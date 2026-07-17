@@ -1,0 +1,445 @@
+// TRAINING ZONE — modelo de datos multi-tenant (ADR-003/004)
+// Aislamiento por organización vía orgId ("tenant_id") en cada tabla de negocio.
+// En producción sobre Postgres real se añadiría Row Level Security (ADR-004);
+// aquí el aislamiento se aplica en la capa de acceso a datos (lib/tenant.ts).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Tenancy ----------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  centers       Center[]
+  users         User[]
+  members       Member[]
+  plans         MembershipPlan[]
+  sessions      ClassSession[]
+  templates     SessionTemplate[]
+  payments      Payment[]
+  auditLogs     AuditLog[]
+  aptitudeRules AptitudeRule[]
+}
+
+model Center {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  slug      String
+  address   String?
+  timezone  String   @default("Europe/Madrid")
+  createdAt DateTime @default(now())
+
+  organization Organization      @relation(fields: [orgId], references: [id])
+  users        User[]
+  members      Member[]          @relation("PrimaryCenter")
+  templates    SessionTemplate[]
+  sessions     ClassSession[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+}
+
+// ---------- Identidad y roles ----------
+
+enum Role {
+  PLATFORM_ADMIN
+  OWNER
+  CENTER_DIRECTOR
+  TRAINER
+  RECEPTION
+  MEMBER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  orgId        String
+  centerId     String?
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  image        String?
+  authProvider String   @default("demo") // "demo" | "microsoft-entra-id" (preparado, no activo)
+  createdAt    DateTime @default(now())
+
+  organization        Organization      @relation(fields: [orgId], references: [id])
+  center               Center?           @relation(fields: [centerId], references: [id])
+  trainerSessions      ClassSession[]    @relation("TrainerSessions")
+  trainerTemplates     SessionTemplate[] @relation("TrainerTemplates")
+  memberProfile        Member?           @relation("MemberUser")
+  auditLogs            AuditLog[]
+  healthReported       HealthRecord[]    @relation("ReportedBy")
+  aptitudeRulesEdited  AptitudeRule[]    @relation("EditedBy")
+
+  @@index([orgId])
+}
+
+// ---------- Socio y catálogo comercial (A.2.1) ----------
+
+enum MemberState {
+  PROSPECT
+  TRIAL
+  ACTIVE
+  DELINQUENT
+  FROZEN
+  CANCELLED
+}
+
+model Member {
+  id               String      @id @default(cuid())
+  orgId            String
+  primaryCenterId  String
+  userId           String?     @unique
+  firstName        String
+  lastName         String
+  email            String
+  phone            String?
+  birthDate        DateTime?
+  state            MemberState @default(PROSPECT)
+  joinedAt         DateTime    @default(now())
+  cancelledAt      DateTime?
+  consentContract  Boolean     @default(true)
+  consentHealth    Boolean     @default(false)
+  consentMarketing Boolean     @default(false)
+  notes            String?
+  createdAt        DateTime    @default(now())
+
+  organization    Organization     @relation(fields: [orgId], references: [id])
+  primaryCenter   Center           @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
+  user            User?            @relation("MemberUser", fields: [userId], references: [id])
+  subscriptions   Subscription[]
+  bookings        Booking[]
+  payments        Payment[]
+  healthRecords   HealthRecord[]
+  retentionAlerts RetentionAlert[]
+
+  @@index([orgId])
+  @@index([primaryCenterId])
+  @@index([state])
+}
+
+enum PlanType {
+  MONTHLY
+  SESSION_PACK
+  DROP_IN
+  PERSONAL_TRAINING
+  DUO
+}
+
+model MembershipPlan {
+  id               String   @id @default(cuid())
+  orgId            String
+  name             String
+  type             PlanType
+  sessionsIncluded Int?
+  priceCents       Int
+  validityDays     Int?
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  organization  Organization   @relation(fields: [orgId], references: [id])
+  subscriptions Subscription[]
+
+  @@index([orgId])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  FROZEN
+  CANCELLED
+  EXPIRED
+}
+
+model Subscription {
+  id                String             @id @default(cuid())
+  memberId          String
+  planId            String
+  startDate         DateTime
+  endDate           DateTime?
+  status            SubscriptionStatus @default(ACTIVE)
+  priceCents        Int
+  sessionsRemaining Int?
+  createdAt         DateTime           @default(now())
+
+  member   Member         @relation(fields: [memberId], references: [id])
+  plan     MembershipPlan @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  @@index([memberId])
+}
+
+// ---------- Agenda y reservas (A.2.2) ----------
+
+model SessionTemplate {
+  id          String   @id @default(cuid())
+  orgId       String
+  centerId    String
+  name        String
+  classType   String
+  weekday     Int // 0=domingo .. 6=sábado
+  startTime   String // "HH:mm"
+  durationMin Int
+  capacity    Int
+  room        String?
+  trainerId   String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  organization Organization   @relation(fields: [orgId], references: [id])
+  center       Center         @relation(fields: [centerId], references: [id])
+  trainer      User?          @relation("TrainerTemplates", fields: [trainerId], references: [id])
+  sessions     ClassSession[]
+
+  @@index([orgId])
+  @@index([centerId])
+}
+
+enum SessionStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+model ClassSession {
+  id         String        @id @default(cuid())
+  orgId      String
+  centerId   String
+  templateId String?
+  name       String
+  classType  String
+  date       DateTime // fecha (medianoche) del día de la sesión
+  startTime  String // "HH:mm"
+  endTime    String // "HH:mm"
+  capacity   Int
+  room       String?
+  trainerId  String?
+  status     SessionStatus @default(SCHEDULED)
+  createdAt  DateTime      @default(now())
+
+  organization Organization     @relation(fields: [orgId], references: [id])
+  center       Center           @relation(fields: [centerId], references: [id])
+  template     SessionTemplate? @relation(fields: [templateId], references: [id])
+  trainer      User?            @relation("TrainerSessions", fields: [trainerId], references: [id])
+  bookings     Booking[]
+
+  @@index([orgId])
+  @@index([centerId, date])
+}
+
+enum BookingStatus {
+  BOOKED
+  WAITLISTED
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  sessionId        String
+  memberId         String
+  status           BookingStatus @default(BOOKED)
+  waitlistPosition Int?
+  bookedAt         DateTime      @default(now())
+  checkedInAt      DateTime?
+  cancelledAt      DateTime?
+
+  session ClassSession    @relation(fields: [sessionId], references: [id])
+  member  Member          @relation(fields: [memberId], references: [id])
+  debrief SessionDebrief?
+
+  @@index([sessionId])
+  @@index([memberId])
+  @@index([status])
+}
+
+// ---------- Cobros (A.2.3) ----------
+
+enum PaymentMethod {
+  CASH
+  CARD
+  BIZUM
+  TRANSFER
+  SEPA
+}
+
+enum PaymentStatus {
+  PAID
+  PENDING
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  orgId          String
+  memberId       String
+  subscriptionId String?
+  amountCents    Int
+  method         PaymentMethod
+  status         PaymentStatus @default(PAID)
+  date           DateTime
+  receiptNumber  String?
+  notes          String?
+  createdAt      DateTime      @default(now())
+
+  organization Organization  @relation(fields: [orgId], references: [id])
+  member       Member        @relation(fields: [memberId], references: [id])
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
+  @@index([date])
+}
+
+// ---------- Salud (A.2.4) — datos Art. 9 RGPD ----------
+// Nota de diseño: en producción este modelo vive en un esquema separado
+// (`health.*`, ADR-005) con cifrado a nivel de columna. En este entorno de
+// demo se representa en el mismo esquema para simplificar, pero el acceso
+// pasa siempre por lib/health-access.ts, que aplica la matriz de permisos
+// y registra cada lectura en AuditLog (ADR-008).
+
+enum HealthRecordType {
+  INJURY
+  CHRONIC_CONDITION
+  MEDICATION
+  SURGERY
+  PREGNANCY
+  ALLERGY
+}
+
+enum HealthSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum HealthStatus {
+  ACTIVE
+  RESOLVED
+}
+
+model HealthRecord {
+  id               String           @id @default(cuid())
+  memberId         String
+  type             HealthRecordType
+  zone             String? // p.ej. "hombro derecho"
+  description      String
+  severity         HealthSeverity
+  status           HealthStatus     @default(ACTIVE)
+  reportedByUserId String?
+  reportedAt       DateTime         @default(now())
+  resolvedAt       DateTime?
+  consentSignedAt  DateTime?
+
+  member     Member @relation(fields: [memberId], references: [id])
+  reportedBy User?  @relation("ReportedBy", fields: [reportedByUserId], references: [id])
+
+  @@index([memberId])
+  @@index([status])
+}
+
+// Semáforo de Aptitud (G.2): reglas deterministas mantenidas por Sergio,
+// no por el modelo de IA. La IA (F6, fuera de esta entrega) solo redactaría.
+enum AptitudeLight {
+  GREEN
+  AMBER
+  RED
+}
+
+model AptitudeRule {
+  id             String        @id @default(cuid())
+  orgId          String
+  injuryZone     String // coincide con HealthRecord.zone
+  blockArea      String // p.ej. "Empuje vertical"
+  light          AptitudeLight
+  adaptation     String? // p.ej. "reducir ROM, carga <=60%"
+  editedByUserId String?
+  updatedAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  editedBy     User?        @relation("EditedBy", fields: [editedByUserId], references: [id])
+
+  @@index([orgId])
+}
+
+// Session Debrief (G.1): captura post-sesión en <20s, un toque por persona.
+enum DebriefFeeling {
+  GREEN
+  AMBER
+  RED
+}
+
+model SessionDebrief {
+  id        String         @id @default(cuid())
+  bookingId String         @unique
+  feeling   DebriefFeeling
+  rpe       Int?
+  note      String?
+  createdAt DateTime       @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+}
+
+// ---------- Auditoría append-only (ADR-008) ----------
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  orgId       String
+  actorUserId String?
+  action      String // p.ej. "HEALTH_RECORD_READ", "MEMBER_UPDATED"
+  entityType  String
+  entityId    String
+  memberId    String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  actor        User?        @relation(fields: [actorUserId], references: [id])
+
+  @@index([orgId])
+  @@index([entityType, entityId])
+  @@index([memberId])
+}
+
+// ---------- Motor de retención (G.3) ----------
+
+enum RetentionRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RetentionAlertStatus {
+  OPEN
+  CONTACTED
+  POSTPONED
+  DISMISSED
+}
+
+model RetentionAlert {
+  id           String               @id @default(cuid())
+  memberId     String
+  baselineFreq Float // sesiones/semana, línea base personal
+  recentFreq   Float // sesiones/semana, últimas 2 semanas
+  dropPct      Float
+  riskLevel    RetentionRiskLevel
+  context      String?
+  status       RetentionAlertStatus @default(OPEN)
+  createdAt    DateTime             @default(now())
+  resolvedAt   DateTime?
+
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@index([memberId])
+  @@index([status])
+}
