@@ -67,6 +67,10 @@ if (hasMicrosoftEntraConfig) {
 
 export const authConfig = {
   providers,
+  // Necesario fuera de Vercel (self-hosted / detrás de un proxy inverso):
+  // Auth.js valida el header Host contra AUTH_URL en producción por defecto
+  // y lo rechaza si no se marca explícitamente como confiable.
+  trustHost: true,
   pages: {
     signIn: "/login",
   },
