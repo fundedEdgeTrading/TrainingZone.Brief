@@ -49,6 +49,31 @@ export async function getMemberProgress(memberId: string) {
   };
 }
 
+export async function getMemberMonthlyActivity(memberId: string, months = 6) {
+  const now = new Date();
+  const since = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+
+  const bookings = await prisma.booking.findMany({
+    where: { memberId, status: "ATTENDED", session: { date: { gte: since } } },
+    select: { session: { select: { date: true } } },
+  });
+
+  const counts = new Map<string, number>();
+  for (const b of bookings) {
+    const d = b.session.date;
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+
+  const result: { label: string; count: number }[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    result.push({ label: d.toLocaleDateString("es-ES", { month: "short" }), count: counts.get(key) ?? 0 });
+  }
+  return result;
+}
+
 export async function getMemberHealthTransparency(memberId: string, orgId: string) {
   const records = await prisma.healthRecord.findMany({
     where: { memberId, status: "ACTIVE" },
