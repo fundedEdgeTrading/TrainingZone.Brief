@@ -17,38 +17,60 @@ export default async function PortalAgendaPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Reservar clase</h1>
-        <p className="text-sm text-slate-500">
-          {member.primaryCenter?.name ?? ""} · puedes reservar hasta 7 días vista
-          (máx. 3 reservas activas a la vez).
+    <div className="max-w-[1100px] mx-auto flex flex-col gap-4">
+      <div className="bg-brand-yellow rounded-2xl px-[26px] py-[22px] tz-fade-up">
+        <div className="font-display font-extrabold text-2xl uppercase text-brand-ink leading-none">
+          Reserva tu próxima clase
+        </div>
+        <p className="text-sm text-brand-text-2 mt-1.5 font-medium">
+          Hasta 7 días vista · máximo 3 reservas activas a la vez.
         </p>
       </div>
 
-      {Array.from(byDay.entries()).map(([day, daySessions]) => (
-        <div key={day} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-2 bg-slate-50 text-sm font-semibold text-slate-700 capitalize">{day}</div>
-          <div className="divide-y divide-slate-100">
-            {daySessions.map((s) => {
+      {Array.from(byDay.entries()).map(([day, daySessions], dayIdx) => (
+        <div
+          key={day}
+          className="bg-brand-card border border-brand-border rounded-2xl overflow-hidden tz-fade-up"
+          style={{ animationDelay: `${0.06 + dayIdx * 0.06}s` }}
+        >
+          <div className="px-5 py-3 bg-brand-ink font-display font-bold text-[13px] tracking-[.08em] uppercase text-brand-yellow capitalize">
+            {day}
+          </div>
+          <div className="flex flex-col">
+            {daySessions.map((s, i) => {
               const full = s.bookedCount >= s.capacity;
+              const booked = !!s.myBookingId;
               return (
-                <div key={s.id} className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <div className="font-medium text-slate-800">
-                      {s.startTime} · {s.name}
+                <div
+                  key={s.id}
+                  className={`flex items-center justify-between gap-4 px-5 py-[15px] ${i > 0 ? "border-t border-[#f0efe9]" : ""}`}
+                >
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="font-display font-extrabold text-xl text-brand-text w-[58px] shrink-0">
+                      {s.startTime}
                     </div>
-                    <div className="text-xs text-slate-500">
-                      {s.trainerName ?? "Sin entrenador"} · {s.bookedCount}/{s.capacity} plazas
-                      {full && !s.myBookingId && " · lista de espera"}
+                    <div className="min-w-0">
+                      <div className="text-[15px] font-bold text-brand-text truncate">{s.name}</div>
+                      <div className="text-xs text-brand-muted mt-px truncate">
+                        {s.trainerName ?? "Sin entrenador"} · {s.bookedCount}/{s.capacity} plazas
+                        {full && !booked && " · lista de espera"}
+                      </div>
                     </div>
                   </div>
-                  <BookingButton
-                    sessionId={s.id}
-                    myBookingId={s.myBookingId}
-                    myBookingStatus={s.myBookingStatus}
-                    canCancelFreely={canCancelWithoutPenalty(s.startsAt)}
-                  />
+                  <div className="flex items-center gap-3 shrink-0">
+                    {booked && (
+                      <span className="inline-flex items-center bg-[#e9f9ef] text-good rounded-full px-[11px] py-1 text-xs font-bold">
+                        Reservada
+                      </span>
+                    )}
+                    <BookingButton
+                      sessionId={s.id}
+                      myBookingId={s.myBookingId}
+                      myBookingStatus={s.myBookingStatus}
+                      full={full}
+                      canCancelFreely={canCancelWithoutPenalty(s.startsAt)}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -57,7 +79,7 @@ export default async function PortalAgendaPage() {
       ))}
 
       {sessions.length === 0 && (
-        <p className="text-sm text-slate-500">No hay sesiones disponibles en los próximos 7 días.</p>
+        <p className="text-sm text-brand-muted">No hay sesiones disponibles en los próximos 7 días.</p>
       )}
     </div>
   );

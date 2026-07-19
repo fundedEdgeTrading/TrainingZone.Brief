@@ -80,3 +80,19 @@ export const ROLE_LABEL: Record<Role, string> = {
   MEMBER: "Socio",
   PLATFORM_ADMIN: "Admin plataforma",
 };
+
+/** Título de cabecera para la ruta actual: coincidencia de prefijo más larga en NAV_BY_ROLE. */
+export function getPageTitle(nav: { href: string; label: string }[], pathname: string): string {
+  const match = [...nav]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"));
+  return match?.label ?? "Training Zone";
+}
+
+export function sectionLabelForRole(role: Role): string {
+  return role === "MEMBER" ? "Mi cuenta" : "Gestión";
+}
+
+export function footerLabelForRole(role: Role): string {
+  return role === "MEMBER" ? "Portal del socio" : "MVP F0–F5";
+}

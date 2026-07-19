@@ -17,6 +17,7 @@ import {
   OccupancyByWeekdayChart,
   RetentionCohortChart,
   RevenueByMethodChart,
+  NoShowRateCard,
 } from "./charts";
 
 export default async function DashboardPage() {
@@ -39,61 +40,52 @@ export default async function DashboardPage() {
     (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Panel de control</h1>
-        <p className="text-sm text-slate-500">
-          Sergio abre una pantalla y sabe cómo va el mes (F5).
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <KpiCard label="Socios activos" value={String(kpis.activeMembers)} />
-        <KpiCard label="Morosos" value={String(kpis.delinquent)} tone={kpis.delinquent > 0 ? "critical" : "default"} />
-        <KpiCard label="Congelados" value={String(kpis.frozen)} tone="warning" />
-        <KpiCard label="Ingresos del mes" value={eur(kpis.monthRevenueCents)} tone="good" />
-        <KpiCard label="Sesiones este mes" value={String(kpis.sessionsThisMonth)} />
+    <div className="max-w-[1240px] mx-auto flex flex-col gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        <KpiCard label="Socios activos" value={String(kpis.activeMembers)} delay={0.04} />
+        <KpiCard
+          label="Morosos"
+          value={String(kpis.delinquent)}
+          tone={kpis.delinquent > 0 ? "critical" : "default"}
+          hint={kpis.delinquent > 0 ? "recibos fallidos" : ""}
+          delay={0.1}
+        />
+        <KpiCard label="Congelados" value={String(kpis.frozen)} tone="warning" delay={0.16} />
+        <KpiCard label="Ingresos del mes" value={eur(kpis.monthRevenueCents)} tone="good" delay={0.22} />
+        <KpiCard label="Sesiones este mes" value={String(kpis.sessionsThisMonth)} delay={0.28} />
         <KpiCard
           label="Alertas de retención"
           value={String(kpis.openAlerts)}
           tone={kpis.openAlerts > 0 ? "warning" : "default"}
-          hint="abiertas, ver módulo Retención"
+          hint="ver módulo Retención"
+          delay={0.34}
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card title="Ingresos por mes (últimos 6 meses)">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
+        <Card title="Ingresos por mes" meta="Últimos 6 meses" delay={0.12}>
           <RevenueByMonthChart data={revenueByMonth} />
         </Card>
-        <Card title="Socios por estado">
+        <Card title="Socios por estado" delay={0.18}>
           <MemberStateChart data={stateBreakdown} />
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card title="Ocupación por centro (30 días)">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr_0.85fr] gap-4">
+        <Card title="Ocupación por centro" meta="30 días" delay={0.24}>
           <OccupancyByCenterChart data={occupancyByCenter} />
         </Card>
-        <Card title="Ocupación por día de la semana (60 días)">
+        <Card title="Ocupación por día" meta="60 días" delay={0.3}>
           <OccupancyByWeekdayChart data={occupancyByWeekday} />
         </Card>
-        <Card title="Tasa de no-show (30 días)">
-          <div className="flex flex-col items-center justify-center h-[220px]">
-            <div className={`text-5xl font-bold ${noShowRate > 15 ? "text-red-600" : "text-slate-800"}`}>
-              {noShowRate}%
-            </div>
-            <p className="text-sm text-slate-500 mt-2 text-center">
-              de las reservas confirmadas no se presentaron
-            </p>
-          </div>
-        </Card>
+        <NoShowRateCard rate={noShowRate} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card title="Retención por cohorte de alta (% aún activos)">
+        <Card title="Retención por cohorte" meta="% aún activos por mes de alta" delay={0.42}>
           <RetentionCohortChart data={cohorts} />
         </Card>
-        <Card title="Ingresos por método de pago (histórico)">
+        <Card title="Ingresos por método de pago" delay={0.48}>
           <RevenueByMethodChart data={revenueByMethod} />
         </Card>
       </div>

@@ -1,14 +1,154 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f4f3ee;
+  --foreground: #111110;
+}
+
+@theme inline {
+  /* Marca Training Zone (amarillo/negro) */
+  --color-brand-yellow: #fff03e;
+  --color-brand-ink: #111110;
+  --color-brand-ink-soft: #1f1f1c;
+  --color-brand-ink-circle: #1c1c19;
+  --color-brand-border-dark: #262622;
+  --color-brand-nav-inactive: #b7b6af;
+  --color-brand-nav-hover-bg: #1e1e1a;
+
+  --color-brand-bg: #f4f3ee;
+  --color-brand-card: #ffffff;
+  --color-brand-subtle: #faf9f5;
+  --color-brand-subtle-2: #f0efe9;
+  --color-brand-border: #e6e5df;
+  --color-brand-border-hover: #d6d5cd;
+
+  --color-brand-text: #111110;
+  --color-brand-text-2: #3a3a34;
+  --color-brand-muted: #8a897f;
+  --color-brand-muted-2: #a5a49a;
+  --color-brand-faint: #6a6a62;
+  --color-brand-footer: #57574f;
+
+  /* Semánticos (estados, salud, pagos) */
+  --color-good: #0b8f3f;
+  --color-warning: #e6b325;
+  --color-warning-text: #b7791a;
+  --color-critical: #c9342f;
+  --color-trial: #2a78d6;
+  --color-prospect: #6b5bc7;
+  --color-neutral: #a5a49a;
+  --color-pay-ok: #3ddc84;
+
+  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-display: "Barlow Semi Condensed", system-ui, sans-serif;
+}
+
+@keyframes tzNavIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tzFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tzHeadIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tzPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes tzShine {
+  0% {
+    background-position: -140% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+
+.tz-nav-in {
+  animation: tzNavIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.tz-fade-up {
+  animation: tzFadeUp 0.55s both;
+}
+.tz-head-in {
+  animation: tzHeadIn 0.5s 0.1s both;
+}
+
+.tz-logo-shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.5) 46%,
+    var(--color-brand-yellow) 50%,
+    rgba(255, 255, 255, 0.5) 54%,
+    transparent 62%
+  );
+  background-size: 220% 100%;
+  background-position: -140% 0;
+  pointer-events: none;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+.tz-logo-wrap {
+  position: relative;
+  display: inline-block;
+  transition:
+    transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.3s;
+}
+.tz-logo-wrap:hover {
+  transform: scale(1.03);
+  filter: drop-shadow(0 0 10px rgba(255, 240, 62, 0.45));
+}
+.tz-logo-wrap:hover .tz-logo-shine {
+  animation: tzShine 0.95s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--color-brand-yellow);
+  color: var(--color-brand-ink);
 }

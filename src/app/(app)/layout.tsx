@@ -1,7 +1,8 @@
 import { requireSession } from "@/lib/session";
-import { NAV_BY_ROLE, ROLE_LABEL } from "@/lib/rbac";
+import { prisma } from "@/lib/prisma";
+import { NAV_BY_ROLE, ROLE_LABEL, sectionLabelForRole, footerLabelForRole } from "@/lib/rbac";
 import Sidebar from "./sidebar";
-import UserMenu from "./user-menu";
+import Header from "./header";
 
 export default async function AppLayout({
   children,
@@ -9,22 +10,33 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const session = await requireSession();
-  const nav = NAV_BY_ROLE[session.user.role];
+  const { role, centerId, name, email } = session.user;
+  const nav = NAV_BY_ROLE[role];
+
+  const center = centerId
+    ? await prisma.center.findUnique({ where: { id: centerId }, select: { name: true } })
+    : null;
+  const centerName = center?.name?.replace(/^TRAINING ZONE\s*/i, "") || "";
+
+  const subtitle =
+    role === "MEMBER"
+      ? `Training Zone · ${centerName}`
+      : `${ROLE_LABEL[role]} · ${centerName || "Toda la organización"}`;
+
+  const showCenterChip = role === "OWNER" || role === "PLATFORM_ADMIN";
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar nav={nav} />
+    <div className="flex min-h-screen bg-brand-bg">
+      <Sidebar nav={nav} sectionLabel={sectionLabelForRole(role)} footerLabel={footerLabelForRole(role)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-6 shrink-0">
-          <div className="text-sm text-slate-500">
-            TRAINING ZONE ·{" "}
-            <span className="font-medium text-slate-700">
-              {ROLE_LABEL[session.user.role]}
-            </span>
-          </div>
-          <UserMenu name={session.user.name ?? session.user.email ?? ""} />
-        </header>
-        <main className="flex-1 overflow-y-auto p-6 bg-slate-50">
+        <Header
+          nav={nav}
+          subtitle={subtitle}
+          userName={name ?? email ?? ""}
+          roleLabel={ROLE_LABEL[role]}
+          centerChip={showCenterChip ? "Todos los centros" : undefined}
+        />
+        <main className="flex-1 overflow-y-auto p-7 px-8 pb-12 bg-brand-bg">
           {children}
         </main>
       </div>
