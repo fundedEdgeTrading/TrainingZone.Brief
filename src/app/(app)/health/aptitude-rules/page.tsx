@@ -17,8 +17,8 @@ export default async function AptitudeRulesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Semáforo de Aptitud — Reglas</h1>
-        <p className="text-sm text-slate-500 max-w-2xl">
+        <h1 className="text-xl font-semibold text-tz-black">Semáforo de Aptitud — Reglas</h1>
+        <p className="text-sm text-muted max-w-2xl">
           Reglas deterministas mantenidas por Sergio, no por un modelo de IA (G.2).
           Cada zona de lesión se traduce en un bloque de trabajo con semáforo y
           adaptación. El entrenador ve el resultado en el Session Brief; la IA
@@ -26,23 +26,23 @@ export default async function AptitudeRulesPage() {
         </p>
       </div>
 
-      <form action={createAptitudeRule} className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-2">
-        <input name="injuryZone" placeholder="Zona (p.ej. hombro derecho)" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        <input name="blockArea" placeholder="Bloque (p.ej. Empuje vertical)" required className="rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-        <select name="light" className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+      <form action={createAptitudeRule} className="bg-white border border-tz-linen rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-2">
+        <input name="injuryZone" placeholder="Zona (p.ej. hombro derecho)" required className="rounded-lg border border-tz-linen px-3 py-2 text-sm" />
+        <input name="blockArea" placeholder="Bloque (p.ej. Empuje vertical)" required className="rounded-lg border border-tz-linen px-3 py-2 text-sm" />
+        <select name="light" className="rounded-lg border border-tz-linen px-3 py-2 text-sm">
           <option value="RED">🔴 Evitar</option>
           <option value="AMBER">🟡 Adaptar</option>
           <option value="GREEN">🟢 Libre</option>
         </select>
-        <input name="adaptation" placeholder="Adaptación sugerida (opcional)" className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-1" />
-        <button className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700">
+        <input name="adaptation" placeholder="Adaptación sugerida (opcional)" className="rounded-lg border border-tz-linen px-3 py-2 text-sm md:col-span-1" />
+        <button className="rounded-lg bg-tz-black text-white px-4 py-2 text-sm font-medium hover:bg-brand-ink-soft">
           Añadir regla
         </button>
       </form>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-tz-linen rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+          <thead className="bg-tz-bone text-muted text-xs uppercase">
             <tr>
               <th className="text-left px-4 py-2">Zona</th>
               <th className="text-left px-4 py-2">Bloque</th>
@@ -54,12 +54,12 @@ export default async function AptitudeRulesPage() {
           </thead>
           <tbody>
             {rules.map((r) => (
-              <tr key={r.id} className="border-t border-slate-100">
-                <td className="px-4 py-2 font-medium text-slate-700">{r.injuryZone}</td>
+              <tr key={r.id} className="border-t border-tz-sand">
+                <td className="px-4 py-2 font-medium text-text-2">{r.injuryZone}</td>
                 <td className="px-4 py-2">{r.blockArea}</td>
                 <td className="px-4 py-2">{LIGHT_EMOJI[r.light]}</td>
-                <td className="px-4 py-2 text-slate-500">{r.adaptation ?? "—"}</td>
-                <td className="px-4 py-2 text-slate-400 text-xs">
+                <td className="px-4 py-2 text-muted">{r.adaptation ?? "—"}</td>
+                <td className="px-4 py-2 text-faint text-xs">
                   {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
                 </td>
                 <td className="px-4 py-2">

@@ -30,8 +30,8 @@ export default async function BriefIndexPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Session Brief</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-xl font-semibold text-tz-black">Session Brief</h1>
+        <p className="text-sm text-muted">
           Elige una sesión para ver la vista previa de 90 segundos antes de abrir la puerta.
         </p>
       </div>
@@ -43,22 +43,22 @@ export default async function BriefIndexPage() {
             <Link
               key={s.id}
               href={`/brief/${s.id}`}
-              className="block bg-white border border-slate-200 rounded-xl p-4 hover:border-indigo-300 hover:shadow-sm transition"
+              className="block bg-white border border-tz-linen rounded-xl p-4 hover:border-brand-border-hover hover:shadow-sm transition"
             >
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-faint">
                 {isToday ? "Hoy" : s.date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric" })} ·{" "}
                 {s.startTime}
               </div>
-              <div className="font-semibold text-slate-800 mt-1">{s.name}</div>
-              <div className="text-sm text-slate-500">{s.center.name} · {s.trainer?.name ?? "Sin entrenador"}</div>
-              <div className="text-sm text-slate-400 mt-2">{s.bookings.length} reservas</div>
+              <div className="font-semibold text-tz-black mt-1">{s.name}</div>
+              <div className="text-sm text-muted">{s.center.name} · {s.trainer?.name ?? "Sin entrenador"}</div>
+              <div className="text-sm text-faint mt-2">{s.bookings.length} reservas</div>
             </Link>
           );
         })}
       </div>
 
       {sessions.length === 0 && (
-        <p className="text-sm text-slate-500">No hay sesiones próximas asignadas.</p>
+        <p className="text-sm text-muted">No hay sesiones próximas asignadas.</p>
       )}
     </div>
   );

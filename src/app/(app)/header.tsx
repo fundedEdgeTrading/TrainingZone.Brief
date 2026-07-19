@@ -26,7 +26,7 @@ export default function Header({
       className="h-[88px] shrink-0 bg-brand-card border-b border-brand-border flex items-center justify-between px-8 tz-head-in"
     >
       <div className="flex items-center gap-3.5">
-        <span className="w-1.5 h-[34px] bg-brand-yellow rounded-[2px]" />
+        <span className="w-1.5 h-[34px] bg-tz-black rounded-[2px]" />
         <div>
           <div className="font-display font-extrabold text-[22px] leading-none tracking-[-.01em] uppercase text-brand-text">
             {title}

@@ -22,23 +22,23 @@ export default async function MembersPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Socios</h1>
-          <p className="text-sm text-slate-500">{members.length} resultados</p>
+          <h1 className="text-xl font-semibold text-tz-black">Socios</h1>
+          <p className="text-sm text-muted">{members.length} resultados</p>
         </div>
       </div>
 
-      <form className="flex flex-wrap gap-2 bg-white border border-slate-200 rounded-xl p-3">
+      <form className="flex flex-wrap gap-2 bg-white border border-tz-linen rounded-xl p-3">
         <input
           type="text"
           name="q"
           defaultValue={params.q}
           placeholder="Buscar por nombre o email..."
-          className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          className="flex-1 min-w-[200px] rounded-lg border border-tz-linen px-3 py-2 text-sm"
         />
         <select
           name="state"
           defaultValue={params.state}
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          className="rounded-lg border border-tz-linen px-3 py-2 text-sm"
         >
           <option value="">Todos los estados</option>
           {STATES.map((s) => (
@@ -47,14 +47,14 @@ export default async function MembersPage({
             </option>
           ))}
         </select>
-        <button className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700">
+        <button className="rounded-lg bg-tz-black text-tz-bone px-4 py-2 text-sm font-medium hover:bg-brand-ink-soft">
           Filtrar
         </button>
       </form>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-tz-linen rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+          <thead className="bg-tz-bone text-muted text-xs uppercase">
             <tr>
               <th className="text-left px-4 py-3">Socio</th>
               <th className="text-left px-4 py-3">Centro</th>
@@ -65,14 +65,14 @@ export default async function MembersPage({
           </thead>
           <tbody>
             {members.map((m) => (
-              <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50">
+              <tr key={m.id} className="border-t border-tz-sand hover:bg-tz-bone">
                 <td className="px-4 py-3">
-                  <Link href={`/members/${m.id}`} className="font-medium text-indigo-700 hover:underline">
+                  <Link href={`/members/${m.id}`} className="font-medium text-tz-black hover:underline">
                     {m.firstName} {m.lastName}
                   </Link>
-                  <div className="text-xs text-slate-400">{m.email}</div>
+                  <div className="text-xs text-faint">{m.email}</div>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{m.primaryCenter.name}</td>
+                <td className="px-4 py-3 text-text-2">{m.primaryCenter.name}</td>
                 <td className="px-4 py-3">
                   <span
                     className="inline-block rounded-full px-2 py-0.5 text-xs font-medium text-white"
@@ -81,8 +81,8 @@ export default async function MembersPage({
                     {MEMBER_STATE_LABEL[m.state]}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{m.subscriptions[0]?.plan.name ?? "—"}</td>
-                <td className="px-4 py-3 text-slate-500">
+                <td className="px-4 py-3 text-text-2">{m.subscriptions[0]?.plan.name ?? "—"}</td>
+                <td className="px-4 py-3 text-muted">
                   {m.joinedAt.toLocaleDateString("es-ES")}
                 </td>
               </tr>

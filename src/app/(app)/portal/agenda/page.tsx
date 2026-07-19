@@ -18,8 +18,8 @@ export default async function PortalAgendaPage() {
 
   return (
     <div className="max-w-[1100px] mx-auto flex flex-col gap-4">
-      <div className="bg-brand-yellow rounded-2xl px-[26px] py-[22px] tz-fade-up">
-        <div className="font-display font-extrabold text-2xl uppercase text-brand-ink leading-none">
+      <div className="bg-tz-sand rounded-2xl px-[26px] py-[22px] tz-fade-up">
+        <div className="font-display font-extrabold text-2xl uppercase text-tz-black leading-none">
           Reserva tu próxima clase
         </div>
         <p className="text-sm text-brand-text-2 mt-1.5 font-medium">
@@ -33,7 +33,7 @@ export default async function PortalAgendaPage() {
           className="bg-brand-card border border-brand-border rounded-2xl overflow-hidden tz-fade-up"
           style={{ animationDelay: `${0.06 + dayIdx * 0.06}s` }}
         >
-          <div className="px-5 py-3 bg-brand-ink font-display font-bold text-[13px] tracking-[.08em] uppercase text-brand-yellow capitalize">
+          <div className="px-5 py-3 bg-brand-ink font-display font-bold text-[13px] tracking-[.08em] uppercase text-tz-bone capitalize">
             {day}
           </div>
           <div className="flex flex-col">

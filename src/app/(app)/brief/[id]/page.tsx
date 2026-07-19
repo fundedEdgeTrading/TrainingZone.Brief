@@ -27,27 +27,27 @@ export default async function SessionBriefPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <Link href={`/agenda/session/${cls.id}`} className="text-sm text-indigo-600 hover:underline">
+          <Link href={`/agenda/session/${cls.id}`} className="text-sm text-tz-black hover:underline">
             ← Volver al detalle de sesión
           </Link>
-          <h1 className="text-xl font-semibold text-slate-900 mt-1">
+          <h1 className="text-xl font-semibold text-tz-black mt-1">
             Session Brief · {cls.name}
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             {cls.date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
             {cls.startTime} · {cls.center.name} · {cls.trainer?.name ?? "Sin entrenador"}
           </p>
         </div>
         <div className="text-right">
-          <div className="text-2xl font-semibold text-slate-800">
+          <div className="text-2xl font-semibold text-tz-black">
             {doneCount}/{roster.length}
           </div>
-          <div className="text-xs text-slate-400">debriefs registrados</div>
+          <div className="text-xs text-faint">debriefs registrados</div>
         </div>
       </div>
 
       {!canSeeHealth && (
-        <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <div className="text-sm text-warning bg-warning-bg border border-tz-linen rounded-lg p-3">
           Tu rol no tiene acceso a los indicadores de salud (Semáforo de Aptitud).
           Puedes registrar el Debrief igualmente.
         </div>
@@ -60,7 +60,7 @@ export default async function SessionBriefPage({
       </div>
 
       {roster.length === 0 && (
-        <p className="text-sm text-slate-500">Nadie tiene reserva confirmada en esta sesión.</p>
+        <p className="text-sm text-muted">Nadie tiene reserva confirmada en esta sesión.</p>
       )}
     </div>
   );

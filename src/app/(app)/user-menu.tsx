@@ -17,7 +17,7 @@ export default function UserMenu({
   return (
     <div className="flex items-center gap-4">
       <div className="flex items-center gap-2.5">
-        <div className="w-[38px] h-[38px] rounded-full bg-brand-yellow flex items-center justify-center font-display font-extrabold text-sm text-brand-ink shrink-0">
+        <div className="w-[38px] h-[38px] rounded-full bg-tz-black flex items-center justify-center font-display font-extrabold text-sm text-tz-bone shrink-0">
           {initials(name)}
         </div>
         <div className="leading-[1.15] hidden sm:block">

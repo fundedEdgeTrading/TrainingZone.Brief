@@ -10,7 +10,7 @@ import {
 import { KpiCard, Card } from "@/components/kpi-card";
 import ActivityChart from "./activity-chart";
 
-const LIGHT_COLOR: Record<string, string> = { RED: "#c9342f", AMBER: "#e6b325", GREEN: "#0b8f3f" };
+const LIGHT_COLOR: Record<string, string> = { RED: "#8A3420", AMBER: "#8A5A12", GREEN: "#4B5A22" };
 
 export default async function PortalHomePage() {
   const session = await requireRole(["MEMBER"]);
@@ -31,7 +31,7 @@ export default async function PortalHomePage() {
         className="relative overflow-hidden flex items-end justify-between flex-wrap gap-4 bg-brand-ink rounded-[18px] px-8 py-[30px] tz-fade-up"
       >
         <div className="relative z-10">
-          <div className="font-display font-bold text-xs tracking-[.16em] uppercase text-brand-yellow">
+          <div className="font-display font-bold text-xs tracking-[.16em] uppercase text-tz-linen">
             Bienvenida de vuelta
           </div>
           <div className="font-display font-extrabold text-[40px] leading-none text-white mt-2 uppercase tracking-[-.01em]">
@@ -44,7 +44,7 @@ export default async function PortalHomePage() {
         </div>
         <Link
           href="/portal/agenda"
-          className="relative z-10 bg-brand-yellow text-brand-ink rounded-[10px] px-[22px] py-3.5 font-display font-extrabold text-[15px] uppercase tracking-[.03em] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-10px_rgba(255,240,62,.6)]"
+          className="relative z-10 bg-tz-bone text-tz-black rounded-[10px] px-[22px] py-3.5 font-display font-extrabold text-[15px] uppercase tracking-[.03em] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-10px_rgba(29,29,28,.35)]"
         >
           Reservar clase →
         </Link>
@@ -73,7 +73,7 @@ export default async function PortalHomePage() {
         <Card title="Tu plan" delay={0.16}>
           {activeSub ? (
             <div className="bg-brand-ink rounded-xl px-[18px] py-4">
-              <div className="font-display font-extrabold text-xl text-brand-yellow uppercase">
+              <div className="font-display font-extrabold text-xl text-tz-bone uppercase">
                 {activeSub.plan.name}
               </div>
               <div className="text-[13px] text-brand-muted-2 mt-1">

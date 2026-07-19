@@ -12,10 +12,10 @@ function euros(cents: number) {
 
 const STATUS_LABEL: Record<string, string> = { PAID: "Pagado", PENDING: "Pendiente", FAILED: "Fallido", REFUNDED: "Devuelto" };
 const STATUS_CLASS: Record<string, string> = {
-  PAID: "text-emerald-700",
-  PENDING: "text-amber-700",
-  FAILED: "text-red-700",
-  REFUNDED: "text-slate-500",
+  PAID: "text-good",
+  PENDING: "text-warning",
+  FAILED: "text-critical",
+  REFUNDED: "text-muted",
 };
 
 export default async function BillingPage({
@@ -36,8 +36,8 @@ export default async function BillingPage({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Cobros</h1>
-        <p className="text-sm text-slate-500">
+        <h1 className="text-xl font-semibold text-tz-black">Cobros</h1>
+        <p className="text-sm text-muted">
           Cero dudas sobre quién está al corriente (F3). Facturación certificada
           (VERI*FACTU) y pasarela de pago online quedan fuera de esta entrega —
           aquí solo se registra el cobro.
@@ -58,7 +58,7 @@ export default async function BillingPage({
       {delinquent.length > 0 && (
         <Card title={`Socios morosos (${delinquent.length})`}>
           <table className="w-full text-sm">
-            <thead className="text-xs text-slate-400 text-left">
+            <thead className="text-xs text-faint text-left">
               <tr>
                 <th className="pb-2">Socio</th>
                 <th className="pb-2">Centro</th>
@@ -68,14 +68,14 @@ export default async function BillingPage({
             </thead>
             <tbody>
               {delinquent.map((m) => (
-                <tr key={m.id} className="border-t border-slate-100">
+                <tr key={m.id} className="border-t border-tz-sand">
                   <td className="py-2">
-                    <Link href={`/members/${m.id}`} className="text-indigo-700 hover:underline">
+                    <Link href={`/members/${m.id}`} className="text-tz-black hover:underline">
                       {m.firstName} {m.lastName}
                     </Link>
                   </td>
-                  <td className="py-2 text-slate-600">{m.primaryCenter.name}</td>
-                  <td className="py-2 text-slate-600">{m.subscriptions[0]?.plan.name ?? "—"}</td>
+                  <td className="py-2 text-text-2">{m.primaryCenter.name}</td>
+                  <td className="py-2 text-text-2">{m.subscriptions[0]?.plan.name ?? "—"}</td>
                   <td className="py-2">
                     {m.payments[0] ? (
                       <span className={STATUS_CLASS[m.payments[0].status]}>
@@ -101,7 +101,7 @@ export default async function BillingPage({
                 key={s}
                 href={s ? `/billing?status=${s}` : "/billing"}
                 className={`px-2 py-1 rounded-md ${
-                  (params.status ?? "") === s ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
+                  (params.status ?? "") === s ? "bg-tz-sand text-tz-black" : "text-muted hover:bg-tz-sand"
                 }`}
               >
                 {s ? STATUS_LABEL[s] : "Todos"}
@@ -111,7 +111,7 @@ export default async function BillingPage({
         }
       >
         <table className="w-full text-sm">
-          <thead className="text-xs text-slate-400 text-left">
+          <thead className="text-xs text-faint text-left">
             <tr>
               <th className="pb-2">Fecha</th>
               <th className="pb-2">Socio</th>
@@ -123,10 +123,10 @@ export default async function BillingPage({
           </thead>
           <tbody>
             {payments.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100">
+              <tr key={p.id} className="border-t border-tz-sand">
                 <td className="py-2">{p.date.toLocaleDateString("es-ES")}</td>
                 <td className="py-2">
-                  <Link href={`/members/${p.member.id}`} className="text-indigo-700 hover:underline">
+                  <Link href={`/members/${p.member.id}`} className="text-tz-black hover:underline">
                     {p.member.firstName} {p.member.lastName}
                   </Link>
                 </td>
@@ -135,7 +135,7 @@ export default async function BillingPage({
                 <td className="py-2">
                   <span className={STATUS_CLASS[p.status]}>{STATUS_LABEL[p.status]}</span>
                 </td>
-                <td className="py-2 text-slate-400">{p.receiptNumber}</td>
+                <td className="py-2 text-faint">{p.receiptNumber}</td>
               </tr>
             ))}
           </tbody>

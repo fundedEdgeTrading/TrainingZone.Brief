@@ -60,8 +60,8 @@ export default async function AgendaPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">Agenda</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-xl font-semibold text-tz-black">Agenda</h1>
+          <p className="text-sm text-muted">
             Semana del {weekLabel} · {sessions.length} sesiones
           </p>
         </div>
@@ -69,37 +69,37 @@ export default async function AgendaPage({
           <CenterSwitcher centers={centers} currentCenterId={centerId ?? ""} />
           <Link
             href={`/agenda?center=${centerId}&week=${prevWeek.toISOString().slice(0, 10)}`}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-lg border border-tz-linen px-3 py-2 text-sm hover:bg-tz-bone"
           >
             ← Semana anterior
           </Link>
           <Link
             href={`/agenda?center=${centerId}&week=${new Date().toISOString().slice(0, 10)}`}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-lg border border-tz-linen px-3 py-2 text-sm hover:bg-tz-bone"
           >
             Hoy
           </Link>
           <Link
             href={`/agenda?center=${centerId}&week=${nextWeek.toISOString().slice(0, 10)}`}
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50"
+            className="rounded-lg border border-tz-linen px-3 py-2 text-sm hover:bg-tz-bone"
           >
             Semana siguiente →
           </Link>
         </div>
       </div>
 
-      <div className="flex gap-4 text-xs text-slate-500">
+      <div className="flex gap-4 text-xs text-muted">
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#0ca30c" }} /> Ocupación normal
+          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#6B7A34" }} /> Ocupación normal
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#eda100" }} /> Casi lleno (≥70%)
+          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#B98A2E" }} /> Casi lleno (≥70%)
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#d03b3b" }} /> Lleno / lista de espera
+          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#B5482F" }} /> Lleno / lista de espera
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#c3c2b7" }} /> Cancelada
+          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#D8CCB8" }} /> Cancelada
         </span>
       </div>
 

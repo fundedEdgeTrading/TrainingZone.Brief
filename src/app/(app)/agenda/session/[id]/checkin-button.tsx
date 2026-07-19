@@ -19,8 +19,8 @@ export default function CheckinButton({
       onClick={() => startTransition(() => toggleCheckIn(bookingId, sessionId))}
       className={`text-xs rounded-full px-3 py-1 font-medium transition ${
         checkedIn
-          ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200"
-          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          ? "bg-good-bg text-good hover:opacity-80"
+          : "bg-tz-sand text-text-2 hover:bg-tz-linen/40"
       }`}
     >
       {checkedIn ? "✓ Check-in hecho" : "Marcar check-in"}
