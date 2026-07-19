@@ -51,7 +51,7 @@ export default function BookingButton({
     <button
       disabled={pending}
       onClick={() => startTransition(() => bookSession(sessionId))}
-      className={`${baseClass} bg-brand-yellow text-brand-ink border border-brand-yellow hover:-translate-y-0.5 hover:shadow-[0_10px_22px_-10px_rgba(255,240,62,.7)]`}
+      className={`${baseClass} bg-tz-black text-tz-bone border border-tz-black hover:-translate-y-0.5 hover:shadow-[0_10px_22px_-10px_rgba(29,29,28,.35)]`}
     >
       Reservar
     </button>

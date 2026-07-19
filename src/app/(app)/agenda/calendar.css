@@ -1,11 +1,11 @@
 .rbc-today {
-  background-color: #eef2ff;
+  background-color: #efe6d8;
 }
 .rbc-toolbar button {
-  color: #334155;
+  color: #5b5748;
 }
 .rbc-toolbar button.rbc-active {
-  background-color: #4f46e5;
+  background-color: #1d1d1c;
   color: white;
 }
 .rbc-event {

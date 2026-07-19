@@ -21,7 +21,7 @@ export default function CenterSwitcher({
         params.set("center", e.target.value);
         router.push(`${pathname}?${params.toString()}`);
       }}
-      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      className="rounded-lg border border-tz-linen px-3 py-2 text-sm"
     >
       {centers.map((c) => (
         <option key={c.id} value={c.id}>

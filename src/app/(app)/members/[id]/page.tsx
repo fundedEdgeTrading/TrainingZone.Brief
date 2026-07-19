@@ -45,10 +45,10 @@ export default async function MemberDetailPage({
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-slate-900">
+          <h1 className="text-xl font-semibold text-tz-black">
             {member.firstName} {member.lastName}
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             {member.email} · {member.primaryCenter.name}
           </p>
         </div>
@@ -60,7 +60,7 @@ export default async function MemberDetailPage({
         </span>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <div className="bg-white border border-tz-linen rounded-xl p-5">
         <Tabs
           panels={[
             {
@@ -68,24 +68,24 @@ export default async function MemberDetailPage({
               label: "Datos",
               content: (
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm max-w-xl">
-                  <dt className="text-slate-500">Teléfono</dt>
-                  <dd className="text-slate-800">{member.phone ?? "—"}</dd>
-                  <dt className="text-slate-500">Fecha de nacimiento</dt>
-                  <dd className="text-slate-800">
+                  <dt className="text-muted">Teléfono</dt>
+                  <dd className="text-tz-black">{member.phone ?? "—"}</dd>
+                  <dt className="text-muted">Fecha de nacimiento</dt>
+                  <dd className="text-tz-black">
                     {member.birthDate ? member.birthDate.toLocaleDateString("es-ES") : "—"}
                   </dd>
-                  <dt className="text-slate-500">Alta</dt>
-                  <dd className="text-slate-800">{member.joinedAt.toLocaleDateString("es-ES")}</dd>
-                  <dt className="text-slate-500">Baja</dt>
-                  <dd className="text-slate-800">
+                  <dt className="text-muted">Alta</dt>
+                  <dd className="text-tz-black">{member.joinedAt.toLocaleDateString("es-ES")}</dd>
+                  <dt className="text-muted">Baja</dt>
+                  <dd className="text-tz-black">
                     {member.cancelledAt ? member.cancelledAt.toLocaleDateString("es-ES") : "—"}
                   </dd>
-                  <dt className="text-slate-500">Consentimiento contrato</dt>
-                  <dd className="text-slate-800">{member.consentContract ? "Sí" : "No"}</dd>
-                  <dt className="text-slate-500">Consentimiento datos de salud</dt>
-                  <dd className="text-slate-800">{member.consentHealth ? "Sí" : "No"}</dd>
-                  <dt className="text-slate-500">Consentimiento marketing</dt>
-                  <dd className="text-slate-800">{member.consentMarketing ? "Sí" : "No"}</dd>
+                  <dt className="text-muted">Consentimiento contrato</dt>
+                  <dd className="text-tz-black">{member.consentContract ? "Sí" : "No"}</dd>
+                  <dt className="text-muted">Consentimiento datos de salud</dt>
+                  <dd className="text-tz-black">{member.consentHealth ? "Sí" : "No"}</dd>
+                  <dt className="text-muted">Consentimiento marketing</dt>
+                  <dd className="text-tz-black">{member.consentMarketing ? "Sí" : "No"}</dd>
                 </dl>
               ),
             },
@@ -95,9 +95,9 @@ export default async function MemberDetailPage({
               content: (
                 <div className="space-y-6">
                   <div>
-                    <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Suscripciones</h4>
+                    <h4 className="text-xs font-semibold text-muted uppercase mb-2">Suscripciones</h4>
                     <table className="w-full text-sm">
-                      <thead className="text-xs text-slate-400 text-left">
+                      <thead className="text-xs text-faint text-left">
                         <tr>
                           <th className="pb-2">Plan</th>
                           <th className="pb-2">Inicio</th>
@@ -108,7 +108,7 @@ export default async function MemberDetailPage({
                       </thead>
                       <tbody>
                         {member.subscriptions.map((s) => (
-                          <tr key={s.id} className="border-t border-slate-100">
+                          <tr key={s.id} className="border-t border-tz-sand">
                             <td className="py-2">{s.plan.name}</td>
                             <td className="py-2">{s.startDate.toLocaleDateString("es-ES")}</td>
                             <td className="py-2">{s.endDate ? s.endDate.toLocaleDateString("es-ES") : "—"}</td>
@@ -120,9 +120,9 @@ export default async function MemberDetailPage({
                     </table>
                   </div>
                   <div>
-                    <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Pagos recientes</h4>
+                    <h4 className="text-xs font-semibold text-muted uppercase mb-2">Pagos recientes</h4>
                     <table className="w-full text-sm">
-                      <thead className="text-xs text-slate-400 text-left">
+                      <thead className="text-xs text-faint text-left">
                         <tr>
                           <th className="pb-2">Fecha</th>
                           <th className="pb-2">Importe</th>
@@ -133,7 +133,7 @@ export default async function MemberDetailPage({
                       </thead>
                       <tbody>
                         {member.payments.map((p) => (
-                          <tr key={p.id} className="border-t border-slate-100">
+                          <tr key={p.id} className="border-t border-tz-sand">
                             <td className="py-2">{p.date.toLocaleDateString("es-ES")}</td>
                             <td className="py-2">{euros(p.amountCents)}</td>
                             <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
@@ -141,16 +141,16 @@ export default async function MemberDetailPage({
                               <span
                                 className={
                                   p.status === "PAID"
-                                    ? "text-emerald-700"
+                                    ? "text-good"
                                     : p.status === "PENDING"
-                                    ? "text-amber-700"
-                                    : "text-red-700"
+                                    ? "text-warning"
+                                    : "text-critical"
                                 }
                               >
                                 {p.status}
                               </span>
                             </td>
-                            <td className="py-2 text-slate-400">{p.receiptNumber}</td>
+                            <td className="py-2 text-faint">{p.receiptNumber}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -166,20 +166,20 @@ export default async function MemberDetailPage({
                 <div className="space-y-4">
                   <div className="flex gap-6 text-sm">
                     <div>
-                      <div className="text-2xl font-semibold text-slate-800">{stats.attended}</div>
-                      <div className="text-slate-500">Sesiones asistidas</div>
+                      <div className="text-2xl font-semibold text-tz-black">{stats.attended}</div>
+                      <div className="text-muted">Sesiones asistidas</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-semibold text-red-600">{stats.noShow}</div>
-                      <div className="text-slate-500">No-shows</div>
+                      <div className="text-2xl font-semibold text-critical">{stats.noShow}</div>
+                      <div className="text-muted">No-shows</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-semibold text-slate-800">{stats.noShowRate}%</div>
-                      <div className="text-slate-500">Tasa de no-show</div>
+                      <div className="text-2xl font-semibold text-tz-black">{stats.noShowRate}%</div>
+                      <div className="text-muted">Tasa de no-show</div>
                     </div>
                   </div>
                   <table className="w-full text-sm">
-                    <thead className="text-xs text-slate-400 text-left">
+                    <thead className="text-xs text-faint text-left">
                       <tr>
                         <th className="pb-2">Fecha</th>
                         <th className="pb-2">Clase</th>
@@ -189,7 +189,7 @@ export default async function MemberDetailPage({
                     </thead>
                     <tbody>
                       {member.bookings.map((b) => (
-                        <tr key={b.id} className="border-t border-slate-100">
+                        <tr key={b.id} className="border-t border-tz-sand">
                           <td className="py-2">{b.session.date.toLocaleDateString("es-ES")}</td>
                           <td className="py-2">{b.session.name}</td>
                           <td className="py-2">{b.status}</td>
@@ -209,38 +209,38 @@ export default async function MemberDetailPage({
               key: "salud",
               label: "Salud",
               content: healthRecords === null ? (
-                <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-4">
+                <div className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
                   Acceso restringido: tu rol no tiene permiso para ver datos de salud
                   de este socio (Art. 9 RGPD — acceso limitado a entrenador
                   asignado y dirección). Ver <span className="italic">Auditoría</span> para el registro de accesos.
                 </div>
               ) : healthRecords.length === 0 ? (
-                <p className="text-sm text-slate-500">Sin registros de salud.</p>
+                <p className="text-sm text-muted">Sin registros de salud.</p>
               ) : (
                 <div className="space-y-3">
                   {healthRecords.map((h) => (
-                    <div key={h.id} className="border border-slate-200 rounded-lg p-3 text-sm">
+                    <div key={h.id} className="border border-tz-linen rounded-lg p-3 text-sm">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-slate-800">
+                        <span className="font-medium text-tz-black">
                           {HEALTH_TYPE_LABEL[h.type]}
                           {h.zone ? ` — ${h.zone}` : ""}
                         </span>
                         <span
                           className={`text-xs rounded-full px-2 py-0.5 ${
-                            h.status === "ACTIVE" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-500"
+                            h.status === "ACTIVE" ? "bg-warning-bg text-warning" : "bg-tz-sand text-muted"
                           }`}
                         >
                           {h.status === "ACTIVE" ? "Activa" : "Resuelta"}
                         </span>
                       </div>
-                      <p className="text-slate-600 mt-1">{h.description}</p>
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-text-2 mt-1">{h.description}</p>
+                      <p className="text-xs text-faint mt-1">
                         Severidad: {SEVERITY_LABEL[h.severity]} · Reportado por{" "}
                         {h.reportedBy?.name ?? "—"} el {h.reportedAt.toLocaleDateString("es-ES")}
                       </p>
                     </div>
                   ))}
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-faint">
                     Esta lectura ha quedado registrada en el log de auditoría (ADR-008).
                   </p>
                 </div>

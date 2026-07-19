@@ -9,7 +9,7 @@ export default function AlertActions({ alertId, status }: { alertId: string; sta
 
   if (status !== "OPEN") {
     return (
-      <span className="text-xs text-slate-400">
+      <span className="text-xs text-faint">
         {{ CONTACTED: "Contactada", POSTPONED: "Pospuesta", DISMISSED: "Descartada" }[status]}
       </span>
     );
@@ -24,21 +24,21 @@ export default function AlertActions({ alertId, status }: { alertId: string; sta
       <button
         disabled={pending}
         onClick={() => set("CONTACTED")}
-        className="text-xs bg-emerald-100 text-emerald-800 rounded-md px-2 py-1 hover:bg-emerald-200"
+        className="text-xs bg-good-bg text-good rounded-md px-2 py-1 hover:opacity-80"
       >
         Marcar contactada
       </button>
       <button
         disabled={pending}
         onClick={() => set("POSTPONED")}
-        className="text-xs bg-slate-100 text-slate-700 rounded-md px-2 py-1 hover:bg-slate-200"
+        className="text-xs bg-tz-sand text-text-2 rounded-md px-2 py-1 hover:bg-tz-linen/40"
       >
         Posponer 7d
       </button>
       <button
         disabled={pending}
         onClick={() => set("DISMISSED")}
-        className="text-xs text-slate-400 rounded-md px-2 py-1 hover:bg-slate-100"
+        className="text-xs text-faint rounded-md px-2 py-1 hover:bg-tz-bone"
       >
         Descartar
       </button>

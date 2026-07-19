@@ -67,16 +67,16 @@ export default function LoginForm() {
         type="button"
         disabled
         title="Requiere un App Registration de Microsoft Entra ID configurado en producción"
-        className="w-full flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-slate-100 text-slate-400 py-2.5 text-sm font-medium cursor-not-allowed"
+        className="w-full flex items-center justify-center gap-2 rounded-lg border border-tz-linen bg-tz-sand text-faint py-2.5 text-sm font-medium cursor-not-allowed"
       >
         <MicrosoftLogo />
         Continuar con Microsoft
       </button>
 
-      <div className="flex items-center gap-3 text-xs text-slate-400">
-        <div className="h-px bg-slate-200 flex-1" />
+      <div className="flex items-center gap-3 text-xs text-faint">
+        <div className="h-px bg-tz-linen flex-1" />
         acceso demo
-        <div className="h-px bg-slate-200 flex-1" />
+        <div className="h-px bg-tz-linen flex-1" />
       </div>
 
       <form
@@ -87,7 +87,7 @@ export default function LoginForm() {
         className="space-y-3"
       >
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-medium text-text-2 mb-1">
             Email
           </label>
           <input
@@ -96,11 +96,11 @@ export default function LoginForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="tu@trainingzone.es"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tz-black"
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">
+          <label className="block text-xs font-medium text-text-2 mb-1">
             Contraseña
           </label>
           <input
@@ -109,23 +109,23 @@ export default function LoginForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tz-black"
           />
         </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-critical">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 text-sm font-medium transition disabled:opacity-60"
+          className="w-full rounded-lg bg-tz-black hover:bg-brand-ink-soft text-white py-2.5 text-sm font-medium transition disabled:opacity-60"
         >
           {loading ? "Entrando..." : "Iniciar sesión"}
         </button>
       </form>
 
       <div>
-        <p className="text-xs font-medium text-slate-500 mb-2">
+        <p className="text-xs font-medium text-muted mb-2">
           O entra directamente como un usuario demo (contraseña:{" "}
-          <code className="bg-slate-100 px-1 rounded">{DEMO_PASSWORD}</code>):
+          <code className="bg-tz-sand px-1 rounded">{DEMO_PASSWORD}</code>):
         </p>
         <div className="space-y-1.5">
           {DEMO_USERS.map((u) => (
@@ -134,12 +134,12 @@ export default function LoginForm() {
               type="button"
               disabled={loading}
               onClick={() => doSignIn(u.email, DEMO_PASSWORD)}
-              className="w-full text-left rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 px-3 py-2 transition"
+              className="w-full text-left rounded-lg border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone px-3 py-2 transition"
             >
-              <div className="text-sm font-medium text-slate-800">
+              <div className="text-sm font-medium text-tz-black">
                 {u.label}
               </div>
-              <div className="text-xs text-slate-500">{u.desc}</div>
+              <div className="text-xs text-muted">{u.desc}</div>
             </button>
           ))}
         </div>

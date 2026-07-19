@@ -9,7 +9,7 @@ export default function DeleteButton({ id }: { id: string }) {
     <button
       disabled={pending}
       onClick={() => startTransition(() => deleteAptitudeRule(id))}
-      className="text-xs text-slate-400 hover:text-red-600"
+      className="text-xs text-faint hover:text-critical"
     >
       Eliminar
     </button>

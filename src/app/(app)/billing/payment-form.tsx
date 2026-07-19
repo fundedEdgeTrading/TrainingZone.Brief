@@ -27,16 +27,16 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
           setTimeout(() => setDone(false), 2500);
         });
       }}
-      className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-2 items-end"
+      className="bg-white border border-tz-linen rounded-xl p-4 grid grid-cols-1 md:grid-cols-5 gap-2 items-end"
     >
       <div className="md:col-span-2">
-        <label className="block text-xs text-slate-500 mb-1">Socio</label>
+        <label className="block text-xs text-muted mb-1">Socio</label>
         <select
           name="memberId"
           required
           value={memberId}
           onChange={(e) => setMemberId(e.target.value)}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm"
         >
           <option value="">Seleccionar...</option>
           {members.map((m) => (
@@ -48,7 +48,7 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
       </div>
       <input type="hidden" name="subscriptionId" value={sub?.id ?? ""} />
       <div>
-        <label className="block text-xs text-slate-500 mb-1">Importe (€)</label>
+        <label className="block text-xs text-muted mb-1">Importe (€)</label>
         <input
           name="amount"
           type="number"
@@ -56,12 +56,12 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
           required
           defaultValue={sub ? (sub.priceCents / 100).toFixed(2) : undefined}
           key={sub?.id ?? "none"}
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm"
         />
       </div>
       <div>
-        <label className="block text-xs text-slate-500 mb-1">Método</label>
-        <select name="method" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <label className="block text-xs text-muted mb-1">Método</label>
+        <select name="method" className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm">
           <option value="CASH">Efectivo</option>
           <option value="CARD">Tarjeta</option>
           <option value="BIZUM">Bizum</option>
@@ -71,7 +71,7 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
       </div>
       <button
         disabled={pending || !memberId}
-        className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+        className="rounded-lg bg-tz-black text-white px-4 py-2 text-sm font-medium hover:bg-brand-ink-soft disabled:opacity-50"
       >
         {done ? "✓ Registrado" : pending ? "Guardando..." : "Registrar cobro"}
       </button>

@@ -22,7 +22,7 @@ export default async function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font -- root layout, aplica a toda la app */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Semi+Condensed:wght@600;700;800&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
           rel="stylesheet"
         />
       </head>

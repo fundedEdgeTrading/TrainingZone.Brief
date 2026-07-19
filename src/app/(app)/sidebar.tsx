@@ -16,14 +16,14 @@ export default function Sidebar({
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 shrink-0 bg-brand-ink text-brand-nav-inactive flex flex-col sticky top-0 h-screen">
+    <aside className="w-64 shrink-0 bg-tz-sand text-text-2 border-r border-tz-linen flex flex-col sticky top-0 h-screen">
       <div
-        className="h-[88px] flex items-center px-6 border-b border-brand-border-dark shrink-0"
+        className="h-[88px] flex items-center px-6 border-b border-tz-linen shrink-0"
         style={{ animation: "tzNavIn .5s cubic-bezier(.2,.8,.2,1) both" }}
       >
         <div className="tz-logo-wrap">
           <Image
-            src="/brand/tz-logo-white.png"
+            src="/brand/tz-logo-black.png"
             alt="Training Zone"
             width={220}
             height={37}
@@ -33,15 +33,15 @@ export default function Sidebar({
           <div
             className="tz-logo-shine"
             style={{
-              WebkitMaskImage: "url(/brand/tz-logo-white.png)",
-              maskImage: "url(/brand/tz-logo-white.png)",
+              WebkitMaskImage: "url(/brand/tz-logo-black.png)",
+              maskImage: "url(/brand/tz-logo-black.png)",
             }}
           />
         </div>
       </div>
 
       <div
-        className="px-3.5 pt-5 pb-2 font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-faint"
+        className="px-3.5 pt-5 pb-2 font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted"
         style={{ animation: "tzNavIn .5s .05s both" }}
       >
         {sectionLabel}
@@ -57,14 +57,14 @@ export default function Sidebar({
               href={item.href}
               className={`group flex items-center gap-3 rounded-[10px] px-3.5 py-[11px] text-sm transition-[background-color,color,transform] duration-[180ms] ${
                 active
-                  ? "bg-brand-yellow text-brand-ink font-bold"
-                  : "bg-transparent text-brand-nav-inactive font-medium hover:bg-[#1e1e1a] hover:text-white hover:translate-x-1"
+                  ? "bg-tz-black text-tz-bone font-bold"
+                  : "bg-transparent text-text-2 font-medium hover:bg-tz-linen/40 hover:translate-x-1"
               }`}
               style={{ animation: `tzNavIn .45s ${(0.12 + i * 0.05).toFixed(2)}s both` }}
             >
               <span
                 className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
-                  active ? "bg-brand-ink" : "bg-[#44443e]"
+                  active ? "bg-tz-bone" : "bg-faint"
                 }`}
               />
               <span className="flex-1">{item.label}</span>
@@ -74,10 +74,10 @@ export default function Sidebar({
       </nav>
 
       <div
-        className="px-5 py-4 border-t border-brand-border-dark text-xs text-brand-footer tracking-[.04em] shrink-0"
+        className="px-5 py-4 border-t border-tz-linen text-xs text-muted tracking-[.04em] shrink-0"
         style={{ animation: "tzNavIn .5s .5s both" }}
       >
-        <span className="text-brand-yellow font-bold">TZ</span> · {footerLabel}
+        <span className="text-tz-black font-bold">TZ</span> · {footerLabel}
       </div>
     </aside>
   );

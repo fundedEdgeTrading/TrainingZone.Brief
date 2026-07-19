@@ -1,11 +1,11 @@
 type Tone = "default" | "good" | "warning" | "critical" | "accent";
 
 const STRIPE_COLOR: Record<Tone, string> = {
-  default: "#e6e5df",
-  good: "#fff03e",
-  warning: "#e6b325",
-  critical: "#c9342f",
-  accent: "#fff03e",
+  default: "#d8ccb8",
+  good: "#4b5a22",
+  warning: "#8a5a12",
+  critical: "#8a3420",
+  accent: "#1d1d1c",
 };
 
 const TEXT_CLASS: Record<Tone, string> = {

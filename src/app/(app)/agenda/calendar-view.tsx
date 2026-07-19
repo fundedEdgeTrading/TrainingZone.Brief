@@ -39,10 +39,10 @@ function combine(dateISO: string, time: string) {
 }
 
 function occupancyColor(pct: number, cancelled: boolean) {
-  if (cancelled) return "#c3c2b7";
-  if (pct >= 95) return "#d03b3b";
-  if (pct >= 70) return "#eda100";
-  return "#0ca30c";
+  if (cancelled) return "#D8CCB8";
+  if (pct >= 95) return "#B5482F";
+  if (pct >= 70) return "#B98A2E";
+  return "#6B7A34";
 }
 
 export default function CalendarView({ sessions }: { sessions: SessionEvent[] }) {
@@ -65,7 +65,7 @@ export default function CalendarView({ sessions }: { sessions: SessionEvent[] })
   );
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4" style={{ height: 700 }}>
+    <div className="bg-white border border-tz-linen rounded-xl p-4" style={{ height: 700 }}>
       <Calendar
         localizer={localizer}
         culture="es"

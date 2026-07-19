@@ -1,27 +1,27 @@
-// Paleta de marca Training Zone (amarillo/negro). El amarillo se reserva
-// como acento (barra destacada, hover, CTA); el relleno neutro de las
-// gráficas es negro suave, no una serie categórica cicladas.
+// Paleta de marca Training Zone (beige/hueso/negro). Las barras
+// destacadas/hover de las gráficas usan negro sobre relleno neutro cálido,
+// no una serie categórica cicladas.
 export const BRAND = {
-  yellow: "#fff03e",
-  ink: "#111110",
-  inkSoft: "#1f1f1c",
-  inkCircle: "#1c1c19",
+  yellow: "#1d1d1c",
+  ink: "#1d1d1c",
+  inkSoft: "#c7bfad",
+  inkCircle: "#1d1d1c",
 };
 
 export const STATUS = {
-  good: "#0b8f3f",
-  warning: "#e6b325",
-  warningText: "#b7791a",
-  critical: "#c9342f",
+  good: "#4b5a22",
+  warning: "#8a5a12",
+  warningText: "#8a5a12",
+  critical: "#8a3420",
 };
 
 export const INK = {
-  primary: "#111110",
-  secondary: "#3a3a34",
-  muted: "#8a897f",
-  faint: "#a5a49a",
-  gridline: "#f0efe9",
-  baseline: "#e6e5df",
+  primary: "#1d1d1c",
+  secondary: "#5b5748",
+  muted: "#8a8574",
+  faint: "#a8a296",
+  gridline: "#e7dfd2",
+  baseline: "#d8ccb8",
   surface: "#ffffff",
 };
 
@@ -30,8 +30,8 @@ export const MEMBER_STATE_COLOR: Record<string, string> = {
   DELINQUENT: STATUS.critical,
   FROZEN: STATUS.warning,
   CANCELLED: INK.faint,
-  TRIAL: "#2a78d6",
-  PROSPECT: "#6b5bc7",
+  TRIAL: "#5c4a34",
+  PROSPECT: "#5b4552",
 };
 
 export const MEMBER_STATE_LABEL: Record<string, string> = {

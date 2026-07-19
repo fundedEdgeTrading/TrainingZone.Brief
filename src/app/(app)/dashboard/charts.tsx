@@ -44,7 +44,7 @@ function TzTooltip({
       ? `${Math.round(raw)}%`
       : Math.round(raw).toLocaleString("es-ES");
   const payloadData = item.payload as { dotColor?: string; label?: string } | undefined;
-  const color = payloadData?.dotColor ?? (item.color as string) ?? BRAND.yellow;
+  const color = payloadData?.dotColor ?? (item.color as string) ?? "#D8CCB8";
   const name = payloadData?.label ?? item.name;
 
   return (
@@ -235,7 +235,7 @@ export function NoShowRateCard({ rate }: { rate: number }) {
         Tasa de no-show <span className="font-sans font-semibold text-xs normal-case text-[#8a8a80]">· 30 días</span>
       </h3>
       <div className="relative z-10">
-        <div className="font-display font-extrabold text-[76px] leading-none text-brand-yellow">{rate}%</div>
+        <div className="font-display font-extrabold text-[76px] leading-none text-tz-linen">{rate}%</div>
         <p className="text-[13px] text-brand-muted-2 mt-2 max-w-[200px]">
           de las reservas confirmadas no se presentaron
         </p>

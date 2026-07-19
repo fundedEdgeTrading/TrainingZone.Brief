@@ -26,7 +26,7 @@ function ActivityTooltip({ active, payload }: TooltipContentProps) {
       className="flex items-center gap-2.5 bg-brand-ink border border-[#33332d] rounded-xl px-[13px] pt-[9px] pb-2.5 shadow-[0_16px_38px_-10px_rgba(0,0,0,.55)]"
       style={{ animation: "tzPop .13s ease both" }}
     >
-      <span className="w-[9px] h-[9px] rounded-[3px] shrink-0 bg-brand-yellow" />
+      <span className="w-[9px] h-[9px] rounded-[3px] shrink-0 bg-tz-linen" />
       <div className="flex flex-col gap-px">
         <span className="text-[11px] font-semibold uppercase tracking-[.03em] text-brand-muted-2">
           {label} · sesiones

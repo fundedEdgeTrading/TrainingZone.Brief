@@ -6,9 +6,9 @@ import { setDebrief } from "./actions";
 import type { DebriefFeeling } from "@prisma/client";
 
 const LIGHT_STYLE: Record<string, { emoji: string; label: string; classes: string }> = {
-  RED: { emoji: "🔴", label: "Evitar bloques marcados", classes: "bg-red-50 border-red-200" },
-  AMBER: { emoji: "🟡", label: "Adaptar bloques marcados", classes: "bg-amber-50 border-amber-200" },
-  GREEN: { emoji: "🟢", label: "Libre, sin restricción activa", classes: "bg-emerald-50 border-emerald-200" },
+  RED: { emoji: "🔴", label: "Evitar bloques marcados", classes: "bg-critical-bg border-tz-linen" },
+  AMBER: { emoji: "🟡", label: "Adaptar bloques marcados", classes: "bg-warning-bg border-tz-linen" },
+  GREEN: { emoji: "🟢", label: "Libre, sin restricción activa", classes: "bg-good-bg border-tz-linen" },
 };
 
 type RosterEntry = {
@@ -44,25 +44,25 @@ export default function BriefCard({
   return (
     <div
       className={`rounded-xl border p-4 flex flex-col gap-3 ${
-        style ? style.classes : "bg-white border-slate-200"
+        style ? style.classes : "bg-white border-tz-linen"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
           <Link
             href={`/members/${entry.member.id}`}
-            className="font-semibold text-slate-900 hover:underline"
+            className="font-semibold text-tz-black hover:underline"
           >
             {entry.member.firstName} {entry.member.lastName}
           </Link>
           <div className="flex gap-1 mt-1 flex-wrap">
             {entry.isNew && (
-              <span className="text-[10px] font-medium bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5">
+              <span className="text-[10px] font-medium bg-tz-sand text-text-2 rounded-full px-2 py-0.5">
                 Nuevo
               </span>
             )}
             {entry.member.state === "DELINQUENT" && (
-              <span className="text-[10px] font-medium bg-red-100 text-red-700 rounded-full px-2 py-0.5">
+              <span className="text-[10px] font-medium bg-critical-bg text-critical rounded-full px-2 py-0.5">
                 Moroso
               </span>
             )}
@@ -80,7 +80,7 @@ export default function BriefCard({
       </div>
 
       {canSeeHealth && expanded && (
-        <div className="text-xs text-slate-600 space-y-1 border-t border-black/5 pt-2">
+        <div className="text-xs text-text-2 space-y-1 border-t border-black/5 pt-2">
           {entry.conditions.length === 0 && <p>Sin condiciones de salud activas registradas.</p>}
           {entry.matchedRules.map((r, i) => (
             <p key={i}>
@@ -97,14 +97,14 @@ export default function BriefCard({
       )}
 
       <div className="flex items-center gap-2 mt-auto pt-1">
-        <span className="text-xs text-slate-500 mr-1">Debrief:</span>
+        <span className="text-xs text-muted mr-1">Debrief:</span>
         {(["GREEN", "AMBER", "RED"] as DebriefFeeling[]).map((f) => (
           <button
             key={f}
             disabled={pending}
             onClick={() => tap(f)}
             className={`h-9 w-9 rounded-full text-lg flex items-center justify-center border-2 transition ${
-              feeling === f ? "border-slate-800 scale-110" : "border-transparent opacity-60 hover:opacity-100"
+              feeling === f ? "border-tz-black scale-110" : "border-transparent opacity-60 hover:opacity-100"
             }`}
           >
             {{ GREEN: "🟢", AMBER: "🟡", RED: "🔴" }[f]}

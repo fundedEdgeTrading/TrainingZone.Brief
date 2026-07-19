@@ -5,9 +5,9 @@ import { Card, KpiCard } from "@/components/kpi-card";
 import AlertActions from "./alert-actions";
 
 const RISK_CLASS: Record<string, string> = {
-  HIGH: "bg-red-50 border-red-200",
-  MEDIUM: "bg-amber-50 border-amber-200",
-  LOW: "bg-slate-50 border-slate-200",
+  HIGH: "bg-critical-bg border-tz-linen",
+  MEDIUM: "bg-warning-bg border-tz-linen",
+  LOW: "bg-tz-bone border-tz-linen",
 };
 const RISK_LABEL: Record<string, string> = { HIGH: "ALTA", MEDIUM: "MEDIA", LOW: "BAJA" };
 
@@ -32,8 +32,8 @@ export default async function RetentionPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Motor de retención</h1>
-        <p className="text-sm text-slate-500 max-w-2xl">
+        <h1 className="text-xl font-semibold text-tz-black">Motor de retención</h1>
+        <p className="text-sm text-muted max-w-2xl">
           Caída de frecuencia respecto a la línea base personal del socio (G.3).
           Recuperar 3 socios/mes a 45€ son ~1.620€/año por centro — la señal con
           mayor ROI directo de la plataforma.
@@ -58,25 +58,25 @@ export default async function RetentionPage() {
             <div key={a.id} className={`rounded-lg border p-4 ${RISK_CLASS[a.riskLevel]}`}>
               <div className="flex items-start justify-between flex-wrap gap-2">
                 <div>
-                  <Link href={`/members/${a.member.id}`} className="font-semibold text-slate-900 hover:underline">
+                  <Link href={`/members/${a.member.id}`} className="font-semibold text-tz-black hover:underline">
                     {a.member.firstName} {a.member.lastName}
                   </Link>
-                  <span className="ml-2 text-xs font-medium uppercase text-slate-500">
+                  <span className="ml-2 text-xs font-medium uppercase text-muted">
                     Riesgo {RISK_LABEL[a.riskLevel]}
                   </span>
-                  <p className="text-sm text-slate-600 mt-1">
+                  <p className="text-sm text-text-2 mt-1">
                     Línea base: {a.baselineFreq.toFixed(1)} sesiones/semana · Últimas 2 semanas:{" "}
                     {a.recentFreq.toFixed(1)}/semana{" "}
-                    <span className="font-semibold text-red-700">({a.dropPct}%)</span>
+                    <span className="font-semibold text-critical">({a.dropPct}%)</span>
                   </p>
-                  {a.context && <p className="text-xs text-slate-500 mt-1">{a.context}</p>}
-                  <p className="text-xs text-slate-400 mt-1">{a.member.primaryCenter.name}</p>
+                  {a.context && <p className="text-xs text-muted mt-1">{a.context}</p>}
+                  <p className="text-xs text-faint mt-1">{a.member.primaryCenter.name}</p>
                 </div>
                 <AlertActions alertId={a.id} status={a.status} />
               </div>
             </div>
           ))}
-          {capped.length === 0 && <p className="text-sm text-slate-500">Sin alertas abiertas ahora mismo.</p>}
+          {capped.length === 0 && <p className="text-sm text-muted">Sin alertas abiertas ahora mismo.</p>}
         </div>
       </Card>
 
@@ -84,11 +84,11 @@ export default async function RetentionPage() {
         <Card title={`En cola (${overflow}) — se mostrarán la próxima semana`}>
           <div className="space-y-2">
             {open.slice(3).map((a) => (
-              <div key={a.id} className="flex items-center justify-between text-sm border-t border-slate-100 pt-2">
-                <Link href={`/members/${a.member.id}`} className="text-indigo-700 hover:underline">
+              <div key={a.id} className="flex items-center justify-between text-sm border-t border-tz-sand pt-2">
+                <Link href={`/members/${a.member.id}`} className="text-tz-black hover:underline">
                   {a.member.firstName} {a.member.lastName}
                 </Link>
-                <span className="text-xs text-slate-500">{RISK_LABEL[a.riskLevel]} · {a.dropPct}%</span>
+                <span className="text-xs text-muted">{RISK_LABEL[a.riskLevel]} · {a.dropPct}%</span>
               </div>
             ))}
           </div>
@@ -97,7 +97,7 @@ export default async function RetentionPage() {
 
       <Card title="Histórico de alertas">
         <table className="w-full text-sm">
-          <thead className="text-xs text-slate-400 text-left">
+          <thead className="text-xs text-faint text-left">
             <tr>
               <th className="pb-2">Socio</th>
               <th className="pb-2">Riesgo</th>
@@ -108,16 +108,16 @@ export default async function RetentionPage() {
           </thead>
           <tbody>
             {alerts.map((a) => (
-              <tr key={a.id} className="border-t border-slate-100">
+              <tr key={a.id} className="border-t border-tz-sand">
                 <td className="py-2">
-                  <Link href={`/members/${a.member.id}`} className="text-indigo-700 hover:underline">
+                  <Link href={`/members/${a.member.id}`} className="text-tz-black hover:underline">
                     {a.member.firstName} {a.member.lastName}
                   </Link>
                 </td>
                 <td className="py-2">{RISK_LABEL[a.riskLevel]}</td>
                 <td className="py-2">{a.dropPct}%</td>
-                <td className="py-2 text-slate-500">{a.createdAt.toLocaleDateString("es-ES")}</td>
-                <td className="py-2 text-slate-500">{a.status}</td>
+                <td className="py-2 text-muted">{a.createdAt.toLocaleDateString("es-ES")}</td>
+                <td className="py-2 text-muted">{a.status}</td>
               </tr>
             ))}
           </tbody>

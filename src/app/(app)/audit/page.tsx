@@ -21,17 +21,17 @@ export default async function AuditPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Auditoría</h1>
-        <p className="text-sm text-slate-500 max-w-2xl">
+        <h1 className="text-xl font-semibold text-tz-black">Auditoría</h1>
+        <p className="text-sm text-muted max-w-2xl">
           Registro append-only (ADR-008). Cada lectura de un dato de salud y
           cada apertura del Session Brief con indicadores de salud queda
           registrada aquí, exigible bajo RGPD Art. 9.
         </p>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-tz-linen rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+          <thead className="bg-tz-bone text-muted text-xs uppercase">
             <tr>
               <th className="text-left px-4 py-2">Fecha</th>
               <th className="text-left px-4 py-2">Acción</th>
@@ -42,22 +42,22 @@ export default async function AuditPage() {
           </thead>
           <tbody>
             {logs.map((l) => (
-              <tr key={l.id} className="border-t border-slate-100">
-                <td className="px-4 py-2 text-slate-500">
+              <tr key={l.id} className="border-t border-tz-sand">
+                <td className="px-4 py-2 text-muted">
                   {l.createdAt.toLocaleString("es-ES")}
                 </td>
-                <td className="px-4 py-2 font-medium text-slate-700">
+                <td className="px-4 py-2 font-medium text-text-2">
                   {ACTION_LABEL[l.action] ?? l.action}
                 </td>
-                <td className="px-4 py-2 text-slate-600">
-                  {l.actor?.name ?? "—"} <span className="text-xs text-slate-400">({l.actor?.role})</span>
+                <td className="px-4 py-2 text-text-2">
+                  {l.actor?.name ?? "—"} <span className="text-xs text-faint">({l.actor?.role})</span>
                 </td>
-                <td className="px-4 py-2 text-slate-500 text-xs">
+                <td className="px-4 py-2 text-muted text-xs">
                   {l.entityType} · {l.entityId.slice(0, 8)}…
                 </td>
                 <td className="px-4 py-2">
                   {l.memberId ? (
-                    <Link href={`/members/${l.memberId}`} className="text-indigo-700 hover:underline text-xs">
+                    <Link href={`/members/${l.memberId}`} className="text-tz-black hover:underline text-xs">
                       ver ficha
                     </Link>
                   ) : (
