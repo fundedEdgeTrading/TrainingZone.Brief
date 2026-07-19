@@ -53,8 +53,22 @@
   --color-neutral-bg: #ebe9e1;
   --color-pay-ok: #4b5a22;
 
-  --font-sans: "Poppins", system-ui, sans-serif;
-  --font-display: "Poppins", system-ui, sans-serif;
+  --font-sans: var(--font-poppins), "Poppins", system-ui, sans-serif;
+  --font-display: var(--font-poppins), "Poppins", system-ui, sans-serif;
+
+  /* Radios */
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-pill: 999px;
+
+  /* Sombras (cálidas, basadas en el negro de marca) */
+  --shadow-card: 0 1px 2px rgba(29, 29, 28, 0.04), 0 4px 16px -8px rgba(29, 29, 28, 0.08);
+  --shadow-hover: 0 10px 28px -12px rgba(29, 29, 28, 0.28);
+  --shadow-pop: 0 18px 44px -16px rgba(29, 29, 28, 0.35);
+
+  /* Motion */
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.4, 1);
 }
 
 @keyframes tzNavIn {
@@ -108,6 +122,21 @@
     background-position: 260% 0;
   }
 }
+@keyframes tzShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+@keyframes tzShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
 
 .tz-nav-in {
   animation: tzNavIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
@@ -117,6 +146,12 @@
 }
 .tz-head-in {
   animation: tzHeadIn 0.5s 0.1s both;
+}
+.tz-page {
+  animation: tzFadeUp 0.45s var(--ease-out-soft) both;
+}
+.tz-shake {
+  animation: tzShake 0.35s var(--ease-out-soft) both;
 }
 
 .tz-logo-shine {
@@ -165,4 +200,52 @@ body {
 ::selection {
   background: var(--color-tz-linen);
   color: var(--color-tz-black);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-tz-black);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-tz-linen) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-tz-linen);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-border-hover);
+}
+
+.tz-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.tz-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--color-tz-sand) 25%, var(--color-tz-bone) 50%, var(--color-tz-sand) 75%);
+  background-size: 200% 100%;
+  animation: tzShimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

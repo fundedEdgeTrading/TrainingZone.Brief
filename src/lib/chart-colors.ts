@@ -34,6 +34,22 @@ export const MEMBER_STATE_COLOR: Record<string, string> = {
   PROSPECT: "#5b4552",
 };
 
+export const MEMBER_STATE_TONE: Record<string, "good" | "critical" | "warning" | "trial" | "prospect" | "neutral"> = {
+  ACTIVE: "good",
+  DELINQUENT: "critical",
+  FROZEN: "warning",
+  TRIAL: "trial",
+  PROSPECT: "prospect",
+  CANCELLED: "neutral",
+};
+
+export const PAYMENT_STATUS_TONE: Record<string, "good" | "critical" | "warning" | "neutral"> = {
+  PAID: "good",
+  FAILED: "critical",
+  PENDING: "warning",
+  REFUNDED: "neutral",
+};
+
 export const MEMBER_STATE_LABEL: Record<string, string> = {
   ACTIVE: "Activo",
   DELINQUENT: "Moroso",

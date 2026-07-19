@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Field, Input } from "@/components/ui/field";
+import { Button, ButtonSpinner } from "@/components/ui/button";
 
 const DEMO_USERS = [
   {
@@ -34,6 +36,11 @@ const DEMO_USERS = [
 
 const DEMO_PASSWORD = "demo1234";
 
+function initials(label: string) {
+  const parts = label.replace(/—.*$/, "").trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
 export default function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
@@ -42,6 +49,7 @@ export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [shake, setShake] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function doSignIn(loginEmail: string, loginPassword: string) {
@@ -55,6 +63,8 @@ export default function LoginForm() {
     setLoading(false);
     if (res?.error) {
       setError("Credenciales incorrectas.");
+      setShake(true);
+      setTimeout(() => setShake(false), 400);
       return;
     }
     router.push(callbackUrl);
@@ -67,7 +77,7 @@ export default function LoginForm() {
         type="button"
         disabled
         title="Requiere un App Registration de Microsoft Entra ID configurado en producción"
-        className="w-full flex items-center justify-center gap-2 rounded-lg border border-tz-linen bg-tz-sand text-faint py-2.5 text-sm font-medium cursor-not-allowed"
+        className="w-full flex items-center justify-center gap-2 rounded-control border border-tz-linen bg-tz-sand text-faint py-2.5 text-sm font-medium cursor-not-allowed opacity-60"
       >
         <MicrosoftLogo />
         Continuar con Microsoft
@@ -84,42 +94,31 @@ export default function LoginForm() {
           e.preventDefault();
           doSignIn(email, password);
         }}
-        className="space-y-3"
+        className={`space-y-3 ${shake ? "tz-shake" : ""}`}
       >
-        <div>
-          <label className="block text-xs font-medium text-text-2 mb-1">
-            Email
-          </label>
-          <input
+        <Field label="Email">
+          <Input
             type="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="tu@trainingzone.es"
-            className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tz-black"
           />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-text-2 mb-1">
-            Contraseña
-          </label>
-          <input
+        </Field>
+        <Field label="Contraseña">
+          <Input
             type="password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
-            className="w-full rounded-lg border border-tz-linen px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-tz-black"
           />
-        </div>
-        {error && <p className="text-sm text-critical">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-lg bg-tz-black hover:bg-brand-ink-soft text-white py-2.5 text-sm font-medium transition disabled:opacity-60"
-        >
+        </Field>
+        {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
+        <Button type="submit" size="lg" disabled={loading} className="w-full">
+          {loading && <ButtonSpinner />}
           {loading ? "Entrando..." : "Iniciar sesión"}
-        </button>
+        </Button>
       </form>
 
       <div>
@@ -128,18 +127,22 @@ export default function LoginForm() {
           <code className="bg-tz-sand px-1 rounded">{DEMO_PASSWORD}</code>):
         </p>
         <div className="space-y-1.5">
-          {DEMO_USERS.map((u) => (
+          {DEMO_USERS.map((u, i) => (
             <button
               key={u.email}
               type="button"
               disabled={loading}
               onClick={() => doSignIn(u.email, DEMO_PASSWORD)}
-              className="w-full text-left rounded-lg border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone px-3 py-2 transition"
+              className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone hover:-translate-y-0.5 hover:shadow-card px-3 py-2 transition-[transform,box-shadow,border-color,background-color] duration-150 tz-fade-up"
+              style={{ animationDelay: `${0.1 + i * 0.05}s` }}
             >
-              <div className="text-sm font-medium text-tz-black">
-                {u.label}
-              </div>
-              <div className="text-xs text-muted">{u.desc}</div>
+              <span className="w-8 h-8 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-[11px] flex items-center justify-center shrink-0">
+                {initials(u.label)}
+              </span>
+              <span>
+                <span className="block text-sm font-medium text-tz-black">{u.label}</span>
+                <span className="block text-xs text-muted">{u.desc}</span>
+              </span>
             </button>
           ))}
         </div>
