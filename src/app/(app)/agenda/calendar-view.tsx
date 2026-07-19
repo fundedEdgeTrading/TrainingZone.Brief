@@ -65,7 +65,7 @@ export default function CalendarView({ sessions }: { sessions: SessionEvent[] })
   );
 
   return (
-    <div className="bg-white border border-tz-linen rounded-xl p-4" style={{ height: 700 }}>
+    <div className="bg-brand-card border border-brand-border rounded-card p-4 shadow-card tz-fade-up" style={{ height: 700 }}>
       <Calendar
         localizer={localizer}
         culture="es"

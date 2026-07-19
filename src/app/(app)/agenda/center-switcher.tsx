@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { Select } from "@/components/ui/field";
 
 export default function CenterSwitcher({
   centers,
@@ -14,20 +15,20 @@ export default function CenterSwitcher({
   const searchParams = useSearchParams();
 
   return (
-    <select
+    <Select
       value={currentCenterId}
       onChange={(e) => {
         const params = new URLSearchParams(searchParams.toString());
         params.set("center", e.target.value);
         router.push(`${pathname}?${params.toString()}`);
       }}
-      className="rounded-lg border border-tz-linen px-3 py-2 text-sm"
+      className="w-auto"
     >
       {centers.map((c) => (
         <option key={c.id} value={c.id}>
           {c.name}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }

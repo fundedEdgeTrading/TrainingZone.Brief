@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import clsx from "clsx";
 
 export default function Tabs({
   panels,
@@ -11,26 +12,29 @@ export default function Tabs({
 
   return (
     <div>
-      <div className="flex gap-1 border-b border-tz-linen mb-4">
+      <div className="inline-flex gap-1 bg-tz-sand rounded-pill p-1 mb-5">
         {panels.map((p) => (
           <button
             key={p.key}
             onClick={() => setActive(p.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
+            className={clsx(
+              "rounded-pill px-4 py-2 text-sm font-semibold transition-colors duration-200",
               active === p.key
-                ? "border-tz-black text-tz-black"
-                : "border-transparent text-muted hover:text-text-2"
-            }`}
+                ? "bg-tz-black text-tz-bone shadow-card"
+                : "text-text-2 hover:bg-tz-linen/50"
+            )}
           >
             {p.label}
           </button>
         ))}
       </div>
-      {panels.map((p) => (
-        <div key={p.key} className={active === p.key ? "block" : "hidden"}>
-          {p.content}
-        </div>
-      ))}
+      {panels.map((p) =>
+        active === p.key ? (
+          <div key={p.key} className="tz-fade-up" style={{ animationDuration: "0.3s" }}>
+            {p.content}
+          </div>
+        ) : null
+      )}
     </div>
   );
 }

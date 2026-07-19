@@ -1,13 +1,105 @@
+.rbc-calendar {
+  background: transparent;
+  font-family: var(--font-sans);
+}
+
+.rbc-header {
+  padding: 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-brand-muted);
+  border-color: var(--color-tz-sand) !important;
+}
+
+.rbc-time-content,
+.rbc-day-bg,
+.rbc-month-view,
+.rbc-time-view,
+.rbc-timeslot-group,
+.rbc-time-header-content,
+.rbc-header,
+.rbc-month-row,
+.rbc-day-bg + .rbc-day-bg,
+.rbc-agenda-view table.rbc-agenda-table {
+  border-color: var(--color-tz-sand) !important;
+}
+
+.rbc-off-range-bg {
+  background: var(--color-tz-bone);
+}
+
 .rbc-today {
-  background-color: #efe6d8;
+  background-color: var(--color-trial-bg);
+}
+
+.rbc-current-time-indicator {
+  background-color: var(--color-critical);
+  height: 2px;
+}
+
+.rbc-event {
+  background: var(--color-tz-black);
+  color: var(--color-tz-bone);
+  border: none;
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.15s var(--ease-out-soft), box-shadow 0.15s var(--ease-out-soft);
+}
+.rbc-event:hover,
+.rbc-event:focus {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+}
+.rbc-event.rbc-selected {
+  outline: 2px solid var(--color-brand-border-hover);
+  background: var(--color-tz-black);
+}
+.rbc-event-label {
+  color: var(--color-brand-muted-2);
+}
+
+.rbc-toolbar {
+  margin-bottom: 16px;
+  gap: 8px;
 }
 .rbc-toolbar button {
-  color: #5b5748;
+  color: var(--color-brand-text-2);
+  border: 1px solid var(--color-brand-border);
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.rbc-toolbar button:hover {
+  background: var(--color-tz-bone);
+  border-color: var(--color-brand-border-hover);
 }
 .rbc-toolbar button.rbc-active {
-  background-color: #1d1d1c;
-  color: white;
+  background-color: var(--color-tz-black);
+  color: var(--color-tz-bone);
+  border-color: var(--color-tz-black);
 }
-.rbc-event {
-  padding: 2px 4px;
+.rbc-toolbar button.rbc-active:hover {
+  background-color: var(--color-brand-ink-soft);
+}
+.rbc-toolbar-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-brand-text);
+}
+
+.rbc-agenda-view table.rbc-agenda-table thead > tr > th {
+  color: var(--color-brand-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  padding-bottom: 8px;
 }

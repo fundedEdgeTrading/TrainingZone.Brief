@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { listPayments, getBillingKpis, getDelinquentMembers, getMembersForPaymentForm } from "@/lib/billing-queries";
-import { PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
+import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
 import { KpiCard, Card } from "@/components/kpi-card";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
 import PaymentForm from "./payment-form";
 import type { PaymentStatus } from "@prisma/client";
 
@@ -11,12 +13,6 @@ function euros(cents: number) {
 }
 
 const STATUS_LABEL: Record<string, string> = { PAID: "Pagado", PENDING: "Pendiente", FAILED: "Fallido", REFUNDED: "Devuelto" };
-const STATUS_CLASS: Record<string, string> = {
-  PAID: "text-good",
-  PENDING: "text-warning",
-  FAILED: "text-critical",
-  REFUNDED: "text-muted",
-};
 
 export default async function BillingPage({
   searchParams,
@@ -34,29 +30,22 @@ export default async function BillingPage({
   ]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-tz-black">Cobros</h1>
-        <p className="text-sm text-muted">
-          Cero dudas sobre quién está al corriente (F3). Facturación certificada
-          (VERI*FACTU) y pasarela de pago online quedan fuera de esta entrega —
-          aquí solo se registra el cobro.
-        </p>
-      </div>
+    <div className="tz-page space-y-6">
+      <PageHeader description="Cero dudas sobre quién está al corriente (F3). Facturación certificada (VERI*FACTU) y pasarela de pago online quedan fuera de esta entrega — aquí solo se registra el cobro." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Cobrado este mes" value={euros(kpis.paidThisMonthCents)} tone="good" />
-        <KpiCard label="Pagos pendientes" value={String(kpis.pending)} tone={kpis.pending ? "warning" : "default"} />
-        <KpiCard label="Pagos fallidos" value={String(kpis.failed)} tone={kpis.failed ? "critical" : "default"} />
-        <KpiCard label="Socios morosos" value={String(kpis.delinquentMembers)} tone={kpis.delinquentMembers ? "critical" : "default"} />
+        <KpiCard label="Cobrado este mes" value={euros(kpis.paidThisMonthCents)} tone="good" delay={0.04} />
+        <KpiCard label="Pagos pendientes" value={String(kpis.pending)} tone={kpis.pending ? "warning" : "default"} delay={0.1} />
+        <KpiCard label="Pagos fallidos" value={String(kpis.failed)} tone={kpis.failed ? "critical" : "default"} delay={0.16} />
+        <KpiCard label="Socios morosos" value={String(kpis.delinquentMembers)} tone={kpis.delinquentMembers ? "critical" : "default"} delay={0.22} />
       </div>
 
-      <Card title="Registrar cobro manual (efectivo / tarjeta presencial / Bizum)">
+      <Card title="Registrar cobro manual" meta="efectivo / tarjeta presencial / Bizum" delay={0.12}>
         <PaymentForm members={membersForForm} />
       </Card>
 
       {delinquent.length > 0 && (
-        <Card title={`Socios morosos (${delinquent.length})`}>
+        <Card title="Socios morosos" meta={String(delinquent.length)} delay={0.18}>
           <table className="w-full text-sm">
             <thead className="text-xs text-faint text-left">
               <tr>
@@ -78,8 +67,9 @@ export default async function BillingPage({
                   <td className="py-2 text-text-2">{m.subscriptions[0]?.plan.name ?? "—"}</td>
                   <td className="py-2">
                     {m.payments[0] ? (
-                      <span className={STATUS_CLASS[m.payments[0].status]}>
-                        {STATUS_LABEL[m.payments[0].status]} · {m.payments[0].date.toLocaleDateString("es-ES")}
+                      <span className="inline-flex items-center gap-2">
+                        <Badge tone={PAYMENT_STATUS_TONE[m.payments[0].status]}>{STATUS_LABEL[m.payments[0].status]}</Badge>
+                        <span className="text-muted tz-nums">{m.payments[0].date.toLocaleDateString("es-ES")}</span>
                       </span>
                     ) : (
                       "—"
@@ -94,14 +84,15 @@ export default async function BillingPage({
 
       <Card
         title="Pagos recientes"
+        delay={0.24}
         action={
           <div className="flex gap-1 text-xs">
             {["", "PAID", "PENDING", "FAILED"].map((s) => (
               <Link
                 key={s}
                 href={s ? `/billing?status=${s}` : "/billing"}
-                className={`px-2 py-1 rounded-md ${
-                  (params.status ?? "") === s ? "bg-tz-sand text-tz-black" : "text-muted hover:bg-tz-sand"
+                className={`px-2 py-1 rounded-md transition-colors duration-150 ${
+                  (params.status ?? "") === s ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"
                 }`}
               >
                 {s ? STATUS_LABEL[s] : "Todos"}
@@ -124,16 +115,16 @@ export default async function BillingPage({
           <tbody>
             {payments.map((p) => (
               <tr key={p.id} className="border-t border-tz-sand">
-                <td className="py-2">{p.date.toLocaleDateString("es-ES")}</td>
+                <td className="py-2 tz-nums">{p.date.toLocaleDateString("es-ES")}</td>
                 <td className="py-2">
                   <Link href={`/members/${p.member.id}`} className="text-tz-black hover:underline">
                     {p.member.firstName} {p.member.lastName}
                   </Link>
                 </td>
-                <td className="py-2">{euros(p.amountCents)}</td>
+                <td className="py-2 tz-nums font-semibold">{euros(p.amountCents)}</td>
                 <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
                 <td className="py-2">
-                  <span className={STATUS_CLASS[p.status]}>{STATUS_LABEL[p.status]}</span>
+                  <Badge tone={PAYMENT_STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
                 </td>
                 <td className="py-2 text-faint">{p.receiptNumber}</td>
               </tr>

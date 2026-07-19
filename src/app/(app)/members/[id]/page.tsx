@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { getMemberDetail, getMemberAttendanceStats } from "@/lib/members-queries";
 import { getHealthRecordsForMember } from "@/lib/health-access";
-import { MEMBER_STATE_COLOR, MEMBER_STATE_LABEL, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
+import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
+import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 
 const HEALTH_TYPE_LABEL: Record<string, string> = {
@@ -16,8 +17,21 @@ const HEALTH_TYPE_LABEL: Record<string, string> = {
 
 const SEVERITY_LABEL: Record<string, string> = { LOW: "Baja", MEDIUM: "Media", HIGH: "Alta" };
 
+const PAYMENT_STATUS_CLASS: Record<string, string> = {
+  PAID: "text-good",
+  PENDING: "text-warning",
+  FAILED: "text-critical",
+  REFUNDED: "text-muted",
+};
+
+const FEELING_DOT: Record<string, string> = { GREEN: "bg-good", AMBER: "bg-warning", RED: "bg-critical" };
+
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+}
+
+function initials(first: string, last: string) {
+  return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase();
 }
 
 export default async function MemberDetailPage({
@@ -42,25 +56,25 @@ export default async function MemberDetailPage({
   ]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-tz-black">
-            {member.firstName} {member.lastName}
-          </h1>
-          <p className="text-sm text-muted">
-            {member.email} · {member.primaryCenter.name}
-          </p>
+    <div className="tz-page space-y-4">
+      <div className="bg-brand-card border border-brand-border rounded-card p-6 shadow-card flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-4">
+          <span className="w-14 h-14 rounded-full bg-tz-sand text-brand-text-2 font-display font-extrabold text-lg flex items-center justify-center shrink-0">
+            {initials(member.firstName, member.lastName)}
+          </span>
+          <div>
+            <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text leading-none">
+              {member.firstName} {member.lastName}
+            </h1>
+            <p className="text-sm text-brand-muted mt-1.5">
+              {member.email} · {member.primaryCenter.name}
+            </p>
+          </div>
         </div>
-        <span
-          className="inline-block rounded-full px-3 py-1 text-xs font-medium text-white"
-          style={{ backgroundColor: MEMBER_STATE_COLOR[member.state] }}
-        >
-          {MEMBER_STATE_LABEL[member.state]}
-        </span>
+        <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
       </div>
 
-      <div className="bg-white border border-tz-linen rounded-xl p-5">
+      <div className="bg-brand-card border border-brand-border rounded-card p-5 shadow-card">
         <Tabs
           panels={[
             {
@@ -113,7 +127,7 @@ export default async function MemberDetailPage({
                             <td className="py-2">{s.startDate.toLocaleDateString("es-ES")}</td>
                             <td className="py-2">{s.endDate ? s.endDate.toLocaleDateString("es-ES") : "—"}</td>
                             <td className="py-2">{s.status}</td>
-                            <td className="py-2">{euros(s.priceCents)}</td>
+                            <td className="py-2 tz-nums">{euros(s.priceCents)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -135,20 +149,10 @@ export default async function MemberDetailPage({
                         {member.payments.map((p) => (
                           <tr key={p.id} className="border-t border-tz-sand">
                             <td className="py-2">{p.date.toLocaleDateString("es-ES")}</td>
-                            <td className="py-2">{euros(p.amountCents)}</td>
+                            <td className="py-2 tz-nums">{euros(p.amountCents)}</td>
                             <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
                             <td className="py-2">
-                              <span
-                                className={
-                                  p.status === "PAID"
-                                    ? "text-good"
-                                    : p.status === "PENDING"
-                                    ? "text-warning"
-                                    : "text-critical"
-                                }
-                              >
-                                {p.status}
-                              </span>
+                              <span className={PAYMENT_STATUS_CLASS[p.status]}>{p.status}</span>
                             </td>
                             <td className="py-2 text-faint">{p.receiptNumber}</td>
                           </tr>
@@ -166,15 +170,15 @@ export default async function MemberDetailPage({
                 <div className="space-y-4">
                   <div className="flex gap-6 text-sm">
                     <div>
-                      <div className="text-2xl font-semibold text-tz-black">{stats.attended}</div>
+                      <div className="font-display font-extrabold text-2xl text-tz-black tz-nums">{stats.attended}</div>
                       <div className="text-muted">Sesiones asistidas</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-semibold text-critical">{stats.noShow}</div>
+                      <div className="font-display font-extrabold text-2xl text-critical tz-nums">{stats.noShow}</div>
                       <div className="text-muted">No-shows</div>
                     </div>
                     <div>
-                      <div className="text-2xl font-semibold text-tz-black">{stats.noShowRate}%</div>
+                      <div className="font-display font-extrabold text-2xl text-tz-black tz-nums">{stats.noShowRate}%</div>
                       <div className="text-muted">Tasa de no-show</div>
                     </div>
                   </div>
@@ -194,9 +198,11 @@ export default async function MemberDetailPage({
                           <td className="py-2">{b.session.name}</td>
                           <td className="py-2">{b.status}</td>
                           <td className="py-2">
-                            {b.debrief
-                              ? { GREEN: "🟢", AMBER: "🟡", RED: "🔴" }[b.debrief.feeling]
-                              : "—"}
+                            {b.debrief ? (
+                              <span className={`inline-block w-2.5 h-2.5 rounded-full ${FEELING_DOT[b.debrief.feeling]}`} />
+                            ) : (
+                              "—"
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -225,13 +231,9 @@ export default async function MemberDetailPage({
                           {HEALTH_TYPE_LABEL[h.type]}
                           {h.zone ? ` — ${h.zone}` : ""}
                         </span>
-                        <span
-                          className={`text-xs rounded-full px-2 py-0.5 ${
-                            h.status === "ACTIVE" ? "bg-warning-bg text-warning" : "bg-tz-sand text-muted"
-                          }`}
-                        >
+                        <Badge tone={h.status === "ACTIVE" ? "warning" : "neutral"} dot={false}>
                           {h.status === "ACTIVE" ? "Activa" : "Resuelta"}
-                        </span>
+                        </Badge>
                       </div>
                       <p className="text-text-2 mt-1">{h.description}</p>
                       <p className="text-xs text-faint mt-1">

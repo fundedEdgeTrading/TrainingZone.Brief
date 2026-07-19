@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getCentersForUser, getWeekSessions } from "@/lib/agenda-queries";
+import { PageHeader } from "@/components/ui/page-header";
 import CalendarView from "./calendar-view";
 import CenterSwitcher from "./center-switcher";
 
@@ -56,37 +57,28 @@ export default async function AgendaPage({
     weekEnd.getTime() - 86400000
   ).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}`;
 
+  const linkClass =
+    "rounded-control border border-brand-border bg-white px-3.5 py-2 text-sm font-semibold text-brand-text transition-colors duration-150 hover:border-brand-ink hover:bg-tz-bone";
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-tz-black">Agenda</h1>
-          <p className="text-sm text-muted">
-            Semana del {weekLabel} · {sessions.length} sesiones
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <CenterSwitcher centers={centers} currentCenterId={centerId ?? ""} />
-          <Link
-            href={`/agenda?center=${centerId}&week=${prevWeek.toISOString().slice(0, 10)}`}
-            className="rounded-lg border border-tz-linen px-3 py-2 text-sm hover:bg-tz-bone"
-          >
-            ← Semana anterior
-          </Link>
-          <Link
-            href={`/agenda?center=${centerId}&week=${new Date().toISOString().slice(0, 10)}`}
-            className="rounded-lg border border-tz-linen px-3 py-2 text-sm hover:bg-tz-bone"
-          >
-            Hoy
-          </Link>
-          <Link
-            href={`/agenda?center=${centerId}&week=${nextWeek.toISOString().slice(0, 10)}`}
-            className="rounded-lg border border-tz-linen px-3 py-2 text-sm hover:bg-tz-bone"
-          >
-            Semana siguiente →
-          </Link>
-        </div>
-      </div>
+    <div className="tz-page space-y-4">
+      <PageHeader
+        description={`Semana del ${weekLabel} · ${sessions.length} sesiones`}
+        actions={
+          <>
+            <CenterSwitcher centers={centers} currentCenterId={centerId ?? ""} />
+            <Link href={`/agenda?center=${centerId}&week=${prevWeek.toISOString().slice(0, 10)}`} className={linkClass}>
+              ← Semana anterior
+            </Link>
+            <Link href={`/agenda?center=${centerId}&week=${new Date().toISOString().slice(0, 10)}`} className={linkClass}>
+              Hoy
+            </Link>
+            <Link href={`/agenda?center=${centerId}&week=${nextWeek.toISOString().slice(0, 10)}`} className={linkClass}>
+              Semana siguiente →
+            </Link>
+          </>
+        }
+      />
 
       <div className="flex gap-4 text-xs text-muted">
         <span className="flex items-center gap-1">
