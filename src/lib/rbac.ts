@@ -16,6 +16,7 @@ export const NAV_BY_ROLE: Record<
     { href: "/billing", label: "Cobros" },
     { href: "/retention", label: "Retención" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud" },
+    { href: "/organization", label: "Organización" },
     { href: "/audit", label: "Auditoría" },
   ],
   CENTER_DIRECTOR: [
@@ -39,15 +40,35 @@ export const NAV_BY_ROLE: Record<
     { href: "/portal", label: "Mi actividad" },
     { href: "/portal/agenda", label: "Reservar clase" },
   ],
+  HR_MANAGER: [
+    { href: "/organization", label: "Organización" },
+  ],
   PLATFORM_ADMIN: [
     { href: "/dashboard", label: "Panel de control" },
+    { href: "/organization", label: "Organización" },
     { href: "/audit", label: "Auditoría" },
   ],
 };
 
 export function canViewHealthData(role: Role): boolean {
-  // Recepción y Admin plataforma NO ven datos de salud por defecto (A.2.4/A.2.5).
+  // Recepción, RRHH y Admin plataforma NO ven datos de salud por defecto (A.2.4/A.2.5).
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
+}
+
+export function canEditHealthData(role: Role): boolean {
+  // Alta/resolución de lesiones y condiciones: mismo ámbito que la lectura
+  // (entrenador asignado + dirección). Recepción y RRHH quedan fuera.
+  return canViewHealthData(role);
+}
+
+// Gestión de personal e imputación a centros (RRHH además de dirección/plataforma).
+export function canManageStaff(role: Role): boolean {
+  return role === "OWNER" || role === "PLATFORM_ADMIN" || role === "HR_MANAGER";
+}
+
+// Alta de organización y centros: solo administración de la organización.
+export function canManageOrg(role: Role): boolean {
+  return role === "OWNER" || role === "PLATFORM_ADMIN";
 }
 
 export function canEditAptitudeRules(role: Role): boolean {
@@ -78,6 +99,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   TRAINER: "Entrenador",
   RECEPTION: "Recepción",
   MEMBER: "Socio",
+  HR_MANAGER: "RRHH",
   PLATFORM_ADMIN: "Admin plataforma",
 };
 

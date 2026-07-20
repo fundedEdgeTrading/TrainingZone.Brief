@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/guard";
-import { getMemberDetail, getMemberAttendanceStats } from "@/lib/members-queries";
+import { getMemberDetail, getMemberAttendanceStats, getMemberNotes } from "@/lib/members-queries";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
+import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm } from "./member-forms";
 
 const HEALTH_TYPE_LABEL: Record<string, string> = {
   INJURY: "Lesión",
@@ -45,7 +46,7 @@ export default async function MemberDetailPage({
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const [stats, healthRecords] = await Promise.all([
+  const [stats, healthRecords, notes] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -53,6 +54,7 @@ export default async function MemberDetailPage({
       actorUserId: session.user.id,
       actorRole: session.user.role,
     }),
+    getMemberNotes(session.user.orgId, member.id),
   ]);
 
   return (
@@ -212,6 +214,34 @@ export default async function MemberDetailPage({
               ),
             },
             {
+              key: "bitacora",
+              label: "Bitácora",
+              content: (
+                <div className="space-y-4 max-w-2xl">
+                  <AddNoteForm memberId={member.id} />
+                  {notes.length === 0 ? (
+                    <p className="text-sm text-muted">Sin observaciones todavía.</p>
+                  ) : (
+                    <ul className="space-y-2.5">
+                      {notes.map((n) => (
+                        <li key={n.id} className="border border-tz-linen rounded-lg p-3 text-sm">
+                          <p className="text-text-2 whitespace-pre-wrap">{n.body}</p>
+                          <p className="text-xs text-faint mt-1.5">
+                            {n.author?.name ?? "—"} ·{" "}
+                            {n.createdAt.toLocaleDateString("es-ES", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ),
+            },
+            {
               key: "salud",
               label: "Salud",
               content: healthRecords === null ? (
@@ -220,31 +250,49 @@ export default async function MemberDetailPage({
                   de este socio (Art. 9 RGPD — acceso limitado a entrenador
                   asignado y dirección). Ver <span className="italic">Auditoría</span> para el registro de accesos.
                 </div>
-              ) : healthRecords.length === 0 ? (
-                <p className="text-sm text-muted">Sin registros de salud.</p>
               ) : (
-                <div className="space-y-3">
-                  {healthRecords.map((h) => (
-                    <div key={h.id} className="border border-tz-linen rounded-lg p-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-tz-black">
-                          {HEALTH_TYPE_LABEL[h.type]}
-                          {h.zone ? ` — ${h.zone}` : ""}
-                        </span>
-                        <Badge tone={h.status === "ACTIVE" ? "warning" : "neutral"} dot={false}>
-                          {h.status === "ACTIVE" ? "Activa" : "Resuelta"}
-                        </Badge>
-                      </div>
-                      <p className="text-text-2 mt-1">{h.description}</p>
-                      <p className="text-xs text-faint mt-1">
-                        Severidad: {SEVERITY_LABEL[h.severity]} · Reportado por{" "}
-                        {h.reportedBy?.name ?? "—"} el {h.reportedAt.toLocaleDateString("es-ES")}
+                <div className="space-y-4">
+                  {member.consentHealth ? (
+                    <AddHealthRecordForm memberId={member.id} />
+                  ) : (
+                    <div className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
+                      Este socio no ha firmado el consentimiento de datos de salud
+                      (Art. 9 RGPD). No se pueden registrar lesiones ni condiciones
+                      hasta que lo otorgue.
+                    </div>
+                  )}
+                  {healthRecords.length === 0 ? (
+                    <p className="text-sm text-muted">Sin registros de salud.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {healthRecords.map((h) => (
+                        <div key={h.id} className="border border-tz-linen rounded-lg p-3 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-medium text-tz-black">
+                              {HEALTH_TYPE_LABEL[h.type]}
+                              {h.zone ? ` — ${h.zone}` : ""}
+                            </span>
+                            <div className="flex items-center gap-3 shrink-0">
+                              {h.status === "ACTIVE" && (
+                                <ResolveHealthButton recordId={h.id} memberId={member.id} />
+                              )}
+                              <Badge tone={h.status === "ACTIVE" ? "warning" : "neutral"} dot={false}>
+                                {h.status === "ACTIVE" ? "Activa" : "Resuelta"}
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="text-text-2 mt-1">{h.description}</p>
+                          <p className="text-xs text-faint mt-1">
+                            Severidad: {SEVERITY_LABEL[h.severity]} · Reportado por{" "}
+                            {h.reportedBy?.name ?? "—"} el {h.reportedAt.toLocaleDateString("es-ES")}
+                          </p>
+                        </div>
+                      ))}
+                      <p className="text-xs text-faint">
+                        Cada lectura y alta queda registrada en el log de auditoría (ADR-008).
                       </p>
                     </div>
-                  ))}
-                  <p className="text-xs text-faint">
-                    Esta lectura ha quedado registrada en el log de auditoría (ADR-008).
-                  </p>
+                  )}
                 </div>
               ),
             },

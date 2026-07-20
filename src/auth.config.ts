@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
+import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@prisma/client";
@@ -16,6 +17,9 @@ import type { Role } from "@prisma/client";
  *   Registration real en un tenant de Azure que esta sesión no puede crear.
  *   Cuando el cliente tenga su tenant, basta con rellenar esas variables:
  *   no hace falta tocar código.
+ * - Google: igual que Microsoft, declarado y listo pero desactivado hasta que
+ *   existan AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET (credenciales OAuth de Google
+ *   Cloud). Con esas dos vacías, el botón de Google no se muestra.
  */
 
 const providers: NextAuthConfig["providers"] = [
@@ -65,6 +69,18 @@ if (hasMicrosoftEntraConfig) {
   );
 }
 
+const hasGoogleConfig =
+  !!process.env.AUTH_GOOGLE_ID && !!process.env.AUTH_GOOGLE_SECRET;
+
+if (hasGoogleConfig) {
+  providers.push(
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
+    })
+  );
+}
+
 export const authConfig = {
   providers,
   // Necesario fuera de Vercel (self-hosted / detrás de un proxy inverso):
@@ -99,3 +115,4 @@ export const authConfig = {
 } satisfies NextAuthConfig;
 
 export const microsoftEntraIdEnabled = hasMicrosoftEntraConfig;
+export const googleEnabled = hasGoogleConfig;

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireRole } from "@/lib/guard";
+import { requireRole, requireCenterRole } from "@/lib/guard";
 import { getSessionDetail } from "@/lib/agenda-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,10 @@ export default async function SessionDetailPage({
   const { id } = await params;
   const cls = await getSessionDetail(session.user.orgId, id);
   if (!cls) notFound();
+
+  // Ámbito de centro: el staff no organizacional solo abre sesiones de centros
+  // a los que está imputado (su centro base o vía CenterMembership).
+  await requireCenterRole(cls.centerId, ["CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
 
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");

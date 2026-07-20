@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import LoginForm from "./login-form";
-import AptaLogo from "./apta-logo";
+import AptaLogo from "@/components/apta-logo";
 
 export default function LoginPage() {
   return (
@@ -57,9 +57,10 @@ export default function LoginPage() {
             </div>
 
             <p className="text-center text-faint text-xs short:text-[11px] mt-4 short:mt-3">
-              El inicio de sesión con Microsoft (Entra ID) está integrado en el
-              código y listo para activarse en cuanto exista un App Registration
-              real en el tenant de Azure del cliente.
+              El inicio de sesión con Microsoft (Entra ID) y Google está
+              integrado en el código y listo para activarse en cuanto existan
+              las credenciales correspondientes (App Registration de Azure /
+              OAuth de Google Cloud).
             </p>
           </div>
         </div>

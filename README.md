@@ -47,6 +47,10 @@ Abrir `http://localhost:3000` — redirige a `/login`.
   crear desde este entorno. En cuanto el cliente tenga su tenant, basta con
   rellenar esas tres variables: no hace falta tocar código ni desplegar de
   nuevo.
+- **Google (OAuth):** igual que Microsoft, declarado y listo pero **desactivado**
+  hasta que existan `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (credenciales de
+  Google Cloud Console). El botón aparece en el login pero deshabilitado; en
+  cuanto se rellenen esas dos variables queda operativo, sin tocar código.
 
 ### Usuarios demo (contraseña: `demo1234`)
 
@@ -56,22 +60,42 @@ Abrir `http://localhost:3000` — redirige a `/login`.
 | `direccion.centro@trainingzone.es` | Dirección de centro | Panel, socios, agenda, cobros, retención (ámbito de su centro) |
 | `entrenador@trainingzone.es` | Entrenador (Dani Herrero) | Agenda, Session Brief + Debrief, semáforo de aptitud |
 | `recepcion@trainingzone.es` | Recepción | Socios, agenda, cobros — **sin acceso a datos de salud** |
+| `rrhh@trainingzone.es` | RRHH | Organización: alta de centros y personal, imputación multi-centro — **sin acceso a datos de salud** |
 | `socio@trainingzone.es` | Socio (Marta García López) | Portal: reservar clase, progreso, transparencia de adaptaciones |
 
 También hay entrenadores/recepción/dirección adicionales por centro (ver
 `prisma/seed.ts`) para poblar la agenda con datos realistas.
 
+### Segunda empresa (demo multi-tenant)
+
+El seed crea también una **segunda organización, `VITALIA WELLNESS`**, con sus
+propios dos centros (Chamberí y Retiro), equipo, socios, historial y **logo
+propio** (`/brand/vitalia-logo.svg`). Sirve para enseñar el aislamiento
+multi-tenant y el logo por organización en el NavBar. Sus cuentas demo
+(contraseña `demo1234`): `owner@vitalia.es`, `entrenador@vitalia.es` (imputado a
+los dos centros), `rrhh@vitalia.es`, `socio@vitalia.es`.
+
+**Logo en el NavBar:** cada organización (y opcionalmente cada centro) tiene un
+`logoUrl`. El NavBar muestra el del centro, si no el de la organización, y si
+ninguno tiene → el de **Apta** (la marca de la plataforma). Se gestiona desde el
+módulo **Organización** (marca de la organización y logo por centro).
+
 ## Datos de demostración
 
-El seed genera, sobre 3 centros ("Centro", "Norte", "Sur"):
+El seed genera **dos organizaciones** (Training Zone con 3 centros, Vitalia con
+2), y por cada una:
 
-- 192 socios con estados realistas (activo, moroso, congelado, prueba, baja)
-- ~6 meses de histórico + 2 semanas futuras de sesiones, reservas, check-ins,
-  no-shows y lista de espera
+- Socios con estados realistas (activo, moroso, congelado, prueba, baja) —
+  ~425 en total entre las dos empresas
+- ~6-7 meses de histórico + hasta 3 semanas futuras de sesiones, reservas,
+  check-ins, no-shows y lista de espera (~13 000 reservas en total)
+- Imputación de personal a centros (`CenterMembership`), con ejemplos de
+  entrenadores/dirección repartidos entre varios centros
 - Pagos con métodos variados (tarjeta, Bizum, efectivo, SEPA, transferencia)
   y algunos morosos con recibos fallidos/pendientes
 - Registros de salud (lesiones, condiciones crónicas, alergias...) para ~1 de
   cada 4 socios, con consentimiento y reglas del Semáforo de Aptitud
+- Bitácora de observaciones no clínicas del socio (`MemberNote`)
 - Debriefs post-sesión (🟢/🟡/🔴) para la mayoría de asistencias pasadas
 - Alertas de retención calculadas comparando la frecuencia reciente de cada
   socio contra su línea base personal
@@ -84,14 +108,16 @@ poblar todo).
 ## Estructura
 
 ```
-prisma/schema.prisma       Modelo de dominio multi-tenant (orgId en cada tabla)
+prisma/schema.prisma       Modelo de dominio multi-tenant (orgId en cada tabla);
+                            CenterMembership (imputación de personal a centros)
+                            y MemberNote (bitácora de observaciones del socio)
 prisma/seed.ts              Generador de datos de demo
 src/auth.ts, auth.config.ts Auth.js: Credentials (demo) + Microsoft Entra ID (preparado)
 src/proxy.ts                 Proxy (antes "middleware"): exige sesión salvo /login
 src/lib/rbac.ts              Matriz de permisos por rol + navegación
 src/lib/guard.ts             requireRole() — guarda de página por rol
 src/lib/health-access.ts     Único punto de lectura de datos de salud + auditoría
-src/app/(app)/...            Módulos: dashboard, members, agenda, brief, billing, retention, health, audit, portal
+src/app/(app)/...            Módulos: dashboard, members, agenda, brief, billing, retention, health, audit, portal, organization
 ```
 
 ## Qué queda fuera de esta entrega (a propósito)
@@ -103,9 +129,11 @@ Siguiendo el propio documento (Parte H, riesgos 2 y 8):
   factura. Es una decisión de D3 en el documento, no un olvido.
 - **Integración del agente IA de Sergio / `IInsightProvider`** (F6): fuera
   del alcance del MVP (F0–F5) por diseño.
-- **Onboarding multi-tenant self-service** (F7): el modelo de datos ya es
-  multi-tenant (`orgId` en cada tabla), pero el wizard de alta de un nuevo
-  centro externo no está construido.
+- **Onboarding multi-tenant self-service** (F7): la gestión *dentro* de una
+  organización ya está construida (módulo **Organización**: alta de centros y
+  personal, e imputación de cada persona a varios centros con rol y % de
+  dedicación vía `CenterMembership`). Lo que queda fuera es el alta
+  self-service de una organización externa nueva (signup de tenant + SSO).
 
 ## Notas de seguridad / RGPD
 

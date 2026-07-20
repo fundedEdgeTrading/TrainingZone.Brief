@@ -22,7 +22,7 @@ export default async function AgendaPage({
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const params = await searchParams;
 
-  const centers = await getCentersForUser(session.user.orgId);
+  const centers = await getCentersForUser(session.user);
   const centerId = params.center || session.user.centerId || centers[0]?.id;
 
   const refDate = params.week ? new Date(params.week) : new Date();

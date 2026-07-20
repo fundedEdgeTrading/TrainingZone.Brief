@@ -17,6 +17,7 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  logoUrl   String? // logo de marca para el NavBar; si es null se usa el de Apta
   createdAt DateTime @default(now())
 
   centers       Center[]
@@ -28,6 +29,8 @@ model Organization {
   payments      Payment[]
   auditLogs     AuditLog[]
   aptitudeRules AptitudeRule[]
+  centerMemberships CenterMembership[]
+  memberNotes       MemberNote[]
 }
 
 model Center {
@@ -36,6 +39,7 @@ model Center {
   name      String
   slug      String
   address   String?
+  logoUrl   String? // logo propio del centro; si es null se hereda el de la organización (y en su defecto, Apta)
   timezone  String   @default("Europe/Madrid")
   createdAt DateTime @default(now())
 
@@ -44,6 +48,7 @@ model Center {
   members      Member[]          @relation("PrimaryCenter")
   templates    SessionTemplate[]
   sessions     ClassSession[]
+  staffMemberships CenterMembership[]
 
   @@unique([orgId, slug])
   @@index([orgId])
@@ -58,6 +63,7 @@ enum Role {
   TRAINER
   RECEPTION
   MEMBER
+  HR_MANAGER // RRHH: gestiona personal e imputación a centros, sin acceso a datos de salud
 }
 
 model User {
@@ -80,8 +86,36 @@ model User {
   auditLogs            AuditLog[]
   healthReported       HealthRecord[]    @relation("ReportedBy")
   aptitudeRulesEdited  AptitudeRule[]    @relation("EditedBy")
+  centerMemberships    CenterMembership[]
+  memberNotesAuthored  MemberNote[]      @relation("MemberNoteAuthor")
 
   @@index([orgId])
+}
+
+// Imputación de personal a centros: relación N:N staff ↔ centro con un rol y un
+// % de dedicación por centro. Permite que una persona trabaje en varios centros
+// con roles distintos; `User.role`/`User.centerId` quedan como rol y centro base
+// (retrocompatibilidad). El ámbito efectivo se resuelve contra esta tabla.
+model CenterMembership {
+  id            String    @id @default(cuid())
+  orgId         String
+  userId        String
+  centerId      String
+  role          Role
+  isPrimary     Boolean   @default(false)
+  allocationPct Int? // % de jornada imputado a este centro (0-100)
+  startDate     DateTime  @default(now())
+  endDate       DateTime?
+  createdAt     DateTime  @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  center       Center       @relation(fields: [centerId], references: [id])
+
+  @@unique([userId, centerId])
+  @@index([orgId])
+  @@index([centerId])
+  @@index([userId])
 }
 
 // ---------- Socio y catálogo comercial (A.2.1) ----------
@@ -122,10 +156,31 @@ model Member {
   payments        Payment[]
   healthRecords   HealthRecord[]
   retentionAlerts RetentionAlert[]
+  noteEntries     MemberNote[]
 
   @@index([orgId])
   @@index([primaryCenterId])
   @@index([state])
+}
+
+// Bitácora de comentarios internos del socio (RB-LEAD-008): lista cronológica
+// "nota + autor + fecha", DISTINTA de los datos clínicos de HealthRecord. No es
+// dato del Art. 9 RGPD, así que la ve cualquier rol de staff (no pasa por
+// health-access). Lo clínico va siempre a HealthRecord.
+model MemberNote {
+  id           String   @id @default(cuid())
+  orgId        String
+  memberId     String
+  authorUserId String?
+  body         String
+  createdAt    DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+  author       User?        @relation("MemberNoteAuthor", fields: [authorUserId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
 }
 
 enum PlanType {
