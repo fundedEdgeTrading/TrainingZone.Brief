@@ -1,6 +1,9 @@
 # TRAINING ZONE — CRM de Leads, Perfil de Cliente y Gestión de Centro
 
-**Documento de trabajo interno · v1.0**
+**Documento de trabajo interno · v1.1**
+**Cambios v1.1:** cerradas las 9 decisiones de negocio que en v1.0 quedaban abiertas en §11.
+Cada decisión se ha convertido en regla concreta (`RB-*`) en su sección correspondiente y la §11
+pasa a ser el registro histórico de esas decisiones.
 **Objetivo:** convertir el volcado funcional recibido en un catálogo de reglas de negocio,
 campos y estados accionable, siguiendo el mismo criterio que `TRAININGZONE_planfuncionaleimplementacion.md`
 (`DOMAIN_RULES.md`). Cada regla numerada (`RB-XXX-NNN`) es candidata a convertirse en un
@@ -40,7 +43,7 @@ Un Lead es todo contacto que aún no ha pagado. Se rellena por dos vías:
 | Nombre y apellidos | Sí | Formulario / entrenador | |
 | Teléfono | Sí | Formulario / entrenador | Canal de reset de contraseña vía SMS (ver 1.2) |
 | Email | **Condicional** | Formulario / entrenador | Ver `RB-LEAD-002` |
-| Zona (vive / trabaja cerca) | Sí | Formulario / entrenador | Campo libre o código postal — **abierto**, ver §11 |
+| Código postal | Sí | Formulario / entrenador | Campo estructurado (no texto libre). Base para segmentación por proximidad y mapa de radio, ver `RB-LEAD-010` |
 | Fecha de contacto | Sí (auto) | Sistema | Se sella sola al crear el registro |
 | Responsable del contacto | Sí | Entrenador/recepción | Ver `RB-LEAD-003` |
 | Estado del lead | Sí (auto) | Sistema | Máquina de estados, ver 1.4 |
@@ -63,13 +66,27 @@ teléfono registrado**, exista o no email.
 **`RB-LEAD-003`** — Responsable del contacto. Si el contacto es presencial, se asigna
 automáticamente al entrenador/recepcionista que lo atiende (usuario logueado). Si llega por
 un formulario web, el campo queda vacío hasta que un responsable de centro lo revisa y **se
-autoasigna o asigna a otro compañero** — no puede quedar un lead sin responsable pasado un
-plazo (ver `RB-LEAD-009`, abierto).
+autoasigna o asigna a otro compañero** — no puede quedar un lead sin responsable pasado el
+plazo definido en `RB-LEAD-009`.
+
+**`RB-LEAD-009`** — Alerta por lead sin responsable **(decisión §11.2)**. Si un lead entrado por
+formulario web permanece **más de 24 horas sin responsable asignado**, el sistema dispara una
+alerta a dirección (notificación accionable, ver §8.6). El contador arranca en la fecha de
+contacto auto-sellada (`RB-LEAD-001`). La alerta se resuelve automáticamente al asignarse un
+responsable.
 
 **`RB-LEAD-004`** — Canal de origen (`comoNosConocio`), lista cerrada configurable:
 `Boca a boca`, `Instagram`, `TikTok`, `Web`, `Vive/trabaja por la zona`, `Otro` (con texto).
 Esta lista debe ser editable por dirección sin desplegar código (tabla, no enum fijo en código
 — igual que las reglas de aptitud del módulo de salud).
+
+**`RB-LEAD-010`** — Ubicación del lead/cliente **(decisión §11.1)**. La zona se captura como
+**código postal** (campo estructurado de 5 dígitos), no como texto libre. Sobre ese dato:
+- Se usa para **segmentar campañas por proximidad** (§9.3) y para analítica demográfica.
+- La UI de dirección debe ofrecer una **visualización en mapa con radios/heatmap** de la
+  distribución geográfica de leads y clientes alrededor del centro (objetivo de producto:
+  ver de dónde vienen los clientes de un vistazo). El código postal es la clave de geocodificación
+  (CP → coordenadas aproximadas) que alimenta ese mapa.
 
 ### 1.2. Máquina de estados del Lead
 
@@ -95,8 +112,13 @@ paso a la base de clientes activos **se confirma solo cuando Stripe confirma el 
 pago falla o se cancela, el lead vuelve a `SEGUIMIENTO` con una nota automática.
 
 **`RB-LEAD-006`** — Al marcar `NO_CERRADO`, el registro **no se borra**: pasa a una tabla/estado
-de histórico, consultable para campañas de recaptación (marketing), con todos sus datos
-(incluida la razón de no cierre si se registró — campo opcional recomendado, ver §11).
+de histórico, consultable para campañas de recaptación (marketing), con todos sus datos.
+
+**`RB-LEAD-011`** — Razón de no cierre **obligatoria (decisión §11.3)**. Al pasar un lead a
+`NO_CERRADO` el sistema **exige** seleccionar un motivo (bloqueante, no se puede archivar sin
+él). Lista cerrada configurable por dirección (misma mecánica de tabla que `RB-LEAD-004`), p. ej.:
+`Precio`, `Horarios`, `Se fue a la competencia`, `No decide / lo piensa`, `Distancia/ubicación`,
+`Otro` (con texto). Este motivo es la clave de segmentación de las campañas de recaptación.
 
 **`RB-LEAD-007`** — Al confirmarse el cierre (`RB-LEAD-005`), todos los datos del Lead se
 **trasladan al perfil de `Member`** (no se duplica captura de datos): nombre, teléfono, email,
@@ -144,8 +166,10 @@ abre la sección de reservas de grupo; ambas pueden coexistir en el mismo perfil
 - Cliente de **EP** → tiene un **entrenador responsable** asignado explícitamente.
 - Cliente de **solo grupos** → el responsable "de cara al cliente" es **Training Zone**
   (marca/equipo), aunque internamente la programación la gestiona el agente de IA (§4.2).
-- **Abierto:** ¿el cliente de **solo online** tiene entrenador responsable asignado o también
-  "Training Zone"? (ver §11).
+- Cliente de **solo online** → tiene un **entrenador individual asignado explícitamente**, igual
+  que EP y **no** "Training Zone" genérico **(decisión §11.4)**. Ese entrenador es el responsable
+  de cara al cliente y quien confirma la programación de la IA (`RB-IA-003`), aunque el día a día
+  del seguimiento lo lleve la IA.
 
 ### 2.3. Objetivos y valoración inicial
 
@@ -183,10 +207,29 @@ capturado en el Lead se convierte en el primer `HealthRecord` del `Member`.
 | Entrenador | Sí | Sí (todas) |
 
 **`RB-AGENDA-002`** — Entrenamiento personal: por defecto **lo agenda el entrenador**
-directamente en la ficha del cliente. El centro puede marcar ciertas franjas horarias como
-**"autorreservables"** para que el propio cliente de EP pueda coger hueco sin pasar por el
-entrenador. **Abierto:** ¿cuántas franjas, con qué antelación, y quién decide cuáles son
-autorreservables — el entrenador de cada cliente o dirección globalmente? (ver §11).
+directamente en la ficha del cliente. El entrenador puede, para cada hueco de EP, elegir entre:
+- **Reservarlo manualmente** en nombre del cliente (crear el evento él mismo), o
+- **Dejarlo disponible como "autorreservable"** para que el propio cliente de EP coja el hueco
+  desde la app sin pasar por él.
+
+La reserva manual es un requisito de primera clase, no un caso raro: hay clientes de EP (p. ej.
+personas mayores) que **no usan la app** y a los que se les agenda todo a mano — el flujo manual
+debe cubrir a esos clientes de punta a punta.
+
+**`RB-AGENDA-006`** — Quién configura las franjas autorreservables **(decisión §11.5)**. Modelo
+por fases:
+- **Ahora (v1):** las configura **cada entrenador** para sus propios clientes de EP. El entrenador
+  necesita permiso explícito para **crear, editar y añadir** franjas/eventos de EP (crear el
+  evento reservado a mano o publicarlo como disponible).
+- **Objetivo (futuro):** existirá además una **política global de centro** (dirección) que fije
+  el marco por defecto (nº de franjas, antelación mínima) sobre el que el entrenador ajusta.
+
+**`RB-AGENDA-007`** — Diferencia estructural EP vs. grupos **(aclaración §11.5)**. En **grupos**
+la reserva la hace **siempre el cliente**: solo puede reservar en las horas en las que el centro
+ha puesto una sesión de grupo, y cada sesión tiene un **límite de personas** (aforo) definido por
+el centro. Los horarios de grupo los pone el centro, no el entrenador cliente a cliente. En **EP**,
+en cambio, el hueco puede nacer como reserva manual del entrenador o como franja autorreservable
+(ver `RB-AGENDA-002`).
 
 ### 3.2. Check-in / asistencia y entrenador director de sesión
 
@@ -251,12 +294,29 @@ Cliente rellena autovaloración: "me siento estancado"
 Esto conecta directamente con el motor de ofertas personalizadas (§8.6): la detección de
 estancamiento es una de las señales de entrada de ese motor, no un sistema aparte.
 
+**`RB-IA-007`** — Definición de "cliente estancado" **(decisión §11.9)**. El estancamiento **no**
+se decide solo por la autovaloración textual: se **combina** la señal subjetiva con **señales
+objetivas**:
+1. **Autovaloración textual** del cliente ("me siento estancado", etc.).
+2. **Caída de asistencia** respecto a su patrón habitual.
+3. **RPE bajo sostenido** en las últimas sesiones.
+4. **Ausencia de progresión en marcadores clave** (peso, marcas de fuerza, objetivos de salud del
+   §2.3 sin avance en X periodo).
+
+Estas señales objetivas **reutilizan el motor de retención ya existente** (`RetentionAlert`), no se
+construye un sistema paralelo: la detección de estancamiento es una regla más sobre esas señales.
+El cliente se marca como "en riesgo de estancamiento" cuando concurre la autovaloración **o** un
+umbral de señales objetivas, y eso alimenta la recomendación de IA (§4.5) y el motor de ofertas.
+
 ### 4.6. Seguimiento periódico de objetivos (check-in recurrente)
 
-**`RB-IA-006`** — Cada cierto tiempo (**abierto: periodicidad exacta**, ver §11) el sistema debe
-preguntar al cliente si ha cambiado algo respecto a su objetivo: si lo ha modificado, si se ve
-estancado, o si quiere ir a por más. Estas respuestas alimentan tanto la recomendación de IA
-(§4.5) como el reporte semanal al equipo (§8.7).
+**`RB-IA-006`** — Cada cierto tiempo el sistema debe preguntar al cliente si ha cambiado algo
+respecto a su objetivo: si lo ha modificado, si se ve estancado, o si quiere ir a por más. Estas
+respuestas alimentan tanto la recomendación de IA (§4.5) como el reporte semanal al equipo (§8.7).
+
+**Periodicidad (decisión §11.6):** **configurable por tipo de servicio**, con **default mensual**
+para el check-in de objetivos. Dirección puede cambiar el intervalo por servicio (EP, grupos,
+online) sin desplegar código.
 
 ---
 
@@ -328,6 +388,11 @@ programadas** (no confundir con sesiones consumidas del bono: aquí se refiere a
 calendario futuro del cliente se está quedando sin entrenamientos planificados) y notificar al
 entrenador responsable para que programe más.
 
+**Umbral (decisión §11.8):** el disparador es **por tiempo**: la alerta salta cuando al cliente le
+quedan **menos de 2 semanas** de entrenamientos ya programados en el calendario. Como salvaguarda
+equivalente en volumen (para clientes con baja frecuencia semanal), salta también cuando le queden
+**4 sesiones o menos** programadas. Se dispara la que se cumpla antes de las dos.
+
 ### 8.6. Notificaciones accionables al entrenador
 
 **`RB-RRHH-007`** — El entrenador debe recibir notificaciones tipo tarea, por ejemplo:
@@ -348,9 +413,14 @@ registra por **tres vías combinadas**:
 2. Preguntada al entrenador (cualitativo).
 3. Anotada por el propio cliente (autovaloraciones, RPE, comentarios post-sesión).
 
-Con esas señales, el sistema (IA + reglas) sugiere ofertas concretas al entrenador, que es
-quien decide si ofrecerlas. **Abierto:** ¿la oferta requiere aprobación de dirección antes de
-comunicarse al cliente, o el entrenador puede ofrecerla directamente? (ver §11).
+Con esas señales, el sistema (IA + reglas) sugiere ofertas concretas al entrenador.
+
+**`RB-RRHH-013`** — Aprobación de ofertas personalizadas **(decisión §11.7)**. Una oferta sugerida
+por el motor **requiere luz verde de dirección antes de comunicarse al cliente**. Flujo:
+`sistema sugiere → entrenador la propone/eleva → dirección aprueba o rechaza → solo tras
+aprobación se comunica al cliente`. El entrenador **no** puede ofrecer el descuento/upsell
+directamente sin ese visto bueno. La oferta arrastra su estado (`SUGERIDA` → `PENDIENTE_DIRECCION`
+→ `APROBADA`/`RECHAZADA` → `COMUNICADA`) para trazabilidad.
 
 ### 8.8. RPE y anotaciones post-sesión → informe semanal
 
@@ -365,10 +435,13 @@ equipo**, para revisar comentarios y proponer mejoras conjuntamente.
 
 ### 8.9. Valoración de entrenadores (confidencial)
 
-**`RB-RRHH-011`** — Periódicamente (**abierto: cada cuánto**, ver §11) se pregunta a los
-clientes por su entrenador, generando una valoración cualitativa/cuantitativa de cada
-entrenador (fortalezas/áreas de mejora), para usar en reuniones individuales de dirección con
-cada entrenador.
+**`RB-RRHH-011`** — Periódicamente se pregunta a los clientes por su entrenador, generando una
+valoración cualitativa/cuantitativa de cada entrenador (fortalezas/áreas de mejora), para usar en
+reuniones individuales de dirección con cada entrenador.
+
+**Periodicidad (decisión §11.6):** **configurable por tipo de servicio**, con **default
+trimestral** para la valoración de entrenadores. Comparte el mismo mecanismo de configuración de
+intervalos que `RB-IA-006`.
 
 **`RB-RRHH-012`** — **Estas valoraciones de entrenadores son visibles únicamente para
 dirección.** Los propios entrenadores **no** tienen acceso a esta información. Esto es una
@@ -411,39 +484,29 @@ objetivo, cuántos se ven estancados, cuántos piden "más" en el último check-
 | Lesiones/patologías | Ve las suyas | No (salvo asignado) | Sí | Sí |
 | Valoraciones de entrenadores | No | No | No (ni sobre sí mismo) | Sí — **exclusivo** |
 | Registro horario propio | — | Lee/firma el suyo | — | Ve todos |
-| Ofertas personalizadas sugeridas | No (hasta que se le comunique) | No | Sí, decide si ofrecerla | Sí |
+| Ofertas personalizadas sugeridas | No (hasta que se aprueba y se le comunica) | No | Propone/eleva, no ofrece sin aprobación | **Aprueba** — luz verde obligatoria (`RB-RRHH-013`) |
 | Reporte semanal de comentarios | No | Sí (es del equipo) | Sí | Sí |
 | Huecos de agenda de grupos | Sí (si es de grupos) | Sí | Sí | Sí |
 | Huecos de agenda de EP | No | No | Solo franjas autorreservables (si es su cliente) | Sí |
 
 ---
 
-## 11. Preguntas abiertas (decisiones de negocio pendientes)
+## 11. Decisiones de negocio cerradas (registro)
 
-Estas son las cuestiones que el texto original deja sin cerrar y que conviene decidir antes de
-convertir este documento en tickets:
+Las 9 cuestiones que en v1.0 quedaban abiertas están **decididas**. Se conservan aquí como
+registro histórico; cada una ya está reflejada como regla concreta en su sección.
 
-1. **Zona del lead** (`vive/trabaja por la zona`): ¿campo de texto libre, código postal, o radio
-   en un mapa? Condiciona si se puede usar para segmentar campañas por proximidad.
-2. **Plazo máximo sin responsable**: si un lead de formulario web no se asigna a nadie, ¿a
-   partir de cuánto tiempo salta una alerta a dirección?
-3. **Razón de no cierre**: ¿se pide obligatoriamente un motivo al marcar `NO_CERRADO` (precio,
-   horarios, se fue a la competencia, no decide...) para poder segmentar mejor la
-   recaptación?
-4. **Entrenador responsable en modalidad "solo online"**: ¿asignado individual o "Training
-   Zone" como en grupos?
-5. **Franjas autorreservables de EP**: ¿cuántas por semana, con qué antelación, y quién las
-   configura (el propio entrenador por cliente, o una política global de centro)?
-6. **Periodicidad del check-in de objetivos** (§4.6) y de la **valoración de entrenadores**
-   (§8.6): ¿mensual, trimestral, configurable por tipo de servicio?
-7. **Aprobación de ofertas personalizadas**: ¿el entrenador puede ofrecer el descuento
-   directamente al detectarlo el sistema, o necesita luz verde de dirección antes de
-   comunicarlo al cliente?
-8. **Umbral de "pocas sesiones programadas"** (`RB-RRHH-006`): ¿cuántas sesiones futuras
-   quedando disparan la alerta de reprogramación?
-9. **Definición exacta de "cliente estancado"** para la IA (§4.5): ¿solo por autovaloración
-   textual, o también por señales objetivas (caída de asistencia, RPE bajo sostenido, etc.,
-   reutilizando el motor de retención ya existente)?
+| # | Cuestión | Decisión | Regla / sección |
+|---|---|---|---|
+| 11.1 | Zona del lead (texto libre / CP / mapa) | **Código postal** como campo estructurado; visualización objetivo en **mapa con radios** alrededor del centro | `RB-LEAD-010` (§1.1) |
+| 11.2 | Plazo máximo sin responsable | **24 horas** sin responsable → alerta a dirección | `RB-LEAD-009` (§1.1) |
+| 11.3 | Razón de no cierre obligatoria | **Sí, obligatoria** (lista cerrada configurable), bloqueante al archivar | `RB-LEAD-011` (§1.2) |
+| 11.4 | Entrenador responsable en "solo online" | **Entrenador individual asignado**, no "Training Zone" genérico | `RB-PERFIL-002` (§2.2) |
+| 11.5 | Franjas autorreservables de EP | Las **configura el entrenador** (con permiso crear/editar/añadir); objetivo futuro: política global de centro. El EP admite **reserva manual** (clientes que no usan app) o franja autorreservable. Grupos: siempre reserva el cliente, en horarios del centro, con aforo por sesión | `RB-AGENDA-002/006/007` (§3.1) |
+| 11.6 | Periodicidad check-in objetivos y valoración de entrenadores | **Configurable por tipo de servicio**, con defaults: check-in de objetivos **mensual**, valoración de entrenadores **trimestral** | `RB-IA-006` (§4.6), `RB-RRHH-011` (§8.9) |
+| 11.7 | Aprobación de ofertas personalizadas | **Requiere luz verde de dirección** antes de comunicarse al cliente | `RB-RRHH-013` (§8.7) |
+| 11.8 | Umbral de "pocas sesiones programadas" | **Por tiempo**: < 2 semanas de entrenamientos programados; salvaguarda equivalente en **4 sesiones** restantes | `RB-RRHH-006` (§8.5) |
+| 11.9 | Definición de "cliente estancado" | **Combinar** autovaloración textual **+** señales objetivas (caída de asistencia, RPE bajo sostenido, ausencia de progresión), reutilizando el motor de retención | `RB-IA-007` (§4.5) |
 
 ---
 
@@ -473,6 +536,6 @@ convertir este documento en tickets:
 
 ---
 
-*Fin del documento. Siguiente paso sugerido: cerrar las preguntas de §11 y priorizar qué
-bloque (Lead/CRM, Agenda EP, IA de programación, RRHH) entra primero en el backlog de
-implementación.*
+*Fin del documento. Con las decisiones de §11 ya cerradas, el siguiente paso es la
+**priorización e implementación de las funcionalidades restantes**, detallada en el documento
+complementario `CRM_IMPLEMENTACION_FUNCIONALIDADES.md`.*
