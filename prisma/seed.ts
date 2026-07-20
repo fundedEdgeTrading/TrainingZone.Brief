@@ -41,6 +41,8 @@ async function main() {
   console.log("Limpiando base de datos...");
   await prisma.$transaction([
     prisma.auditLog.deleteMany(),
+    prisma.memberNote.deleteMany(),
+    prisma.centerMembership.deleteMany(),
     prisma.retentionAlert.deleteMany(),
     prisma.sessionDebrief.deleteMany(),
     prisma.booking.deleteMany(),
@@ -80,7 +82,7 @@ async function main() {
     id: string;
     name: string;
     email: string;
-    role: "PLATFORM_ADMIN" | "OWNER" | "CENTER_DIRECTOR" | "TRAINER" | "RECEPTION" | "MEMBER";
+    role: "PLATFORM_ADMIN" | "OWNER" | "CENTER_DIRECTOR" | "TRAINER" | "RECEPTION" | "MEMBER" | "HR_MANAGER";
     centerId: string | null;
   };
 
@@ -99,6 +101,7 @@ async function main() {
     { id: id(), name: "Rubén Castillo", email: "direccion.sur@trainingzone.es", role: "CENTER_DIRECTOR", centerId: sur.id },
     { id: id(), name: "Nuria Paredes", email: "recepcion.norte@trainingzone.es", role: "RECEPTION", centerId: norte.id },
     { id: id(), name: "Óscar Bravo", email: "recepcion.sur@trainingzone.es", role: "RECEPTION", centerId: sur.id },
+    { id: id(), name: "Cristina Molina", email: "rrhh@trainingzone.es", role: "HR_MANAGER", centerId: null },
     { id: id(), name: "Piensaenweb Admin", email: "admin@piensaenweb.dev", role: "PLATFORM_ADMIN", centerId: null },
   ];
 
@@ -114,6 +117,43 @@ async function main() {
       authProvider: "demo",
     })),
   });
+
+  // ---------- Imputación de personal a centros (CenterMembership) ----------
+  // Backfill: cada persona con centro base obtiene su imputación primaria.
+  // OWNER/PLATFORM_ADMIN/RRHH (centerId null) quedan como ámbito organización.
+  type SeedMembership = {
+    id: string;
+    orgId: string;
+    userId: string;
+    centerId: string;
+    role: SeedUser["role"];
+    isPrimary: boolean;
+    allocationPct: number;
+  };
+  const centerMemberships: SeedMembership[] = [];
+  for (const u of staffUsers) {
+    if (u.centerId) {
+      centerMemberships.push({
+        id: id(),
+        orgId,
+        userId: u.id,
+        centerId: u.centerId,
+        role: u.role,
+        isPrimary: true,
+        allocationPct: 100,
+      });
+    }
+  }
+  // Ejemplos de imputación multi-centro: un entrenador y una dirección que se
+  // reparten entre dos centros (demuestra que User.centerId ya no limita a uno).
+  const daniId = staffUsers.find((u) => u.email === "entrenador@trainingzone.es")!.id;
+  const beatrizId = staffUsers.find((u) => u.email === "direccion.centro@trainingzone.es")!.id;
+  const daniPrimary = centerMemberships.find((m) => m.userId === daniId);
+  if (daniPrimary) daniPrimary.allocationPct = 60;
+  centerMemberships.push({ id: id(), orgId, userId: daniId, centerId: norte.id, role: "TRAINER", isPrimary: false, allocationPct: 40 });
+  centerMemberships.push({ id: id(), orgId, userId: beatrizId, centerId: sur.id, role: "CENTER_DIRECTOR", isPrimary: false, allocationPct: 30 });
+  await prisma.centerMembership.createMany({ data: centerMemberships });
+  console.log(`Creadas ${centerMemberships.length} imputaciones de personal.`);
 
   const trainersByCenter: Record<string, SeedUser[]> = {
     [centro.id]: staffUsers.filter((u) => u.role === "TRAINER" && u.centerId === centro.id),
@@ -671,6 +711,39 @@ async function main() {
   await prisma.healthRecord.createMany({ data: healthRecords });
   console.log(`Creados ${healthRecords.length} registros de salud.`);
 
+  // ---------- Bitácora de observaciones (MemberNote) ----------
+  // Notas internas NO clínicas (distintas de HealthRecord): nota + autor + fecha.
+  const NOTE_BODIES = [
+    "Viaja bastante por trabajo, le encaja mejor un plan flexible.",
+    "Muy motivada, objetivo puesto en una carrera en primavera.",
+    "Prefiere entrenar a primera hora; evitar reprogramar a la tarde.",
+    "Comentó dudas con el precio del bono — vigilar la renovación.",
+    "Viene con una amiga, valorar oferta dúo.",
+    "Le cuesta la constancia los lunes; un recordatorio el domingo ayuda.",
+    "Interesado en pasar a personal training 1:1.",
+    "Prefiere clases pequeñas; avisar si sube el aforo.",
+    "Vuelve tras una temporada parado, ir progresivo las primeras semanas.",
+    "Contento con el seguimiento, mantener al entrenador actual.",
+  ];
+  const noteAuthorIds = staffUsers.filter((u) => u.role !== "PLATFORM_ADMIN").map((u) => u.id);
+  const noteRows: { id: string; orgId: string; memberId: string; authorUserId: string; body: string; createdAt: Date }[] = [];
+  for (const m of members) {
+    if (m.state === MemberState.PROSPECT) continue;
+    if (Math.random() > 0.3) continue;
+    for (let k = 0; k < randInt(1, 2); k++) {
+      noteRows.push({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        authorUserId: pick(noteAuthorIds),
+        body: pick(NOTE_BODIES),
+        createdAt: addDays(TODAY, -randInt(1, 120)),
+      });
+    }
+  }
+  await prisma.memberNote.createMany({ data: noteRows });
+  console.log(`Creadas ${noteRows.length} notas de bitácora.`);
+
   // ---------- Semáforo de Aptitud (G.2) ----------
   const sergioId = staffUsers.find((u) => u.email === "sergio@trainingzone.es")!.id;
   const aptitudeRules = [
@@ -797,6 +870,7 @@ async function main() {
   console.log("  direccion.centro@trainingzone.es     (Dirección de centro)");
   console.log("  entrenador@trainingzone.es           (Entrenador)");
   console.log("  recepcion@trainingzone.es            (Recepción)");
+  console.log("  rrhh@trainingzone.es                 (RRHH — organización y equipo)");
   console.log("  socio@trainingzone.es                (Socio — Marta García López)");
 }
 

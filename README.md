@@ -56,6 +56,7 @@ Abrir `http://localhost:3000` — redirige a `/login`.
 | `direccion.centro@trainingzone.es` | Dirección de centro | Panel, socios, agenda, cobros, retención (ámbito de su centro) |
 | `entrenador@trainingzone.es` | Entrenador (Dani Herrero) | Agenda, Session Brief + Debrief, semáforo de aptitud |
 | `recepcion@trainingzone.es` | Recepción | Socios, agenda, cobros — **sin acceso a datos de salud** |
+| `rrhh@trainingzone.es` | RRHH | Organización: alta de centros y personal, imputación multi-centro — **sin acceso a datos de salud** |
 | `socio@trainingzone.es` | Socio (Marta García López) | Portal: reservar clase, progreso, transparencia de adaptaciones |
 
 También hay entrenadores/recepción/dirección adicionales por centro (ver
@@ -84,14 +85,16 @@ poblar todo).
 ## Estructura
 
 ```
-prisma/schema.prisma       Modelo de dominio multi-tenant (orgId en cada tabla)
+prisma/schema.prisma       Modelo de dominio multi-tenant (orgId en cada tabla);
+                            CenterMembership (imputación de personal a centros)
+                            y MemberNote (bitácora de observaciones del socio)
 prisma/seed.ts              Generador de datos de demo
 src/auth.ts, auth.config.ts Auth.js: Credentials (demo) + Microsoft Entra ID (preparado)
 src/proxy.ts                 Proxy (antes "middleware"): exige sesión salvo /login
 src/lib/rbac.ts              Matriz de permisos por rol + navegación
 src/lib/guard.ts             requireRole() — guarda de página por rol
 src/lib/health-access.ts     Único punto de lectura de datos de salud + auditoría
-src/app/(app)/...            Módulos: dashboard, members, agenda, brief, billing, retention, health, audit, portal
+src/app/(app)/...            Módulos: dashboard, members, agenda, brief, billing, retention, health, audit, portal, organization
 ```
 
 ## Qué queda fuera de esta entrega (a propósito)
@@ -103,9 +106,11 @@ Siguiendo el propio documento (Parte H, riesgos 2 y 8):
   factura. Es una decisión de D3 en el documento, no un olvido.
 - **Integración del agente IA de Sergio / `IInsightProvider`** (F6): fuera
   del alcance del MVP (F0–F5) por diseño.
-- **Onboarding multi-tenant self-service** (F7): el modelo de datos ya es
-  multi-tenant (`orgId` en cada tabla), pero el wizard de alta de un nuevo
-  centro externo no está construido.
+- **Onboarding multi-tenant self-service** (F7): la gestión *dentro* de una
+  organización ya está construida (módulo **Organización**: alta de centros y
+  personal, e imputación de cada persona a varios centros con rol y % de
+  dedicación vía `CenterMembership`). Lo que queda fuera es el alta
+  self-service de una organización externa nueva (signup de tenant + SSO).
 
 ## Notas de seguridad / RGPD
 

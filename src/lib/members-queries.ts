@@ -49,6 +49,14 @@ export async function getMemberDetail(orgId: string, memberId: string) {
   });
 }
 
+export async function getMemberNotes(orgId: string, memberId: string) {
+  return prisma.memberNote.findMany({
+    where: { orgId, memberId },
+    include: { author: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 export async function getMemberAttendanceStats(memberId: string) {
   const bookings = await prisma.booking.findMany({
     where: { memberId },
