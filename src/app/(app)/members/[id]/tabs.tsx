@@ -12,7 +12,7 @@ export default function Tabs({
 
   return (
     <div>
-      <div className="inline-flex gap-1 bg-tz-sand rounded-pill p-1 mb-5">
+      <div className="inline-flex flex-wrap gap-1 max-w-full bg-tz-sand rounded-pill p-1 mb-5">
         {panels.map((p) => (
           <button
             key={p.key}

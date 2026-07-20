@@ -3,7 +3,9 @@ import clsx from "clsx";
 export function TableShell({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
     <div className={clsx("bg-brand-card border border-brand-border rounded-card overflow-hidden shadow-card", className)}>
-      <table className="w-full text-sm">{children}</table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">{children}</table>
+      </div>
     </div>
   );
 }
