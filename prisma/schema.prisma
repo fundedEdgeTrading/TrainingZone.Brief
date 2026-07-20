@@ -17,6 +17,7 @@ model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  logoUrl   String? // logo de marca para el NavBar; si es null se usa el de Apta
   createdAt DateTime @default(now())
 
   centers       Center[]
@@ -38,6 +39,7 @@ model Center {
   name      String
   slug      String
   address   String?
+  logoUrl   String? // logo propio del centro; si es null se hereda el de la organización (y en su defecto, Apta)
   timezone  String   @default("Europe/Madrid")
   createdAt DateTime @default(now())
 

@@ -14,10 +14,24 @@ export default async function AppLayout({
   const { role, centerId, name, email } = session.user;
   const nav = NAV_BY_ROLE[role];
 
-  const center = centerId
-    ? await prisma.center.findUnique({ where: { id: centerId }, select: { name: true } })
-    : null;
-  const centerName = center?.name?.replace(/^TRAINING ZONE\s*/i, "") || "";
+  const [org, center] = await Promise.all([
+    prisma.organization.findUnique({
+      where: { id: session.user.orgId },
+      select: { name: true, logoUrl: true },
+    }),
+    centerId
+      ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true } })
+      : Promise.resolve(null),
+  ]);
+
+  // NavBar: logo del centro, si no el de la organización, si no el de Apta (null).
+  const logoUrl = center?.logoUrl ?? org?.logoUrl ?? null;
+  const brandName = org?.name ?? "Apta";
+
+  let centerName = center?.name ?? "";
+  if (org?.name && centerName.toUpperCase().startsWith(org.name.toUpperCase())) {
+    centerName = centerName.slice(org.name.length).trim();
+  }
 
   const subtitle =
     role === "MEMBER"
@@ -29,7 +43,13 @@ export default async function AppLayout({
   return (
     <MobileNavProvider>
       <div className="flex min-h-screen bg-brand-bg">
-        <Sidebar nav={nav} sectionLabel={sectionLabelForRole(role)} footerLabel={footerLabelForRole(role)} />
+        <Sidebar
+          nav={nav}
+          sectionLabel={sectionLabelForRole(role)}
+          footerLabel={footerLabelForRole(role)}
+          logoUrl={logoUrl}
+          brandName={brandName}
+        />
         <div className="flex-1 flex flex-col min-w-0">
           <Header
             nav={nav}

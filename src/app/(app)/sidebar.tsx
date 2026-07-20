@@ -1,18 +1,22 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import AptaLogo from "@/components/apta-logo";
 import { useMobileNav } from "./mobile-nav";
 
 export default function Sidebar({
   nav,
   sectionLabel,
   footerLabel,
+  logoUrl,
+  brandName,
 }: {
   nav: { href: string; label: string }[];
   sectionLabel: string;
   footerLabel: string;
+  logoUrl?: string | null;
+  brandName?: string;
 }) {
   const pathname = usePathname();
   const { open, setOpen } = useMobileNav();
@@ -35,23 +39,17 @@ export default function Sidebar({
           className="relative h-[72px] lg:h-[88px] flex items-center justify-center px-4 border-b border-tz-linen shrink-0"
           style={{ animation: "tzNavIn .5s cubic-bezier(.2,.8,.2,1) both" }}
         >
-          <div className="tz-logo-wrap">
-            <Image
-              src="/brand/tz-logo-black.png"
-              alt="Training Zone"
-              width={250}
-              height={42}
-              preload
-              className="h-[26px] lg:h-[34px] w-auto block"
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático
+            <img
+              src={logoUrl}
+              alt={brandName ?? "Logo"}
+              className="h-[26px] lg:h-[34px] w-auto max-w-[190px] object-contain block"
             />
-            <div
-              className="tz-logo-shine"
-              style={{
-                WebkitMaskImage: "url(/brand/tz-logo-black.png)",
-                maskImage: "url(/brand/tz-logo-black.png)",
-              }}
-            />
-          </div>
+          ) : (
+            // Sin logo propio → marca de la plataforma (Apta)
+            <AptaLogo variant="dark" className="text-2xl lg:text-3xl" />
+          )}
           <button
             onClick={() => setOpen(false)}
             aria-label="Cerrar menú"

@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 
+export async function getOrganization(orgId: string) {
+  return prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true, slug: true, logoUrl: true },
+  });
+}
+
 export async function getCentersWithCounts(orgId: string) {
   return prisma.center.findMany({
     where: { orgId },

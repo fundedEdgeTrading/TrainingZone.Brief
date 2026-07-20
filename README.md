@@ -47,6 +47,10 @@ Abrir `http://localhost:3000` — redirige a `/login`.
   crear desde este entorno. En cuanto el cliente tenga su tenant, basta con
   rellenar esas tres variables: no hace falta tocar código ni desplegar de
   nuevo.
+- **Google (OAuth):** igual que Microsoft, declarado y listo pero **desactivado**
+  hasta que existan `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (credenciales de
+  Google Cloud Console). El botón aparece en el login pero deshabilitado; en
+  cuanto se rellenen esas dos variables queda operativo, sin tocar código.
 
 ### Usuarios demo (contraseña: `demo1234`)
 
@@ -62,17 +66,36 @@ Abrir `http://localhost:3000` — redirige a `/login`.
 También hay entrenadores/recepción/dirección adicionales por centro (ver
 `prisma/seed.ts`) para poblar la agenda con datos realistas.
 
+### Segunda empresa (demo multi-tenant)
+
+El seed crea también una **segunda organización, `VITALIA WELLNESS`**, con sus
+propios dos centros (Chamberí y Retiro), equipo, socios, historial y **logo
+propio** (`/brand/vitalia-logo.svg`). Sirve para enseñar el aislamiento
+multi-tenant y el logo por organización en el NavBar. Sus cuentas demo
+(contraseña `demo1234`): `owner@vitalia.es`, `entrenador@vitalia.es` (imputado a
+los dos centros), `rrhh@vitalia.es`, `socio@vitalia.es`.
+
+**Logo en el NavBar:** cada organización (y opcionalmente cada centro) tiene un
+`logoUrl`. El NavBar muestra el del centro, si no el de la organización, y si
+ninguno tiene → el de **Apta** (la marca de la plataforma). Se gestiona desde el
+módulo **Organización** (marca de la organización y logo por centro).
+
 ## Datos de demostración
 
-El seed genera, sobre 3 centros ("Centro", "Norte", "Sur"):
+El seed genera **dos organizaciones** (Training Zone con 3 centros, Vitalia con
+2), y por cada una:
 
-- 192 socios con estados realistas (activo, moroso, congelado, prueba, baja)
-- ~6 meses de histórico + 2 semanas futuras de sesiones, reservas, check-ins,
-  no-shows y lista de espera
+- Socios con estados realistas (activo, moroso, congelado, prueba, baja) —
+  ~425 en total entre las dos empresas
+- ~6-7 meses de histórico + hasta 3 semanas futuras de sesiones, reservas,
+  check-ins, no-shows y lista de espera (~13 000 reservas en total)
+- Imputación de personal a centros (`CenterMembership`), con ejemplos de
+  entrenadores/dirección repartidos entre varios centros
 - Pagos con métodos variados (tarjeta, Bizum, efectivo, SEPA, transferencia)
   y algunos morosos con recibos fallidos/pendientes
 - Registros de salud (lesiones, condiciones crónicas, alergias...) para ~1 de
   cada 4 socios, con consentimiento y reglas del Semáforo de Aptitud
+- Bitácora de observaciones no clínicas del socio (`MemberNote`)
 - Debriefs post-sesión (🟢/🟡/🔴) para la mayoría de asistencias pasadas
 - Alertas de retención calculadas comparando la frecuencia reciente de cada
   socio contra su línea base personal

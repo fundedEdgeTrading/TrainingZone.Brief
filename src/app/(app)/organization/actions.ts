@@ -27,11 +27,26 @@ function slugify(s: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+// ---------- Organización (marca / logo) ----------
+export async function updateOrganization(formData: FormData) {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const name = String(formData.get("name") ?? "").trim();
+  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
+  if (!name) return;
+
+  await prisma.organization.update({
+    where: { id: session.user.orgId },
+    data: { name, logoUrl },
+  });
+  revalidatePath("/organization");
+}
+
 // ---------- Centros (alta de estructura de la empresa) ----------
 export async function createCenter(formData: FormData) {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim() || null;
+  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
   const slug = slugify(String(formData.get("slug") ?? "").trim() || name);
   if (!name || !slug) return;
 
@@ -41,7 +56,23 @@ export async function createCenter(formData: FormData) {
   });
   if (existing) return;
 
-  await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address } });
+  await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, logoUrl } });
+  revalidatePath("/organization");
+}
+
+// Editar el logo de un centro (si es null, hereda el de la organización / Apta).
+export async function updateCenterLogo(formData: FormData) {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const centerId = String(formData.get("centerId") ?? "");
+  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
+
+  const center = await prisma.center.findFirst({
+    where: { id: centerId, orgId: session.user.orgId },
+    select: { id: true },
+  });
+  if (!center) return;
+
+  await prisma.center.update({ where: { id: centerId }, data: { logoUrl } });
   revalidatePath("/organization");
 }
 

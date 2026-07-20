@@ -1,9 +1,16 @@
 import type { Role } from "@prisma/client";
 import { requireRole } from "@/lib/guard";
 import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
-import { getCentersWithCounts, getStaffWithMemberships } from "@/lib/org-queries";
-import { createCenter, createStaffUser, assignUserToCenter } from "./actions";
+import { getOrganization, getCentersWithCounts, getStaffWithMemberships } from "@/lib/org-queries";
+import {
+  updateOrganization,
+  createCenter,
+  updateCenterLogo,
+  createStaffUser,
+  assignUserToCenter,
+} from "./actions";
 import { RemoveMembershipButton } from "./controls";
+import AptaLogo from "@/components/apta-logo";
 import { PageHeader } from "@/components/ui/page-header";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
@@ -16,7 +23,8 @@ export default async function OrganizationPage() {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
   const canOrg = canManageOrg(session.user.role);
 
-  const [centers, staff] = await Promise.all([
+  const [org, centers, staff] = await Promise.all([
+    getOrganization(session.user.orgId),
     getCentersWithCounts(session.user.orgId),
     getStaffWithMemberships(session.user.orgId),
   ]);
@@ -34,8 +42,42 @@ export default async function OrganizationPage() {
     <div className="tz-page space-y-6">
       <PageHeader
         kicker="Organización y equipo"
-        description="Estructura de la empresa (centros), alta de personal e imputación de cada persona a uno o varios centros con su rol y dedicación. El modelo ya es multi-tenant (orgId en cada tabla); aquí se gestiona el ámbito dentro de la organización (F7)."
+        description="Marca, estructura de la empresa (centros), alta de personal e imputación de cada persona a uno o varios centros con su rol y dedicación. El modelo ya es multi-tenant (orgId en cada tabla); aquí se gestiona el ámbito dentro de la organización (F7)."
       />
+
+      {/* ---------- Marca de la organización ---------- */}
+      {canOrg && org && (
+        <section className="space-y-3">
+          <h2 className={SECTION_TITLE}>Marca</h2>
+          <div className={`${CARD} flex flex-col lg:flex-row lg:items-end gap-5`}>
+            <div className="shrink-0">
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">
+                Logo en el NavBar
+              </div>
+              <div className="h-14 min-w-[180px] flex items-center rounded-lg border border-brand-border bg-tz-sand px-4">
+                {org.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- logo de marca por URL arbitraria
+                  <img src={org.logoUrl} alt={org.name} className="h-8 w-auto max-w-[200px] object-contain" />
+                ) : (
+                  <span className="flex items-center gap-2 text-xs text-faint">
+                    <AptaLogo variant="dark" className="text-xl" />
+                    <span>(por defecto)</span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <form action={updateOrganization} className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <Field label="Nombre de la organización">
+                <Input name="name" defaultValue={org.name} required />
+              </Field>
+              <Field label="URL del logo" hint="Vacío = logo de Apta por defecto">
+                <Input name="logoUrl" defaultValue={org.logoUrl ?? ""} placeholder="/brand/mi-logo.svg o https://..." />
+              </Field>
+              <Button type="submit">Guardar marca</Button>
+            </form>
+          </div>
+        </section>
+      )}
 
       {/* ---------- Centros ---------- */}
       <section className="space-y-3">
@@ -43,28 +85,49 @@ export default async function OrganizationPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {centers.map((c) => (
             <div key={c.id} className={CARD}>
-              <h3 className="font-semibold text-brand-text">{c.name}</h3>
-              <p className="text-xs text-brand-muted mt-1">{c.address ?? "Sin dirección"}</p>
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-lg bg-tz-sand border border-brand-border flex items-center justify-center overflow-hidden shrink-0">
+                  {c.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- logo de centro por URL arbitraria
+                    <img src={c.logoUrl} alt={c.name} className="h-7 w-7 object-contain" />
+                  ) : (
+                    <span className="text-[8px] font-bold text-faint uppercase tracking-wide">hereda</span>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-brand-text truncate">{c.name}</h3>
+                  <p className="text-xs text-brand-muted truncate">{c.address ?? "Sin dirección"}</p>
+                </div>
+              </div>
               <p className="text-xs text-faint mt-3">
                 {c._count.members} socios · {c._count.staffMemberships} personas imputadas
               </p>
+              {canOrg && (
+                <form action={updateCenterLogo} className="mt-3 flex items-end gap-2">
+                  <input type="hidden" name="centerId" value={c.id} />
+                  <Field label="Logo (URL)" className="flex-1">
+                    <Input name="logoUrl" defaultValue={c.logoUrl ?? ""} placeholder="/brand/… (vacío = hereda)" />
+                  </Field>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Guardar
+                  </Button>
+                </form>
+              )}
             </div>
           ))}
-          {centers.length === 0 && (
-            <p className="text-sm text-muted">Todavía no hay centros.</p>
-          )}
+          {centers.length === 0 && <p className="text-sm text-muted">Todavía no hay centros.</p>}
         </div>
 
         {canOrg && (
-          <form
-            action={createCenter}
-            className={`${CARD} grid grid-cols-1 md:grid-cols-4 gap-3 items-end`}
-          >
+          <form action={createCenter} className={`${CARD} grid grid-cols-1 md:grid-cols-4 gap-3 items-end`}>
             <Field label="Nombre del centro" className="md:col-span-2">
-              <Input name="name" placeholder="p.ej. TRAINING ZONE Este" required />
+              <Input name="name" placeholder="p.ej. Vitalia Este" required />
             </Field>
             <Field label="Slug" hint="Opcional — se genera del nombre">
               <Input name="slug" placeholder="este" />
+            </Field>
+            <Field label="Logo (URL)" hint="Opcional — si no, hereda">
+              <Input name="logoUrl" placeholder="/brand/…" />
             </Field>
             <Field label="Dirección" className="md:col-span-3">
               <Input name="address" placeholder="Calle, número, ciudad" />
@@ -118,15 +181,12 @@ export default async function OrganizationPage() {
           </tbody>
         </TableShell>
 
-        <form
-          action={createStaffUser}
-          className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
-        >
+        <form action={createStaffUser} className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}>
           <Field label="Nombre" className="md:col-span-2">
             <Input name="name" placeholder="Nombre y apellidos" required />
           </Field>
           <Field label="Email">
-            <Input name="email" type="email" placeholder="persona@trainingzone.es" required />
+            <Input name="email" type="email" placeholder="persona@empresa.es" required />
           </Field>
           <Field label="Rol">
             <Select name="role" defaultValue="TRAINER">
@@ -161,10 +221,7 @@ export default async function OrganizationPage() {
           dedicación. Así un entrenador puede repartirse entre varios centros o una dirección
           supervisar más de uno.
         </p>
-        <form
-          action={assignUserToCenter}
-          className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
-        >
+        <form action={assignUserToCenter} className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}>
           <Field label="Persona" className="md:col-span-2">
             <Select name="userId" required defaultValue="">
               <option value="">Seleccionar...</option>
