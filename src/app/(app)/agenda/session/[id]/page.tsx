@@ -2,10 +2,12 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { getSessionDetail } from "@/lib/agenda-queries";
+import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
 import CheckinButton from "./checkin-button";
+import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
 
 const STATUS_LABEL: Record<string, string> = {
   BOOKED: "Reservado",
@@ -29,6 +31,9 @@ export default async function SessionDetailPage({
   // a los que está imputado (su centro base o vía CenterMembership).
   await requireCenterRole(cls.centerId, ["CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
 
+  const isEpSession = cls.classType === "Personal Training";
+  const trainers = isEpSession ? await listAssignableStaff(session.user.orgId, ["TRAINER"]) : [];
+
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");
 
@@ -49,6 +54,12 @@ export default async function SessionDetailPage({
               {cls.startTime}–{cls.endTime} · {cls.center.name} {cls.room ? `· ${cls.room}` : ""}
             </p>
             <p className="text-sm text-muted">Entrenador: {cls.trainer?.name ?? "Sin asignar"}</p>
+            {isEpSession && (
+              <div className="flex flex-col gap-1.5 mt-2">
+                <DirectorSelect sessionId={cls.id} directedByUserId={cls.directedByUserId} trainers={trainers} />
+                <SelfBookableToggle sessionId={cls.id} selfBookable={cls.selfBookable} />
+              </div>
+            )}
           </div>
           <div className="text-right">
             <div className="font-display font-extrabold text-2xl text-tz-black tz-nums">

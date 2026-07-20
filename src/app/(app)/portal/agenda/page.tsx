@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { getMemberForUser, getBookableSessions, canCancelWithoutPenalty } from "@/lib/portal-queries";
+import { getMemberServiceKinds } from "@/lib/members-queries";
 import BookingButton from "./booking-button";
 
 export default async function PortalAgendaPage() {
@@ -8,7 +9,12 @@ export default async function PortalAgendaPage() {
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
 
-  const sessions = await getBookableSessions(session.user.orgId, member.primaryCenterId, member.id);
+  const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
+  const sessions = await getBookableSessions(session.user.orgId, member.primaryCenterId, member.id, {
+    trainerId: member.trainerId,
+    hasGroupService: serviceKinds.includes("GROUP"),
+    hasEpService: serviceKinds.includes("EP"),
+  });
 
   const byDay = new Map<string, typeof sessions>();
   for (const s of sessions) {

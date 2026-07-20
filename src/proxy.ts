@@ -7,7 +7,9 @@ import { getToken } from "next-auth/jwt";
 // en el runtime de Proxy), así que la comprobación de sesión usa el JWT
 // directamente vía next-auth/jwt, que sí es compatible.
 
-const PUBLIC_PATHS = ["/login", "/register", "/onboarding"];
+// "/lead-form" (no "/lead") a propósito: con startsWith(), "/lead" también
+// marcaría pública la sección de gestión "/leads" del staff.
+const PUBLIC_PATHS = ["/login", "/register", "/onboarding", "/lead-form", "/api/jobs", "/api/stripe"];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { getPageTitle } from "@/lib/rbac";
 import UserMenu from "./user-menu";
 import { useMobileNav } from "./mobile-nav";
+import { NotificationBell } from "./notification-bell";
 
 export default function Header({
   nav,
@@ -11,12 +12,22 @@ export default function Header({
   userName,
   roleLabel,
   centerChip,
+  notifications,
 }: {
   nav: { href: string; label: string }[];
   subtitle: string;
   userName: string;
   roleLabel: string;
   centerChip?: string;
+  notifications: {
+    id: string;
+    title: string;
+    body: string | null;
+    kind: string;
+    entityType: string | null;
+    entityId: string | null;
+    createdAt: Date;
+  }[];
 }) {
   const pathname = usePathname();
   const { setOpen } = useMobileNav();
@@ -25,7 +36,7 @@ export default function Header({
 
   return (
     <header
-      className="h-[72px] lg:h-[88px] shrink-0 bg-brand-card border-b border-brand-border flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 tz-head-in"
+      className="relative z-30 h-[72px] lg:h-[88px] shrink-0 bg-brand-card border-b border-brand-border flex items-center justify-between gap-3 px-4 sm:px-6 lg:px-8 tz-head-in"
     >
       <div className="flex items-center gap-3 lg:gap-3.5 min-w-0">
         <button
@@ -52,6 +63,7 @@ export default function Header({
             {centerChip}
           </div>
         )}
+        <NotificationBell notifications={notifications} />
         <UserMenu name={userName} roleLabel={roleLabel} />
       </div>
     </header>

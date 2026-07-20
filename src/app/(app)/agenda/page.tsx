@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getCentersForUser, getWeekSessions } from "@/lib/agenda-queries";
+import { listAssignableStaff } from "@/lib/org-queries";
+import { listActiveMembersForSelect } from "@/lib/members-queries";
+import { canManageEpSlots, canManageOrg } from "@/lib/rbac";
 import { PageHeader } from "@/components/ui/page-header";
 import CalendarView from "./calendar-view";
 import CenterSwitcher from "./center-switcher";
+import { NewEpSlotDrawer } from "./new-ep-slot-drawer";
 
 function startOfWeekMonday(d: Date) {
   const date = new Date(d);
@@ -39,6 +43,14 @@ export default async function AgendaPage({
     ? await getWeekSessions(session.user.orgId, centerId, weekStart, weekEnd)
     : [];
 
+  const canCreateEpSlot = centerId && canManageEpSlots(session.user.role);
+  const [trainers, epMembers] = canCreateEpSlot
+    ? await Promise.all([
+        listAssignableStaff(session.user.orgId, ["TRAINER"]),
+        listActiveMembersForSelect(session.user.orgId, { trainerId: session.user.role === "TRAINER" ? session.user.id : undefined }),
+      ])
+    : [[], []];
+
   const events = sessions.map((s) => ({
     id: s.id,
     name: s.name,
@@ -66,6 +78,14 @@ export default async function AgendaPage({
         description={`Semana del ${weekLabel} · ${sessions.length} sesiones`}
         actions={
           <>
+            {canCreateEpSlot && (
+              <NewEpSlotDrawer
+                centerId={centerId}
+                trainers={trainers}
+                members={epMembers}
+                showTrainerSelect={canManageOrg(session.user.role) || session.user.role === "CENTER_DIRECTOR"}
+              />
+            )}
             <CenterSwitcher centers={centers} currentCenterId={centerId ?? ""} />
             <Link href={`/agenda?center=${centerId}&week=${prevWeek.toISOString().slice(0, 10)}`} className={linkClass}>
               ← Semana anterior

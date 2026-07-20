@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { listPayments, getBillingKpis, getDelinquentMembers, getMembersForPaymentForm } from "@/lib/billing-queries";
+import { listActivePlansForOrg } from "@/lib/members-queries";
+import { isStripeConfigured } from "@/lib/stripe";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
 import { KpiCard, Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import PaymentForm from "./payment-form";
+import StripeCheckoutForm from "./stripe-checkout-form";
 import type { PaymentStatus } from "@prisma/client";
 
 function euros(cents: number) {
@@ -22,11 +25,12 @@ export default async function BillingPage({
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
   const params = await searchParams;
 
-  const [kpis, payments, delinquent, membersForForm] = await Promise.all([
+  const [kpis, payments, delinquent, membersForForm, plans] = await Promise.all([
     getBillingKpis(session.user.orgId),
     listPayments(session.user.orgId, { status: (params.status as PaymentStatus) || undefined }),
     getDelinquentMembers(session.user.orgId),
     getMembersForPaymentForm(session.user.orgId),
+    listActivePlansForOrg(session.user.orgId),
   ]);
 
   return (
@@ -40,7 +44,11 @@ export default async function BillingPage({
         <KpiCard label="Socios morosos" value={String(kpis.delinquentMembers)} tone={kpis.delinquentMembers ? "critical" : "default"} delay={0.22} />
       </div>
 
-      <Card title="Registrar cobro manual" meta="efectivo / tarjeta presencial / Bizum" delay={0.12}>
+      <Card title="Cobro por Stripe" meta="RB-PAGO-001 — canal objetivo" delay={0.1}>
+        <StripeCheckoutForm members={membersForForm} plans={plans} configured={isStripeConfigured()} />
+      </Card>
+
+      <Card title="Registrar cobro manual" meta="efectivo / tarjeta presencial / Bizum — puente hasta Stripe" delay={0.12}>
         <PaymentForm members={membersForForm} />
       </Card>
 

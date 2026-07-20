@@ -47,12 +47,67 @@ export async function getWeekSessions(orgId: string, centerId: string, weekStart
   return sessions;
 }
 
+function addMinutesToTime(time: string, minutes: number) {
+  const [h, m] = time.split(":").map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+/**
+ * RB-AGENDA-002/006: crea un hueco de EP. Por defecto lo agenda el entrenador
+ * (reserva manual en nombre de un cliente que no usa la app); si se marca
+ * `selfBookable`, queda disponible para que el propio cliente de EP lo coja
+ * desde el portal (RB-AGENDA-001).
+ */
+export async function createEpSlot(
+  orgId: string,
+  input: { centerId: string; trainerId: string; date: Date; startTime: string; durationMin: number; selfBookable: boolean; memberId?: string | null }
+) {
+  const endTime = addMinutesToTime(input.startTime, input.durationMin);
+  const session = await prisma.classSession.create({
+    data: {
+      orgId,
+      centerId: input.centerId,
+      name: `Personal Training ${input.startTime}`,
+      classType: "Personal Training",
+      date: input.date,
+      startTime: input.startTime,
+      endTime,
+      capacity: 1,
+      trainerId: input.trainerId,
+      selfBookable: input.selfBookable,
+    },
+  });
+
+  if (input.memberId) {
+    await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
+  }
+
+  return session;
+}
+
+/** RB-AGENDA-004: entrenador que dirigió realmente la sesión (puede diferir del asignado). */
+export async function setSessionDirector(orgId: string, sessionId: string, directedByUserId: string | null) {
+  const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId }, select: { id: true } });
+  if (!session) return { ok: false as const, error: "Sesión no encontrada." };
+  await prisma.classSession.update({ where: { id: sessionId }, data: { directedByUserId } });
+  return { ok: true as const };
+}
+
+export async function setSessionSelfBookable(orgId: string, sessionId: string, selfBookable: boolean) {
+  const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId, classType: "Personal Training" }, select: { id: true } });
+  if (!session) return { ok: false as const, error: "Sesión no encontrada o no es de EP." };
+  await prisma.classSession.update({ where: { id: sessionId }, data: { selfBookable } });
+  return { ok: true as const };
+}
+
 export async function getSessionDetail(orgId: string, sessionId: string) {
   return prisma.classSession.findFirst({
     where: { id: sessionId, orgId },
     include: {
       center: true,
       trainer: { select: { name: true } },
+      directedBy: { select: { id: true, name: true } },
       bookings: {
         include: { member: { select: { id: true, firstName: true, lastName: true, state: true } } },
         orderBy: [{ status: "asc" }, { bookedAt: "asc" }],
