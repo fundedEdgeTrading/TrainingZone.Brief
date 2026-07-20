@@ -72,54 +72,58 @@ export default function LoginForm() {
   }
 
   return (
-    <div className="space-y-6">
-      <button
-        type="button"
-        disabled
-        title="Requiere un App Registration de Microsoft Entra ID configurado en producción"
-        className="w-full flex items-center justify-center gap-2 rounded-control border border-tz-linen bg-tz-sand text-faint py-2.5 text-sm font-medium cursor-not-allowed opacity-60"
-      >
-        <MicrosoftLogo />
-        Continuar con Microsoft
-      </button>
+    <div className="grid gap-6 lg:grid-cols-[1fr_1px_1fr] lg:gap-7">
+      <div className="space-y-5 short:space-y-4">
+        <button
+          type="button"
+          disabled
+          title="Requiere un App Registration de Microsoft Entra ID configurado en producción"
+          className="w-full flex items-center justify-center gap-2 rounded-control border border-tz-linen bg-tz-sand text-faint py-2.5 short:py-2 text-sm font-medium cursor-not-allowed opacity-60"
+        >
+          <MicrosoftLogo />
+          Continuar con Microsoft
+        </button>
 
-      <div className="flex items-center gap-3 text-xs text-faint">
-        <div className="h-px bg-tz-linen flex-1" />
-        acceso demo
-        <div className="h-px bg-tz-linen flex-1" />
+        <div className="flex items-center gap-3 text-xs text-faint">
+          <div className="h-px bg-tz-linen flex-1" />
+          acceso demo
+          <div className="h-px bg-tz-linen flex-1" />
+        </div>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            doSignIn(email, password);
+          }}
+          className={`space-y-3 ${shake ? "tz-shake" : ""}`}
+        >
+          <Field label="Email">
+            <Input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="tu@trainingzone.es"
+            />
+          </Field>
+          <Field label="Contraseña">
+            <Input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+            />
+          </Field>
+          {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
+          <Button type="submit" size="lg" disabled={loading} className="w-full">
+            {loading && <ButtonSpinner />}
+            {loading ? "Entrando..." : "Iniciar sesión"}
+          </Button>
+        </form>
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          doSignIn(email, password);
-        }}
-        className={`space-y-3 ${shake ? "tz-shake" : ""}`}
-      >
-        <Field label="Email">
-          <Input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="tu@trainingzone.es"
-          />
-        </Field>
-        <Field label="Contraseña">
-          <Input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-          />
-        </Field>
-        {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
-        <Button type="submit" size="lg" disabled={loading} className="w-full">
-          {loading && <ButtonSpinner />}
-          {loading ? "Entrando..." : "Iniciar sesión"}
-        </Button>
-      </form>
+      <div className="hidden lg:block bg-tz-linen/70" />
 
       <div>
         <p className="text-xs font-medium text-muted mb-2">
@@ -133,7 +137,7 @@ export default function LoginForm() {
               type="button"
               disabled={loading}
               onClick={() => doSignIn(u.email, DEMO_PASSWORD)}
-              className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone hover:-translate-y-0.5 hover:shadow-card px-3 py-2 transition-[transform,box-shadow,border-color,background-color] duration-150 tz-fade-up"
+              className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone hover:-translate-y-0.5 hover:shadow-card px-3 py-2 short:py-1.5 transition-[transform,box-shadow,border-color,background-color] duration-150 tz-fade-up"
               style={{ animationDelay: `${0.1 + i * 0.05}s` }}
             >
               <span className="w-8 h-8 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-[11px] flex items-center justify-center shrink-0">
