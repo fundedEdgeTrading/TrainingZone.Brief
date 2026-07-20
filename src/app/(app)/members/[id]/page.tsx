@@ -81,7 +81,7 @@ export default async function MemberDetailPage({
               key: "datos",
               label: "Datos",
               content: (
-                <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm max-w-xl">
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm max-w-xl">
                   <dt className="text-muted">Teléfono</dt>
                   <dd className="text-tz-black">{member.phone ?? "—"}</dd>
                   <dt className="text-muted">Fecha de nacimiento</dt>

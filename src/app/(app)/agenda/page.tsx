@@ -80,7 +80,7 @@ export default async function AgendaPage({
         }
       />
 
-      <div className="flex gap-4 text-xs text-muted">
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#6B7A34" }} /> Ocupación normal
         </span>

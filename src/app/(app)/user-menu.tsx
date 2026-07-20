@@ -15,9 +15,9 @@ export default function UserMenu({
   roleLabel: string;
 }) {
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-2.5 sm:gap-4">
       <div className="flex items-center gap-2.5">
-        <div className="w-[38px] h-[38px] rounded-full bg-tz-black flex items-center justify-center font-display font-extrabold text-sm text-tz-bone shrink-0">
+        <div className="w-[34px] h-[34px] sm:w-[38px] sm:h-[38px] rounded-full bg-tz-black flex items-center justify-center font-display font-extrabold text-sm text-tz-bone shrink-0">
           {initials(name)}
         </div>
         <div className="leading-[1.15] hidden sm:block">
@@ -27,7 +27,7 @@ export default function UserMenu({
       </div>
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
-        className="text-[13px] font-semibold text-brand-footer border border-brand-border bg-white rounded-lg px-3.5 py-2 transition-colors duration-[180ms] hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+        className="text-[13px] font-semibold text-brand-footer border border-brand-border bg-white rounded-lg px-3 py-2 sm:px-3.5 whitespace-nowrap transition-colors duration-[180ms] hover:bg-brand-ink hover:text-white hover:border-brand-ink"
       >
         Cerrar sesión
       </button>
