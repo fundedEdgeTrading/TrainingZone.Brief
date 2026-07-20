@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
+
+const noopSubscribe = () => () => {};
+function useMounted() {
+  return useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  );
+}
 
 export function Drawer({
   open,
@@ -17,6 +27,8 @@ export function Drawer({
   widthClassName?: string;
   children: React.ReactNode;
 }) {
+  const mounted = useMounted();
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -30,7 +42,12 @@ export function Drawer({
     };
   }, [open, onClose]);
 
-  return (
+  if (!mounted) return null;
+
+  // Se renderiza en un portal a document.body: un ancestro de la página con una
+  // animación de entrada (transform) crearía un containing block nuevo y rompería
+  // el position:fixed del drawer (se saldría de la pantalla real).
+  return createPortal(
     <>
       <div
         onClick={onClose}
@@ -66,7 +83,8 @@ export function Drawer({
         </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
 
