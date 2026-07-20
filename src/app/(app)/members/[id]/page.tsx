@@ -5,7 +5,9 @@ import { getHealthRecordsForMember } from "@/lib/health-access";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
-import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm } from "./member-forms";
+import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ContactForm, ResendWelcomeButton } from "./member-forms";
+import { EditableMemberPhoto } from "./member-photo";
+import { AddProgressEntryForm, ProgressComparator } from "./progress-forms";
 
 const HEALTH_TYPE_LABEL: Record<string, string> = {
   INJURY: "Lesión",
@@ -61,19 +63,20 @@ export default async function MemberDetailPage({
     <div className="tz-page space-y-4">
       <div className="bg-brand-card border border-brand-border rounded-card p-6 shadow-card flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <span className="w-14 h-14 rounded-full bg-tz-sand text-brand-text-2 font-display font-extrabold text-lg flex items-center justify-center shrink-0">
-            {initials(member.firstName, member.lastName)}
-          </span>
+          <EditableMemberPhoto memberId={member.id} photoUrl={member.photoUrl} initials={initials(member.firstName, member.lastName)} />
           <div>
             <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text leading-none">
               {member.firstName} {member.lastName}
             </h1>
             <p className="text-sm text-brand-muted mt-1.5">
-              {member.email} · {member.primaryCenter.name}
+              {member.email} · {member.primaryCenter.name} · Alta {member.joinedAt.toLocaleDateString("es-ES")}
             </p>
           </div>
         </div>
-        <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
+        <div className="flex items-center gap-3">
+          {!member.userId && <ResendWelcomeButton memberId={member.id} />}
+          <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
+        </div>
       </div>
 
       <div className="bg-brand-card border border-brand-border rounded-card p-5 shadow-card">
@@ -83,26 +86,90 @@ export default async function MemberDetailPage({
               key: "datos",
               label: "Datos",
               content: (
-                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm max-w-xl">
-                  <dt className="text-muted">Teléfono</dt>
-                  <dd className="text-tz-black">{member.phone ?? "—"}</dd>
-                  <dt className="text-muted">Fecha de nacimiento</dt>
-                  <dd className="text-tz-black">
-                    {member.birthDate ? member.birthDate.toLocaleDateString("es-ES") : "—"}
-                  </dd>
-                  <dt className="text-muted">Alta</dt>
-                  <dd className="text-tz-black">{member.joinedAt.toLocaleDateString("es-ES")}</dd>
-                  <dt className="text-muted">Baja</dt>
-                  <dd className="text-tz-black">
-                    {member.cancelledAt ? member.cancelledAt.toLocaleDateString("es-ES") : "—"}
-                  </dd>
-                  <dt className="text-muted">Consentimiento contrato</dt>
-                  <dd className="text-tz-black">{member.consentContract ? "Sí" : "No"}</dd>
-                  <dt className="text-muted">Consentimiento datos de salud</dt>
-                  <dd className="text-tz-black">{member.consentHealth ? "Sí" : "No"}</dd>
-                  <dt className="text-muted">Consentimiento marketing</dt>
-                  <dd className="text-tz-black">{member.consentMarketing ? "Sí" : "No"}</dd>
-                </dl>
+                <ContactForm
+                  member={{
+                    id: member.id,
+                    email: member.email,
+                    phone: member.phone,
+                    address: member.address,
+                    birthDate: member.birthDate ? member.birthDate.toISOString().slice(0, 10) : null,
+                    emergencyContact: member.emergencyContact,
+                    consentContractAt: member.consentContractAt ? member.consentContractAt.toISOString() : null,
+                    consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
+                    consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
+                    consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                  }}
+                />
+              ),
+            },
+            {
+              key: "evolucion",
+              label: "Fotos y evolución",
+              content: (
+                <div className="space-y-6">
+                  {member.consentImages ? (
+                    <AddProgressEntryForm memberId={member.id} />
+                  ) : (
+                    <div className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
+                      Este socio no ha firmado el consentimiento de uso de imágenes. No se pueden guardar fotos de
+                      evolución hasta que lo otorgue en su onboarding.
+                    </div>
+                  )}
+                  {member.progressEntries.length === 0 ? (
+                    <p className="text-sm text-muted">Sin registros de evolución todavía.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {member.progressEntries.map((entry) => (
+                        <div key={entry.id} className="border border-tz-linen rounded-xl p-5">
+                          <div className="flex items-center justify-between gap-3 flex-wrap mb-3.5">
+                            <div className="font-bold text-[15px] text-tz-black">
+                              {entry.date.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                              {entry.weightKg != null && (
+                                <span className="rounded-pill bg-tz-sand px-3 py-1 text-xs font-semibold text-text-2 tz-nums">
+                                  {entry.weightKg} kg
+                                </span>
+                              )}
+                              {entry.bodyFatPct != null && (
+                                <span className="rounded-pill bg-tz-sand px-3 py-1 text-xs font-semibold text-text-2 tz-nums">
+                                  {entry.bodyFatPct} % graso
+                                </span>
+                              )}
+                              {entry.waistCm != null && (
+                                <span className="rounded-pill bg-tz-sand px-3 py-1 text-xs font-semibold text-text-2 tz-nums">
+                                  {entry.waistCm} cm cintura
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {[
+                              { url: entry.photoFrontUrl, label: "Frente" },
+                              { url: entry.photoSideUrl, label: "Perfil" },
+                              { url: entry.photoBackUrl, label: "Espalda" },
+                            ].map((slot) => (
+                              <div key={slot.label}>
+                                <div className="h-[200px] rounded-xl bg-tz-bone border border-tz-linen overflow-hidden flex items-center justify-center">
+                                  {slot.url ? (
+                                    // eslint-disable-next-line @next/next/no-img-element -- foto de evolución subida por el usuario
+                                    <img src={slot.url} alt={slot.label} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <span className="text-xs text-faint">Sin foto</span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mt-2 text-center">
+                                  {slot.label}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                      <ProgressComparator entries={member.progressEntries} />
+                    </div>
+                  )}
+                </div>
               ),
             },
             {

@@ -6,11 +6,12 @@ import {
   updateOrganization,
   createCenter,
   updateCenterLogo,
-  createStaffUser,
   assignUserToCenter,
 } from "./actions";
 import { RemoveMembershipButton } from "./controls";
+import { StaffDrawer } from "./staff-drawer";
 import AptaLogo from "@/components/apta-logo";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
@@ -154,82 +155,67 @@ export default async function OrganizationPage() {
 
       {/* ---------- Equipo ---------- */}
       <section className="space-y-3">
-        <h2 className={SECTION_TITLE}>Equipo</h2>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className={SECTION_TITLE}>Equipo</h2>
+            <p className="text-xs text-brand-muted mt-0.5">{staff.length} personas</p>
+          </div>
+          <StaffDrawer centers={centers} createRoles={createRoles} />
+        </div>
+
+        <div className="bg-tz-bone border border-brand-border rounded-xl px-4.5 py-3 text-[13px] text-text-2 flex gap-2.5 items-center">
+          <span className="w-2 h-2 rounded-full bg-apta-gold shrink-0" />
+          Solo Dirección de organización y RRHH pueden dar de alta personal y asignar roles; Dirección de centro no
+          tiene acceso a esta sección.
+        </div>
+
         <TableShell>
           <THead>
             <Th>Persona</Th>
             <Th>Rol base</Th>
             <Th>Imputación a centros</Th>
+            <Th>Estado de acceso</Th>
           </THead>
           <tbody>
-            {staff.map((u) => (
-              <TRow key={u.id}>
-                <Td>
-                  <div className="font-medium text-brand-text">{u.name}</div>
-                  <div className="text-xs text-faint">{u.email}</div>
-                </Td>
-                <Td className="text-text-2">{ROLE_LABEL[u.role]}</Td>
-                <Td>
-                  {u.centerMemberships.length === 0 ? (
-                    <span className="text-xs text-faint">Toda la organización</span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {u.centerMemberships.map((m) => (
-                        <span
-                          key={m.id}
-                          className="inline-flex items-center gap-1.5 rounded-pill bg-tz-sand px-2.5 py-1 text-[11px] text-text-2"
-                        >
-                          <span className="font-semibold">{m.center.name}</span>
-                          <span className="text-faint">
-                            {ROLE_LABEL[m.role]}
-                            {m.allocationPct != null ? ` · ${m.allocationPct}%` : ""}
-                            {m.isPrimary ? " · base" : ""}
+            {staff.map((u) => {
+              const active = !u.invitation || !!u.invitation.usedAt;
+              return (
+                <TRow key={u.id}>
+                  <Td>
+                    <div className="font-medium text-brand-text">{u.name}</div>
+                    <div className="text-xs text-faint">{u.email}</div>
+                  </Td>
+                  <Td className="text-text-2">{ROLE_LABEL[u.role]}</Td>
+                  <Td>
+                    {u.centerMemberships.length === 0 ? (
+                      <span className="text-xs text-faint">Toda la organización</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {u.centerMemberships.map((m) => (
+                          <span
+                            key={m.id}
+                            className="inline-flex items-center gap-1.5 rounded-pill bg-tz-sand px-2.5 py-1 text-[11px] text-text-2"
+                          >
+                            <span className="font-semibold">{m.center.name}</span>
+                            <span className="text-faint">
+                              {ROLE_LABEL[m.role]}
+                              {m.allocationPct != null ? ` · ${m.allocationPct}%` : ""}
+                              {m.isPrimary ? " · base" : ""}
+                            </span>
+                            <RemoveMembershipButton id={m.id} />
                           </span>
-                          <RemoveMembershipButton id={m.id} />
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </Td>
-              </TRow>
-            ))}
+                        ))}
+                      </div>
+                    )}
+                  </Td>
+                  <Td>
+                    <Badge tone={active ? "good" : "warning"}>{active ? "Acceso activo" : "Invitación enviada"}</Badge>
+                  </Td>
+                </TRow>
+              );
+            })}
           </tbody>
         </TableShell>
-
-        <ActionForm
-          action={createStaffUser}
-          successMessage="Persona dada de alta."
-          className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
-        >
-          <Field label="Nombre" className="md:col-span-2">
-            <Input name="name" placeholder="Nombre y apellidos" required />
-          </Field>
-          <Field label="Email">
-            <Input name="email" type="email" placeholder="persona@empresa.es" required />
-          </Field>
-          <Field label="Rol">
-            <Select name="role" defaultValue="TRAINER">
-              {createRoles.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Centro base" hint="Solo roles de centro">
-            <Select name="primaryCenterId" defaultValue="">
-              <option value="">— (organización) —</option>
-              {centers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Button type="submit" className="md:col-span-5 md:justify-self-start">
-            Dar de alta persona
-          </Button>
-        </ActionForm>
       </section>
 
       {/* ---------- Imputación ---------- */}
