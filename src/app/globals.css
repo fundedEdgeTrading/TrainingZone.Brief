@@ -97,6 +97,34 @@
     transform: none;
   }
 }
+/* Dos keyframes idénticos para el wizard: alternarlos entre pasos retriggerea
+   la animación aunque el navegador colapse animaciones con el mismo nombre. */
+@keyframes wizA {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes wizB {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.tz-wiz-a {
+  animation: wizA 0.45s var(--ease-out-soft) both;
+}
+.tz-wiz-b {
+  animation: wizB 0.45s var(--ease-out-soft) both;
+}
 @keyframes tzHeadIn {
   from {
     opacity: 0;

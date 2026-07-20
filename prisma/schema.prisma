@@ -31,6 +31,7 @@ model Organization {
   aptitudeRules AptitudeRule[]
   centerMemberships CenterMembership[]
   memberNotes       MemberNote[]
+  invitations       Invitation[]
 }
 
 model Center {
@@ -88,8 +89,40 @@ model User {
   aptitudeRulesEdited  AptitudeRule[]    @relation("EditedBy")
   centerMemberships    CenterMembership[]
   memberNotesAuthored  MemberNote[]      @relation("MemberNoteAuthor")
+  invitation           Invitation?
 
   @@index([orgId])
+}
+
+// ---------- Invitaciones (F7 self-service + alta de personal/socios) ----------
+// Token de un solo uso para que personal y socios creen su contraseña
+// (personal) o contraseña + consentimientos (socios). Caduca a los 7 días
+// (RB descrita en el handoff). Sin backend de email real en esta demo: el
+// enlace se registra vía lib/mailer.ts (log de servidor).
+
+enum InvitationType {
+  STAFF
+  MEMBER
+}
+
+model Invitation {
+  id        String         @id @default(cuid())
+  orgId     String
+  type      InvitationType
+  token     String         @unique
+  email     String
+  userId    String?        @unique
+  memberId  String?        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+  member       Member?      @relation(fields: [memberId], references: [id])
+
+  @@index([orgId])
+  @@index([expiresAt])
 }
 
 // Imputación de personal a centros: relación N:N staff ↔ centro con un rol y un
@@ -130,37 +163,67 @@ enum MemberState {
 }
 
 model Member {
-  id               String      @id @default(cuid())
-  orgId            String
-  primaryCenterId  String
-  userId           String?     @unique
-  firstName        String
-  lastName         String
-  email            String
-  phone            String?
-  birthDate        DateTime?
-  state            MemberState @default(PROSPECT)
-  joinedAt         DateTime    @default(now())
-  cancelledAt      DateTime?
-  consentContract  Boolean     @default(true)
-  consentHealth    Boolean     @default(false)
-  consentMarketing Boolean     @default(false)
-  notes            String?
-  createdAt        DateTime    @default(now())
+  id                 String      @id @default(cuid())
+  orgId              String
+  primaryCenterId    String
+  userId             String?     @unique
+  firstName          String
+  lastName           String
+  email              String
+  phone              String?
+  birthDate          DateTime?
+  address            String?
+  emergencyContact   String?
+  photoUrl           String? // foto de perfil (subida como data URL en esta demo)
+  state              MemberState @default(PROSPECT)
+  joinedAt           DateTime    @default(now())
+  cancelledAt        DateTime?
+  consentContract    Boolean     @default(true)
+  consentHealth      Boolean     @default(false)
+  consentImages      Boolean     @default(false) // uso de imágenes (fotos de evolución)
+  consentMarketing   Boolean     @default(false)
+  consentContractAt  DateTime?
+  consentHealthAt    DateTime?
+  consentImagesAt    DateTime?
+  consentMarketingAt DateTime?
+  consentVersion     String? // versión del texto legal firmado en el onboarding
+  notes              String?
+  createdAt          DateTime    @default(now())
 
-  organization    Organization     @relation(fields: [orgId], references: [id])
-  primaryCenter   Center           @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
-  user            User?            @relation("MemberUser", fields: [userId], references: [id])
+  organization    Organization           @relation(fields: [orgId], references: [id])
+  primaryCenter   Center                 @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
+  user            User?                  @relation("MemberUser", fields: [userId], references: [id])
   subscriptions   Subscription[]
   bookings        Booking[]
   payments        Payment[]
   healthRecords   HealthRecord[]
   retentionAlerts RetentionAlert[]
   noteEntries     MemberNote[]
+  progressEntries MemberProgressEntry[]
+  invitation      Invitation?
 
   @@index([orgId])
   @@index([primaryCenterId])
   @@index([state])
+}
+
+// Fotos y métricas de evolución física (Ficha Socio). Visibles solo para el
+// socio y su entrenador asignado (mismo ámbito que health-access).
+model MemberProgressEntry {
+  id            String   @id @default(cuid())
+  memberId      String
+  date          DateTime @default(now())
+  weightKg      Float?
+  bodyFatPct    Float?
+  waistCm       Float?
+  photoFrontUrl String?
+  photoSideUrl  String?
+  photoBackUrl  String?
+  createdAt     DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@index([memberId])
 }
 
 // Bitácora de comentarios internos del socio (RB-LEAD-008): lista cronológica

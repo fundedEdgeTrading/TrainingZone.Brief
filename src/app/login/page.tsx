@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import LoginForm from "./login-form";
 import AptaLogo from "@/components/apta-logo";
 
@@ -54,6 +55,19 @@ export default function LoginPage() {
               <Suspense>
                 <LoginForm />
               </Suspense>
+            </div>
+
+            <div
+              className="mt-4 short:mt-3 bg-tz-black rounded-xl px-4 py-3.5 sm:px-5 flex items-center justify-between gap-3 flex-wrap tz-fade-up"
+              style={{ animationDelay: "0.5s" }}
+            >
+              <span className="text-[13px] text-brand-muted-2">¿Tu empresa aún no está en la plataforma?</span>
+              <Link
+                href="/register"
+                className="text-[13px] font-bold text-tz-bone no-underline inline-flex items-center gap-1.5 border border-brand-border-dark rounded-pill px-4 py-[7px] whitespace-nowrap transition-colors duration-200 hover:bg-brand-ink-soft hover:border-apta-gold"
+              >
+                Registrar organización <span aria-hidden="true">→</span>
+              </Link>
             </div>
 
             <p className="text-center text-faint text-xs short:text-[11px] mt-4 short:mt-3">

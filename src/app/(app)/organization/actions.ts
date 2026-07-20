@@ -1,10 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import bcrypt from "bcryptjs";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { canManageOrg } from "@/lib/rbac";
+import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
+import { createStaffWithInvitation, onboardingUrlFor } from "@/lib/invitations";
+import { sendMail } from "@/lib/mailer";
+import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import type { Role } from "@prisma/client";
 
 const STAFF_ROLES: Role[] = [
@@ -112,18 +114,9 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
     centerId = center.id;
   }
 
-  const passwordHash = await bcrypt.hash("demo1234", 10);
-  const user = await prisma.user.create({
-    data: {
-      orgId: session.user.orgId,
-      centerId,
-      name,
-      email,
-      passwordHash,
-      role,
-      authProvider: "demo",
-    },
-  });
+  const { user, invitation } = await prisma.$transaction((tx) =>
+    createStaffWithInvitation(tx, { orgId: session.user.orgId, name, email, role, centerId })
+  );
 
   // Imputación primaria automática para roles de centro.
   if (centerId) {
@@ -131,6 +124,19 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
       data: { orgId: session.user.orgId, userId: user.id, centerId, role, isPrimary: true, allocationPct: 100 },
     });
   }
+
+  const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
+  await sendMail({
+    to: email,
+    subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}! Tu acceso te espera`,
+    html: renderStaffInviteEmail({
+      staffFirstName: name.split(/\s+/)[0] ?? name,
+      orgName: org?.name ?? "Training Zone",
+      orgLogoUrl: org?.logoUrl || "/brand/tz-logo-white.png",
+      roleLabel: ROLE_LABEL[role],
+      onboardingUrl: onboardingUrlFor(invitation.token),
+    }),
+  });
 
   revalidatePath("/organization");
   return { ok: true };

@@ -36,6 +36,7 @@ export async function getStaffWithMemberships(orgId: string) {
         include: { center: { select: { id: true, name: true } } },
         orderBy: { isPrimary: "desc" },
       },
+      invitation: { select: { usedAt: true, expiresAt: true } },
     },
   });
 }

@@ -45,6 +45,8 @@ export async function getMemberDetail(orgId: string, memberId: string) {
         take: 30,
         include: { session: true, debrief: true },
       },
+      progressEntries: { orderBy: { date: "desc" } },
+      invitation: { select: { usedAt: true, expiresAt: true } },
     },
   });
 }
@@ -54,6 +56,18 @@ export async function getMemberNotes(orgId: string, memberId: string) {
     where: { orgId, memberId },
     include: { author: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function listCentersForOrg(orgId: string) {
+  return prisma.center.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+}
+
+export async function listActivePlansForOrg(orgId: string) {
+  return prisma.membershipPlan.findMany({
+    where: { orgId, active: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
   });
 }
 

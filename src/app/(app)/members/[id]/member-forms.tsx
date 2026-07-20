@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { addHealthRecord, resolveHealthRecordAction, addMemberNote } from "./actions";
+import { addHealthRecord, resolveHealthRecordAction, addMemberNote, updateMemberContact, resendMemberWelcome } from "./actions";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -118,6 +118,108 @@ export function ResolveHealthButton({ recordId, memberId }: { recordId: string; 
     >
       Resolver
     </button>
+  );
+}
+
+function fmtDate(d: string | null) {
+  return d
+    ? "Sí · " +
+        new Date(d).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })
+    : "No";
+}
+
+export function ContactForm({
+  member,
+}: {
+  member: {
+    id: string;
+    email: string;
+    phone: string | null;
+    address: string | null;
+    birthDate: string | null;
+    emergencyContact: string | null;
+    consentContractAt: string | null;
+    consentHealthAt: string | null;
+    consentImagesAt: string | null;
+    consentMarketingAt: string | null;
+  };
+}) {
+  const [pending, startTransition] = useTransition();
+  const toast = useToast();
+
+  return (
+    <form
+      action={(fd) =>
+        startTransition(async () => {
+          const result = await updateMemberContact(fd);
+          if (result.ok) toast.success("Datos de contacto guardados.");
+          else toast.error(result.error);
+        })
+      }
+      className="max-w-xl"
+    >
+      <input type="hidden" name="memberId" value={member.id} />
+      <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-3.5">
+        Datos de contacto
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <Field label="Email">
+          <Input name="email" type="email" defaultValue={member.email} required />
+        </Field>
+        <Field label="Teléfono">
+          <Input name="phone" defaultValue={member.phone ?? ""} />
+        </Field>
+        <Field label="Dirección" className="sm:col-span-2">
+          <Input name="address" defaultValue={member.address ?? ""} />
+        </Field>
+        <Field label="Fecha de nacimiento">
+          <Input name="birthDate" type="date" defaultValue={member.birthDate ?? ""} />
+        </Field>
+        <Field label="Contacto de emergencia">
+          <Input name="emergencyContact" defaultValue={member.emergencyContact ?? ""} />
+        </Field>
+      </div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm mt-5 max-w-lg">
+        <dt className="text-muted">Consentimiento contrato</dt>
+        <dd className="text-tz-black">{fmtDate(member.consentContractAt)}</dd>
+        <dt className="text-muted">Consentimiento datos de salud</dt>
+        <dd className="text-tz-black">{fmtDate(member.consentHealthAt)}</dd>
+        <dt className="text-muted">Uso de imágenes (evolución)</dt>
+        <dd className="text-tz-black">{fmtDate(member.consentImagesAt)}</dd>
+        <dt className="text-muted">Consentimiento marketing</dt>
+        <dd className="text-tz-black">{fmtDate(member.consentMarketingAt)}</dd>
+      </dl>
+      <div className="mt-5">
+        <Button type="submit" disabled={pending}>
+          {pending && <ButtonSpinner />}
+          {pending ? "Guardando..." : "Guardar cambios"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function ResendWelcomeButton({ memberId }: { memberId: string }) {
+  const [pending, startTransition] = useTransition();
+  const toast = useToast();
+
+  return (
+    <Button
+      type="button"
+      variant="secondary"
+      size="sm"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await resendMemberWelcome(memberId);
+          if (result.ok) toast.success("Email de bienvenida reenviado.");
+          else toast.error(result.error);
+        })
+      }
+    >
+      {pending && <ButtonSpinner />}
+      {pending ? "Enviando..." : "Reenviar bienvenida"}
+    </Button>
   );
 }
 
