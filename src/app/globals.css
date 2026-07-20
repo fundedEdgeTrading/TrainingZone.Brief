@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Pantallas de poca altura (portátiles pequeños): compactar el login */
+@custom-variant short (@media (max-height: 700px));
+
 :root {
   --background: #f4f0e8;
   --foreground: #1d1d1c;
@@ -69,6 +72,9 @@
   /* Motion */
   --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.4, 1);
+
+  /* Acento dorado del wordmark Apta */
+  --color-apta-gold: #c8ab72;
 }
 
 @keyframes tzNavIn {
@@ -136,6 +142,191 @@
   40% { transform: translateX(4px); }
   60% { transform: translateX(-3px); }
   80% { transform: translateX(3px); }
+}
+
+/* ===== Login premium: wordmark Apta ===== */
+@keyframes aptaLetterIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.45em) scale(0.96);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes aptaShine {
+  0% {
+    background-position: -140% 0;
+  }
+  32% {
+    background-position: 260% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+@keyframes aptaDotIn {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.45);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes aptaDotPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(200, 171, 114, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 0.22em rgba(200, 171, 114, 0);
+  }
+}
+
+.apta-logo {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+}
+.apta-logo-light {
+  --apta-shine: rgba(233, 216, 178, 0.95);
+  color: var(--color-tz-bone);
+}
+.apta-logo-dark {
+  --apta-shine: rgba(164, 128, 71, 0.85);
+  color: var(--color-tz-black);
+}
+.apta-letter {
+  display: inline-block;
+  animation: aptaLetterIn 0.7s var(--ease-out-soft) both;
+}
+.apta-shine-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  line-height: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    var(--apta-shine) 50%,
+    transparent 60%
+  );
+  background-size: 220% 100%;
+  background-position: -140% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: aptaShine 5.5s ease-in-out 1.6s infinite;
+}
+.apta-dot {
+  width: 0.16em;
+  height: 0.16em;
+  margin-left: 0.1em;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #e3cfa2, #b58e52);
+  animation:
+    aptaDotIn 0.5s var(--ease-spring) 0.5s both,
+    aptaDotPulse 3.2s ease-in-out 1.4s infinite;
+}
+
+/* ===== Login premium: aurora del panel oscuro ===== */
+@keyframes tzAuroraDrift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, -5%, 0) scale(1.12);
+  }
+  100% {
+    transform: translate3d(-5%, 6%, 0) scale(0.94);
+  }
+}
+@keyframes tzFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+
+.tz-aurora-blob {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(70px);
+  will-change: transform;
+}
+.tz-aurora-a {
+  width: 420px;
+  height: 420px;
+  left: -120px;
+  top: -80px;
+  background: radial-gradient(circle, rgba(216, 204, 184, 0.16), transparent 70%);
+  animation: tzAuroraDrift 24s ease-in-out infinite alternate;
+}
+.tz-aurora-b {
+  width: 380px;
+  height: 380px;
+  right: -100px;
+  top: 30%;
+  background: radial-gradient(circle, rgba(200, 171, 114, 0.14), transparent 70%);
+  animation: tzAuroraDrift 30s ease-in-out -8s infinite alternate-reverse;
+}
+.tz-aurora-c {
+  width: 460px;
+  height: 460px;
+  left: 10%;
+  bottom: -160px;
+  background: radial-gradient(circle, rgba(244, 240, 232, 0.1), transparent 70%);
+  animation: tzAuroraDrift 27s ease-in-out -15s infinite alternate;
+}
+.tz-float-slow {
+  animation: tzFloat 9s ease-in-out infinite;
+}
+.tz-float-slower {
+  animation: tzFloat 13s ease-in-out -3s infinite;
+}
+
+/* ===== Login premium: destello único sobre la tarjeta ===== */
+@keyframes tzCardSheen {
+  0% {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(340%) skewX(-18deg);
+  }
+}
+.tz-card-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.tz-card-sheen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  background: linear-gradient(
+    105deg,
+    transparent,
+    rgba(216, 204, 184, 0.24) 50%,
+    transparent
+  );
+  transform: translateX(-140%) skewX(-18deg);
+  animation: tzCardSheen 1.5s var(--ease-out-soft) 0.9s both;
+  pointer-events: none;
 }
 
 .tz-nav-in {
