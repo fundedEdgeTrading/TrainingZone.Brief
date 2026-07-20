@@ -4,10 +4,12 @@ import { useState, useTransition } from "react";
 import { updateAlertStatus } from "./actions";
 import type { RetentionAlertStatus } from "@prisma/client";
 import { Button, ButtonSpinner } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 export default function AlertActions({ alertId, status }: { alertId: string; status: RetentionAlertStatus }) {
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState<RetentionAlertStatus | null>(null);
+  const toast = useToast();
 
   if (status !== "OPEN") {
     return (
@@ -19,8 +21,13 @@ export default function AlertActions({ alertId, status }: { alertId: string; sta
 
   function set(s: RetentionAlertStatus) {
     startTransition(async () => {
-      await updateAlertStatus(alertId, s);
-      setDone(s);
+      try {
+        await updateAlertStatus(alertId, s);
+        setDone(s);
+        toast.success("Alerta actualizada.");
+      } catch {
+        toast.error("No se ha podido actualizar la alerta.");
+      }
     });
   }
 

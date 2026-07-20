@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { deleteAptitudeRule } from "./actions";
+import { useToast } from "@/components/ui/toast";
 
 export default function DeleteButton({ id }: { id: string }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!confirming) return;
@@ -13,11 +15,22 @@ export default function DeleteButton({ id }: { id: string }) {
     return () => clearTimeout(t);
   }, [confirming]);
 
+  function handleDelete() {
+    startTransition(async () => {
+      const result = await deleteAptitudeRule(id);
+      if (result.ok) {
+        toast.success("Regla eliminada.");
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
   if (confirming) {
     return (
       <button
         disabled={pending}
-        onClick={() => startTransition(() => deleteAptitudeRule(id))}
+        onClick={handleDelete}
         className="text-xs font-semibold text-critical hover:opacity-80 transition-opacity"
       >
         ¿Seguro? Confirmar

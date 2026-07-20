@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { removeCenterMembership } from "./actions";
+import { useToast } from "@/components/ui/toast";
 
 export function RemoveMembershipButton({ id }: { id: string }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!confirming) return;
@@ -13,11 +15,22 @@ export function RemoveMembershipButton({ id }: { id: string }) {
     return () => clearTimeout(t);
   }, [confirming]);
 
+  function handleRemove() {
+    startTransition(async () => {
+      const result = await removeCenterMembership(id);
+      if (result.ok) {
+        toast.success("Imputación eliminada.");
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
   if (confirming) {
     return (
       <button
         disabled={pending}
-        onClick={() => startTransition(() => removeCenterMembership(id))}
+        onClick={handleRemove}
         className="text-[11px] font-semibold text-critical hover:opacity-80 transition-opacity"
         title="Confirmar quitar imputación"
       >

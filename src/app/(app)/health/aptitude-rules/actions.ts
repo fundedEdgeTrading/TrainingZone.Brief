@@ -5,7 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import type { AptitudeLight } from "@prisma/client";
 
-export async function createAptitudeRule(formData: FormData) {
+export type AptitudeRuleActionResult = { ok: true } | { ok: false; error: string };
+
+export async function createAptitudeRule(formData: FormData): Promise<AptitudeRuleActionResult> {
   const session = await requireRole(["OWNER"]);
 
   const injuryZone = String(formData.get("injuryZone") ?? "").trim();
@@ -13,7 +15,7 @@ export async function createAptitudeRule(formData: FormData) {
   const light = String(formData.get("light") ?? "GREEN") as AptitudeLight;
   const adaptation = String(formData.get("adaptation") ?? "").trim() || null;
 
-  if (!injuryZone || !blockArea) return;
+  if (!injuryZone || !blockArea) return { ok: false, error: "Indica la zona y el bloque de trabajo." };
 
   await prisma.aptitudeRule.create({
     data: {
@@ -27,10 +29,12 @@ export async function createAptitudeRule(formData: FormData) {
   });
 
   revalidatePath("/health/aptitude-rules");
+  return { ok: true };
 }
 
-export async function deleteAptitudeRule(id: string) {
+export async function deleteAptitudeRule(id: string): Promise<AptitudeRuleActionResult> {
   await requireRole(["OWNER"]);
   await prisma.aptitudeRule.delete({ where: { id } });
   revalidatePath("/health/aptitude-rules");
+  return { ok: true };
 }
