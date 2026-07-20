@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
+import { ActionForm } from "@/components/ui/action-form";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
@@ -66,7 +67,12 @@ export default async function OrganizationPage() {
                 )}
               </div>
             </div>
-            <form action={updateOrganization} className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <ActionForm
+              action={updateOrganization}
+              successMessage="Marca actualizada."
+              resetOnSuccess={false}
+              className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 items-end"
+            >
               <Field label="Nombre de la organización">
                 <Input name="name" defaultValue={org.name} required />
               </Field>
@@ -74,7 +80,7 @@ export default async function OrganizationPage() {
                 <Input name="logoUrl" defaultValue={org.logoUrl ?? ""} placeholder="/brand/mi-logo.svg o https://..." />
               </Field>
               <Button type="submit">Guardar marca</Button>
-            </form>
+            </ActionForm>
           </div>
         </section>
       )}
@@ -103,7 +109,12 @@ export default async function OrganizationPage() {
                 {c._count.members} socios · {c._count.staffMemberships} personas imputadas
               </p>
               {canOrg && (
-                <form action={updateCenterLogo} className="mt-3 flex items-end gap-2">
+                <ActionForm
+                  action={updateCenterLogo}
+                  successMessage="Logo del centro actualizado."
+                  resetOnSuccess={false}
+                  className="mt-3 flex items-end gap-2"
+                >
                   <input type="hidden" name="centerId" value={c.id} />
                   <Field label="Logo (URL)" className="flex-1">
                     <Input name="logoUrl" defaultValue={c.logoUrl ?? ""} placeholder="/brand/… (vacío = hereda)" />
@@ -111,7 +122,7 @@ export default async function OrganizationPage() {
                   <Button type="submit" variant="secondary" size="sm">
                     Guardar
                   </Button>
-                </form>
+                </ActionForm>
               )}
             </div>
           ))}
@@ -119,7 +130,11 @@ export default async function OrganizationPage() {
         </div>
 
         {canOrg && (
-          <form action={createCenter} className={`${CARD} grid grid-cols-1 md:grid-cols-4 gap-3 items-end`}>
+          <ActionForm
+            action={createCenter}
+            successMessage="Centro añadido."
+            className={`${CARD} grid grid-cols-1 md:grid-cols-4 gap-3 items-end`}
+          >
             <Field label="Nombre del centro" className="md:col-span-2">
               <Input name="name" placeholder="p.ej. Vitalia Este" required />
             </Field>
@@ -133,7 +148,7 @@ export default async function OrganizationPage() {
               <Input name="address" placeholder="Calle, número, ciudad" />
             </Field>
             <Button type="submit">Añadir centro</Button>
-          </form>
+          </ActionForm>
         )}
       </section>
 
@@ -181,7 +196,11 @@ export default async function OrganizationPage() {
           </tbody>
         </TableShell>
 
-        <form action={createStaffUser} className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}>
+        <ActionForm
+          action={createStaffUser}
+          successMessage="Persona dada de alta."
+          className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
+        >
           <Field label="Nombre" className="md:col-span-2">
             <Input name="name" placeholder="Nombre y apellidos" required />
           </Field>
@@ -210,7 +229,7 @@ export default async function OrganizationPage() {
           <Button type="submit" className="md:col-span-5 md:justify-self-start">
             Dar de alta persona
           </Button>
-        </form>
+        </ActionForm>
       </section>
 
       {/* ---------- Imputación ---------- */}
@@ -221,7 +240,11 @@ export default async function OrganizationPage() {
           dedicación. Así un entrenador puede repartirse entre varios centros o una dirección
           supervisar más de uno.
         </p>
-        <form action={assignUserToCenter} className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}>
+        <ActionForm
+          action={assignUserToCenter}
+          successMessage="Imputación guardada."
+          className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
+        >
           <Field label="Persona" className="md:col-span-2">
             <Select name="userId" required defaultValue="">
               <option value="">Seleccionar...</option>
@@ -257,7 +280,7 @@ export default async function OrganizationPage() {
           <Button type="submit" className="md:col-span-5 md:justify-self-start">
             Imputar a centro
           </Button>
-        </form>
+        </ActionForm>
       </section>
     </div>
   );

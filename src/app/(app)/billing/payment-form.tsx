@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { registerManualPayment } from "./actions";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 type MemberOption = {
   id: string;
@@ -16,6 +17,7 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
   const [memberId, setMemberId] = useState("");
   const [pending, startTransition] = useTransition();
   const [done, setDone] = useState(false);
+  const toast = useToast();
 
   const selected = useMemo(() => members.find((m) => m.id === memberId), [memberId, members]);
   const sub = selected?.subscriptions[0];
@@ -24,9 +26,14 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
     <form
       action={(fd) => {
         startTransition(async () => {
-          await registerManualPayment(fd);
-          setDone(true);
-          setTimeout(() => setDone(false), 2500);
+          const result = await registerManualPayment(fd);
+          if (result.ok) {
+            setDone(true);
+            toast.success("Cobro registrado.");
+            setTimeout(() => setDone(false), 2500);
+          } else {
+            toast.error(result.error);
+          }
         });
       }}
       className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end"

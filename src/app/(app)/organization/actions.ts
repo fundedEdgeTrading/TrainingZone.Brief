@@ -27,41 +27,45 @@ function slugify(s: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+export type OrgActionResult = { ok: true } | { ok: false; error: string };
+
 // ---------- Organización (marca / logo) ----------
-export async function updateOrganization(formData: FormData) {
+export async function updateOrganization(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
   const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
-  if (!name) return;
+  if (!name) return { ok: false, error: "El nombre de la organización es obligatorio." };
 
   await prisma.organization.update({
     where: { id: session.user.orgId },
     data: { name, logoUrl },
   });
   revalidatePath("/organization");
+  return { ok: true };
 }
 
 // ---------- Centros (alta de estructura de la empresa) ----------
-export async function createCenter(formData: FormData) {
+export async function createCenter(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim() || null;
   const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
   const slug = slugify(String(formData.get("slug") ?? "").trim() || name);
-  if (!name || !slug) return;
+  if (!name || !slug) return { ok: false, error: "Indica al menos el nombre del centro." };
 
   const existing = await prisma.center.findFirst({
     where: { orgId: session.user.orgId, slug },
     select: { id: true },
   });
-  if (existing) return;
+  if (existing) return { ok: false, error: "Ya existe un centro con ese slug." };
 
   await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, logoUrl } });
   revalidatePath("/organization");
+  return { ok: true };
 }
 
 // Editar el logo de un centro (si es null, hereda el de la organización / Apta).
-export async function updateCenterLogo(formData: FormData) {
+export async function updateCenterLogo(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const centerId = String(formData.get("centerId") ?? "");
   const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
@@ -70,14 +74,15 @@ export async function updateCenterLogo(formData: FormData) {
     where: { id: centerId, orgId: session.user.orgId },
     select: { id: true },
   });
-  if (!center) return;
+  if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
 
   await prisma.center.update({ where: { id: centerId }, data: { logoUrl } });
   revalidatePath("/organization");
+  return { ok: true };
 }
 
 // ---------- Alta de personal ----------
-export async function createStaffUser(formData: FormData) {
+export async function createStaffUser(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -85,23 +90,25 @@ export async function createStaffUser(formData: FormData) {
   const primaryCenterId = String(formData.get("primaryCenterId") ?? "") || null;
 
   const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!name || !email || !role) return;
+  if (!name || !email || !role) return { ok: false, error: "Completa el nombre, el email y el rol." };
 
   // RRHH no puede crear administración de la organización (evita escalada de privilegios).
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) return;
+  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
+    return { ok: false, error: "No tienes permiso para crear ese rol." };
+  }
 
   const dup = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-  if (dup) return;
+  if (dup) return { ok: false, error: "Ya existe una persona con ese email." };
 
   // Centro base: obligatorio y validado para roles de centro; null para RRHH/dirección global.
   let centerId: string | null = null;
   if (CENTER_SCOPED.includes(role)) {
-    if (!primaryCenterId) return;
+    if (!primaryCenterId) return { ok: false, error: "Este rol necesita un centro base." };
     const center = await prisma.center.findFirst({
       where: { id: primaryCenterId, orgId: session.user.orgId },
       select: { id: true },
     });
-    if (!center) return;
+    if (!center) return { ok: false, error: "No se ha encontrado el centro base seleccionado." };
     centerId = center.id;
   }
 
@@ -126,10 +133,11 @@ export async function createStaffUser(formData: FormData) {
   }
 
   revalidatePath("/organization");
+  return { ok: true };
 }
 
 // ---------- Imputación de personal a centros ----------
-export async function assignUserToCenter(formData: FormData) {
+export async function assignUserToCenter(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
   const userId = String(formData.get("userId") ?? "");
   const centerId = String(formData.get("centerId") ?? "");
@@ -137,7 +145,7 @@ export async function assignUserToCenter(formData: FormData) {
   const allocationRaw = String(formData.get("allocationPct") ?? "").trim();
 
   const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!userId || !centerId || !role) return;
+  if (!userId || !centerId || !role) return { ok: false, error: "Selecciona la persona, el centro y el rol." };
 
   const allocationPct = allocationRaw
     ? Math.min(100, Math.max(0, Math.round(Number(allocationRaw))))
@@ -147,7 +155,7 @@ export async function assignUserToCenter(formData: FormData) {
     prisma.user.findFirst({ where: { id: userId, orgId: session.user.orgId }, select: { id: true } }),
     prisma.center.findFirst({ where: { id: centerId, orgId: session.user.orgId }, select: { id: true } }),
   ]);
-  if (!user || !center) return;
+  if (!user || !center) return { ok: false, error: "No se ha encontrado la persona o el centro." };
 
   await prisma.centerMembership.upsert({
     where: { userId_centerId: { userId, centerId } },
@@ -156,15 +164,17 @@ export async function assignUserToCenter(formData: FormData) {
   });
 
   revalidatePath("/organization");
+  return { ok: true };
 }
 
-export async function removeCenterMembership(id: string) {
+export async function removeCenterMembership(id: string): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
   const membership = await prisma.centerMembership.findFirst({
     where: { id, orgId: session.user.orgId },
     select: { id: true },
   });
-  if (!membership) return;
+  if (!membership) return { ok: false, error: "No se ha encontrado esa imputación." };
   await prisma.centerMembership.delete({ where: { id } });
   revalidatePath("/organization");
+  return { ok: true };
 }

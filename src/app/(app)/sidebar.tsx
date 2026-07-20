@@ -20,6 +20,9 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const { open, setOpen } = useMobileNav();
+  const activeHref = [...nav]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.href;
 
   return (
     <>
@@ -70,8 +73,7 @@ export default function Sidebar({
 
         <nav className="flex-1 px-3 flex flex-col gap-1 overflow-y-auto">
           {nav.map((item, i) => {
-            const active =
-              pathname === item.href || pathname.startsWith(item.href + "/");
+            const active = item.href === activeHref;
             return (
               <Link
                 key={item.href}

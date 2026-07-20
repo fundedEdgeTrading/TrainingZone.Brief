@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { setDebrief } from "./actions";
 import type { DebriefFeeling } from "@prisma/client";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 
 const LIGHT_STYLE: Record<string, { label: string; tone: BadgeTone; classes: string; dot: string }> = {
   RED: { label: "Evitar bloques marcados", tone: "critical", classes: "bg-critical-bg border-tz-linen", dot: "bg-critical" },
@@ -42,13 +43,21 @@ export default function BriefCard({
 }) {
   const [pending, startTransition] = useTransition();
   const [feeling, setFeeling] = useState<DebriefFeeling | null>(entry.debrief?.feeling ?? null);
+  const toast = useToast();
 
   const style = entry.light ? LIGHT_STYLE[entry.light] : null;
   const otherConditions = entry.conditions.filter((c) => !c.zone);
 
   function tap(f: DebriefFeeling) {
+    const previous = feeling;
     setFeeling(f);
-    startTransition(() => setDebrief(entry.bookingId, sessionId, f));
+    startTransition(async () => {
+      const result = await setDebrief(entry.bookingId, sessionId, f);
+      if (!result.ok) {
+        setFeeling(previous);
+        toast.error(result.error);
+      }
+    });
   }
 
   return (

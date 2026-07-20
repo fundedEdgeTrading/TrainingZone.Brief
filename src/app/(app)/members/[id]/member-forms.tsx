@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { addHealthRecord, resolveHealthRecordAction, addMemberNote } from "./actions";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 // Mismas clases que el control de field.tsx, para los <textarea> multilínea.
 const CONTROL =
@@ -13,15 +14,21 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [type, setType] = useState("INJURY");
+  const toast = useToast();
 
   return (
     <form
       ref={formRef}
       action={(fd) =>
         startTransition(async () => {
-          await addHealthRecord(fd);
-          formRef.current?.reset();
-          setType("INJURY");
+          const result = await addHealthRecord(fd);
+          if (result.ok) {
+            formRef.current?.reset();
+            setType("INJURY");
+            toast.success("Registro de salud guardado.");
+          } else {
+            toast.error(result.error);
+          }
         })
       }
       className="border border-tz-linen rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end bg-tz-bone/40"
@@ -72,6 +79,7 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
 export function ResolveHealthButton({ recordId, memberId }: { recordId: string; memberId: string }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!confirming) return;
@@ -79,11 +87,22 @@ export function ResolveHealthButton({ recordId, memberId }: { recordId: string; 
     return () => clearTimeout(t);
   }, [confirming]);
 
+  function handleResolve() {
+    startTransition(async () => {
+      const result = await resolveHealthRecordAction(recordId, memberId);
+      if (result.ok) {
+        toast.success("Registro marcado como resuelto.");
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
   if (confirming) {
     return (
       <button
         disabled={pending}
-        onClick={() => startTransition(() => resolveHealthRecordAction(recordId, memberId))}
+        onClick={handleResolve}
         className="text-xs font-semibold text-good hover:opacity-80 transition-opacity"
       >
         ¿Marcar resuelta?
@@ -105,14 +124,20 @@ export function ResolveHealthButton({ recordId, memberId }: { recordId: string; 
 export function AddNoteForm({ memberId }: { memberId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
+  const toast = useToast();
 
   return (
     <form
       ref={formRef}
       action={(fd) =>
         startTransition(async () => {
-          await addMemberNote(fd);
-          formRef.current?.reset();
+          const result = await addMemberNote(fd);
+          if (result.ok) {
+            formRef.current?.reset();
+            toast.success("Nota añadida a la bitácora.");
+          } else {
+            toast.error(result.error);
+          }
         })
       }
       className="space-y-2"

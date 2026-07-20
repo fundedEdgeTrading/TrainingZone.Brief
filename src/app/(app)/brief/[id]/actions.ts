@@ -5,8 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import type { DebriefFeeling } from "@prisma/client";
 
+export type DebriefActionResult = { ok: true } | { ok: false; error: string };
+
 // Session Debrief (G.1): un toque por persona, <20s para 8 personas.
-export async function setDebrief(bookingId: string, sessionId: string, feeling: DebriefFeeling) {
+export async function setDebrief(
+  bookingId: string,
+  sessionId: string,
+  feeling: DebriefFeeling
+): Promise<DebriefActionResult> {
   await requireSession();
 
   await prisma.sessionDebrief.upsert({
@@ -22,4 +28,5 @@ export async function setDebrief(bookingId: string, sessionId: string, feeling: 
   });
 
   revalidatePath(`/brief/${sessionId}`);
+  return { ok: true };
 }

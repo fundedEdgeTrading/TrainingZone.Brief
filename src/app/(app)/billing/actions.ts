@@ -5,7 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import type { PaymentMethod } from "@prisma/client";
 
-export async function registerManualPayment(formData: FormData) {
+export type PaymentActionResult = { ok: true } | { ok: false; error: string };
+
+export async function registerManualPayment(formData: FormData): Promise<PaymentActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
 
   const memberId = String(formData.get("memberId") ?? "");
@@ -13,7 +15,7 @@ export async function registerManualPayment(formData: FormData) {
   const amountEuros = Number(formData.get("amount") ?? 0);
   const method = String(formData.get("method") ?? "CASH") as PaymentMethod;
 
-  if (!memberId || !amountEuros) return;
+  if (!memberId || !amountEuros) return { ok: false, error: "Selecciona un socio e introduce un importe." };
 
   const count = await prisma.payment.count({ where: { orgId: session.user.orgId } });
 
@@ -32,4 +34,5 @@ export async function registerManualPayment(formData: FormData) {
   });
 
   revalidatePath("/billing");
+  return { ok: true };
 }
