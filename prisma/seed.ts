@@ -1381,6 +1381,7 @@ async function main() {
     prisma.subscription.deleteMany(),
     prisma.healthRecord.deleteMany(),
     prisma.aptitudeRule.deleteMany(),
+    prisma.referenceRange.deleteMany(),
     // Lead <-> Member forman un ciclo de FKs (Lead.convertedMemberId / Member.originLeadId):
     // se rompe el ciclo antes de poder borrar cualquiera de las dos tablas.
     prisma.member.updateMany({ data: { originLeadId: null } }),
