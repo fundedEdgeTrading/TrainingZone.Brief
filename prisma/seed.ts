@@ -50,6 +50,28 @@ function addDays(d: Date, n: number) {
 function fmtTime(h: number, m = 0) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
+// Fotos demo autocontenidas (data URL con SVG, sin depender de red externa),
+// tal como indica el comentario del schema para Member.photoUrl.
+function hashHue(seed: string) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return Math.abs(h) % 360;
+}
+function svgDataUri(svg: string) {
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+function demoAvatarUrl(seed: string, initials: string) {
+  const hue = hashHue(seed);
+  return svgDataUri(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="hsl(${hue},45%,55%)"/><text x="150" y="172" font-family="Arial,sans-serif" font-size="110" font-weight="700" fill="#fff" text-anchor="middle">${initials}</text></svg>`
+  );
+}
+function demoProgressPhotoUrl(seed: string, label: string) {
+  const hue = hashHue(seed);
+  return svgDataUri(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640"><rect width="480" height="640" fill="hsl(${hue},30%,90%)"/><circle cx="240" cy="220" r="70" fill="hsl(${hue},25%,75%)"/><rect x="150" y="300" width="180" height="280" rx="40" fill="hsl(${hue},25%,75%)"/><text x="240" y="600" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="hsl(${hue},20%,35%)" text-anchor="middle">${label}</text></svg>`
+  );
+}
 
 // ---------- Configuración por organización ----------
 type CenterCfg = {
@@ -287,6 +309,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     userId: string | null;
     preferredTemplates: Tpl[];
     atRisk: boolean;
+    isDemoAnchor: boolean;
   };
   const members: SeedMember[] = [];
 
@@ -337,6 +360,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         userId: isDemoAnchor ? demoMemberUserId : null,
         preferredTemplates,
         atRisk,
+        isDemoAnchor,
       });
     }
   }
@@ -358,27 +382,40 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
 
   await prisma.member.createMany({
-    data: members.map((m) => ({
-      id: m.id,
-      orgId,
-      primaryCenterId: m.centerId,
-      userId: m.userId,
-      firstName: m.firstName,
-      lastName: m.lastName,
-      email: m.email,
-      phone: faker.phone.number({ style: "national" }),
-      birthDate: faker.date.birthdate({ min: 18, max: 65, mode: "age" }),
-      state: m.state,
-      joinedAt: m.joinedAt,
-      cancelledAt: m.cancelledAt,
-      consentContract: true,
-      consentHealth: Math.random() < 0.45,
-      consentMarketing: Math.random() < 0.6,
-      // F9 (RB-PERFIL): perfil extendido para poder enseñar BI demográfico (RB-BI-003).
-      postalCode: m.state === MemberState.PROSPECT ? null : pick(MADRID_POSTAL_CODES),
-      occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
-      hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
-    })),
+    data: members.map((m) => {
+      // El socio ancla de la demo (p.ej. Marta) tiene foto de perfil y todos los
+      // consentimientos firmados, para poder enseñar Fotos y Evolución en el front.
+      const consentHealth = m.isDemoAnchor || Math.random() < 0.45;
+      const consentImages = m.isDemoAnchor;
+      const consentMarketing = m.isDemoAnchor || Math.random() < 0.6;
+      return {
+        id: m.id,
+        orgId,
+        primaryCenterId: m.centerId,
+        userId: m.userId,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        email: m.email,
+        phone: faker.phone.number({ style: "national" }),
+        birthDate: faker.date.birthdate({ min: 18, max: 65, mode: "age" }),
+        state: m.state,
+        joinedAt: m.joinedAt,
+        cancelledAt: m.cancelledAt,
+        photoUrl: m.isDemoAnchor ? demoAvatarUrl(m.email, `${m.firstName[0]}${m.lastName[0]}`.toUpperCase()) : null,
+        consentContract: true,
+        consentHealth,
+        consentImages,
+        consentMarketing,
+        consentContractAt: m.joinedAt,
+        consentHealthAt: consentHealth ? m.joinedAt : null,
+        consentImagesAt: consentImages ? m.joinedAt : null,
+        consentMarketingAt: consentMarketing ? m.joinedAt : null,
+        // F9 (RB-PERFIL): perfil extendido para poder enseñar BI demográfico (RB-BI-003).
+        postalCode: m.state === MemberState.PROSPECT ? null : pick(MADRID_POSTAL_CODES),
+        occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
+        hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
+      };
+    }),
   });
 
   // ---------- Suscripciones ----------
@@ -1016,6 +1053,24 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const demoTrainer = trainersByCenter[centerIdByKey.get(cfg.demoMember.centerKey)!]?.[0];
     await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id } });
 
+    // Fotos y evolución (F9): consentimiento de imágenes ya firmado (ver arriba),
+    // 3 registros con foto para poder enseñar el comparador antes/después.
+    await prisma.memberProgressEntry.createMany({
+      data: [
+        { days: -60, weightKg: 68.4, bodyFatPct: 27.5, waistCm: 82 },
+        { days: -30, weightKg: 67.1, bodyFatPct: 26.1, waistCm: 80 },
+        { days: -3, weightKg: 65.8, bodyFatPct: 24.6, waistCm: 78 },
+      ].map(({ days, ...rest }) => ({
+        id: id(),
+        memberId: demoMemberId,
+        date: addDays(TODAY, days),
+        ...rest,
+        photoFrontUrl: demoProgressPhotoUrl(`${cfg.slug}-${demoMemberId}-front-${days}`, "Frente"),
+        photoSideUrl: demoProgressPhotoUrl(`${cfg.slug}-${demoMemberId}-side-${days}`, "Perfil"),
+        photoBackUrl: demoProgressPhotoUrl(`${cfg.slug}-${demoMemberId}-back-${days}`, "Espalda"),
+      })),
+    });
+
     await prisma.workoutProgram.createMany({
       data: [
         {
@@ -1182,6 +1237,7 @@ async function main() {
     prisma.leadNote.deleteMany(),
     prisma.auditLog.deleteMany(),
     prisma.memberNote.deleteMany(),
+    prisma.memberProgressEntry.deleteMany(),
     prisma.centerMembership.deleteMany(),
     prisma.retentionAlert.deleteMany(),
     prisma.sessionDebrief.deleteMany(),
