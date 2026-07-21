@@ -5,7 +5,7 @@ import { listAssignableStaff } from "@/lib/org-queries";
 import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots, canManageOrg } from "@/lib/rbac";
 import { PageHeader } from "@/components/ui/page-header";
-import { startOfWeekMonday } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
 import CalendarView from "./calendar-view";
 import CenterSwitcher from "./center-switcher";
 import { NewEpSlotDrawer } from "./new-ep-slot-drawer";
@@ -21,7 +21,7 @@ export default async function AgendaPage({
   const centers = await getCentersForUser(session.user);
   const centerId = params.center || session.user.centerId || centers[0]?.id;
 
-  const refDate = params.week ? new Date(params.week) : new Date();
+  const refDate = params.week ? parseDateParam(params.week) : new Date();
   const weekStart = startOfWeekMonday(refDate);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
@@ -79,13 +79,13 @@ export default async function AgendaPage({
               />
             )}
             <CenterSwitcher centers={centers} currentCenterId={centerId ?? ""} />
-            <Link href={`/agenda?center=${centerId}&week=${prevWeek.toISOString().slice(0, 10)}`} className={linkClass}>
+            <Link href={`/agenda?center=${centerId}&week=${formatDateParam(prevWeek)}`} className={linkClass}>
               ← Semana anterior
             </Link>
-            <Link href={`/agenda?center=${centerId}&week=${new Date().toISOString().slice(0, 10)}`} className={linkClass}>
+            <Link href={`/agenda?center=${centerId}&week=${formatDateParam(new Date())}`} className={linkClass}>
               Hoy
             </Link>
-            <Link href={`/agenda?center=${centerId}&week=${nextWeek.toISOString().slice(0, 10)}`} className={linkClass}>
+            <Link href={`/agenda?center=${centerId}&week=${formatDateParam(nextWeek)}`} className={linkClass}>
               Semana siguiente →
             </Link>
           </>
@@ -107,7 +107,7 @@ export default async function AgendaPage({
         </span>
       </div>
 
-      <CalendarView sessions={events} weekStart={weekStart.toISOString()} centerId={centerId ?? ""} />
+      <CalendarView sessions={events} weekStart={formatDateParam(weekStart)} centerId={centerId ?? ""} />
     </div>
   );
 }
