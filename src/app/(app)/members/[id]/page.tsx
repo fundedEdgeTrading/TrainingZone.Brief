@@ -18,12 +18,13 @@ import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
 import { BodyCompositionChart } from "./composition-chart";
 import { CompositionSummary } from "./composition-summary";
-import { getReferenceRange, statusForValue, ageFromBirthDate } from "@/lib/reference-ranges";
+import { buildCompositionView } from "@/lib/composition-view";
 import { ClientGoalsPanel, GoalTemplateForm, TrainerAssignSelect } from "./member-profile-forms";
 import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
 import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { StaffChatThread } from "./staff-chat-thread";
 import { WorkoutProgramList } from "./workout-panel";
+import { SingleMetricChart } from "@/components/single-metric-chart";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -92,36 +93,11 @@ export default async function MemberDetailPage({
   // CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
   // serie para la gráfica de evolución. Rango de referencia sin filtro de sexo (dato no
   // capturado hoy — ver §8.1 "riesgos abiertos" del doc de composición).
-  const age = ageFromBirthDate(member.birthDate);
-  const latestComposition = member.progressEntries.find(
-    (e) => e.bodyFatPct != null || e.muscleMassKg != null || e.bmi != null || e.visceralFatRating != null
+  const { compositionTiles, compositionChartPoints, bodyFatChartPoints, measuredAt } = await buildCompositionView(
+    session.user.orgId,
+    member.birthDate,
+    member.progressEntries
   );
-  const [bodyFatRange, bmiRange, visceralRange] = await Promise.all([
-    getReferenceRange(session.user.orgId, "bodyFatPct", { age }),
-    getReferenceRange(session.user.orgId, "bmi", { age }),
-    getReferenceRange(session.user.orgId, "visceralFatRating", { age }),
-  ]);
-  const compositionTiles = latestComposition
-    ? [
-        { label: "Peso", value: latestComposition.weightKg != null ? `${latestComposition.weightKg} kg` : null },
-        { label: "% graso", value: latestComposition.bodyFatPct != null ? `${latestComposition.bodyFatPct} %` : null, status: statusForValue(latestComposition.bodyFatPct, bodyFatRange) },
-        { label: "IMC", value: latestComposition.bmi != null ? `${latestComposition.bmi}` : null, status: statusForValue(latestComposition.bmi, bmiRange) },
-        { label: "Masa muscular", value: latestComposition.muscleMassKg != null ? `${latestComposition.muscleMassKg} kg` : null },
-        { label: "Grasa visceral", value: latestComposition.visceralFatRating != null ? `${latestComposition.visceralFatRating}` : null, status: statusForValue(latestComposition.visceralFatRating, visceralRange) },
-        { label: "Masa ósea", value: latestComposition.boneMassKg != null ? `${latestComposition.boneMassKg} kg` : null },
-        { label: "Agua corporal", value: latestComposition.bodyWaterPct != null ? `${latestComposition.bodyWaterPct} %` : null },
-        { label: "BMR", value: latestComposition.bmrKcal != null ? `${latestComposition.bmrKcal} kcal` : null },
-        { label: "Edad metabólica", value: latestComposition.metabolicAge != null ? `${latestComposition.metabolicAge} años` : null },
-      ]
-    : [];
-  const compositionChartPoints = [...member.progressEntries]
-    .reverse()
-    .map((e) => ({
-      label: (e.measuredAt ?? e.date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }),
-      weightKg: e.weightKg,
-      muscleMassKg: e.muscleMassKg,
-      fatMassKg: e.fatMassKg,
-    }));
 
   return (
     <div className="tz-page space-y-4">
@@ -204,15 +180,9 @@ export default async function MemberDetailPage({
                     </p>
                   )}
 
-                  <CompositionSummary
-                    tiles={compositionTiles}
-                    measuredAt={
-                      latestComposition
-                        ? (latestComposition.measuredAt ?? latestComposition.date).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })
-                        : null
-                    }
-                  />
+                  <CompositionSummary tiles={compositionTiles} measuredAt={measuredAt} />
                   <BodyCompositionChart points={compositionChartPoints} />
+                  <SingleMetricChart points={bodyFatChartPoints} unit="%" />
 
                   {member.progressEntries.length === 0 ? (
                     <p className="text-sm text-muted">Sin registros de evolución todavía.</p>

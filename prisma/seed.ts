@@ -1127,13 +1127,49 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id, heightCm: 170 } });
 
     // Fotos, evolución y composición corporal (F9/CC1-CC3): consentimiento de imágenes y de
-    // salud ya firmados (ver arriba). 3 tomas para enseñar el comparador antes/después y la
-    // gráfica de composición; la última llega "importada" de una báscula Tanita
-    // (docs/COMPOSICION_CORPORAL_TANITA.md) para poder demostrar ese flujo en el seed.
+    // salud ya firmados (ver arriba). 9 tomas a lo largo de ~5 meses (portal del socio +
+    // ficha del entrenador necesitan una serie larga para que las gráficas de evolución y el
+    // comparador antes/después se vean con datos reales en la demo). Las tomas Tanita
+    // (docs/COMPOSICION_CORPORAL_TANITA.md) llegan "importadas" con desglose segmental para
+    // poder demostrar ese flujo en el seed.
     await prisma.memberProgressEntry.createMany({
       data: [
+        { days: -150, weightKg: 72.6, bodyFatPct: 30.8, waistCm: 90, muscleMassKg: 21.9, boneMassKg: 2.5, bodyWaterPct: 51.4, source: "MANUAL" },
+        { days: -120, weightKg: 71.0, bodyFatPct: 29.6, waistCm: 88, muscleMassKg: 22.4, boneMassKg: 2.5, bodyWaterPct: 52.1, source: "MANUAL" },
+        {
+          days: -95,
+          weightKg: 69.8,
+          bodyFatPct: 28.7,
+          waistCm: 86,
+          muscleMassKg: 23.0,
+          boneMassKg: 2.6,
+          bodyWaterPct: 52.8,
+          visceralFatRating: 6,
+          bmrKcal: 1350,
+          metabolicAge: 34,
+          bmi: 24.1,
+          source: "TANITA",
+          segmental: { fatPct: { trunk: 30.4, armLeft: 21.8, armRight: 21.1, legLeft: 24.6, legRight: 23.9 }, muscleKg: { trunk: 12.1, armLeft: 1.7, armRight: 1.75, legLeft: 3.7, legRight: 3.75 }, muscleQuality: {} },
+        },
+        { days: -75, weightKg: 69.1, bodyFatPct: 28.0, waistCm: 85, muscleMassKg: 23.3, boneMassKg: 2.6, bodyWaterPct: 53.2, source: "MANUAL" },
         { days: -60, weightKg: 68.4, bodyFatPct: 27.5, waistCm: 82, muscleMassKg: 24.1, boneMassKg: 2.6, bodyWaterPct: 54.2, source: "MANUAL" },
+        {
+          days: -45,
+          weightKg: 67.8,
+          bodyFatPct: 26.9,
+          waistCm: 81,
+          muscleMassKg: 24.4,
+          boneMassKg: 2.6,
+          bodyWaterPct: 54.6,
+          visceralFatRating: 5,
+          bmrKcal: 1370,
+          metabolicAge: 32,
+          bmi: 23.5,
+          source: "TANITA",
+          segmental: { fatPct: { trunk: 28.6, armLeft: 20.3, armRight: 19.7, legLeft: 23.2, legRight: 22.5 }, muscleKg: { trunk: 12.7, armLeft: 1.82, armRight: 1.86, legLeft: 3.95, legRight: 3.98 }, muscleQuality: {} },
+        },
         { days: -30, weightKg: 67.1, bodyFatPct: 26.1, waistCm: 80, muscleMassKg: 24.8, boneMassKg: 2.6, bodyWaterPct: 55.0, source: "MANUAL" },
+        { days: -14, weightKg: 66.4, bodyFatPct: 25.3, waistCm: 79, muscleMassKg: 25.2, boneMassKg: 2.7, bodyWaterPct: 55.6, source: "MANUAL" },
         {
           days: -3,
           weightKg: 65.8,
