@@ -806,6 +806,18 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     data: APTITUDE_RULES.map((r) => ({ id: id(), orgId, injuryZone: r.injuryZone, blockArea: r.blockArea, light: r.light, adaptation: r.adaptation, editedByUserId: ownerId })),
   });
 
+  // ---------- Rangos de referencia de composición corporal (CC2) ----------
+  await prisma.referenceRange.createMany({
+    data: [
+      { metric: "bodyFatPct", sex: "M", min: 8, max: 19 },
+      { metric: "bodyFatPct", sex: "F", min: 18, max: 28 },
+      { metric: "bmi", sex: null, min: 18.5, max: 25 },
+      { metric: "visceralFatRating", sex: null, min: 1, max: 9 },
+      { metric: "bodyWaterPct", sex: "M", min: 50, max: 65 },
+      { metric: "bodyWaterPct", sex: "F", min: 45, max: 60 },
+    ].map((r) => ({ id: id(), orgId, editedByUserId: ownerId, ...r })),
+  });
+
   // ---------- Motor de retención (G.3) ----------
   const retentionAlerts: { id: string; memberId: string; baselineFreq: number; recentFreq: number; dropPct: number; riskLevel: RetentionRiskLevel; context: string | null }[] = [];
   for (const m of members) {
@@ -1112,24 +1124,48 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   // ---------- F16: IA (rutinas), autovaloración y chat — foco en el socio demo ----------
   if (cfg.demoMember && demoMemberId && demoMemberUserId) {
     const demoTrainer = trainersByCenter[centerIdByKey.get(cfg.demoMember.centerKey)!]?.[0];
-    await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id } });
+    await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id, heightCm: 170 } });
 
-    // Fotos y evolución (F9): consentimiento de imágenes ya firmado (ver arriba),
-    // 3 registros con foto para poder enseñar el comparador antes/después.
+    // Fotos, evolución y composición corporal (F9/CC1-CC3): consentimiento de imágenes y de
+    // salud ya firmados (ver arriba). 3 tomas para enseñar el comparador antes/después y la
+    // gráfica de composición; la última llega "importada" de una báscula Tanita
+    // (docs/COMPOSICION_CORPORAL_TANITA.md) para poder demostrar ese flujo en el seed.
     await prisma.memberProgressEntry.createMany({
       data: [
-        { days: -60, weightKg: 68.4, bodyFatPct: 27.5, waistCm: 82 },
-        { days: -30, weightKg: 67.1, bodyFatPct: 26.1, waistCm: 80 },
-        { days: -3, weightKg: 65.8, bodyFatPct: 24.6, waistCm: 78 },
-      ].map(({ days, ...metrics }) => ({
-        id: id(),
-        memberId: demoMemberId,
-        date: addDays(TODAY, days),
-        ...metrics,
-        photoFrontUrl: bodySilhouetteSvg({ view: "front", ...metrics }),
-        photoSideUrl: bodySilhouetteSvg({ view: "side", ...metrics }),
-        photoBackUrl: bodySilhouetteSvg({ view: "front", ...metrics }),
-      })),
+        { days: -60, weightKg: 68.4, bodyFatPct: 27.5, waistCm: 82, muscleMassKg: 24.1, boneMassKg: 2.6, bodyWaterPct: 54.2, source: "MANUAL" },
+        { days: -30, weightKg: 67.1, bodyFatPct: 26.1, waistCm: 80, muscleMassKg: 24.8, boneMassKg: 2.6, bodyWaterPct: 55.0, source: "MANUAL" },
+        {
+          days: -3,
+          weightKg: 65.8,
+          bodyFatPct: 24.6,
+          waistCm: 78,
+          muscleMassKg: 25.6,
+          boneMassKg: 2.7,
+          bodyWaterPct: 56.1,
+          visceralFatRating: 4,
+          bmrKcal: 1390,
+          metabolicAge: 29,
+          bmi: 22.9,
+          source: "TANITA",
+          segmental: { fatPct: { trunk: 27.1, armLeft: 19.2, armRight: 18.6, legLeft: 22.4, legRight: 21.3 }, muscleKg: { trunk: 13.2, armLeft: 1.9, armRight: 1.95, legLeft: 4.1, legRight: 4.15 }, muscleQuality: {} },
+        },
+      ].map(({ days, ...fields }) => {
+        const { weightKg, bodyFatPct, waistCm, ...composition } = fields;
+        const measuredAt = addDays(TODAY, days);
+        return {
+          id: id(),
+          memberId: demoMemberId,
+          date: measuredAt,
+          measuredAt: composition.source === "TANITA" ? measuredAt : null,
+          weightKg,
+          bodyFatPct,
+          waistCm,
+          ...composition,
+          photoFrontUrl: bodySilhouetteSvg({ view: "front", weightKg, bodyFatPct, waistCm }),
+          photoSideUrl: bodySilhouetteSvg({ view: "side", weightKg, bodyFatPct, waistCm }),
+          photoBackUrl: bodySilhouetteSvg({ view: "front", weightKg, bodyFatPct, waistCm }),
+        };
+      }),
     });
 
     await prisma.workoutProgram.createMany({

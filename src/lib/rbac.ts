@@ -19,6 +19,7 @@ export const NAV_BY_ROLE: Record<
     { href: "/offers", label: "Ofertas" },
     { href: "/rrhh", label: "RRHH" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud" },
+    { href: "/health/reference-ranges", label: "Rangos de composición" },
     { href: "/organization", label: "Organización" },
     { href: "/audit", label: "Auditoría" },
   ],
