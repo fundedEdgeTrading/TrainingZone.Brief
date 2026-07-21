@@ -5,66 +5,90 @@ import type { Role } from "@prisma/client";
  * "own" = solo su propio ámbito (sus sesiones, su ficha); "center" = su
  * centro; "org" = toda la organización.
  */
-export const NAV_BY_ROLE: Record<
-  Role,
-  { href: string; label: string }[]
-> = {
+export type NavSection =
+  | "Vista general"
+  | "Comercial"
+  | "Operativa del centro"
+  | "Salud y aptitud"
+  | "Administración"
+  | "Mi cuenta";
+
+export type NavItem = { href: string; label: string; section: NavSection };
+
+export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
-    { href: "/dashboard", label: "Panel de control" },
-    { href: "/leads", label: "Leads" },
-    { href: "/members", label: "Socios" },
-    { href: "/agenda", label: "Agenda" },
-    { href: "/billing", label: "Cobros" },
-    { href: "/retention", label: "Retención" },
-    { href: "/offers", label: "Ofertas" },
-    { href: "/rrhh", label: "RRHH" },
-    { href: "/health/aptitude-rules", label: "Reglas de aptitud" },
-    { href: "/health/reference-ranges", label: "Rangos de composición" },
-    { href: "/organization", label: "Organización" },
-    { href: "/audit", label: "Auditoría" },
+    { href: "/dashboard", label: "Panel de control", section: "Vista general" },
+    { href: "/leads", label: "Leads", section: "Comercial" },
+    { href: "/offers", label: "Ofertas", section: "Comercial" },
+    { href: "/members", label: "Socios", section: "Operativa del centro" },
+    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/billing", label: "Cobros", section: "Operativa del centro" },
+    { href: "/retention", label: "Retención", section: "Operativa del centro" },
+    { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud" },
+    { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud" },
+    { href: "/rrhh", label: "RRHH", section: "Administración" },
+    { href: "/organization", label: "Organización", section: "Administración" },
+    { href: "/audit", label: "Auditoría", section: "Administración" },
   ],
   CENTER_DIRECTOR: [
-    { href: "/dashboard", label: "Panel de control" },
-    { href: "/leads", label: "Leads" },
-    { href: "/members", label: "Socios" },
-    { href: "/agenda", label: "Agenda" },
-    { href: "/billing", label: "Cobros" },
-    { href: "/retention", label: "Retención" },
-    { href: "/offers", label: "Ofertas" },
-    { href: "/rrhh", label: "RRHH" },
+    { href: "/dashboard", label: "Panel de control", section: "Vista general" },
+    { href: "/leads", label: "Leads", section: "Comercial" },
+    { href: "/offers", label: "Ofertas", section: "Comercial" },
+    { href: "/members", label: "Socios", section: "Operativa del centro" },
+    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/billing", label: "Cobros", section: "Operativa del centro" },
+    { href: "/retention", label: "Retención", section: "Operativa del centro" },
+    { href: "/rrhh", label: "RRHH", section: "Administración" },
   ],
   TRAINER: [
-    { href: "/agenda", label: "Agenda" },
-    { href: "/brief", label: "Session Brief" },
-    { href: "/members", label: "Socios" },
-    { href: "/leads", label: "Leads" },
-    { href: "/trainer", label: "Mi panel" },
-    { href: "/offers", label: "Ofertas" },
-    { href: "/rrhh", label: "RRHH" },
+    { href: "/trainer", label: "Mi panel", section: "Vista general" },
+    { href: "/brief", label: "Session Brief", section: "Vista general" },
+    { href: "/leads", label: "Leads", section: "Comercial" },
+    { href: "/offers", label: "Ofertas", section: "Comercial" },
+    { href: "/members", label: "Socios", section: "Operativa del centro" },
+    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/rrhh", label: "RRHH", section: "Administración" },
   ],
   RECEPTION: [
-    { href: "/members", label: "Socios" },
-    { href: "/leads", label: "Leads" },
-    { href: "/agenda", label: "Agenda" },
-    { href: "/billing", label: "Cobros" },
+    { href: "/leads", label: "Leads", section: "Comercial" },
+    { href: "/members", label: "Socios", section: "Operativa del centro" },
+    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/billing", label: "Cobros", section: "Operativa del centro" },
   ],
   MEMBER: [
-    { href: "/portal", label: "Mi actividad" },
-    { href: "/portal/agenda", label: "Reservar clase" },
-    { href: "/portal/evolucion", label: "Mi evolución" },
-    { href: "/portal/plan", label: "Mi plan" },
-    { href: "/portal/chat", label: "Chat" },
+    { href: "/portal", label: "Mi actividad", section: "Mi cuenta" },
+    { href: "/portal/agenda", label: "Reservar clase", section: "Mi cuenta" },
+    { href: "/portal/evolucion", label: "Mi evolución", section: "Mi cuenta" },
+    { href: "/portal/plan", label: "Mi plan", section: "Mi cuenta" },
+    { href: "/portal/chat", label: "Chat", section: "Mi cuenta" },
   ],
   HR_MANAGER: [
-    { href: "/organization", label: "Organización" },
-    { href: "/rrhh", label: "RRHH" },
+    { href: "/organization", label: "Organización", section: "Administración" },
+    { href: "/rrhh", label: "RRHH", section: "Administración" },
   ],
   PLATFORM_ADMIN: [
-    { href: "/dashboard", label: "Panel de control" },
-    { href: "/organization", label: "Organización" },
-    { href: "/audit", label: "Auditoría" },
+    { href: "/dashboard", label: "Panel de control", section: "Vista general" },
+    { href: "/organization", label: "Organización", section: "Administración" },
+    { href: "/audit", label: "Auditoría", section: "Administración" },
   ],
 };
+
+// Orden canónico de secciones (las vacías se omiten al render).
+export const NAV_SECTION_ORDER: NavSection[] = [
+  "Vista general",
+  "Comercial",
+  "Operativa del centro",
+  "Salud y aptitud",
+  "Administración",
+  "Mi cuenta",
+];
+
+export function groupNav(nav: NavItem[]) {
+  return NAV_SECTION_ORDER.map((section) => ({
+    section,
+    items: nav.filter((i) => i.section === section),
+  })).filter((g) => g.items.length > 0);
+}
 
 export function canViewHealthData(role: Role): boolean {
   // Recepción, RRHH y Admin plataforma NO ven datos de salud por defecto (A.2.4/A.2.5).
@@ -155,10 +179,6 @@ export function getPageTitle(nav: { href: string; label: string }[], pathname: s
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"));
   return match?.label ?? "Training Zone";
-}
-
-export function sectionLabelForRole(role: Role): string {
-  return role === "MEMBER" ? "Mi cuenta" : "Gestión";
 }
 
 export function footerLabelForRole(role: Role): string {
