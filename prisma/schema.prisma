@@ -465,6 +465,13 @@ model ClassSession {
   selfBookable     Boolean @default(false)
   directedByUserId String?
 
+  // Rediseño de agenda estilo Google Calendar: recurrencia simple (una fila
+  // representa toda la serie; las ocurrencias en otras semanas se derivan en
+  // lectura a partir de `date`/`recurrence`/`recUntil`, sin materializarlas).
+  recurrence SessionRecurrence @default(NONE)
+  recUntil   DateTime?
+  isTrial    Boolean           @default(false)
+
   organization Organization     @relation(fields: [orgId], references: [id])
   center       Center           @relation(fields: [centerId], references: [id])
   template     SessionTemplate? @relation(fields: [templateId], references: [id])
@@ -474,6 +481,12 @@ model ClassSession {
 
   @@index([orgId])
   @@index([centerId, date])
+}
+
+enum SessionRecurrence {
+  NONE
+  WEEKLY
+  WEEKDAYS
 }
 
 enum BookingStatus {

@@ -1,14 +1,12 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getCentersForUser, getWeekSessions } from "@/lib/agenda-queries";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { listActiveMembersForSelect } from "@/lib/members-queries";
-import { canManageEpSlots, canManageOrg } from "@/lib/rbac";
-import { PageHeader } from "@/components/ui/page-header";
+import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
-import CalendarView from "./calendar-view";
+import { instanceForWeek, type WeekOccurrence } from "./agenda-utils";
+import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
-import { NewEpSlotDrawer } from "./new-ep-slot-drawer";
 
 export default async function AgendaPage({
   searchParams,
@@ -26,88 +24,56 @@ export default async function AgendaPage({
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  const prevWeek = new Date(weekStart);
-  prevWeek.setDate(prevWeek.getDate() - 7);
-  const nextWeek = new Date(weekStart);
-  nextWeek.setDate(nextWeek.getDate() + 7);
+  const sessions = centerId ? await getWeekSessions(session.user.orgId, centerId, weekStart, weekEnd) : [];
+  const canEdit = Boolean(centerId) && canManageEpSlots(session.user.role);
 
-  const sessions = centerId
-    ? await getWeekSessions(session.user.orgId, centerId, weekStart, weekEnd)
-    : [];
-
-  const canCreateEpSlot = centerId && canManageEpSlots(session.user.role);
-  const [trainers, epMembers] = canCreateEpSlot
+  const [trainers, members] = centerId
     ? await Promise.all([
         listAssignableStaff(session.user.orgId, ["TRAINER"]),
         listActiveMembersForSelect(session.user.orgId, { trainerId: session.user.role === "TRAINER" ? session.user.id : undefined }),
       ])
     : [[], []];
 
-  const events = sessions.map((s) => ({
-    id: s.id,
-    name: s.name,
-    classType: s.classType,
-    date: s.date.toISOString(),
-    startTime: s.startTime,
-    endTime: s.endTime,
-    capacity: s.capacity,
-    bookedCount: s.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length,
-    waitlistCount: s.bookings.filter((b) => b.status === "WAITLISTED").length,
-    trainerName: s.trainer?.name ?? null,
-    status: s.status,
-  }));
-
-  const weekLabel = `${weekStart.toLocaleDateString("es-ES", { day: "2-digit", month: "short" })} – ${new Date(
-    weekEnd.getTime() - 86400000
-  ).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}`;
-
-  const linkClass =
-    "rounded-control border border-brand-border bg-white px-3.5 py-2 text-sm font-semibold text-brand-text transition-colors duration-150 hover:border-brand-ink hover:bg-tz-bone";
+  const occurrences: WeekOccurrence[] = [];
+  for (const s of sessions) {
+    const dayIndex = instanceForWeek(s, weekStart, weekEnd);
+    if (dayIndex === null) continue;
+    if (!s.trainerId) continue;
+    const booking = s.bookings.find((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW");
+    occurrences.push({
+      id: s.id,
+      dayIndex,
+      startMin: toMinutes(s.startTime),
+      endMin: toMinutes(s.endTime),
+      title: s.name,
+      trainerId: s.trainerId,
+      type: s.classType === "Personal Training" ? "personal" : "reduced",
+      isTrial: s.isTrial,
+      isRecurring: s.recurrence !== "NONE",
+      bookedMemberId: booking?.memberId ?? null,
+      status: s.status,
+    });
+  }
 
   return (
-    <div className="tz-page space-y-4">
-      <PageHeader
-        description={`Semana del ${weekLabel} · ${sessions.length} sesiones`}
-        actions={
-          <>
-            {canCreateEpSlot && (
-              <NewEpSlotDrawer
-                centerId={centerId}
-                trainers={trainers}
-                members={epMembers}
-                showTrainerSelect={canManageOrg(session.user.role) || session.user.role === "CENTER_DIRECTOR"}
-              />
-            )}
-            <CenterSwitcher centers={centers} currentCenterId={centerId ?? ""} />
-            <Link href={`/agenda?center=${centerId}&week=${formatDateParam(prevWeek)}`} className={linkClass}>
-              ← Semana anterior
-            </Link>
-            <Link href={`/agenda?center=${centerId}&week=${formatDateParam(new Date())}`} className={linkClass}>
-              Hoy
-            </Link>
-            <Link href={`/agenda?center=${centerId}&week=${formatDateParam(nextWeek)}`} className={linkClass}>
-              Semana siguiente →
-            </Link>
-          </>
+    <div className="tz-page h-[calc(100vh-140px)] min-h-[560px] bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden tz-fade-up">
+      <AgendaView
+        key={formatDateParam(weekStart)}
+        weekStartISO={formatDateParam(weekStart)}
+        centerId={centerId ?? ""}
+        occurrences={occurrences}
+        trainers={trainers.map((t) => ({ id: t.id, name: t.name }))}
+        members={members}
+        canEdit={canEdit}
+        centerSwitcher={
+          centers.length > 1 ? <CenterSwitcher key="center-switcher" centers={centers} currentCenterId={centerId ?? ""} /> : null
         }
       />
-
-      <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#6B7A34" }} /> Ocupación normal
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#B98A2E" }} /> Casi lleno (≥70%)
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#B5482F" }} /> Lleno / lista de espera
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ background: "#D8CCB8" }} /> Cancelada
-        </span>
-      </div>
-
-      <CalendarView sessions={events} focusedDate={formatDateParam(refDate)} centerId={centerId ?? ""} />
     </div>
   );
+}
+
+function toMinutes(hhmm: string) {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
 }
