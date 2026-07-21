@@ -1,10 +1,22 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { createProgressEntry } from "./actions";
+import { createProgressEntry, importTanitaText } from "./actions";
 import { ImageDropzone } from "@/components/ui/dropzone";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+
+const NUM_INPUT = "w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm focus:border-brand-ink focus:outline-none";
+const NUM_LABEL = "block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5";
+
+function NumField({ name, label, step = "0.1" }: { name: string; label: string; step?: string }) {
+  return (
+    <div>
+      <label className={NUM_LABEL}>{label}</label>
+      <input name={name} type="number" step={step} className={NUM_INPUT} />
+    </div>
+  );
+}
 
 export function AddProgressEntryForm({ memberId }: { memberId: string }) {
   const [open, setOpen] = useState(false);
@@ -16,7 +28,8 @@ export function AddProgressEntryForm({ memberId }: { memberId: string }) {
     return (
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-[13px] text-muted max-w-md">
-          Fotos de evolución física con consentimiento de uso de imágenes firmado. Visibles solo para el socio y su
+          Peso, composición corporal (bioimpedancia) y fotos de evolución. Las métricas requieren consentimiento
+          de datos de salud; las fotos, consentimiento de uso de imágenes. Visibles solo para el socio y su
           entrenador asignado.
         </p>
         <Button variant="secondary" onClick={() => setOpen(true)}>
@@ -45,19 +58,27 @@ export function AddProgressEntryForm({ memberId }: { memberId: string }) {
     >
       <input type="hidden" name="memberId" value={memberId} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Peso (kg)</label>
-          <input name="weightKg" type="number" step="0.1" className="w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm focus:border-brand-ink focus:outline-none" />
+        <NumField name="weightKg" label="Peso (kg)" />
+        <NumField name="bodyFatPct" label="% graso" />
+        <NumField name="waistCm" label="Cintura (cm)" step="0.5" />
+      </div>
+
+      <div>
+        <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-2">
+          Composición corporal (bioimpedancia, opcional)
         </div>
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">% graso</label>
-          <input name="bodyFatPct" type="number" step="0.1" className="w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm focus:border-brand-ink focus:outline-none" />
-        </div>
-        <div>
-          <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Cintura (cm)</label>
-          <input name="waistCm" type="number" step="0.5" className="w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm focus:border-brand-ink focus:outline-none" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <NumField name="muscleMassKg" label="Masa muscular (kg)" />
+          <NumField name="fatMassKg" label="Masa grasa (kg)" />
+          <NumField name="fatFreeMassKg" label="Masa magra (kg)" />
+          <NumField name="boneMassKg" label="Masa ósea (kg)" />
+          <NumField name="bodyWaterPct" label="Agua corporal (%)" />
+          <NumField name="visceralFatRating" label="Grasa visceral" step="1" />
+          <NumField name="bmrKcal" label="BMR (kcal)" step="1" />
+          <NumField name="metabolicAge" label="Edad metabólica" step="1" />
         </div>
       </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <ImageDropzone name="photoFrontUrl" label="Frente" shape="rounded" sizeClassName="w-full h-[180px]" />
         <ImageDropzone name="photoSideUrl" label="Perfil" shape="rounded" sizeClassName="w-full h-[180px]" />
@@ -70,6 +91,71 @@ export function AddProgressEntryForm({ memberId }: { memberId: string }) {
         <Button type="submit" disabled={pending}>
           {pending && <ButtonSpinner />}
           {pending ? "Guardando..." : "Guardar registro"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+// CC5 — la app My Tanita no exporta CSV, solo comparte un texto. El entrenador lo pega aquí tal
+// cual y src/lib/tanita-parse.ts lo interpreta en el servidor (docs/COMPOSICION_CORPORAL_
+// IMPLEMENTACION.md).
+export function TanitaPasteImportForm({ memberId }: { memberId: string }) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const formRef = useRef<HTMLFormElement>(null);
+  const toast = useToast();
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-[13px] font-semibold text-brand-ink underline underline-offset-2 hover:opacity-80 transition-opacity"
+      >
+        Importar desde My Tanita (pegar texto)
+      </button>
+    );
+  }
+
+  return (
+    <form
+      ref={formRef}
+      action={(fd) =>
+        startTransition(async () => {
+          const result = await importTanitaText(fd);
+          if (result.ok) {
+            formRef.current?.reset();
+            setOpen(false);
+            toast.success("Medición Tanita importada.");
+          } else {
+            toast.error(result.error);
+          }
+        })
+      }
+      className="border border-tz-linen rounded-xl p-5 flex flex-col gap-3"
+    >
+      <input type="hidden" name="memberId" value={memberId} />
+      <label className={NUM_LABEL}>Texto compartido por la app My Tanita</label>
+      <textarea
+        name="rawText"
+        required
+        rows={8}
+        placeholder={"Acabo de realizar una medición en TANITA...\n* Peso: 68,55 kg\n* Grasa corporal: 14,9 %\n..."}
+        className="w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm font-mono focus:border-brand-ink focus:outline-none"
+      />
+      <p className="text-xs text-brand-muted">
+        Pega el texto completo tal cual lo comparte la app (botón &ldquo;Compartir&rdquo; en My Tanita). Se
+        reconocen peso, IMC, % graso, masa muscular, calidad muscular, masa ósea, grasa visceral, TMB, edad
+        metabólica, agua corporal y el desglose por tronco/brazos/piernas.
+      </p>
+      <div className="flex justify-end gap-2.5">
+        <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={pending}>
+          {pending && <ButtonSpinner />}
+          {pending ? "Importando..." : "Importar medición"}
         </Button>
       </div>
     </form>

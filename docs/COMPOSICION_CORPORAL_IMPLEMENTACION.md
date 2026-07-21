@@ -13,6 +13,18 @@ y **en qué orden**, con las rutas reales del repo.
 
 **Convención de marcadores:** 🆕 nuevo · ➕ extiende algo existente · 🔁 sustituye.
 
+**Estado de implementación (actualizado):**
+
+| Fase | Estado |
+|---|---|
+| CC1 — Modelo + captura manual | ✅ Implementado |
+| CC2 — Rangos de referencia configurables | ✅ Implementado (`/health/reference-ranges`) |
+| CC3 — Gráficas de evolución | ✅ Implementado (ficha del socio; portal pendiente) |
+| CC4 — Señal de estancamiento por composición | ✅ Implementado (`stall-detection.ts`) |
+| CC5 — Importación por texto pegado MyTanita | ✅ Implementado (`tanita-parse.ts`, sin CSV — ver nota en la fase) |
+| CC6 — Objetivos y BI agregado | ⏳ Pendiente |
+| CC7 — API Tanita Health Connect | 🔮 Futuro, no planificado |
+
 ---
 
 ## 0. Estado real del código (base de partida)
@@ -155,17 +167,31 @@ model ReferenceRange {
 
 ---
 
-## Fase CC5 — Importación CSV de MyTanita ➕ *(dep: CC1; iteración propia)*
+## Fase CC5 — Importación por texto pegado de MyTanita ➕ *(dep: CC1)* — **implementada**
 
-**Meta:** cargar tomas desde el export de la báscula sin teclear.
+**Meta:** cargar una toma sin teclear campo a campo, sin depender de un fichero.
 
-- `src/lib/tanita-import.ts` 🆕: parser de **CSV** (más robusto que el PDF posicional, §8.2 del doc de
-  composición). Mapea columnas Tanita → campos de `MemberProgressEntry`, valida y crea filas con
-  `source = "TANITA"`.
-- Acción + UI de subida en la ficha del socio (dropzone de archivo, reutilizar el patrón de
-  `ImageDropzone`). Previsualizar filas antes de confirmar.
-- El PDF (como el analizado) se admite solo como **adjunto de respaldo**, no como fuente de parseo
-  automático fiable.
+> ⚠️ **Cambio respecto a la v1.0 de este documento:** la app móvil My Tanita **no exporta CSV**.
+> Lo único que ofrece es un botón "Compartir" que genera un **texto plano** con el resumen de la
+> medición (ver ejemplo más abajo). Por tanto CC5 no es un importador de fichero: es un
+> **textarea donde el entrenador pega ese texto**, parseado en el servidor.
+
+- `src/lib/tanita-parse.ts` 🆕 — `parseTanitaText(raw: string)`: parser línea a línea del texto de
+  My Tanita (bullets `* Etiqueta: valor` + sublíneas `- Segmento: valor` para tronco/brazos/piernas).
+  Reconoce peso, IMC, % graso, masa muscular, calidad muscular, masa ósea, grasa visceral, TMB, edad
+  metabólica y agua corporal; **deriva** `fatMassKg`/`fatFreeMassKg` a partir de peso y % graso
+  (validado contra el informe PDF original: 68.55 kg × 14.9 % ⇒ 10.21 kg de grasa, coincide con el
+  informe). Devuelve `{ ok: false, error }` si no reconoce ningún dato, para que la UI muestre el
+  motivo sin romper.
+- Acción `importTanitaText` (`src/app/(app)/members/[id]/actions.ts`): recibe `memberId` + `rawText`,
+  exige `consentHealth` (dato Art. 9, igual que la captura manual), llama al parser y crea el
+  `MemberProgressEntry` con `source = "TANITA"` y `measuredAt = now()`. Deja `AuditLog`
+  (`BODY_COMPOSITION_RECORDED`) igual que la vía manual.
+- UI `TanitaPasteImportForm` (`src/app/(app)/members/[id]/progress-forms.tsx`): un `<textarea>` con
+  el texto de ejemplo como placeholder, visible junto al formulario manual de progreso cuando el
+  socio tiene `consentHealth`.
+- El PDF (como el analizado en `COMPOSICION_CORPORAL_TANITA.md`) sigue sin ser fuente de parseo:
+  es maquetado/posicional y frágil. El texto de "Compartir" es la vía estable.
 
 ---
 
@@ -193,7 +219,7 @@ esta fase solo añade el conector de ingesta.
 ```
 CC1 (modelo + captura manual) ──┬─► CC2 (rangos) ──► CC3 (gráficas) ──► CC6 (objetivos + BI)
                                 ├─► CC4 (estancamiento)
-                                └─► CC5 (import CSV)
+                                └─► CC5 (pegar texto Tanita)
 CC7 (API Tanita) ── futuro, no bloqueante
 ```
 

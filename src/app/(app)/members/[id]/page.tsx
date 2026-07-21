@@ -15,7 +15,10 @@ import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ContactForm, ResendWelcomeButton } from "./member-forms";
 import { EditableMemberPhoto } from "./member-photo";
-import { AddProgressEntryForm, ProgressComparator } from "./progress-forms";
+import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
+import { BodyCompositionChart } from "./composition-chart";
+import { CompositionSummary } from "./composition-summary";
+import { getReferenceRange, statusForValue, ageFromBirthDate } from "@/lib/reference-ranges";
 import { ClientGoalsPanel, GoalTemplateForm, TrainerAssignSelect } from "./member-profile-forms";
 import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
 import { listWorkoutPrograms } from "@/lib/workout-programs";
@@ -86,6 +89,40 @@ export default async function MemberDetailPage({
     listWorkoutPrograms(session.user.orgId, member.id),
   ]);
 
+  // CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
+  // serie para la gráfica de evolución. Rango de referencia sin filtro de sexo (dato no
+  // capturado hoy — ver §8.1 "riesgos abiertos" del doc de composición).
+  const age = ageFromBirthDate(member.birthDate);
+  const latestComposition = member.progressEntries.find(
+    (e) => e.bodyFatPct != null || e.muscleMassKg != null || e.bmi != null || e.visceralFatRating != null
+  );
+  const [bodyFatRange, bmiRange, visceralRange] = await Promise.all([
+    getReferenceRange(session.user.orgId, "bodyFatPct", { age }),
+    getReferenceRange(session.user.orgId, "bmi", { age }),
+    getReferenceRange(session.user.orgId, "visceralFatRating", { age }),
+  ]);
+  const compositionTiles = latestComposition
+    ? [
+        { label: "Peso", value: latestComposition.weightKg != null ? `${latestComposition.weightKg} kg` : null },
+        { label: "% graso", value: latestComposition.bodyFatPct != null ? `${latestComposition.bodyFatPct} %` : null, status: statusForValue(latestComposition.bodyFatPct, bodyFatRange) },
+        { label: "IMC", value: latestComposition.bmi != null ? `${latestComposition.bmi}` : null, status: statusForValue(latestComposition.bmi, bmiRange) },
+        { label: "Masa muscular", value: latestComposition.muscleMassKg != null ? `${latestComposition.muscleMassKg} kg` : null },
+        { label: "Grasa visceral", value: latestComposition.visceralFatRating != null ? `${latestComposition.visceralFatRating}` : null, status: statusForValue(latestComposition.visceralFatRating, visceralRange) },
+        { label: "Masa ósea", value: latestComposition.boneMassKg != null ? `${latestComposition.boneMassKg} kg` : null },
+        { label: "Agua corporal", value: latestComposition.bodyWaterPct != null ? `${latestComposition.bodyWaterPct} %` : null },
+        { label: "BMR", value: latestComposition.bmrKcal != null ? `${latestComposition.bmrKcal} kcal` : null },
+        { label: "Edad metabólica", value: latestComposition.metabolicAge != null ? `${latestComposition.metabolicAge} años` : null },
+      ]
+    : [];
+  const compositionChartPoints = [...member.progressEntries]
+    .reverse()
+    .map((e) => ({
+      label: (e.measuredAt ?? e.date).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }),
+      weightKg: e.weightKg,
+      muscleMassKg: e.muscleMassKg,
+      fatMassKg: e.fatMassKg,
+    }));
+
   return (
     <div className="tz-page space-y-4">
       <div className="bg-brand-card border border-brand-border rounded-card p-6 shadow-card flex items-center justify-between flex-wrap gap-4">
@@ -149,14 +186,34 @@ export default async function MemberDetailPage({
               label: "Fotos y evolución",
               content: (
                 <div className="space-y-6">
-                  {member.consentImages ? (
-                    <AddProgressEntryForm memberId={member.id} />
+                  {member.consentHealth || member.consentImages ? (
+                    <div className="space-y-3">
+                      <AddProgressEntryForm memberId={member.id} />
+                      {member.consentHealth && <TanitaPasteImportForm memberId={member.id} />}
+                    </div>
                   ) : (
                     <div className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
-                      Este socio no ha firmado el consentimiento de uso de imágenes. No se pueden guardar fotos de
-                      evolución hasta que lo otorgue en su onboarding.
+                      Este socio no ha firmado ni el consentimiento de datos de salud ni el de uso de imágenes. No
+                      se pueden guardar métricas de composición ni fotos de evolución hasta que otorgue alguno en
+                      su onboarding.
                     </div>
                   )}
+                  {!member.consentImages && member.consentHealth && (
+                    <p className="text-xs text-brand-muted">
+                      Sin consentimiento de imágenes: solo se pueden guardar métricas (peso, composición), no fotos.
+                    </p>
+                  )}
+
+                  <CompositionSummary
+                    tiles={compositionTiles}
+                    measuredAt={
+                      latestComposition
+                        ? (latestComposition.measuredAt ?? latestComposition.date).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })
+                        : null
+                    }
+                  />
+                  <BodyCompositionChart points={compositionChartPoints} />
+
                   {member.progressEntries.length === 0 ? (
                     <p className="text-sm text-muted">Sin registros de evolución todavía.</p>
                   ) : (
@@ -164,8 +221,13 @@ export default async function MemberDetailPage({
                       {member.progressEntries.map((entry) => (
                         <div key={entry.id} className="border border-tz-linen rounded-xl p-5">
                           <div className="flex items-center justify-between gap-3 flex-wrap mb-3.5">
-                            <div className="font-bold text-[15px] text-tz-black">
-                              {entry.date.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+                            <div className="font-bold text-[15px] text-tz-black flex items-center gap-2">
+                              {(entry.measuredAt ?? entry.date).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+                              {entry.source === "TANITA" && (
+                                <span className="rounded-pill bg-tz-black text-tz-bone px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em]">
+                                  Tanita
+                                </span>
+                              )}
                             </div>
                             <div className="flex gap-2 flex-wrap">
                               {entry.weightKg != null && (
@@ -176,6 +238,11 @@ export default async function MemberDetailPage({
                               {entry.bodyFatPct != null && (
                                 <span className="rounded-pill bg-tz-sand px-3 py-1 text-xs font-semibold text-text-2 tz-nums">
                                   {entry.bodyFatPct} % graso
+                                </span>
+                              )}
+                              {entry.muscleMassKg != null && (
+                                <span className="rounded-pill bg-tz-sand px-3 py-1 text-xs font-semibold text-text-2 tz-nums">
+                                  {entry.muscleMassKg} kg músculo
                                 </span>
                               )}
                               {entry.waistCm != null && (

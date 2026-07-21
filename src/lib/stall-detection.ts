@@ -9,7 +9,29 @@ export type StallSignals = {
   attendanceDropping: boolean;
   lowRpeSustained: boolean;
   goalsWithoutProgress: boolean;
+  compositionStalled: boolean;
 };
+
+// Umbral de "sin cambio apreciable" entre la primera y la última toma de composición del
+// periodo de mirada atrás (docs/COMPOSICION_CORPORAL_TANITA.md §2, RB-IA-007).
+const BODY_FAT_STALL_MARGIN = 0.5; // puntos %
+const MUSCLE_STALL_MARGIN = 0.3; // kg
+
+// CC4: falta de progresión en composición corporal (grasa/músculo) es una señal objetiva más
+// de RB-IA-007 — reutiliza la serie de MemberProgressEntry, no un motor aparte.
+function compositionStalledFromEntries(entries: { bodyFatPct: number | null; muscleMassKg: number | null }[]): boolean {
+  if (entries.length < 2) return false;
+  const first = entries[0];
+  const last = entries[entries.length - 1];
+
+  const fatChecked = first.bodyFatPct != null && last.bodyFatPct != null;
+  const muscleChecked = first.muscleMassKg != null && last.muscleMassKg != null;
+  if (!fatChecked && !muscleChecked) return false;
+
+  const fatStalled = fatChecked ? Math.abs(last.bodyFatPct! - first.bodyFatPct!) < BODY_FAT_STALL_MARGIN : true;
+  const muscleStalled = muscleChecked ? Math.abs(last.muscleMassKg! - first.muscleMassKg!) < MUSCLE_STALL_MARGIN : true;
+  return fatStalled && muscleStalled;
+}
 
 /**
  * RB-IA-007 (decisión §11.9): el estancamiento combina la autovaloración
@@ -20,7 +42,7 @@ export type StallSignals = {
 export async function getStallSignals(memberId: string): Promise<StallSignals> {
   const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 
-  const [assessments, retentionAlert, recentDebriefs, staleGoals] = await Promise.all([
+  const [assessments, retentionAlert, recentDebriefs, staleGoals, compositionEntries] = await Promise.all([
     prisma.selfAssessment.findMany({ where: { memberId, createdAt: { gte: since } }, select: { text: true, structured: true } }),
     prisma.retentionAlert.findFirst({
       where: { memberId, status: { in: ["OPEN", "CONTACTED"] }, riskLevel: { in: ["MEDIUM", "HIGH"] } },
@@ -35,6 +57,11 @@ export async function getStallSignals(memberId: string): Promise<StallSignals> {
     prisma.clientGoal.findFirst({
       where: { memberId, isTemplate: false, achievedAt: null, createdAt: { lte: since } },
       select: { id: true },
+    }),
+    prisma.memberProgressEntry.findMany({
+      where: { memberId, date: { gte: since }, OR: [{ bodyFatPct: { not: null } }, { muscleMassKg: { not: null } }] },
+      orderBy: { date: "asc" },
+      select: { bodyFatPct: true, muscleMassKg: true },
     }),
   ]);
 
@@ -51,11 +78,17 @@ export async function getStallSignals(memberId: string): Promise<StallSignals> {
     attendanceDropping: !!retentionAlert,
     lowRpeSustained,
     goalsWithoutProgress: !!staleGoals,
+    compositionStalled: compositionStalledFromEntries(compositionEntries),
   };
 }
 
 export function isStalled(signals: StallSignals): boolean {
-  const objectiveCount = [signals.attendanceDropping, signals.lowRpeSustained, signals.goalsWithoutProgress].filter(Boolean).length;
+  const objectiveCount = [
+    signals.attendanceDropping,
+    signals.lowRpeSustained,
+    signals.goalsWithoutProgress,
+    signals.compositionStalled,
+  ].filter(Boolean).length;
   return signals.selfReported || objectiveCount >= 2;
 }
 

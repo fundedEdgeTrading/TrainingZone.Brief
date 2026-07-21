@@ -8,7 +8,7 @@ import { canManageMembers } from "@/lib/rbac";
 import { generateInvitationToken, invitationExpiry, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
-import type { HealthRecordType, HealthSeverity } from "@prisma/client";
+import { Prisma, type HealthRecordType, type HealthSeverity } from "@prisma/client";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -126,7 +126,23 @@ export async function updateMemberPhoto(formData: FormData): Promise<MemberActio
   return { ok: true };
 }
 
-// Fotos y evolución: gateado por consentimiento de uso de imágenes (Art. 9 RGPD, opcional).
+// Fotos + composición corporal. Dos consentimientos independientes (docs/COMPOSICION_CORPORAL_
+// IMPLEMENTACION.md CC1.2): las fotos siguen gateadas por consentImages; las métricas de
+// composición (peso, % graso, bioimpedancia) son dato de salud Art. 9 y se gatean por
+// consentHealth, igual que HealthRecord — pueden guardarse sin foto y sin consentImages.
+const COMPOSITION_NUM_FIELDS = [
+  "weightKg",
+  "bodyFatPct",
+  "waistCm",
+  "muscleMassKg",
+  "fatMassKg",
+  "fatFreeMassKg",
+  "bodyWaterPct",
+  "boneMassKg",
+  "bmi",
+] as const;
+const COMPOSITION_INT_FIELDS = ["visceralFatRating", "muscleQuality", "bmrKcal", "metabolicAge"] as const;
+
 export async function createProgressEntry(formData: FormData): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
   const memberId = String(formData.get("memberId") ?? "");
@@ -134,28 +150,92 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId: session.user.orgId },
-    select: { id: true, consentImages: true },
+    select: { id: true, consentImages: true, consentHealth: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
-  if (!member.consentImages) {
-    return { ok: false, error: "Este socio no ha firmado el consentimiento de uso de imágenes." };
-  }
 
   const num = (key: string) => {
     const raw = String(formData.get(key) ?? "").trim().replace(",", ".");
     return raw ? Number(raw) : null;
   };
+  const int = (key: string) => {
+    const n = num(key);
+    return n != null ? Math.round(n) : null;
+  };
   const str = (key: string) => String(formData.get(key) ?? "").trim() || null;
 
-  await prisma.memberProgressEntry.create({
+  const numValues = Object.fromEntries(COMPOSITION_NUM_FIELDS.map((k) => [k, num(k)]));
+  const intValues = Object.fromEntries(COMPOSITION_INT_FIELDS.map((k) => [k, int(k)]));
+  const photos = { photoFrontUrl: str("photoFrontUrl"), photoSideUrl: str("photoSideUrl"), photoBackUrl: str("photoBackUrl") };
+
+  const hasMetrics = Object.values(numValues).some((v) => v != null) || Object.values(intValues).some((v) => v != null);
+  const hasPhotos = Object.values(photos).some((v) => v != null);
+  if (!hasMetrics && !hasPhotos) return { ok: false, error: "Introduce al menos un dato." };
+  if (hasPhotos && !member.consentImages) {
+    return { ok: false, error: "Este socio no ha firmado el consentimiento de uso de imágenes." };
+  }
+  if (hasMetrics && !member.consentHealth) {
+    return { ok: false, error: "Este socio no ha firmado el consentimiento de datos de salud (Art. 9 RGPD)." };
+  }
+
+  const entry = await prisma.memberProgressEntry.create({
+    data: { memberId, ...numValues, ...intValues, ...photos, source: "MANUAL" },
+  });
+
+  if (hasMetrics) {
+    await prisma.auditLog.create({
+      data: {
+        orgId: session.user.orgId,
+        actorUserId: session.user.id,
+        action: "BODY_COMPOSITION_RECORDED",
+        entityType: "MemberProgressEntry",
+        entityId: entry.id,
+        memberId,
+        metadata: { source: "MANUAL" },
+      },
+    });
+  }
+
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+// CC5 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): la app My Tanita no exporta CSV, solo el
+// texto que comparte tras cada medición. En vez de un parser de fichero, el entrenador pega ese
+// texto y aquí se interpreta (src/lib/tanita-parse.ts) para crear la toma con source "TANITA".
+export async function importTanitaText(formData: FormData): Promise<MemberActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const memberId = String(formData.get("memberId") ?? "");
+  const rawText = String(formData.get("rawText") ?? "");
+  if (!memberId || !rawText.trim()) return { ok: false, error: "Pega el texto de la medición." };
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId: session.user.orgId },
+    select: { id: true, consentHealth: true },
+  });
+  if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!member.consentHealth) {
+    return { ok: false, error: "Este socio no ha firmado el consentimiento de datos de salud (Art. 9 RGPD)." };
+  }
+
+  const { parseTanitaText } = await import("@/lib/tanita-parse");
+  const parsed = parseTanitaText(rawText);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const { segmental, ...metrics } = parsed.data;
+  const entry = await prisma.memberProgressEntry.create({
+    data: { memberId, ...metrics, segmental: segmental ?? Prisma.DbNull, source: "TANITA", measuredAt: new Date() },
+  });
+
+  await prisma.auditLog.create({
     data: {
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      action: "BODY_COMPOSITION_RECORDED",
+      entityType: "MemberProgressEntry",
+      entityId: entry.id,
       memberId,
-      weightKg: num("weightKg"),
-      bodyFatPct: num("bodyFatPct"),
-      waistCm: num("waistCm"),
-      photoFrontUrl: str("photoFrontUrl"),
-      photoSideUrl: str("photoSideUrl"),
-      photoBackUrl: str("photoBackUrl"),
+      metadata: { source: "TANITA" },
     },
   });
 

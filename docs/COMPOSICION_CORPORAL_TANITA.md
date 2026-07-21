@@ -120,10 +120,11 @@ Tres vías, de menor a mayor esfuerzo:
 1. **Entrada manual por el entrenador** (v1, sin dependencias). Formulario en la ficha del socio para
    teclear los valores de una toma tras pasar la báscula. Cubre el 100 % del caso de uso desde el día
    uno.
-2. **Importación del PDF/CSV de MyTanita** ➕. La báscula exporta PDF (como el analizado) y CSV. Un
-   `lib/tanita-import.ts` parsea el CSV (más fiable que el PDF) y crea `MemberProgressEntry` con
-   `source = "TANITA"`. El PDF es maquetado/posicional (difícil de parsear de forma robusta): ofrecer
-   importación por **CSV** como camino principal y el PDF solo como adjunto de respaldo.
+2. **Importación por texto pegado de MyTanita** ➕. La app móvil **no exporta CSV**: solo comparte un
+   texto plano tras cada medición (`* Peso: 68,55 kg`, `* Grasa corporal: 14,9 %` + desglose por
+   segmento). `lib/tanita-parse.ts` interpreta ese texto pegado en un `<textarea>` y crea
+   `MemberProgressEntry` con `source = "TANITA"`. El PDF es maquetado/posicional (difícil de parsear
+   de forma robusta): se descarta como fuente automática; el texto de "Compartir" es la vía estable.
 3. **Integración API con Tanita Health Connect** (futuro, riesgo externo). Depende de credenciales y
    disponibilidad del proveedor; planificar aparte, igual que Stripe (F12) o la IA (F16). No bloquea
    las vías 1 y 2.
@@ -168,12 +169,12 @@ Este módulo **no** abre una fase nueva de peso: se acopla a fases ya planificad
 | Señal de estancamiento por falta de progresión | **F14** (`lib/stall-detection.ts`) | Composición estancada = señal objetiva `RB-IA-007` |
 | Rangos de referencia configurables | **F9** | Tabla editable estilo `AptitudeRule` |
 | Métricas agregadas de composición | **F17** (BI) | Enriquece `RB-BI-003`, no lo sustituye |
-| Importación CSV MyTanita | Iteración propia (post-F9) | Parser aislado en `lib/tanita-import.ts` |
+| Importación por texto pegado MyTanita | Iteración propia (post-F9) | Parser aislado en `lib/tanita-parse.ts` |
 | API Tanita Health Connect | Futuro / riesgo externo | Planificar aparte como Stripe/IA |
 
 **Prioridad sugerida:** (1) campos + entrada manual + ficha con semáforos → (2) gráficas de evolución
-→ (3) señal de estancamiento → (4) importación CSV → (5) API. Las tres primeras aportan valor sin
-dependencias externas.
+→ (3) señal de estancamiento → (4) importación por texto pegado → (5) API. Las tres primeras aportan
+valor sin dependencias externas.
 
 ---
 
@@ -182,8 +183,8 @@ dependencias externas.
 1. **Altura del socio:** las métricas derivadas (IMC, edad metabólica de referencia) requieren
    `heightCm`. Decidir si vive en `Member` o en `HealthRecord`. Recomendado: `Member.heightCm`.
 2. **Parseo del PDF Tanita:** el PDF es posicional y frágil (el informe analizado mezcla valores sin
-   etiquetas claras). Priorizar **CSV**; tratar el PDF solo como adjunto de respaldo, no como fuente
-   de parseo automático fiable.
+   etiquetas claras). La app **no exporta CSV**; se usa el texto de "Compartir" (`lib/tanita-parse.ts`)
+   como única vía de importación automática, con el PDF solo como adjunto de respaldo.
 3. **Rangos por sexo/edad:** los rangos saludables dependen de sexo y edad; la tabla de referencia
    debe contemplarlo. Requiere el sexo del socio (dato Art. 9 si se infiere de salud).
 4. **Frecuencia de toma:** definir si la toma de composición sigue el mismo programador de check-ins

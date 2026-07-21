@@ -47,6 +47,7 @@ model Organization {
   personalizedOffers     PersonalizedOffer[]
   trainerRatings         TrainerRating[]
   checkinScheduleConfigs CheckinScheduleConfig[]
+  referenceRanges        ReferenceRange[]
 }
 
 model Center {
@@ -104,6 +105,7 @@ model User {
   auditLogs            AuditLog[]
   healthReported       HealthRecord[]    @relation("ReportedBy")
   aptitudeRulesEdited  AptitudeRule[]    @relation("EditedBy")
+  referenceRangesEdited ReferenceRange[] @relation("EditedReferenceRange")
   centerMemberships    CenterMembership[]
   memberNotesAuthored  MemberNote[]      @relation("MemberNoteAuthor")
   invitation           Invitation?
@@ -227,6 +229,7 @@ model Member {
   occupation     String?
   hasChildren    Boolean? // BI demográfico (RB-BI-003), heredado del lead si se respondió
   channel        String?
+  heightCm       Int? // composición corporal: base para IMC/rangos de referencia (docs/COMPOSICION_CORPORAL_*)
   originLeadId   String? @unique
   trainerId      String?
   stripeCustomerId String? @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
@@ -272,9 +275,48 @@ model MemberProgressEntry {
   photoBackUrl  String?
   createdAt     DateTime @default(now())
 
+  // Composición corporal (bioimpedancia, p.ej. Tanita) — docs/COMPOSICION_CORPORAL_TANITA.md §3.
+  // Todos opcionales: una fila puede seguir siendo un registro "solo peso/fotos" como hasta ahora.
+  // Dato Art. 9 RGPD (RB-PERFIL-004): mismo tratamiento que HealthRecord, ver lib/health-access.ts.
+  muscleMassKg      Float? // masa muscular
+  fatMassKg         Float? // masa grasa (kg)
+  fatFreeMassKg     Float? // masa magra / libre de grasa
+  bodyWaterPct      Float? // agua corporal (%)
+  boneMassKg        Float? // masa ósea
+  visceralFatRating Int? // grasa visceral (rating Tanita, no %)
+  muscleQuality     Int? // "calidad muscular" (MQ Tanita)
+  bmrKcal           Int? // metabolismo basal
+  metabolicAge      Int? // edad metabólica
+  bmi               Float? // IMC (se guarda además de derivarse, para no depender de heightCm al recalcular históricos)
+  segmental         Json? // análisis por segmento: tronco/brazos/piernas {fatPct, muscleKg}
+  source            String    @default("MANUAL") // "MANUAL" | "TANITA" (pegado desde MyTanita)
+  measuredAt        DateTime? // fecha real de la toma (≠ createdAt), relevante en importaciones
+
   member Member @relation(fields: [memberId], references: [id])
 
   @@index([memberId])
+}
+
+// Rangos de referencia de composición corporal (RB-PERFIL-004 / semáforo en la ficha del socio).
+// Tabla editable por dirección — no hardcode — misma filosofía que AptitudeRule.
+model ReferenceRange {
+  id     String  @id @default(cuid())
+  orgId  String
+  metric String // "bodyFatPct" | "bmi" | "visceralFatRating" | "bodyWaterPct" ...
+  sex    String? // null = aplica a ambos
+  ageMin Int?
+  ageMax Int?
+  min    Float?
+  max    Float?
+
+  editedByUserId String?
+  updatedAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  editedBy     User?        @relation("EditedReferenceRange", fields: [editedByUserId], references: [id])
+
+  @@index([orgId])
+  @@index([orgId, metric])
 }
 
 // Bitácora de comentarios internos del socio (RB-LEAD-008): lista cronológica
