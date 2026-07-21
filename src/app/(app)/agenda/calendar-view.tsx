@@ -5,6 +5,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
+import { startOfWeekMonday } from "@/lib/date-utils";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "./calendar.css";
 
@@ -61,11 +62,26 @@ function occupancyColor(pct: number, cancelled: boolean) {
   return "#6B7A34";
 }
 
-export default function CalendarView({ sessions }: { sessions: SessionEvent[] }) {
+export default function CalendarView({
+  sessions,
+  weekStart,
+  centerId,
+}: {
+  sessions: SessionEvent[];
+  weekStart: string;
+  centerId: string;
+}) {
   const router = useRouter();
   const isMobile = useIsMobile();
   const [userView, setUserView] = useState<View | null>(null);
   const view = userView ?? (isMobile ? Views.DAY : Views.WEEK);
+
+  function handleNavigate(date: Date) {
+    const monday = startOfWeekMonday(date);
+    if (monday.toISOString().slice(0, 10) !== weekStart.slice(0, 10)) {
+      router.push(`/agenda?center=${centerId}&week=${monday.toISOString().slice(0, 10)}`);
+    }
+  }
 
   const events = useMemo(
     () =>
@@ -86,6 +102,7 @@ export default function CalendarView({ sessions }: { sessions: SessionEvent[] })
     <div className="bg-brand-card border border-brand-border rounded-card p-2.5 sm:p-4 shadow-card tz-fade-up overflow-x-auto">
       <div className={`h-[600px] sm:h-[668px] ${view === Views.WEEK ? "min-w-[640px]" : ""}`}>
         <Calendar
+          key={weekStart}
           localizer={localizer}
           culture="es"
           events={events}
@@ -93,6 +110,8 @@ export default function CalendarView({ sessions }: { sessions: SessionEvent[] })
           endAccessor="end"
           view={view}
           onView={setUserView}
+          defaultDate={new Date(weekStart)}
+          onNavigate={handleNavigate}
           views={[Views.WEEK, Views.DAY, Views.AGENDA]}
           step={30}
           min={new Date(1970, 0, 1, 6, 0)}
