@@ -5,8 +5,7 @@ import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { canManageMembers } from "@/lib/rbac";
 import type { MemberState } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
-import { Input, Select } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -42,24 +41,19 @@ export default async function MembersPage({
         actions={canCreate ? <NewMemberDrawer centers={centers} plans={plans} /> : undefined}
       />
 
-      <form className="flex flex-wrap gap-2 bg-brand-card border border-brand-border rounded-card p-3 shadow-card">
-        <Input
-          type="text"
-          name="q"
-          defaultValue={params.q}
-          placeholder="Buscar por nombre o email..."
-          className="flex-1 min-w-[200px]"
-        />
-        <Select name="state" defaultValue={params.state} className="w-auto">
-          <option value="">Todos los estados</option>
-          {STATES.map((s) => (
-            <option key={s} value={s}>
-              {MEMBER_STATE_LABEL[s]}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit">Filtrar</Button>
-      </form>
+      <FilterBar
+        kicker="Filtrar socios"
+        searchName="q"
+        searchDefault={params.q}
+        searchPlaceholder="Buscar por nombre o email..."
+        chipName="state"
+        chipLabel="Estado"
+        chipDefault={params.state}
+        chipOptions={[
+          { value: "", label: "Todos" },
+          ...STATES.map((s) => ({ value: s, label: MEMBER_STATE_LABEL[s], tone: MEMBER_STATE_TONE[s] })),
+        ]}
+      />
 
       {members.length === 0 ? (
         <TableShell>

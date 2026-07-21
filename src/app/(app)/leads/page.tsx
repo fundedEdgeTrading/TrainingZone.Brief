@@ -3,8 +3,7 @@ import { requireRole } from "@/lib/guard";
 import { canManageLeads, canManageOrg } from "@/lib/rbac";
 import { listLeads, listLeadChannels, listNoCloseReasons, listCentersForLead } from "@/lib/leads-queries";
 import { Badge } from "@/components/ui/badge";
-import { Input, Select } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
+import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { LeadStatus } from "@prisma/client";
@@ -47,18 +46,16 @@ export default async function LeadsPage({
         actions={canCreate ? <NewLeadDrawer centers={centers} channels={channels} /> : undefined}
       />
 
-      <form className="flex flex-wrap gap-2 bg-brand-card border border-brand-border rounded-card p-3 shadow-card">
-        <Input type="text" name="q" defaultValue={params.q} placeholder="Buscar por nombre o teléfono..." className="flex-1 min-w-[200px]" />
-        <Select name="centerId" defaultValue={params.centerId} className="w-auto">
-          <option value="">Todos los centros</option>
-          {centers.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
-        <Button type="submit">Filtrar</Button>
-      </form>
+      <FilterBar
+        kicker="Filtrar leads"
+        searchName="q"
+        searchDefault={params.q}
+        searchPlaceholder="Buscar por nombre o teléfono..."
+        chipName="centerId"
+        chipLabel="Centro"
+        chipDefault={params.centerId}
+        chipOptions={[{ value: "", label: "Todos" }, ...centers.map((c) => ({ value: c.id, label: c.name }))]}
+      />
 
       {leads.length === 0 ? (
         <EmptyState title="Sin leads" description="Todavía no hay contactos en el embudo comercial." />

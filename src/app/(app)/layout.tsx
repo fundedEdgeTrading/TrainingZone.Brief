@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { NAV_BY_ROLE, ROLE_LABEL, sectionLabelForRole, footerLabelForRole } from "@/lib/rbac";
+import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole } from "@/lib/rbac";
 import { listNotificationsForUser } from "@/lib/notifications";
 import Sidebar from "./sidebar";
 import Header from "./header";
@@ -47,7 +47,6 @@ export default async function AppLayout({
       <div className="flex min-h-screen bg-brand-bg">
         <Sidebar
           nav={nav}
-          sectionLabel={sectionLabelForRole(role)}
           footerLabel={footerLabelForRole(role)}
           logoUrl={logoUrl}
           brandName={brandName}
