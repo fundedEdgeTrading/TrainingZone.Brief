@@ -5,7 +5,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
+import { formatDateParam, parseDateParam } from "@/lib/date-utils";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "./calendar.css";
 
@@ -64,11 +64,11 @@ function occupancyColor(pct: number, cancelled: boolean) {
 
 export default function CalendarView({
   sessions,
-  weekStart,
+  focusedDate,
   centerId,
 }: {
   sessions: SessionEvent[];
-  weekStart: string;
+  focusedDate: string;
   centerId: string;
 }) {
   const router = useRouter();
@@ -76,11 +76,14 @@ export default function CalendarView({
   const [userView, setUserView] = useState<View | null>(null);
   const view = userView ?? (isMobile ? Views.DAY : Views.WEEK);
 
+  // El servidor es la única fuente de verdad para la fecha mostrada: cada
+  // navegación (Anterior/Hoy/Siguiente, en cualquier vista) recarga la
+  // página con la fecha exacta, en vez de confiar en el estado interno no
+  // controlado de react-big-calendar (poco fiable al cruzar semanas).
   function handleNavigate(date: Date) {
-    const monday = startOfWeekMonday(date);
-    const mondayParam = formatDateParam(monday);
-    if (mondayParam !== weekStart) {
-      router.push(`/agenda?center=${centerId}&week=${mondayParam}`);
+    const param = formatDateParam(date);
+    if (param !== focusedDate) {
+      router.push(`/agenda?center=${centerId}&week=${param}`);
     }
   }
 
@@ -108,7 +111,7 @@ export default function CalendarView({
       )}
       <div className={`h-[600px] sm:h-[668px] ${view === Views.WEEK ? "min-w-[640px]" : ""}`}>
         <Calendar
-          key={weekStart}
+          key={focusedDate}
           localizer={localizer}
           culture="es"
           events={events}
@@ -116,7 +119,7 @@ export default function CalendarView({
           endAccessor="end"
           view={view}
           onView={setUserView}
-          defaultDate={parseDateParam(weekStart)}
+          defaultDate={parseDateParam(focusedDate)}
           onNavigate={handleNavigate}
           views={[Views.WEEK, Views.DAY, Views.AGENDA]}
           step={30}

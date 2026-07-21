@@ -107,7 +107,7 @@ export default async function AgendaPage({
         </span>
       </div>
 
-      <CalendarView sessions={events} weekStart={formatDateParam(weekStart)} centerId={centerId ?? ""} />
+      <CalendarView sessions={events} focusedDate={formatDateParam(refDate)} centerId={centerId ?? ""} />
     </div>
   );
 }
