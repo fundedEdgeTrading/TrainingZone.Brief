@@ -100,6 +100,11 @@ export default function CalendarView({
 
   return (
     <div className="bg-brand-card border border-brand-border rounded-card p-2.5 sm:p-4 shadow-card tz-fade-up overflow-x-auto">
+      {sessions.length === 0 && (
+        <p className="text-sm text-brand-muted bg-tz-bone rounded-control px-3 py-2 mb-3">
+          No hay sesiones programadas para esta semana.
+        </p>
+      )}
       <div className={`h-[600px] sm:h-[668px] ${view === Views.WEEK ? "min-w-[640px]" : ""}`}>
         <Calendar
           key={weekStart}
