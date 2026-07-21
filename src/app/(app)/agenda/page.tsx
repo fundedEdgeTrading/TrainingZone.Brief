@@ -5,18 +5,10 @@ import { listAssignableStaff } from "@/lib/org-queries";
 import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots, canManageOrg } from "@/lib/rbac";
 import { PageHeader } from "@/components/ui/page-header";
+import { startOfWeekMonday } from "@/lib/date-utils";
 import CalendarView from "./calendar-view";
 import CenterSwitcher from "./center-switcher";
 import { NewEpSlotDrawer } from "./new-ep-slot-drawer";
-
-function startOfWeekMonday(d: Date) {
-  const date = new Date(d);
-  const day = date.getDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  date.setDate(date.getDate() + diff);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
 
 export default async function AgendaPage({
   searchParams,
@@ -115,7 +107,7 @@ export default async function AgendaPage({
         </span>
       </div>
 
-      <CalendarView sessions={events} />
+      <CalendarView sessions={events} weekStart={weekStart.toISOString()} centerId={centerId ?? ""} />
     </div>
   );
 }
