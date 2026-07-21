@@ -97,13 +97,28 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   let session;
   if (input.id) {
     session = await prisma.classSession.update({ where: { id: input.id, orgId }, data });
-    await prisma.booking.deleteMany({ where: { sessionId: session.id, status: { not: "CANCELLED" } } });
+
+    // No borramos bookings: una reserva con SessionDebrief no se puede eliminar
+    // (FK RESTRICT). Si el socio cambia, cancelamos las reservas antiguas en
+    // vez de borrarlas y creamos una nueva si hace falta.
+    const existingBookings = await prisma.booking.findMany({
+      where: { sessionId: session.id, status: { not: "CANCELLED" } },
+      select: { id: true, memberId: true },
+    });
+    for (const b of existingBookings) {
+      if (b.memberId !== input.memberId) {
+        await prisma.booking.update({ where: { id: b.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
+      }
+    }
+    const alreadyBooked = existingBookings.some((b) => b.memberId === input.memberId);
+    if (input.memberId && !alreadyBooked) {
+      await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
+    }
   } else {
     session = await prisma.classSession.create({ data: { ...data, orgId } });
-  }
-
-  if (input.memberId) {
-    await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
+    if (input.memberId) {
+      await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
+    }
   }
 
   return session;
@@ -112,6 +127,9 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
 export async function deleteSession(orgId: string, sessionId: string) {
   const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId }, select: { id: true } });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };
+  // Borrar la sesión implica borrar también sus reservas y, si las hay,
+  // los debriefs asociados (FK RESTRICT: Booking <- SessionDebrief).
+  await prisma.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
   await prisma.booking.deleteMany({ where: { sessionId } });
   await prisma.classSession.delete({ where: { id: sessionId } });
   return { ok: true as const };
