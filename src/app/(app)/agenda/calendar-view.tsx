@@ -5,7 +5,7 @@ import { format, parse, startOfWeek, getDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useSyncExternalStore } from "react";
-import { startOfWeekMonday } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "./calendar.css";
 
@@ -78,8 +78,9 @@ export default function CalendarView({
 
   function handleNavigate(date: Date) {
     const monday = startOfWeekMonday(date);
-    if (monday.toISOString().slice(0, 10) !== weekStart.slice(0, 10)) {
-      router.push(`/agenda?center=${centerId}&week=${monday.toISOString().slice(0, 10)}`);
+    const mondayParam = formatDateParam(monday);
+    if (mondayParam !== weekStart) {
+      router.push(`/agenda?center=${centerId}&week=${mondayParam}`);
     }
   }
 
@@ -115,7 +116,7 @@ export default function CalendarView({
           endAccessor="end"
           view={view}
           onView={setUserView}
-          defaultDate={new Date(weekStart)}
+          defaultDate={parseDateParam(weekStart)}
           onNavigate={handleNavigate}
           views={[Views.WEEK, Views.DAY, Views.AGENDA]}
           step={30}
