@@ -51,6 +51,7 @@ export const NAV_BY_ROLE: Record<
   MEMBER: [
     { href: "/portal", label: "Mi actividad" },
     { href: "/portal/agenda", label: "Reservar clase" },
+    { href: "/portal/evolucion", label: "Mi evolución" },
     { href: "/portal/plan", label: "Mi plan" },
     { href: "/portal/chat", label: "Chat" },
   ],

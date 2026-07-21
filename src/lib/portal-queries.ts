@@ -1,4 +1,29 @@
 import { prisma } from "@/lib/prisma";
+import { buildCompositionView } from "@/lib/composition-view";
+
+// RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
+// de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
+// mismos consentimientos (Art. 9 RGPD) que ya firmó en su onboarding.
+export async function getMemberEvolution(memberId: string, orgId: string) {
+  const member = await prisma.member.findUnique({
+    where: { id: memberId },
+    select: {
+      birthDate: true,
+      consentHealth: true,
+      consentImages: true,
+      progressEntries: { orderBy: { date: "desc" } },
+    },
+  });
+  if (!member) return null;
+
+  const view = await buildCompositionView(orgId, member.birthDate, member.progressEntries);
+  return {
+    consentHealth: member.consentHealth,
+    consentImages: member.consentImages,
+    progressEntries: member.progressEntries,
+    ...view,
+  };
+}
 
 export async function getMemberForUser(userId: string) {
   return prisma.member.findFirst({
