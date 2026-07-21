@@ -1291,7 +1291,7 @@ const ORGS: OrgSeedConfig[] = [
     slug: "training-zone",
     logoUrl: "/brand/tz-logo-black.png",
     historyDays: 210,
-    futureDays: 21,
+    futureDays: 60,
     centers: [
       { key: "centro", name: "TRAINING ZONE Centro", slug: "centro", address: "Calle Mayor 12, Madrid", templateCount: 11, capacityRange: [10, 16], memberCount: 130 },
       { key: "norte", name: "TRAINING ZONE Norte", slug: "norte", address: "Av. de la Ilustración 45, Madrid", templateCount: 9, capacityRange: [8, 14], memberCount: 85 },
@@ -1328,7 +1328,7 @@ const ORGS: OrgSeedConfig[] = [
     slug: "vitalia",
     logoUrl: "/brand/vitalia-logo.svg",
     historyDays: 150,
-    futureDays: 14,
+    futureDays: 45,
     centers: [
       { key: "chamberi", name: "Vitalia Chamberí", slug: "chamberi", address: "Calle de Almagro 22, Madrid", templateCount: 9, capacityRange: [8, 14], memberCount: 82 },
       // Retiro sin logo propio → hereda el de la organización (Vitalia) en el NavBar.
