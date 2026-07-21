@@ -66,10 +66,71 @@ function demoAvatarUrl(seed: string, initials: string) {
     `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="hsl(${hue},45%,55%)"/><text x="150" y="172" font-family="Arial,sans-serif" font-size="110" font-weight="700" fill="#fff" text-anchor="middle">${initials}</text></svg>`
   );
 }
-function demoProgressPhotoUrl(seed: string, label: string) {
-  const hue = hashHue(seed);
+function clamp(v: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, v));
+}
+// Silueta tipo "muñeco" (no es una foto real de una persona) cuya anchura de
+// cintura/cadera y grosor de brazos/piernas varían con los datos de cada
+// registro (peso, cintura, % graso), para poder ver la evolución física
+// entre fotos igual que con un dibujo del cuerpo.
+// Lienzo horizontal (no vertical) porque las tarjetas del front recortan la
+// imagen con object-cover en cajas anchas y bajas (miniatura ~8:5, comparador
+// ~4:3): un lienzo alto perdería la cabeza. La etiqueta Frente/Perfil/Espalda
+// ya la pinta el front debajo de la imagen, así que no se repite aquí.
+function bodySilhouetteSvg(opts: { view: "front" | "side"; weightKg: number; bodyFatPct: number; waistCm: number }) {
+  const { view, weightKg, bodyFatPct, waistCm } = opts;
+  const cx = 240;
+  const shoulderHalf = 95;
+  const waistHalf = clamp(58 + (waistCm - 80) * 4.2 + (bodyFatPct - 26) * 2.6, 46, 118);
+  const hipHalf = waistHalf * 0.88 + 14;
+  const armW = clamp(20 + (weightKg - 67) * 1.6, 15, 34);
+  const legW = clamp(34 + (weightKg - 67) * 1.8, 26, 52);
+  const legGap = 12;
+  const skin = "#8a97a6";
+  const skinDark = "#5f6c7a";
+  const bg = "#eef1f4";
+  const legs = `<rect x="${cx - legGap - legW}" y="270" width="${legW}" height="60" rx="${legW / 3}" fill="${skinDark}"/><rect x="${cx + legGap}" y="270" width="${legW}" height="60" rx="${legW / 3}" fill="${skinDark}"/>`;
+
+  if (view === "side") {
+    const bellyBulge = clamp(waistHalf * 0.5, 25, 70);
+    const path = [
+      `M ${cx - 30} 135`,
+      `L ${cx - 30} 275`,
+      `L ${cx - 16} 285`,
+      `L ${cx - 20} 330`,
+      `L ${cx - 2} 330`,
+      `L ${cx + 6} 285`,
+      `L ${cx + 20} 330`,
+      `L ${cx + 34} 330`,
+      `L ${cx + 18} 280`,
+      `Q ${cx + bellyBulge} 210 ${cx + 14} 155`,
+      `L ${cx + 4} 138`,
+      `Z`,
+    ].join(" ");
+    return svgDataUri(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="380"><rect width="480" height="380" fill="${bg}"/><circle cx="${cx - 4}" cy="95" r="34" fill="${skin}"/><path d="${path}" fill="${skin}"/></svg>`
+    );
+  }
+
+  // Torso (mitad derecha) desde el hombro hasta la cadera; la mitad izquierda
+  // es el espejo, formando un polígono cerrado. Las piernas son dos bloques
+  // cortos debajo, a modo de encuadre de foto de cuerpo (no de pie entero).
+  const half: [number, number][] = [
+    [shoulderHalf, 145],
+    [shoulderHalf * 0.82, 180],
+    [waistHalf, 225],
+    [hipHalf, 270],
+  ];
+  const right = half.map(([x, y]) => `${cx + x} ${y}`).join(" L ");
+  const left = [...half].reverse().map(([x, y]) => `${cx - x} ${y}`).join(" L ");
+  const body = `M ${cx} 130 L ${right} L ${cx - hipHalf} 270 L ${left} Z`;
+  const armY1 = 150;
+  const armY2 = 260;
   return svgDataUri(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="640"><rect width="480" height="640" fill="hsl(${hue},30%,90%)"/><circle cx="240" cy="220" r="70" fill="hsl(${hue},25%,75%)"/><rect x="150" y="300" width="180" height="280" rx="40" fill="hsl(${hue},25%,75%)"/><text x="240" y="600" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="hsl(${hue},20%,35%)" text-anchor="middle">${label}</text></svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="380"><rect width="480" height="380" fill="${bg}"/>` +
+      `<rect x="${cx - shoulderHalf - armW}" y="${armY1}" width="${armW}" height="${armY2 - armY1}" rx="${armW / 2}" fill="${skinDark}"/>` +
+      `<rect x="${cx + shoulderHalf}" y="${armY1}" width="${armW}" height="${armY2 - armY1}" rx="${armW / 2}" fill="${skinDark}"/>` +
+      `${legs}<path d="${body}" fill="${skin}"/><circle cx="${cx}" cy="95" r="38" fill="${skin}"/></svg>`
   );
 }
 
@@ -1060,14 +1121,14 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         { days: -60, weightKg: 68.4, bodyFatPct: 27.5, waistCm: 82 },
         { days: -30, weightKg: 67.1, bodyFatPct: 26.1, waistCm: 80 },
         { days: -3, weightKg: 65.8, bodyFatPct: 24.6, waistCm: 78 },
-      ].map(({ days, ...rest }) => ({
+      ].map(({ days, ...metrics }) => ({
         id: id(),
         memberId: demoMemberId,
         date: addDays(TODAY, days),
-        ...rest,
-        photoFrontUrl: demoProgressPhotoUrl(`${cfg.slug}-${demoMemberId}-front-${days}`, "Frente"),
-        photoSideUrl: demoProgressPhotoUrl(`${cfg.slug}-${demoMemberId}-side-${days}`, "Perfil"),
-        photoBackUrl: demoProgressPhotoUrl(`${cfg.slug}-${demoMemberId}-back-${days}`, "Espalda"),
+        ...metrics,
+        photoFrontUrl: bodySilhouetteSvg({ view: "front", ...metrics }),
+        photoSideUrl: bodySilhouetteSvg({ view: "side", ...metrics }),
+        photoBackUrl: bodySilhouetteSvg({ view: "front", ...metrics }),
       })),
     });
 
