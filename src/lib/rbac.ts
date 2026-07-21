@@ -11,37 +11,51 @@ export const NAV_BY_ROLE: Record<
 > = {
   OWNER: [
     { href: "/dashboard", label: "Panel de control" },
+    { href: "/leads", label: "Leads" },
     { href: "/members", label: "Socios" },
     { href: "/agenda", label: "Agenda" },
     { href: "/billing", label: "Cobros" },
     { href: "/retention", label: "Retención" },
+    { href: "/offers", label: "Ofertas" },
+    { href: "/rrhh", label: "RRHH" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud" },
     { href: "/organization", label: "Organización" },
     { href: "/audit", label: "Auditoría" },
   ],
   CENTER_DIRECTOR: [
     { href: "/dashboard", label: "Panel de control" },
+    { href: "/leads", label: "Leads" },
     { href: "/members", label: "Socios" },
     { href: "/agenda", label: "Agenda" },
     { href: "/billing", label: "Cobros" },
     { href: "/retention", label: "Retención" },
+    { href: "/offers", label: "Ofertas" },
+    { href: "/rrhh", label: "RRHH" },
   ],
   TRAINER: [
     { href: "/agenda", label: "Agenda" },
     { href: "/brief", label: "Session Brief" },
     { href: "/members", label: "Socios" },
+    { href: "/leads", label: "Leads" },
+    { href: "/trainer", label: "Mi panel" },
+    { href: "/offers", label: "Ofertas" },
+    { href: "/rrhh", label: "RRHH" },
   ],
   RECEPTION: [
     { href: "/members", label: "Socios" },
+    { href: "/leads", label: "Leads" },
     { href: "/agenda", label: "Agenda" },
     { href: "/billing", label: "Cobros" },
   ],
   MEMBER: [
     { href: "/portal", label: "Mi actividad" },
     { href: "/portal/agenda", label: "Reservar clase" },
+    { href: "/portal/plan", label: "Mi plan" },
+    { href: "/portal/chat", label: "Chat" },
   ],
   HR_MANAGER: [
     { href: "/organization", label: "Organización" },
+    { href: "/rrhh", label: "RRHH" },
   ],
   PLATFORM_ADMIN: [
     { href: "/dashboard", label: "Panel de control" },
@@ -85,6 +99,36 @@ export function canManageMembers(role: Role): boolean {
 
 export function isStaffRole(role: Role): boolean {
   return role !== "MEMBER";
+}
+
+// F8 — CRM comercial de leads.
+export function canManageLeads(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "RECEPTION" || role === "TRAINER";
+}
+
+// F11/RB-AGENDA-006 — crear/editar/publicar franjas autorreservables de EP.
+export function canManageEpSlots(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
+}
+
+// F14/RB-RRHH-013 — aprobar (luz verde) ofertas personalizadas.
+export function canApproveOffers(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR";
+}
+
+// F14/RB-RRHH-013 — proponer/elevar ofertas a dirección.
+export function canProposeOffers(role: Role): boolean {
+  return role === "TRAINER" || role === "OWNER" || role === "CENTER_DIRECTOR";
+}
+
+// F14/RB-RRHH-012 — valoraciones de entrenadores: EXCLUSIVO dirección, nunca el propio entrenador.
+export function canViewTrainerRatings(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR";
+}
+
+// F13/RB-RRHH-003 — buzón de propuestas: dirección + RRHH lo revisan.
+export function canReviewStaffProposals(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "HR_MANAGER";
 }
 
 export function defaultRouteForRole(role: Role): string {

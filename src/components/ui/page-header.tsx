@@ -4,7 +4,7 @@ export function PageHeader({
   actions,
 }: {
   kicker?: string;
-  description?: string;
+  description?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
   return (

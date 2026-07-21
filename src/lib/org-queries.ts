@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Role } from "@prisma/client";
 
 export async function getOrganization(orgId: string) {
   return prisma.organization.findUnique({
@@ -38,5 +39,14 @@ export async function getStaffWithMemberships(orgId: string) {
       },
       invitation: { select: { usedAt: true, expiresAt: true } },
     },
+  });
+}
+
+/** Listado ligero de personal asignable (dueño de lead, entrenador responsable...). */
+export async function listAssignableStaff(orgId: string, roles?: Role[]) {
+  return prisma.user.findMany({
+    where: { orgId, role: roles ? { in: roles } : { not: "MEMBER" } },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, role: true },
   });
 }

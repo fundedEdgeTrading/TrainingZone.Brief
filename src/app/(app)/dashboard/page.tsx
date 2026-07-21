@@ -8,6 +8,10 @@ import {
   getOccupancyByWeekday,
   getCohortRetention,
   getRevenueByMethod,
+  getLtvAndTicket,
+  getMemberDemographics,
+  getGoalsAggregate,
+  getPostalCodeDistribution,
 } from "@/lib/dashboard-queries";
 import { KpiCard, Card } from "@/components/kpi-card";
 import {
@@ -24,17 +28,34 @@ export default async function DashboardPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
   const orgId = session.user.orgId;
 
-  const [kpis, revenueByMonth, stateBreakdown, occupancyByCenter, noShowRate, occupancyByWeekday, cohorts, revenueByMethod] =
-    await Promise.all([
-      getKpis(orgId),
-      getRevenueByMonth(orgId),
-      getMemberStateBreakdown(orgId),
-      getOccupancyByCenter(orgId),
-      getNoShowRate(orgId),
-      getOccupancyByWeekday(orgId),
-      getCohortRetention(orgId),
-      getRevenueByMethod(orgId),
-    ]);
+  const [
+    kpis,
+    revenueByMonth,
+    stateBreakdown,
+    occupancyByCenter,
+    noShowRate,
+    occupancyByWeekday,
+    cohorts,
+    revenueByMethod,
+    ltvTicket,
+    demographics,
+    goalsAggregate,
+    postalDistribution,
+  ] = await Promise.all([
+    getKpis(orgId),
+    getRevenueByMonth(orgId),
+    getMemberStateBreakdown(orgId),
+    getOccupancyByCenter(orgId),
+    getNoShowRate(orgId),
+    getOccupancyByWeekday(orgId),
+    getCohortRetention(orgId),
+    getRevenueByMethod(orgId),
+    getLtvAndTicket(orgId),
+    getMemberDemographics(orgId),
+    getGoalsAggregate(orgId),
+    getPostalCodeDistribution(orgId),
+  ]);
+  const maxPostal = Math.max(1, ...postalDistribution.map((p) => p.total));
 
   const eur = (cents: number) =>
     (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -89,6 +110,81 @@ export default async function DashboardPage() {
           <RevenueByMethodChart data={revenueByMethod} />
         </Card>
       </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <KpiCard label="LTV medio por cliente" value={eur(ltvTicket.ltvEuros * 100)} hint={`${ltvTicket.payingMembers} clientes con cobros`} tone="good" delay={0.5} />
+        <KpiCard label="Ticket medio" value={eur(ltvTicket.avgTicketEuros * 100)} delay={0.54} />
+        <KpiCard label="Edad media" value={demographics.avgAge ? `${demographics.avgAge} años` : "—"} delay={0.58} />
+        <KpiCard
+          label="% con hijos / empresarios"
+          value={`${demographics.pctWithChildren ?? "—"}% / ${demographics.pctBusinessOwners ?? "—"}%`}
+          delay={0.62}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card title="Nicho principal (ocupación)" meta={`muestra: ${demographics.sampleSize}`} delay={0.56}>
+          {demographics.topOccupations.length === 0 ? (
+            <p className="text-sm text-brand-muted">Sin datos de ocupación todavía.</p>
+          ) : (
+            <ul className="space-y-2">
+              {demographics.topOccupations.map((o) => (
+                <li key={o.occupation} className="flex items-center justify-between text-sm">
+                  <span className="capitalize text-brand-text-2">{o.occupation}</span>
+                  <span className="tz-nums font-semibold text-brand-text">{o.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Objetivos (agregado)" meta="RB-BI-004" delay={0.6}>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="font-display font-extrabold text-xl text-brand-text tz-nums">
+                {goalsAggregate.achievedGoals}/{goalsAggregate.totalGoals}
+              </div>
+              <div className="text-brand-muted">Objetivos conseguidos</div>
+            </div>
+            <div>
+              <div className="font-display font-extrabold text-xl text-brand-text tz-nums">{goalsAggregate.checkins}</div>
+              <div className="text-brand-muted">Check-ins recibidos</div>
+            </div>
+            <div>
+              <div className="font-display font-extrabold text-xl text-critical tz-nums">{goalsAggregate.stalledCount}</div>
+              <div className="text-brand-muted">Se sienten estancados</div>
+            </div>
+            <div>
+              <div className="font-display font-extrabold text-xl text-good tz-nums">{goalsAggregate.wantsMoreCount}</div>
+              <div className="text-brand-muted">Piden &quot;más&quot;</div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card
+        title="Distribución geográfica (leads + clientes)"
+        meta="por prefijo de código postal — proxy del mapa de radios (RB-LEAD-010)"
+        delay={0.64}
+      >
+        {postalDistribution.length === 0 ? (
+          <p className="text-sm text-brand-muted">Sin códigos postales registrados todavía.</p>
+        ) : (
+          <div className="space-y-2">
+            {postalDistribution.slice(0, 10).map((p) => (
+              <div key={p.prefix} className="flex items-center gap-3 text-sm">
+                <span className="w-10 shrink-0 font-semibold text-brand-text tz-nums">{p.prefix}xxx</span>
+                <div className="flex-1 h-3 rounded-full bg-tz-sand overflow-hidden">
+                  <div className="h-full bg-tz-black rounded-full" style={{ width: `${(p.total / maxPostal) * 100}%` }} />
+                </div>
+                <span className="w-24 shrink-0 text-xs text-brand-muted text-right">
+                  {p.leads} leads · {p.members} clientes
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

@@ -65,6 +65,13 @@ export async function createMemberWithInvitation(
     phone?: string | null;
     birthDate?: Date | null;
     planId?: string | null;
+    // F9 (RB-PERFIL): perfil extendido heredado del lead de origen (F8), si aplica.
+    postalCode?: string | null;
+    occupation?: string | null;
+    hasChildren?: boolean | null;
+    channel?: string | null;
+    originLeadId?: string | null;
+    trainerId?: string | null;
   }
 ) {
   const member = await tx.member.create({
@@ -77,6 +84,12 @@ export async function createMemberWithInvitation(
       phone: params.phone ?? null,
       birthDate: params.birthDate ?? null,
       state: "TRIAL",
+      postalCode: params.postalCode ?? null,
+      occupation: params.occupation ?? null,
+      hasChildren: params.hasChildren ?? null,
+      channel: params.channel ?? null,
+      originLeadId: params.originLeadId ?? null,
+      trainerId: params.trainerId ?? null,
     },
   });
 

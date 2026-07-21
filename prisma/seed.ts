@@ -111,6 +111,21 @@ const NOTE_BODIES = [
   "Vuelve tras una temporada parado, ir progresivo las primeras semanas.",
   "Contento con el seguimiento, mantener al entrenador actual.",
 ];
+const MADRID_POSTAL_CODES = ["28001", "28004", "28009", "28013", "28020", "28028", "28035", "28045"];
+const OCCUPATIONS = [
+  "Administrativo/a",
+  "Profesor/a",
+  "Enfermero/a",
+  "Empresario/a (consultoría)",
+  "Autónomo/a (diseño gráfico)",
+  "Ingeniero/a de software",
+  "Comercial",
+  "Médico/a",
+  "Abogado/a",
+  "Estudiante",
+  "Gerente de tienda",
+  "Fisioterapeuta",
+];
 const APTITUDE_RULES = [
   { injuryZone: "hombro derecho", blockArea: "Empuje vertical", light: AptitudeLight.RED, adaptation: "Evitar por completo — sustituir por landmine press" },
   { injuryZone: "hombro derecho", blockArea: "Empuje horizontal", light: AptitudeLight.AMBER, adaptation: "Reducir ROM, carga ≤60%" },
@@ -201,9 +216,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     { id: id(), name: "Sesión suelta", type: PlanType.DROP_IN, sessionsIncluded: 1 as number | null, priceCents: 1200, validityDays: 7 },
     { id: id(), name: "Personal Training 1:1 (4 sesiones)", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 4 as number | null, priceCents: 20000, validityDays: 30 },
     { id: id(), name: "Dúo (2 personas)", type: PlanType.DUO, sessionsIncluded: 8 as number | null, priceCents: 12000, validityDays: 30 },
+    { id: id(), name: "Entrenamiento online 1:1", type: PlanType.ONLINE, sessionsIncluded: null as number | null, priceCents: 3900, validityDays: 30 },
   ];
   await prisma.membershipPlan.createMany({ data: plans.map((p) => ({ ...p, orgId })) });
-  const [monthlyPlan, pack10, pack20, dropIn, personalTraining] = plans;
+  const [monthlyPlan, pack10, pack20, dropIn, personalTraining, , onlinePlan] = plans;
 
   // ---------- Plantillas semanales (agenda) ----------
   type Tpl = {
@@ -358,6 +374,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       consentContract: true,
       consentHealth: Math.random() < 0.45,
       consentMarketing: Math.random() < 0.6,
+      // F9 (RB-PERFIL): perfil extendido para poder enseñar BI demográfico (RB-BI-003).
+      postalCode: m.state === MemberState.PROSPECT ? null : pick(MADRID_POSTAL_CODES),
+      occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
+      hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
     })),
   });
 
@@ -378,11 +398,12 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       m.state === MemberState.TRIAL
         ? dropIn
         : weightedPick<typeof plans[number]>([
-            [monthlyPlan, 55],
+            [monthlyPlan, 50],
             [pack10, 20],
             [pack20, 10],
             [personalTraining, 8],
             [dropIn, 7],
+            [onlinePlan, 5],
           ]);
     const status: SubscriptionStatus =
       m.state === MemberState.CANCELLED
@@ -402,6 +423,21 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
   await prisma.subscription.createMany({ data: subscriptions });
+
+  // F9/RB-PERFIL-002 (decisión §11.4): EP y online SIEMPRE tienen entrenador
+  // individual asignado explícitamente; "solo grupos" se queda sin trainerId.
+  const epOrOnlinePlanIds = new Set<string>([personalTraining.id, onlinePlan.id]);
+  const trainerAssignments: { memberId: string; trainerId: string }[] = [];
+  for (const sub of subscriptions) {
+    if (sub.status !== SubscriptionStatus.ACTIVE || !epOrOnlinePlanIds.has(sub.planId)) continue;
+    const member = members.find((m) => m.id === sub.memberId)!;
+    const centerTrainers = trainersByCenter[member.centerId];
+    if (!centerTrainers?.length) continue;
+    trainerAssignments.push({ memberId: member.id, trainerId: pick(centerTrainers).id });
+  }
+  for (const t of trainerAssignments) {
+    await prisma.member.update({ where: { id: t.memberId }, data: { trainerId: t.trainerId } });
+  }
 
   // ---------- Sesiones (agenda) ----------
   const startDate = addDays(TODAY, -cfg.historyDays);
@@ -557,6 +593,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   // ---------- Pagos (F3) ----------
   const receiptPrefix = cfg.slug.replace(/[^a-z]/gi, "").slice(0, 2).toUpperCase() || "TZ";
+  const sellerIds = staffUsers.filter((u) => u.role === "RECEPTION" || u.role === "CENTER_DIRECTOR" || u.role === "OWNER").map((u) => u.id);
   const payments: {
     id: string;
     orgId: string;
@@ -568,6 +605,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     date: Date;
     receiptNumber: string;
     notes: string | null;
+    soldByUserId: string | null;
   }[] = [];
   let receiptCounter = 1000;
   const methodWeights: [PaymentMethod, number][] = [
@@ -596,6 +634,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         date,
         receiptNumber: `${receiptPrefix}-${receiptCounter++}`,
         notes: null,
+        soldByUserId: sellerIds.length ? pick(sellerIds) : null,
       });
     }
   }
@@ -715,6 +754,344 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
   await prisma.auditLog.createMany({ data: auditRows });
 
+  // ---------- F8: Embudo de Leads ----------
+  const leadChannels = ["Boca a boca", "Instagram", "TikTok", "Web", "Vive/trabaja por la zona", "Otro"].map((label) => ({
+    id: id(),
+    orgId,
+    label,
+  }));
+  await prisma.leadChannel.createMany({ data: leadChannels });
+
+  const noCloseReasons = ["Precio", "Horarios", "Se fue a la competencia", "No decide / lo piensa", "Distancia/ubicación", "Otro"].map(
+    (label) => ({ id: id(), orgId, label })
+  );
+  await prisma.noCloseReason.createMany({ data: noCloseReasons });
+
+  const anyCenter = centersData[0];
+  const receptionOrOwner = staffUsers.filter((u) => u.role === "RECEPTION" || u.role === "TRAINER" || u.role === "CENTER_DIRECTOR");
+  const activeNonAnchorMembers = members.filter((m) => m.state === MemberState.ACTIVE && m.id !== demoMemberId);
+
+  type SeedLead = {
+    id: string;
+    centerId: string;
+    firstName: string;
+    lastName: string;
+    phone: string;
+    email: string | null;
+    postalCode: string;
+    occupation: string;
+    hasChildren: boolean | null;
+    goals: string;
+    hasTrainedBefore: boolean;
+    channel: string;
+    status: "SIN_CONTACTAR" | "SEGUIMIENTO" | "CON_FECHA_VALORACION" | "CERRADO" | "NO_CERRADO";
+    ownerUserId: string | null;
+    contactedAt: Date;
+    noCloseReason: string | null;
+    convertedMemberId: string | null;
+  };
+  const leads: SeedLead[] = [
+    {
+      id: id(),
+      centerId: anyCenter.id,
+      firstName: "Marina",
+      lastName: "Castillo",
+      phone: faker.phone.number({ style: "national" }),
+      email: faker.internet.email({ firstName: "Marina", lastName: "Castillo" }).toLowerCase(),
+      postalCode: pick(MADRID_POSTAL_CODES),
+      occupation: pick(OCCUPATIONS),
+      hasChildren: null,
+      goals: "Perder peso y ganar energía en el día a día",
+      hasTrainedBefore: false,
+      channel: pick(leadChannels).label,
+      status: "SIN_CONTACTAR",
+      ownerUserId: null, // RB-LEAD-003: entró por formulario web, sin responsable
+      contactedAt: addDays(TODAY, -2), // >24h sin responsable → dispara RB-LEAD-009
+      noCloseReason: null,
+      convertedMemberId: null,
+    },
+    {
+      id: id(),
+      centerId: anyCenter.id,
+      firstName: "Pedro",
+      lastName: "Salinas",
+      phone: faker.phone.number({ style: "national" }),
+      email: null,
+      postalCode: pick(MADRID_POSTAL_CODES),
+      occupation: pick(OCCUPATIONS),
+      hasChildren: true,
+      goals: "Prepararse para una carrera popular",
+      hasTrainedBefore: true,
+      channel: pick(leadChannels).label,
+      status: "SEGUIMIENTO",
+      ownerUserId: receptionOrOwner.length ? pick(receptionOrOwner).id : null,
+      contactedAt: addDays(TODAY, -5),
+      noCloseReason: null,
+      convertedMemberId: null,
+    },
+    {
+      id: id(),
+      centerId: anyCenter.id,
+      firstName: "Aitana",
+      lastName: "Roldán",
+      phone: faker.phone.number({ style: "national" }),
+      email: faker.internet.email({ firstName: "Aitana", lastName: "Roldan" }).toLowerCase(),
+      postalCode: pick(MADRID_POSTAL_CODES),
+      occupation: pick(OCCUPATIONS),
+      hasChildren: false,
+      goals: "Tonificar y mejorar movilidad",
+      hasTrainedBefore: true,
+      channel: pick(leadChannels).label,
+      status: "CON_FECHA_VALORACION",
+      ownerUserId: receptionOrOwner.length ? pick(receptionOrOwner).id : null,
+      contactedAt: addDays(TODAY, -3),
+      noCloseReason: null,
+      convertedMemberId: null,
+    },
+    {
+      id: id(),
+      centerId: anyCenter.id,
+      firstName: "Rubén",
+      lastName: "Aparicio",
+      phone: faker.phone.number({ style: "national" }),
+      email: faker.internet.email({ firstName: "Ruben", lastName: "Aparicio" }).toLowerCase(),
+      postalCode: pick(MADRID_POSTAL_CODES),
+      occupation: pick(OCCUPATIONS),
+      hasChildren: null,
+      goals: "Ganar fuerza general",
+      hasTrainedBefore: false,
+      channel: pick(leadChannels).label,
+      status: "NO_CERRADO",
+      ownerUserId: receptionOrOwner.length ? pick(receptionOrOwner).id : null,
+      contactedAt: addDays(TODAY, -40),
+      noCloseReason: pick(noCloseReasons).label,
+      convertedMemberId: null,
+    },
+    ...(activeNonAnchorMembers.length
+      ? [
+          {
+            id: id(),
+            centerId: anyCenter.id,
+            firstName: "Historial",
+            lastName: "Convertido",
+            phone: faker.phone.number({ style: "national" }),
+            email: faker.internet.email({ firstName: "historial", lastName: "convertido" }).toLowerCase(),
+            postalCode: pick(MADRID_POSTAL_CODES),
+            occupation: pick(OCCUPATIONS),
+            hasChildren: false,
+            goals: "Ponerse en forma para el verano",
+            hasTrainedBefore: false,
+            channel: pick(leadChannels).label,
+            status: "CERRADO" as const,
+            ownerUserId: receptionOrOwner.length ? pick(receptionOrOwner).id : null,
+            contactedAt: addDays(TODAY, -60),
+            noCloseReason: null,
+            convertedMemberId: activeNonAnchorMembers[0].id,
+          },
+        ]
+      : []),
+  ];
+  await prisma.lead.createMany({ data: leads.map((l) => ({ ...l, orgId })) });
+
+  if (activeNonAnchorMembers.length) {
+    await prisma.member.update({ where: { id: activeNonAnchorMembers[0].id }, data: { originLeadId: leads[leads.length - 1].id } });
+  }
+
+  const leadNoteRows = leads
+    .filter((l) => l.status !== "SIN_CONTACTAR")
+    .map((l) => ({
+      id: id(),
+      orgId,
+      leadId: l.id,
+      authorUserId: l.ownerUserId,
+      body: pick(["Le encajan mejor las clases de tarde.", "Muy interesado/a, pedir referencia de un amigo.", "Quiere probar antes de comprometerse a un bono largo."]),
+      createdAt: addDays(l.contactedAt, 1),
+    }));
+  if (leadNoteRows.length) await prisma.leadNote.createMany({ data: leadNoteRows });
+
+  // ---------- F9: Catálogo de objetivos (RB-PERFIL-003) ----------
+  const goalTemplates = [
+    "Conseguir hacer 1 flexión completa",
+    "Conseguir hacer 10 sentadillas con el peso corporal",
+    "Mejorar el dolor de espalda",
+    "Mejorar el dolor de rodilla",
+    "Sentir más energía en el día a día",
+  ].map((label) => ({ id: id(), orgId, label, isTemplate: true }));
+  await prisma.clientGoal.createMany({ data: goalTemplates });
+
+  const goalAssignments: { id: string; orgId: string; memberId: string; label: string; isTemplate: boolean; achievedAt: Date | null }[] = [];
+  for (const m of members) {
+    if (m.state !== MemberState.ACTIVE) continue;
+    if (Math.random() > 0.35) continue;
+    const label = pick(goalTemplates).label;
+    goalAssignments.push({
+      id: id(),
+      orgId,
+      memberId: m.id,
+      label,
+      isTemplate: false,
+      achievedAt: Math.random() < 0.3 ? addDays(TODAY, -randInt(1, 30)) : null,
+    });
+  }
+  if (goalAssignments.length) await prisma.clientGoal.createMany({ data: goalAssignments });
+
+  // ---------- F11: Franjas de EP (autorreserva + director de sesión) ----------
+  const epSessionIds = sessions.filter((s) => s.classType === "Personal Training");
+  const selfBookableIds = epSessionIds.filter(() => Math.random() < 0.5).map((s) => s.id);
+  if (selfBookableIds.length) {
+    await prisma.classSession.updateMany({ where: { id: { in: selfBookableIds } }, data: { selfBookable: true } });
+  }
+  const pastDirectedIds = epSessionIds.filter((s) => s.isPast && s.trainerId && Math.random() < 0.6);
+  for (const s of pastDirectedIds.slice(0, 150)) {
+    await prisma.classSession.update({ where: { id: s.id }, data: { directedByUserId: s.trainerId } });
+  }
+
+  // ---------- F13: RRHH — fichaje y buzón de propuestas ----------
+  const timeClockRows: { id: string; orgId: string; userId: string; centerId: string; workDate: Date; clockIn: string; clockOut: string | null; signedAt: Date | null }[] = [];
+  for (const u of staffUsers) {
+    if (!u.centerId) continue;
+    for (let d = 1; d <= 10; d++) {
+      const workDate = addDays(TODAY, -d);
+      if (workDate.getDay() === 0 || workDate.getDay() === 6) continue;
+      const signed = Math.random() < 0.7;
+      timeClockRows.push({
+        id: id(),
+        orgId,
+        userId: u.id,
+        centerId: u.centerId,
+        workDate,
+        clockIn: fmtTime(9, randInt(0, 15)),
+        clockOut: fmtTime(17, randInt(0, 30)),
+        signedAt: signed ? workDate : null,
+      });
+    }
+  }
+  for (let i = 0; i < timeClockRows.length; i += CHUNK) {
+    await prisma.timeClockEntry.createMany({ data: timeClockRows.slice(i, i + CHUNK) });
+  }
+
+  const trainerUsers = staffUsers.filter((u) => u.role === "TRAINER");
+  if (trainerUsers.length) {
+    await prisma.staffProposal.createMany({
+      data: [
+        { id: id(), orgId, authorUserId: pick(trainerUsers).id, body: "Podríamos añadir una clase de movilidad los sábados por la mañana.", status: "OPEN" },
+        { id: id(), orgId, authorUserId: pick(trainerUsers).id, body: "Sería útil tener una sala pequeña solo para EP.", status: "REVIEWED" },
+      ],
+    });
+  }
+
+  // ---------- F14: Ofertas personalizadas y valoración de entrenadores ----------
+  if (activeNonAnchorMembers.length && trainerUsers.length) {
+    const offerMembers = activeNonAnchorMembers.slice(0, Math.min(3, activeNonAnchorMembers.length));
+    const offerStatuses: ("SUGERIDA" | "PENDIENTE_DIRECCION" | "APROBADA")[] = ["SUGERIDA", "PENDIENTE_DIRECCION", "APROBADA"];
+    await prisma.personalizedOffer.createMany({
+      data: offerMembers.map((m, i) => ({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        proposedByUserId: offerStatuses[i] === "SUGERIDA" ? null : pick(trainerUsers).id,
+        approvedByUserId: offerStatuses[i] === "APROBADA" ? ownerId : null,
+        signals: { attendancePerWeek: 1.0, tenureDays: 90 },
+        description: "2 días/semana con 20% dto. el primer mes.",
+        status: offerStatuses[i] ?? "SUGERIDA",
+      })),
+    });
+
+    const ratingMembers = activeNonAnchorMembers.slice(0, Math.min(5, activeNonAnchorMembers.length));
+    await prisma.trainerRating.createMany({
+      data: ratingMembers.map((m) => ({
+        id: id(),
+        orgId,
+        trainerUserId: pick(trainerUsers).id,
+        memberId: m.id,
+        score: randInt(3, 5),
+        strengths: "Explica muy bien la técnica y motiva.",
+        improvements: "Podría variar más los ejercicios.",
+      })),
+    });
+  }
+
+  // ---------- F16: IA (rutinas), autovaloración y chat — foco en el socio demo ----------
+  if (cfg.demoMember && demoMemberId && demoMemberUserId) {
+    const demoTrainer = trainersByCenter[centerIdByKey.get(cfg.demoMember.centerKey)!]?.[0];
+    await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id } });
+
+    await prisma.workoutProgram.createMany({
+      data: [
+        {
+          id: id(),
+          orgId,
+          memberId: demoMemberId,
+          createdByAI: true,
+          confirmedByUserId: demoTrainer?.id ?? null,
+          status: demoTrainer ? "ACTIVE" : "DRAFT",
+          payload: {
+            goals: ["Mejorar el dolor de espalda"],
+            sessions: [
+              { day: "Lunes", blocks: ["Movilidad 10'", "Fuerza tren inferior 3x10", "Core 3x30\""] },
+              { day: "Miércoles", blocks: ["Movilidad 10'", "Fuerza tren superior 3x10", "Cardio ligero 15'"] },
+            ],
+            source: "mock-ai-v1",
+          },
+        },
+      ],
+    });
+
+    await prisma.selfAssessment.create({
+      data: {
+        orgId,
+        memberId: demoMemberId,
+        kind: "checkin-objetivos",
+        text: "Me siento con más energía, aunque algunas semanas cuesta más venir.",
+        structured: { stalled: false, wantsMore: true },
+        aiRecommendation: "¡Sigue así! Registramos tu progreso y tu entrenador lo revisará en tu próximo check-in.",
+      },
+    });
+
+    const conversation = await prisma.conversation.create({ data: { orgId, memberId: demoMemberId } });
+    await prisma.chatMessage.createMany({
+      data: [
+        { id: id(), conversationId: conversation.id, senderKind: "TRAINER", senderUserId: demoTrainer?.id ?? null, body: "¡Hola! ¿Qué tal la rodilla esta semana?", createdAt: addDays(TODAY, -2) },
+        { id: id(), conversationId: conversation.id, senderKind: "MEMBER", senderUserId: demoMemberUserId, body: "Mucho mejor, gracias. Ya sin molestias.", createdAt: addDays(TODAY, -2) },
+        { id: id(), conversationId: conversation.id, senderKind: "AI", senderUserId: null, body: "Recuerda tu sesión de mañana a las 09:00 — ¡nos vemos!", createdAt: addDays(TODAY, -1) },
+      ],
+    });
+  }
+
+  // ---------- F10: Notificaciones de ejemplo ----------
+  const directorForNotif = staffUsers.find((u) => u.role === "OWNER" || u.role === "CENTER_DIRECTOR");
+  if (directorForNotif) {
+    const staleLead = leads.find((l) => l.status === "SIN_CONTACTAR");
+    await prisma.notification.createMany({
+      data: [
+        ...(staleLead
+          ? [
+              {
+                id: id(),
+                orgId,
+                recipientUserId: directorForNotif.id,
+                kind: "ALERT" as const,
+                title: `Lead sin responsable: ${staleLead.firstName} ${staleLead.lastName}`,
+                body: "Lleva más de 24h sin que nadie se lo asigne (RB-LEAD-009).",
+                entityType: "Lead",
+                entityId: staleLead.id,
+              },
+            ]
+          : []),
+        {
+          id: id(),
+          orgId,
+          recipientUserId: directorForNotif.id,
+          kind: "INFO" as const,
+          title: "Nueva propuesta de un compañero",
+          body: "Podríamos añadir una clase de movilidad los sábados por la mañana.",
+          entityType: "StaffProposal",
+          entityId: null,
+        },
+      ],
+    });
+  }
+
   console.log(
     `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas`
   );
@@ -791,6 +1168,18 @@ const ORGS: OrgSeedConfig[] = [
 async function main() {
   console.log("Limpiando base de datos...");
   await prisma.$transaction([
+    prisma.chatMessage.deleteMany(),
+    prisma.conversation.deleteMany(),
+    prisma.selfAssessment.deleteMany(),
+    prisma.workoutProgram.deleteMany(),
+    prisma.trainerRating.deleteMany(),
+    prisma.personalizedOffer.deleteMany(),
+    prisma.staffProposal.deleteMany(),
+    prisma.timeClockEntry.deleteMany(),
+    prisma.checkinScheduleConfig.deleteMany(),
+    prisma.clientGoal.deleteMany(),
+    prisma.notification.deleteMany(),
+    prisma.leadNote.deleteMany(),
     prisma.auditLog.deleteMany(),
     prisma.memberNote.deleteMany(),
     prisma.centerMembership.deleteMany(),
@@ -803,6 +1192,13 @@ async function main() {
     prisma.subscription.deleteMany(),
     prisma.healthRecord.deleteMany(),
     prisma.aptitudeRule.deleteMany(),
+    // Lead <-> Member forman un ciclo de FKs (Lead.convertedMemberId / Member.originLeadId):
+    // se rompe el ciclo antes de poder borrar cualquiera de las dos tablas.
+    prisma.member.updateMany({ data: { originLeadId: null } }),
+    prisma.lead.updateMany({ data: { convertedMemberId: null } }),
+    prisma.lead.deleteMany(),
+    prisma.leadChannel.deleteMany(),
+    prisma.noCloseReason.deleteMany(),
     prisma.member.deleteMany(),
     prisma.membershipPlan.deleteMany(),
     prisma.user.deleteMany(),

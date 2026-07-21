@@ -32,6 +32,21 @@ model Organization {
   centerMemberships CenterMembership[]
   memberNotes       MemberNote[]
   invitations       Invitation[]
+
+  leads                  Lead[]
+  leadNotes              LeadNote[]
+  leadChannels           LeadChannel[]
+  noCloseReasons         NoCloseReason[]
+  clientGoals            ClientGoal[]
+  notifications          Notification[]
+  workoutPrograms        WorkoutProgram[]
+  selfAssessments        SelfAssessment[]
+  conversations          Conversation[]
+  timeClockEntries       TimeClockEntry[]
+  staffProposals         StaffProposal[]
+  personalizedOffers     PersonalizedOffer[]
+  trainerRatings         TrainerRating[]
+  checkinScheduleConfigs CheckinScheduleConfig[]
 }
 
 model Center {
@@ -50,6 +65,8 @@ model Center {
   templates    SessionTemplate[]
   sessions     ClassSession[]
   staffMemberships CenterMembership[]
+  leads            Lead[]
+  timeClockEntries TimeClockEntry[]
 
   @@unique([orgId, slug])
   @@index([orgId])
@@ -90,6 +107,20 @@ model User {
   centerMemberships    CenterMembership[]
   memberNotesAuthored  MemberNote[]      @relation("MemberNoteAuthor")
   invitation           Invitation?
+
+  leadsOwned            Lead[]              @relation("LeadOwner")
+  leadNotesAuthored     LeadNote[]          @relation("LeadNoteAuthor")
+  assignedMembers       Member[]            @relation("AssignedMemberTrainer")
+  directedSessions      ClassSession[]      @relation("DirectedSessions")
+  workoutProgramsConfirmed WorkoutProgram[] @relation("WorkoutConfirmedBy")
+  notifications         Notification[]      @relation("NotificationRecipient")
+  timeClockEntries      TimeClockEntry[]
+  staffProposalsAuthored StaffProposal[]
+  offersProposed        PersonalizedOffer[] @relation("OfferProposedBy")
+  offersApproved        PersonalizedOffer[] @relation("OfferApprovedBy")
+  trainerRatingsReceived TrainerRating[]    @relation("TrainerRatingSubject")
+  paymentsSold          Payment[]           @relation("SoldBy")
+  chatMessagesSent      ChatMessage[]
 
   @@index([orgId])
 }
@@ -190,9 +221,21 @@ model Member {
   notes              String?
   createdAt          DateTime    @default(now())
 
+  // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen,
+  // entrenador responsable explícito (EP y online; null = responsable Training Zone).
+  postalCode     String?
+  occupation     String?
+  hasChildren    Boolean? // BI demográfico (RB-BI-003), heredado del lead si se respondió
+  channel        String?
+  originLeadId   String? @unique
+  trainerId      String?
+  stripeCustomerId String? @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
+
   organization    Organization           @relation(fields: [orgId], references: [id])
   primaryCenter   Center                 @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
   user            User?                  @relation("MemberUser", fields: [userId], references: [id])
+  trainer         User?                  @relation("AssignedMemberTrainer", fields: [trainerId], references: [id])
+  originLead      Lead?                  @relation("MemberOriginLead", fields: [originLeadId], references: [id])
   subscriptions   Subscription[]
   bookings        Booking[]
   payments        Payment[]
@@ -201,10 +244,18 @@ model Member {
   noteEntries     MemberNote[]
   progressEntries MemberProgressEntry[]
   invitation      Invitation?
+  convertedFromLead Lead?                @relation("LeadConvertedMember")
+  clientGoals     ClientGoal[]
+  workoutPrograms WorkoutProgram[]
+  selfAssessments SelfAssessment[]
+  conversation    Conversation?
+  personalizedOffers PersonalizedOffer[]
+  trainerRatingsGiven TrainerRating[]
 
   @@index([orgId])
   @@index([primaryCenterId])
   @@index([state])
+  @@index([trainerId])
 }
 
 // Fotos y métricas de evolución física (Ficha Socio). Visibles solo para el
@@ -246,12 +297,33 @@ model MemberNote {
   @@index([memberId])
 }
 
+// Objetivos concretos de salud/rendimiento del socio (RB-PERFIL-003). Catálogo
+// editable por dirección: las filas con isTemplate=true son el catálogo de
+// partida (sin memberId real, se clonan al asignar), las demás son objetivos
+// asignados a un socio concreto.
+model ClientGoal {
+  id String @id @default(cuid())
+  orgId String
+  memberId String? // null en filas de catálogo (isTemplate=true)
+  label String
+  isTemplate Boolean @default(false)
+  achievedAt DateTime?
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member Member? @relation(fields: [memberId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
+}
+
 enum PlanType {
   MONTHLY
   SESSION_PACK
   DROP_IN
   PERSONAL_TRAINING
   DUO
+  ONLINE
 }
 
 model MembershipPlan {
@@ -343,10 +415,19 @@ model ClassSession {
   status     SessionStatus @default(SCHEDULED)
   createdAt  DateTime      @default(now())
 
+  // RB-AGENDA-002/004: hueco de EP (classType="PERSONAL_TRAINING", capacity=1).
+  // selfBookable distingue la franja abierta a autorreserva del cliente de EP
+  // (RB-AGENDA-001/002) de la reservada a mano por el entrenador. directedByUserId
+  // registra quién dirigió realmente la sesión (verificación cruzada F13/RB-RRHH-002),
+  // que puede diferir del entrenador asignado en la plantilla.
+  selfBookable     Boolean @default(false)
+  directedByUserId String?
+
   organization Organization     @relation(fields: [orgId], references: [id])
   center       Center           @relation(fields: [centerId], references: [id])
   template     SessionTemplate? @relation(fields: [templateId], references: [id])
   trainer      User?            @relation("TrainerSessions", fields: [trainerId], references: [id])
+  directedBy   User?            @relation("DirectedSessions", fields: [directedByUserId], references: [id])
   bookings     Booking[]
 
   @@index([orgId])
@@ -388,6 +469,7 @@ enum PaymentMethod {
   BIZUM
   TRANSFER
   SEPA
+  STRIPE // F12/RB-PAGO-001: cobro online (checkout o domiciliación) conciliado por webhook
 }
 
 enum PaymentStatus {
@@ -408,11 +490,15 @@ model Payment {
   date           DateTime
   receiptNumber  String?
   notes          String?
+  soldByUserId   String? // RB-RRHH-004: venta atribuida a trabajador (ranking mensual)
+  stripeCheckoutSessionId String? @unique // F12: sesión de checkout que originó el cobro
+  stripePaymentIntentId   String? @unique // F12: PaymentIntent confirmado por el webhook
   createdAt      DateTime      @default(now())
 
   organization Organization  @relation(fields: [orgId], references: [id])
   member       Member        @relation(fields: [memberId], references: [id])
   subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  soldBy       User?         @relation("SoldBy", fields: [soldByUserId], references: [id])
 
   @@index([orgId])
   @@index([memberId])
@@ -448,7 +534,11 @@ enum HealthStatus {
 
 model HealthRecord {
   id               String           @id @default(cuid())
-  memberId         String
+  // Dato Art. 9 RGPD: cuelga de un socio O de un lead (nunca ambos), para que al
+  // convertir el lead (RB-LEAD-007) el registro solo cambie de FK y no se
+  // recapture el dato. Todo acceso sigue pasando por lib/health-access.ts.
+  memberId         String?
+  leadId           String?
   type             HealthRecordType
   zone             String? // p.ej. "hombro derecho"
   description      String
@@ -459,10 +549,12 @@ model HealthRecord {
   resolvedAt       DateTime?
   consentSignedAt  DateTime?
 
-  member     Member @relation(fields: [memberId], references: [id])
-  reportedBy User?  @relation("ReportedBy", fields: [reportedByUserId], references: [id])
+  member     Member? @relation(fields: [memberId], references: [id])
+  lead       Lead?   @relation(fields: [leadId], references: [id])
+  reportedBy User?   @relation("ReportedBy", fields: [reportedByUserId], references: [id])
 
   @@index([memberId])
+  @@index([leadId])
   @@index([status])
 }
 
@@ -560,4 +652,315 @@ model RetentionAlert {
 
   @@index([memberId])
   @@index([status])
+}
+
+// ---------- F8: Embudo de Leads / CRM comercial ----------
+
+enum LeadStatus {
+  SIN_CONTACTAR
+  SEGUIMIENTO
+  CON_FECHA_VALORACION
+  CERRADO
+  NO_CERRADO
+}
+
+// Canales de origen ("cómo nos conociste") configurables por dirección sin
+// desplegar (RB-LEAD-004), misma filosofía que AptitudeRule.
+model LeadChannel {
+  id        String   @id @default(cuid())
+  orgId     String
+  label     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+}
+
+// Motivos de no cierre configurables (RB-LEAD-011): obligatorio al pasar un
+// lead a NO_CERRADO, editable por dirección sin desplegar.
+model NoCloseReason {
+  id        String   @id @default(cuid())
+  orgId     String
+  label     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+}
+
+model Lead {
+  id               String     @id @default(cuid())
+  orgId            String
+  centerId         String
+  firstName        String
+  lastName         String
+  phone            String // canal de reset por SMS (RB-LEAD-002)
+  email            String? // condicional (RB-LEAD-002): teléfono o email, al menos uno
+  postalCode       String // RB-LEAD-010: estructurado, no dirección libre
+  occupation       String // alimenta BI nicho (RB-BI-003)
+  hasChildren      Boolean? // BI demográfico (RB-BI-003), pregunta opcional
+  goals            String
+  hasTrainedBefore Boolean
+  hasTrainedNote   String?
+  channel          String // RB-LEAD-004: coincide con LeadChannel.label
+  status           LeadStatus @default(SIN_CONTACTAR)
+  ownerUserId      String? // responsable del contacto (RB-LEAD-003)
+  contactedAt      DateTime   @default(now()) // fecha de contacto automática (RB-LEAD-001)
+  noCloseReason    String?    // obligatorio al pasar a NO_CERRADO (RB-LEAD-011)
+  convertedMemberId String?   @unique // enlace al Member creado si CERRADO (RB-LEAD-007)
+  createdAt        DateTime   @default(now())
+
+  organization    Organization   @relation(fields: [orgId], references: [id])
+  center          Center         @relation(fields: [centerId], references: [id])
+  owner           User?          @relation("LeadOwner", fields: [ownerUserId], references: [id])
+  convertedMember Member?        @relation("LeadConvertedMember", fields: [convertedMemberId], references: [id])
+  originForMember Member?        @relation("MemberOriginLead")
+  notes           LeadNote[]
+  healthRecords   HealthRecord[]
+
+  @@index([orgId])
+  @@index([centerId])
+  @@index([status])
+}
+
+// Bitácora del lead (RB-LEAD-008), gemela de MemberNote pero para el embudo comercial.
+model LeadNote {
+  id           String   @id @default(cuid())
+  orgId        String
+  leadId       String
+  authorUserId String?
+  body         String
+  createdAt    DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  lead         Lead         @relation(fields: [leadId], references: [id])
+  author       User?        @relation("LeadNoteAuthor", fields: [authorUserId], references: [id])
+
+  @@index([orgId])
+  @@index([leadId])
+}
+
+// ---------- F10: Notificaciones / tareas (transversal) ----------
+
+enum NotificationKind {
+  TASK
+  ALERT
+  INFO
+}
+
+model Notification {
+  id              String           @id @default(cuid())
+  orgId           String
+  recipientUserId String
+  kind            NotificationKind @default(TASK)
+  title           String
+  body            String?
+  entityType      String? // "Lead" | "Member" | "PersonalizedOffer"...
+  entityId        String?
+  dueDate         DateTime?
+  resolvedAt      DateTime?
+  createdAt       DateTime         @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  recipient    User         @relation("NotificationRecipient", fields: [recipientUserId], references: [id])
+
+  @@index([orgId])
+  @@index([recipientUserId])
+  @@index([resolvedAt])
+}
+
+// ---------- F13: RRHH — fichaje y buzón de propuestas ----------
+
+model TimeClockEntry {
+  id        String    @id @default(cuid())
+  orgId     String
+  userId    String
+  centerId  String
+  workDate  DateTime
+  clockIn   String // "HH:mm"
+  clockOut  String?
+  signedAt  DateTime? // firma digital de conformidad (RB-RRHH-001/002)
+  createdAt DateTime  @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  center       Center       @relation(fields: [centerId], references: [id])
+
+  @@index([orgId])
+  @@index([userId])
+}
+
+model StaffProposal {
+  id           String   @id @default(cuid())
+  orgId        String
+  authorUserId String
+  body         String
+  status       String   @default("OPEN") // OPEN | REVIEWED
+  createdAt    DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  author       User         @relation(fields: [authorUserId], references: [id])
+
+  @@index([orgId])
+}
+
+// ---------- F14: Motor de ofertas y valoración de entrenadores ----------
+
+enum OfferStatus {
+  SUGERIDA
+  PENDIENTE_DIRECCION
+  APROBADA
+  RECHAZADA
+  COMUNICADA
+}
+
+model PersonalizedOffer {
+  id               String      @id @default(cuid())
+  orgId            String
+  memberId         String
+  proposedByUserId String? // entrenador que la eleva
+  approvedByUserId String? // dirección: luz verde obligatoria (RB-RRHH-013)
+  signals          Json // señales que la dispararon (asistencia, antigüedad, RPE...)
+  description      String // "2 días/semana con 20% dto. el primer mes", etc.
+  status           OfferStatus @default(SUGERIDA)
+  createdAt        DateTime    @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+  proposedBy   User?        @relation("OfferProposedBy", fields: [proposedByUserId], references: [id])
+  approvedBy   User?        @relation("OfferApprovedBy", fields: [approvedByUserId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
+}
+
+// Valoración CONFIDENCIAL del entrenador por el socio (RB-RRHH-011/012): el
+// acceso se centraliza en lib/trainer-rating-access.ts, que solo deja leer a
+// dirección — nunca al propio entrenador, ni sobre sí mismo (matriz invertida
+// respecto a health-access.ts).
+model TrainerRating {
+  id            String   @id @default(cuid())
+  orgId         String
+  trainerUserId String
+  memberId      String // quién valora (no visible al entrenador)
+  score         Int?
+  strengths     String?
+  improvements  String?
+  createdAt     DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  trainer      User         @relation("TrainerRatingSubject", fields: [trainerUserId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+
+  @@index([orgId])
+  @@index([trainerUserId])
+}
+
+// ---------- F15: Programador de check-ins periódicos ----------
+
+enum ServiceKind {
+  GROUP
+  PERSONAL_TRAINING
+  ONLINE
+}
+
+// Intervalos configurables por org x tipo de servicio (decisión §11.6, defaults
+// mensual/trimestral) para el check-in de objetivos (RB-IA-006) y la valoración
+// de entrenadores (RB-RRHH-011). El programador de F10 emite las
+// SelfAssessment/TrainerRating cuando corresponde.
+model CheckinScheduleConfig {
+  id                String      @id @default(cuid())
+  orgId             String
+  serviceKind       ServiceKind
+  goalCheckinDays   Int         @default(30)
+  trainerRatingDays Int         @default(90)
+  updatedAt         DateTime    @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, serviceKind])
+  @@index([orgId])
+}
+
+// ---------- F16: IA de programación, autovaloración y chat ----------
+
+enum WorkoutProgramStatus {
+  DRAFT
+  PENDING_TRAINER
+  ACTIVE
+  COMPLETED
+}
+
+// Rutina generada por IA con confirmación humana obligatoria (RB-IA-001/003):
+// el agente solo propone (createdByAI), un entrenador siempre confirma antes
+// de que pase a ACTIVE (RB-IA-002: uso solo por staff).
+model WorkoutProgram {
+  id                String                @id @default(cuid())
+  orgId             String
+  memberId          String
+  createdByAI       Boolean               @default(true)
+  confirmedByUserId String?
+  status            WorkoutProgramStatus  @default(DRAFT)
+  payload           Json
+  createdAt         DateTime              @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+  confirmedBy  User?        @relation("WorkoutConfirmedBy", fields: [confirmedByUserId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
+}
+
+// Autovaloración del cliente (RB-IA-005) y check-in periódico de objetivos
+// (RB-IA-006): la recomendación de IA se guarda junto a la respuesta para
+// trazabilidad, con confirmación humana siempre presente aguas abajo.
+model SelfAssessment {
+  id               String   @id @default(cuid())
+  orgId            String
+  memberId         String
+  kind             String // "mensual" | "estancamiento" | "check-in objetivos"
+  text             String?
+  structured       Json?
+  aiRecommendation String?
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
+}
+
+// Chat centro-cliente (RB-CHAT-001): visibilidad limitada al entrenador
+// asignado + dirección; la IA puede escribir como participante (senderKind).
+model Conversation {
+  id        String   @id @default(cuid())
+  orgId     String
+  memberId  String   @unique
+  createdAt DateTime @default(now())
+
+  organization Organization  @relation(fields: [orgId], references: [id])
+  member       Member        @relation(fields: [memberId], references: [id])
+  messages     ChatMessage[]
+
+  @@index([orgId])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderKind     String // "MEMBER" | "TRAINER" | "AI" | "DIRECTION"
+  senderUserId   String?
+  body           String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  sender       User?        @relation(fields: [senderUserId], references: [id])
+
+  @@index([conversationId])
 }

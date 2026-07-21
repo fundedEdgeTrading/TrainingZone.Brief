@@ -44,6 +44,7 @@ export async function getSessionBrief({
       select: { memberId: true, zone: true, description: true, type: true },
     });
     for (const r of records) {
+      if (!r.memberId) continue;
       const list = healthByMember.get(r.memberId) ?? [];
       list.push({ zone: r.zone, description: r.description, type: r.type });
       healthByMember.set(r.memberId, list);

@@ -44,6 +44,89 @@ export async function getHealthRecordsForMember({
   return records;
 }
 
+/**
+ * Salud del LEAD (F8/§2.1.b): mismo punto único, mismo tratamiento Art. 9. Al
+ * convertir el lead (RB-LEAD-007) el registro solo cambia de FK — nunca se
+ * recaptura — así que este único modelo (HealthRecord.leadId) cubre ambos casos.
+ */
+export async function getHealthRecordsForLead({
+  leadId,
+  orgId,
+  actorUserId,
+  actorRole,
+}: {
+  leadId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+}) {
+  if (!canViewHealthData(actorRole)) return null;
+
+  const records = await prisma.healthRecord.findMany({
+    where: { leadId },
+    orderBy: { reportedAt: "desc" },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "LEAD_HEALTH_RECORD_READ",
+      entityType: "Lead",
+      entityId: leadId,
+      metadata: { recordCount: records.length },
+    },
+  });
+
+  return records;
+}
+
+/**
+ * Captura inicial de salud de un lead (RB-LEAD-001: obligatorio, aunque sea
+ * "ninguna"). Dos orígenes posibles: el propio lead vía formulario público
+ * (sin actor, es su propio dato) o el staff que lo atiende (gateado como el
+ * resto de escritura de salud). Ambos casos dejan rastro en AuditLog.
+ */
+export async function createHealthRecordForLead({
+  leadId,
+  orgId,
+  description,
+  actor,
+}: {
+  leadId: string;
+  orgId: string;
+  description: string;
+  actor: { userId: string; role: Role } | null;
+}): Promise<HealthWriteResult> {
+  if (actor && !canEditHealthData(actor.role)) return { ok: false, error: "forbidden" };
+
+  const record = await prisma.healthRecord.create({
+    data: {
+      leadId,
+      type: "CHRONIC_CONDITION",
+      zone: null,
+      description,
+      severity: "LOW",
+      status: "ACTIVE",
+      reportedByUserId: actor?.userId,
+      consentSignedAt: new Date(),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId: actor?.userId,
+      action: "LEAD_HEALTH_RECORD_CREATED",
+      entityType: "Lead",
+      entityId: leadId,
+      metadata: { recordId: record.id },
+    },
+  });
+
+  return { ok: true };
+}
+
 export type HealthWriteResult =
   | { ok: true }
   | { ok: false; error: "forbidden" | "not_found" | "no_consent" };

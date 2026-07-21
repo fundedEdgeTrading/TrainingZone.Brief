@@ -74,6 +74,10 @@ export async function getMemberMonthlyActivity(memberId: string, months = 6) {
   return result;
 }
 
+export async function getMemberGoals(memberId: string) {
+  return prisma.clientGoal.findMany({ where: { memberId, isTemplate: false }, orderBy: { createdAt: "desc" } });
+}
+
 export async function getMemberHealthTransparency(memberId: string, orgId: string) {
   const records = await prisma.healthRecord.findMany({
     where: { memberId, status: "ACTIVE" },
@@ -92,7 +96,19 @@ const BOOKING_WINDOW_DAYS = 7; // RB-RES-002
 const MIN_LEAD_MINUTES = 30; // RB-RES-001
 const CANCEL_WINDOW_HOURS = 4; // RB-RES-005
 
-export async function getBookableSessions(orgId: string, centerId: string, memberId: string) {
+/**
+ * RB-AGENDA-001: visibilidad segmentada. El socio de grupos ve las clases de
+ * grupo (siempre reservables por el cliente, con aforo). El socio de EP solo
+ * ve las franjas de SU entrenador marcadas como autorreservables
+ * (`selfBookable`, RB-AGENDA-002) — el resto de huecos de EP los gestiona el
+ * entrenador a mano y no aparecen aquí.
+ */
+export async function getBookableSessions(
+  orgId: string,
+  centerId: string,
+  memberId: string,
+  memberContext: { trainerId: string | null; hasGroupService: boolean; hasEpService: boolean } = { trainerId: null, hasGroupService: true, hasEpService: false }
+) {
   const now = new Date();
   const windowEnd = new Date(now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
@@ -102,6 +118,12 @@ export async function getBookableSessions(orgId: string, centerId: string, membe
       centerId,
       status: "SCHEDULED",
       date: { gte: new Date(now.toDateString()), lt: windowEnd },
+      OR: [
+        ...(memberContext.hasGroupService ? [{ classType: { not: "Personal Training" } }] : []),
+        ...(memberContext.hasEpService && memberContext.trainerId
+          ? [{ classType: "Personal Training", selfBookable: true, trainerId: memberContext.trainerId }]
+          : []),
+      ],
     },
     include: {
       trainer: { select: { name: true } },

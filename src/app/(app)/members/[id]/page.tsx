@@ -1,13 +1,28 @@
 import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/guard";
-import { getMemberDetail, getMemberAttendanceStats, getMemberNotes } from "@/lib/members-queries";
+import {
+  getMemberDetail,
+  getMemberAttendanceStats,
+  getMemberNotes,
+  getMemberServiceKinds,
+  listClientGoalTemplates,
+} from "@/lib/members-queries";
+import { listAssignableStaff } from "@/lib/org-queries";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
+import { canManageOrg } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ContactForm, ResendWelcomeButton } from "./member-forms";
 import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator } from "./progress-forms";
+import { ClientGoalsPanel, GoalTemplateForm, TrainerAssignSelect } from "./member-profile-forms";
+import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
+import { listWorkoutPrograms } from "@/lib/workout-programs";
+import { StaffChatThread } from "./staff-chat-thread";
+import { WorkoutProgramList } from "./workout-panel";
+
+const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
 const HEALTH_TYPE_LABEL: Record<string, string> = {
   INJURY: "Lesión",
@@ -48,7 +63,7 @@ export default async function MemberDetailPage({
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const [stats, healthRecords, notes] = await Promise.all([
+  const [stats, healthRecords, notes, trainers, goalTemplates] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -57,6 +72,18 @@ export default async function MemberDetailPage({
       actorRole: session.user.role,
     }),
     getMemberNotes(session.user.orgId, member.id),
+    listAssignableStaff(session.user.orgId, ["TRAINER"]),
+    listClientGoalTemplates(session.user.orgId),
+  ]);
+
+  const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
+
+  const canChat = await canAccessMemberChat(session.user.orgId, member.id, session.user.id, session.user.role);
+  const [chatMessages, workoutPrograms] = await Promise.all([
+    canChat
+      ? getOrCreateConversation(session.user.orgId, member.id).then((c) => listMessages(c.id))
+      : Promise.resolve([]),
+    listWorkoutPrograms(session.user.orgId, member.id),
   ]);
 
   return (
@@ -71,6 +98,16 @@ export default async function MemberDetailPage({
             <p className="text-sm text-brand-muted mt-1.5">
               {member.email} · {member.primaryCenter.name} · Alta {member.joinedAt.toLocaleDateString("es-ES")}
             </p>
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              {serviceKinds.map((k) => (
+                <Badge key={k} tone="neutral" dot={false}>
+                  {SERVICE_KIND_LABEL[k]}
+                </Badge>
+              ))}
+              <span className="text-xs text-brand-muted-2">
+                {member.trainer ? `Entrenador: ${member.trainer.name}` : "Responsable: Training Zone"}
+              </span>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -86,20 +123,25 @@ export default async function MemberDetailPage({
               key: "datos",
               label: "Datos",
               content: (
-                <ContactForm
-                  member={{
-                    id: member.id,
-                    email: member.email,
-                    phone: member.phone,
-                    address: member.address,
-                    birthDate: member.birthDate ? member.birthDate.toISOString().slice(0, 10) : null,
-                    emergencyContact: member.emergencyContact,
-                    consentContractAt: member.consentContractAt ? member.consentContractAt.toISOString() : null,
-                    consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
-                    consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
-                    consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
-                  }}
-                />
+                <div className="space-y-6">
+                  <ContactForm
+                    member={{
+                      id: member.id,
+                      email: member.email,
+                      phone: member.phone,
+                      address: member.address,
+                      birthDate: member.birthDate ? member.birthDate.toISOString().slice(0, 10) : null,
+                      emergencyContact: member.emergencyContact,
+                      consentContractAt: member.consentContractAt ? member.consentContractAt.toISOString() : null,
+                      consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
+                      consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
+                      consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                    }}
+                  />
+                  <div className="max-w-md">
+                    <TrainerAssignSelect memberId={member.id} trainerId={member.trainerId} trainers={trainers} />
+                  </div>
+                </div>
               ),
             },
             {
@@ -305,6 +347,46 @@ export default async function MemberDetailPage({
                       ))}
                     </ul>
                   )}
+                </div>
+              ),
+            },
+            {
+              key: "objetivos",
+              label: "Objetivos",
+              content: (
+                <div className="space-y-4">
+                  <ClientGoalsPanel memberId={member.id} goals={member.clientGoals} templates={goalTemplates} />
+                  {canManageOrg(session.user.role) && (
+                    <div className="pt-3 border-t border-tz-sand">
+                      <p className="text-xs text-brand-muted mb-2">Catálogo de objetivos (editable sin desplegar código)</p>
+                      <GoalTemplateForm />
+                    </div>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "ia-chat",
+              label: "IA & Chat",
+              content: (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted uppercase mb-2">Rutina de IA (RB-IA-001/003)</h4>
+                    <WorkoutProgramList memberId={member.id} programs={workoutPrograms} />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted uppercase mb-2">Chat (RB-CHAT-001)</h4>
+                    {canChat ? (
+                      <StaffChatThread
+                        memberId={member.id}
+                        messages={chatMessages.map((m) => ({ id: m.id, senderKind: m.senderKind, senderName: m.sender?.name ?? null, body: m.body, createdAt: m.createdAt }))}
+                      />
+                    ) : (
+                      <p className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
+                        Solo el entrenador asignado y dirección pueden ver este chat.
+                      </p>
+                    )}
+                  </div>
                 </div>
               ),
             },

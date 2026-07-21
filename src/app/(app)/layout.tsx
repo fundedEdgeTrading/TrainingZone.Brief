@@ -1,6 +1,7 @@
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { NAV_BY_ROLE, ROLE_LABEL, sectionLabelForRole, footerLabelForRole } from "@/lib/rbac";
+import { listNotificationsForUser } from "@/lib/notifications";
 import Sidebar from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
@@ -14,7 +15,7 @@ export default async function AppLayout({
   const { role, centerId, name, email } = session.user;
   const nav = NAV_BY_ROLE[role];
 
-  const [org, center] = await Promise.all([
+  const [org, center, notifications] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
       select: { name: true, logoUrl: true },
@@ -22,6 +23,7 @@ export default async function AppLayout({
     centerId
       ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true } })
       : Promise.resolve(null),
+    listNotificationsForUser(session.user.orgId, session.user.id),
   ]);
 
   // NavBar: logo del centro, si no el de la organización, si no el de Apta (null).
@@ -57,6 +59,7 @@ export default async function AppLayout({
             userName={name ?? email ?? ""}
             roleLabel={ROLE_LABEL[role]}
             centerChip={showCenterChip ? "Todos los centros" : undefined}
+            notifications={notifications}
           />
           <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
             {children}
