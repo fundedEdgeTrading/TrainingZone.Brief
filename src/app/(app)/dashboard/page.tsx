@@ -13,7 +13,6 @@ import {
   getMemberDemographics,
   getGoalsAggregate,
   getPostalProvinceStats,
-  POSTAL_DISTRIBUTION_PAGE_SIZE,
   getAgeBrackets,
   getMembersByService,
   getAcquisitionChannels,
@@ -53,7 +52,6 @@ export default async function DashboardPage({
     servicesOrderBy?: string;
     rankingDimension?: string;
     rankingPage?: string;
-    postalPage?: string;
   }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
@@ -64,7 +62,6 @@ export default async function DashboardPage({
     ? params.rankingDimension
     : "mixed") as "mixed" | "ltv" | "adherence" | "tenure";
   const rankingPage = Math.max(1, parseInt(params.rankingPage ?? "1", 10) || 1);
-  const postalPageParam = Math.max(1, parseInt(params.postalPage ?? "1", 10) || 1);
 
   const [
     kpis,
@@ -109,14 +106,6 @@ export default async function DashboardPage({
   ]);
   const maxFunnel = Math.max(1, ...Object.values(leadCloseRate.funnel));
 
-  const maxPostalTotal = Math.max(1, ...postalProvinceStats.map((p) => p.total));
-  const postalTotalPages = Math.max(1, Math.ceil(postalProvinceStats.length / POSTAL_DISTRIBUTION_PAGE_SIZE));
-  const postalPage = Math.min(postalPageParam, postalTotalPages);
-  const postalPageItems = postalProvinceStats.slice(
-    (postalPage - 1) * POSTAL_DISTRIBUTION_PAGE_SIZE,
-    postalPage * POSTAL_DISTRIBUTION_PAGE_SIZE
-  );
-
   const eur = (cents: number) =>
     (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 
@@ -125,14 +114,8 @@ export default async function DashboardPage({
     url.set("rankingPage", String(page));
     if (params.rankingDimension) url.set("rankingDimension", params.rankingDimension);
     if (params.servicesOrderBy) url.set("servicesOrderBy", params.servicesOrderBy);
-    if (params.postalPage) url.set("postalPage", params.postalPage);
     return `/dashboard?${url.toString()}`;
   };
-
-  const postalOtherParams: Record<string, string> = {};
-  if (params.rankingDimension) postalOtherParams.rankingDimension = params.rankingDimension;
-  if (params.rankingPage) postalOtherParams.rankingPage = params.rankingPage;
-  if (params.servicesOrderBy) postalOtherParams.servicesOrderBy = params.servicesOrderBy;
 
   return (
     <div className="max-w-[1240px] mx-auto flex flex-col gap-5">
@@ -398,15 +381,7 @@ export default async function DashboardPage({
         )}
       </Card>
 
-      <PostalMapPanel
-        points={postalProvinceStats}
-        pageItems={postalPageItems}
-        page={postalPage}
-        totalPages={postalTotalPages}
-        total={postalProvinceStats.length}
-        maxTotal={maxPostalTotal}
-        otherParams={postalOtherParams}
-      />
+      <PostalMapPanel points={postalProvinceStats} />
     </div>
   );
 }

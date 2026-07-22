@@ -242,8 +242,6 @@ export async function getGoalsAggregate(orgId: string) {
 // primeros en la vista sin que el mapa lo supiera, así que sus totales podían no
 // coincidir — con un único dataset compartido eso deja de ser posible.
 
-export const POSTAL_DISTRIBUTION_PAGE_SIZE = 8;
-
 export type PostalProvinceStat = {
   code: string;
   name: string;
