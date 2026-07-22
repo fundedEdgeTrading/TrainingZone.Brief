@@ -158,7 +158,7 @@ export default function AgendaView({
       isTrial: false,
       recurrence: "NONE",
       recEnd: "forever",
-      recUntil: dateISO,
+      recUntil: formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
     });
   }
 
@@ -180,7 +180,7 @@ export default function AgendaView({
       isTrial: ev.isTrial,
       recurrence: ev.isRecurring ? "WEEKLY" : "NONE",
       recEnd: "forever",
-      recUntil: dateISO,
+      recUntil: formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
     });
   }
 
