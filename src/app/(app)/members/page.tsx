@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { listMembers, listCentersForOrg, listActivePlansForOrg } from "@/lib/members-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
-import { canManageMembers } from "@/lib/rbac";
+import { canManageMembers, canImportMembers } from "@/lib/rbac";
 import type { MemberState } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { FilterBar } from "@/components/ui/filter-bar";
@@ -10,6 +10,7 @@ import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { NewMemberDrawer } from "./new-member-drawer";
+import { ImportMembersDrawer } from "./import-members-drawer";
 
 const STATES: MemberState[] = ["ACTIVE", "DELINQUENT", "FROZEN", "TRIAL", "PROSPECT", "CANCELLED"];
 
@@ -25,6 +26,7 @@ export default async function MembersPage({
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const params = await searchParams;
   const canCreate = canManageMembers(session.user.role);
+  const canImport = canImportMembers(session.user.role);
   const [members, centers, plans] = await Promise.all([
     listMembers(session.user.orgId, {
       q: params.q,
@@ -38,7 +40,14 @@ export default async function MembersPage({
     <div className="tz-page space-y-4">
       <PageHeader
         description={`${members.length} resultados`}
-        actions={canCreate ? <NewMemberDrawer centers={centers} plans={plans} /> : undefined}
+        actions={
+          canCreate ? (
+            <div className="flex items-center gap-2">
+              {canImport && <ImportMembersDrawer centers={centers} />}
+              <NewMemberDrawer centers={centers} plans={plans} />
+            </div>
+          ) : undefined
+        }
       />
 
       <FilterBar

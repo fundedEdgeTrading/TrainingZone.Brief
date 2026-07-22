@@ -123,6 +123,13 @@ export function canManageMembers(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "RECEPTION";
 }
 
+// Importación masiva de socios desde CSV (RB-IMPORT): EXCLUSIVO de dirección
+// (dirección de la organización y dirección de centro) — recepción queda fuera,
+// a diferencia del alta individual.
+export function canImportMembers(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR";
+}
+
 export function isStaffRole(role: Role): boolean {
   return role !== "MEMBER";
 }

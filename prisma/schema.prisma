@@ -195,6 +195,22 @@ enum MemberState {
   CANCELLED
 }
 
+// Sexo del socio (columna "Sexo" del export externo: Mujer/Hombre/Otro).
+enum Sex {
+  FEMALE
+  MALE
+  OTHER
+}
+
+// Riesgo de abandono heredado del export (MyWellness "Riesgo de abandono":
+// Baja/Media/Alta). Es la señal del sistema de origen; el motor de retención
+// propio (G.3) sigue calculando su RetentionAlert por separado.
+enum ChurnRisk {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model Member {
   id                 String      @id @default(cuid())
   orgId              String
@@ -234,6 +250,28 @@ model Member {
   trainerId      String?
   stripeCustomerId String? @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
 
+  // --- Importación de socios desde export externo (F-IMPORT / RB-IMPORT) ---
+  // El director puede importar un CSV de socios exportado de otra plataforma
+  // (p.ej. MyWellness/Technogym). Estos campos capturan las columnas del export
+  // que no encajaban en el perfil base. `externalRef` (el "Identificador de la
+  // nube" del origen) es la clave estable que hace la reimportación idempotente:
+  // volver a subir el mismo CSV actualiza al socio en vez de duplicarlo.
+  sex                 Sex?
+  addressLine2        String? // "Dirección 2" (la línea 1 va a `address`)
+  city                String?
+  province            String?
+  country             String?
+  churnRisk           ChurnRisk? // "Riesgo de abandono" del origen
+  primaryAspiration   String? // "Aspiración principal" (Move/Shape/Power/Sport/Balance/Fun)
+  secondaryAspiration String? // "Aspiración secundaria"
+  lastAccessAt        DateTime? // "Último acceso"
+  lastInteractionAt   DateTime? // "Última interacción"
+  accountCreatedAt    DateTime? // "Fecha de creación de la cuenta"
+  mywellnessAccount   String? // "Cuenta mywellness" (login del socio en el origen)
+  externalId          String? // "ID externo" del sistema de origen
+  externalSource      String? // procedencia del registro ("mywellness" | ...)
+  externalRef         String? // "Identificador de la nube" — clave de idempotencia de la importación
+
   organization    Organization           @relation(fields: [orgId], references: [id])
   primaryCenter   Center                 @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
   user            User?                  @relation("MemberUser", fields: [userId], references: [id])
@@ -255,6 +293,7 @@ model Member {
   personalizedOffers PersonalizedOffer[]
   trainerRatingsGiven TrainerRating[]
 
+  @@unique([orgId, externalRef]) // idempotencia de la importación por socio del origen
   @@index([orgId])
   @@index([primaryCenterId])
   @@index([state])
