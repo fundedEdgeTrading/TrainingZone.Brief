@@ -158,7 +158,14 @@ export default function SessionDialog({
                 <button className={`${SEG_BASE} ${dlg.type === "personal" ? SEG_ACTIVE : SEG_INACTIVE}`} onClick={() => patch({ type: "personal" })}>
                   Entrenamiento personal
                 </button>
-                <button className={`${SEG_BASE} ${dlg.type === "reduced" ? SEG_ACTIVE : SEG_INACTIVE}`} onClick={() => patch({ type: "reduced" })}>
+                <button
+                  className={`${SEG_BASE} ${dlg.type === "reduced" ? SEG_ACTIVE : SEG_INACTIVE}`}
+                  onClick={() => {
+                    patch({ type: "reduced", title: "Grupo", memberId: null });
+                    setMemberQuery("");
+                    setShowMembers(false);
+                  }}
+                >
                   Grupo reducido
                 </button>
               </div>
@@ -177,18 +184,19 @@ export default function SessionDialog({
             <div className="relative">
               <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Socio</div>
               <input
-                value={memberQuery}
+                value={dlg.type === "reduced" ? "" : memberQuery}
                 onChange={(e) => {
                   setMemberQuery(e.target.value);
                   setShowMembers(true);
                   patch({ memberId: null });
                 }}
                 onFocus={() => setShowMembers(true)}
-                placeholder="Buscar socio…"
+                placeholder={dlg.type === "reduced" ? "No aplica a grupo reducido" : "Buscar socio…"}
                 autoComplete="off"
-                className={`w-full ${inputCls}`}
+                disabled={dlg.type === "reduced"}
+                className={`w-full ${inputCls} disabled:cursor-not-allowed disabled:bg-tz-bone disabled:text-muted`}
               />
-              {showMembers && (
+              {showMembers && dlg.type !== "reduced" && (
                 <div
                   className="absolute left-0 right-0 top-full z-[5] mt-1 bg-white border border-brand-border rounded-xl max-h-[210px] overflow-y-auto"
                   style={{ boxShadow: "var(--shadow-pop)" }}
