@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { coordsForPostalPrefix } from "@/lib/postal-codes-es";
 export { getLeadCloseRate } from "@/lib/leads-queries";
 
 export async function getKpis(orgId: string) {
@@ -258,6 +259,41 @@ export async function getPostalCodeDistribution(orgId: string) {
   return [...counts.entries()]
     .map(([prefix, v]) => ({ prefix, ...v, total: v.leads + v.members }))
     .sort((a, b) => b.total - a.total);
+}
+
+// ---------- BI-3: mapa de calor real por CP (upgrade RB-LEAD-010) ----------
+
+/** Une getPostalCodeDistribution con la tabla CP→coordenadas para alimentar el heatmap. */
+export async function getPostalCodeHeatmapPoints(orgId: string) {
+  const distribution = await getPostalCodeDistribution(orgId);
+  return distribution
+    .map((d) => {
+      const coords = coordsForPostalPrefix(d.prefix);
+      if (!coords) return null;
+      return { lat: coords.lat, lng: coords.lng, name: coords.name, count: d.total };
+    })
+    .filter((p): p is { lat: number; lng: number; name: string; count: number } => p !== null);
+}
+
+// ---------- BI-2: distribución por sexo (RB-BI-005) ----------
+
+const SEX_LABEL: Record<string, string> = { FEMALE: "Mujer", MALE: "Hombre", OTHER: "Otro" };
+
+/** RB-BI-005: distribución de socios por sexo. "No especificado" se muestra pero se excluye del % sobre respondidos. */
+export async function getSexDistribution(orgId: string) {
+  const rows = await prisma.member.groupBy({
+    by: ["sex"],
+    where: { orgId, state: { not: "PROSPECT" } },
+    _count: { _all: true },
+  });
+  const answered = rows.filter((r) => r.sex !== null);
+  const unspecified = rows.find((r) => r.sex === null)?._count._all ?? 0;
+
+  return {
+    answered: answered.map((r) => ({ sex: r.sex as string, label: SEX_LABEL[r.sex as string] ?? r.sex, count: r._count._all })),
+    unspecified,
+    total: rows.reduce((s, r) => s + r._count._all, 0),
+  };
 }
 
 // ---------- BI-1: franjas de edad, servicio, canal, cierre, ranking (RB-BI-006/007/008/010/011) ----------

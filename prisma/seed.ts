@@ -13,6 +13,7 @@ import {
   RetentionRiskLevel,
   SubscriptionStatus,
   Role,
+  Sex,
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
@@ -475,6 +476,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         postalCode: m.state === MemberState.PROSPECT ? null : pick(MADRID_POSTAL_CODES),
         occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
         hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
+        // BI-2 (RB-BI-005): ~80% responde, el resto se queda "sin especificar" (sex=null).
+        sex: m.state === MemberState.PROSPECT || Math.random() >= 0.8 ? null : pick([Sex.FEMALE, Sex.MALE, Sex.OTHER, Sex.FEMALE, Sex.MALE]),
       };
     }),
   });
@@ -738,6 +741,53 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
   for (let i = 0; i < payments.length; i += CHUNK) {
     await prisma.payment.createMany({ data: payments.slice(i, i + CHUNK) });
+  }
+
+  // ---------- PAGO-1: ejemplos de ciclo de vida de suscripción (RB-PAGO-002/003/004/005/006) ----------
+  const frozenSubs = subscriptions.filter((s) => s.status === SubscriptionStatus.FROZEN);
+  if (frozenSubs.length > 0) {
+    // Congelación con fecha de reanudación fija (el resto de FROZEN quedan indefinidas, pauseUntil=null).
+    await prisma.subscription.update({ where: { id: frozenSubs[0].id }, data: { pauseUntil: addDays(TODAY, 21) } });
+  }
+
+  const activeSubs = subscriptions.filter((s) => s.status === SubscriptionStatus.ACTIVE);
+  if (activeSubs.length > 0) {
+    // Cancelación programada a futuro.
+    await prisma.subscription.update({ where: { id: activeSubs[0].id }, data: { cancelAt: addDays(TODAY, 15) } });
+  }
+
+  const pendingPayments = payments.filter((p) => p.status === "PENDING");
+  if (pendingPayments.length > 0) {
+    // Cobro aplazado (RB-PAGO-002): dueDate futura, no debe contar como morosidad.
+    await prisma.payment.update({ where: { id: pendingPayments[0].id }, data: { dueDate: addDays(TODAY, 10) } });
+  }
+
+  const refundablePayment = payments.find((p) => p.status === "PAID");
+  if (refundablePayment) {
+    // Devolución en modo registro local (D-2): stripeRefundId permanece null hasta PAGO-2b.
+    await prisma.payment.update({
+      where: { id: refundablePayment.id },
+      data: { status: "REFUNDED", refundReason: "Baja anticipada acordada con el socio", refundedAt: TODAY },
+    });
+  }
+
+  const oneOffMember = members.find((m) => m.state === MemberState.ACTIVE);
+  if (oneOffMember) {
+    // Venta puntual (RB-PAGO-005), fuera de cualquier suscripción.
+    await prisma.payment.create({
+      data: {
+        id: id(),
+        orgId,
+        memberId: oneOffMember.id,
+        amountCents: 1500,
+        method: PaymentMethod.CASH,
+        status: "PAID",
+        date: TODAY,
+        receiptNumber: `${receiptPrefix}-${receiptCounter++}`,
+        notes: "Venta puntual: bono 5 sesiones sueltas",
+        soldByUserId: sellerIds.length ? pick(sellerIds) : null,
+      },
+    });
   }
 
   // ---------- Salud (A.2.4) ----------

@@ -73,3 +73,34 @@ export async function cancelMyBooking(bookingId: string): Promise<BookingActionR
   revalidatePath("/portal");
   return { ok: true, waitlisted: false };
 }
+
+export type PostSessionFeedbackResult = { ok: true } | { ok: false; error: string };
+
+const FEELINGS = ["GREEN", "AMBER", "RED"] as const;
+
+/** FB-2/RB-FB-102: feedback ligero y opcional del cliente tras una sesión (reutiliza SelfAssessment). */
+export async function submitPostSessionFeedback(
+  bookingId: string,
+  input: { feeling: (typeof FEELINGS)[number]; rpe?: number | null; comment?: string | null }
+): Promise<PostSessionFeedbackResult> {
+  const session = await requireRole(["MEMBER"]);
+  const member = await getMemberForUser(session.user.id);
+  if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+  if (!FEELINGS.includes(input.feeling)) return { ok: false, error: "Selecciona cómo te has sentido." };
+
+  const booking = await prisma.booking.findFirst({ where: { id: bookingId, memberId: member.id, status: "ATTENDED" } });
+  if (!booking) return { ok: false, error: "Esta reserva no corresponde a una sesión asistida tuya." };
+
+  await prisma.selfAssessment.create({
+    data: {
+      orgId: session.user.orgId,
+      memberId: member.id,
+      kind: "post-sesion",
+      text: input.comment?.trim() || null,
+      structured: { bookingId, feeling: input.feeling, rpe: input.rpe ?? null },
+    },
+  });
+
+  revalidatePath("/portal/agenda");
+  return { ok: true };
+}

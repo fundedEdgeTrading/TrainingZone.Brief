@@ -77,6 +77,14 @@ export function NewLeadDrawer({
                 <option value="no">No</option>
               </Select>
             </Field>
+            <Field label="Sexo (opcional)">
+              <Select name="sex" defaultValue="">
+                <option value="">Sin especificar</option>
+                <option value="FEMALE">Mujer</option>
+                <option value="MALE">Hombre</option>
+                <option value="OTHER">Otro</option>
+              </Select>
+            </Field>
             <Field label="Canal de origen">
               <Select name="channel" required defaultValue="">
                 <option value="" disabled>

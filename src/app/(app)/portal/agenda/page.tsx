@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
-import { getMemberForUser, getBookableSessions, canCancelWithoutPenalty } from "@/lib/portal-queries";
+import { getMemberForUser, getBookableSessions, canCancelWithoutPenalty, getPendingSessionFeedback } from "@/lib/portal-queries";
 import { getMemberServiceKinds } from "@/lib/members-queries";
 import BookingButton from "./booking-button";
+import { PostSessionFeedbackPrompts } from "./post-session-feedback";
 
 export default async function PortalAgendaPage() {
   const session = await requireRole(["MEMBER"]);
@@ -10,11 +11,14 @@ export default async function PortalAgendaPage() {
   if (!member) redirect("/login");
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
-  const sessions = await getBookableSessions(session.user.orgId, member.primaryCenterId, member.id, {
-    trainerId: member.trainerId,
-    hasGroupService: serviceKinds.includes("GROUP"),
-    hasEpService: serviceKinds.includes("EP"),
-  });
+  const [sessions, pendingFeedback] = await Promise.all([
+    getBookableSessions(session.user.orgId, member.primaryCenterId, member.id, {
+      trainerId: member.trainerId,
+      hasGroupService: serviceKinds.includes("GROUP"),
+      hasEpService: serviceKinds.includes("EP"),
+    }),
+    getPendingSessionFeedback(member.id),
+  ]);
 
   const byDay = new Map<string, typeof sessions>();
   for (const s of sessions) {
@@ -32,6 +36,16 @@ export default async function PortalAgendaPage() {
           Hasta 7 días vista · máximo 3 reservas activas a la vez.
         </p>
       </div>
+
+      {pendingFeedback.length > 0 && (
+        <PostSessionFeedbackPrompts
+          items={pendingFeedback.map((p) => ({
+            bookingId: p.bookingId,
+            sessionName: p.sessionName,
+            sessionDate: p.sessionDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
+          }))}
+        />
+      )}
 
       {Array.from(byDay.entries()).map(([day, daySessions], dayIdx) => (
         <div

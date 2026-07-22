@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { LeadStatus, Role } from "@prisma/client";
+import type { LeadStatus, Role, Sex } from "@prisma/client";
 import { createMemberWithInvitation } from "@/lib/invitations";
 import { createNotificationOnce } from "@/lib/notifications";
 import { createHealthRecordForLead } from "@/lib/health-access";
@@ -78,6 +78,7 @@ export type CreateLeadInput = {
   postalCode: string;
   occupation: string;
   hasChildren?: boolean | null; // BI demográfico (RB-BI-003), opcional
+  sex?: Sex | null; // BI-2/RB-BI-005, opcional — "prefiero no decirlo" = null
   goals: string;
   hasTrainedBefore: boolean;
   hasTrainedNote?: string | null;
@@ -110,6 +111,7 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
       postalCode: input.postalCode.trim(),
       occupation: input.occupation.trim(),
       hasChildren: input.hasChildren ?? null,
+      sex: input.sex ?? null,
       goals: input.goals.trim(),
       hasTrainedBefore: input.hasTrainedBefore,
       hasTrainedNote: input.hasTrainedNote?.trim() || null,
@@ -201,6 +203,7 @@ export async function initiateLeadConversion(
       postalCode: lead.postalCode,
       occupation: lead.occupation,
       hasChildren: lead.hasChildren,
+      sex: lead.sex, // RB-LEAD-007: se hereda al Member, sin recapturar (BI-2/RB-BI-005)
       channel: lead.channel,
       originLeadId: lead.id,
       trainerId: opts.trainerId ?? null,
