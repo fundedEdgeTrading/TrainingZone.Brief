@@ -289,4 +289,30 @@ export function leadIsArchived(status: LeadStatus) {
   return status === "CERRADO" || status === "NO_CERRADO";
 }
 
+/** RB-BI-009: tasa de cierre y desglose del embudo (SIN_CONTACTAR → SEGUIMIENTO → CON_FECHA_VALORACION → CERRADO/NO_CERRADO). */
+export async function getLeadCloseRate(orgId: string, opts: { from?: Date; to?: Date } = {}) {
+  const rows = await prisma.lead.groupBy({
+    by: ["status"],
+    where: {
+      orgId,
+      ...(opts.from || opts.to ? { createdAt: { gte: opts.from, lte: opts.to } } : {}),
+    },
+    _count: { _all: true },
+  });
+  const countFor = (s: LeadStatus) => rows.find((r) => r.status === s)?._count._all ?? 0;
+  const funnel = {
+    sinContactar: countFor("SIN_CONTACTAR"),
+    seguimiento: countFor("SEGUIMIENTO"),
+    conFechaValoracion: countFor("CON_FECHA_VALORACION"),
+    cerrado: countFor("CERRADO"),
+    noCerrado: countFor("NO_CERRADO"),
+  };
+  const decided = funnel.cerrado + funnel.noCerrado;
+  return {
+    closeRatePct: decided ? Math.round((funnel.cerrado / decided) * 100) : null,
+    funnel,
+    total: Object.values(funnel).reduce((s, v) => s + v, 0),
+  };
+}
+
 export type LeadRow = Awaited<ReturnType<typeof listLeads>>[number];

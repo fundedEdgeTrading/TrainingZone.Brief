@@ -74,3 +74,8 @@ export const PAYMENT_METHOD_COLOR: Record<string, string> = {
   CASH: STATUS.warning,
   TRANSFER: INK.faint,
 };
+
+// BI-1: paleta categórica de marca para donuts (servicio/canal) — monocromática
+// beige/negro, sin degradados. Orden fijo, nunca ciclado por rango; identidad
+// siempre reforzada con leyenda + etiqueta directa (nunca solo color).
+export const CATEGORICAL = ["#1d1d1c", "#5b5748", "#8a8574", "#3a3a34", "#a8a296", "#c7bfad"];

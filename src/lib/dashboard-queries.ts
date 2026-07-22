@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+export { getLeadCloseRate } from "@/lib/leads-queries";
 
 export async function getKpis(orgId: string) {
   const [activeMembers, delinquent, frozen, openAlerts, monthRevenue, sessionsThisMonth] =
@@ -257,4 +258,155 @@ export async function getPostalCodeDistribution(orgId: string) {
   return [...counts.entries()]
     .map(([prefix, v]) => ({ prefix, ...v, total: v.leads + v.members }))
     .sort((a, b) => b.total - a.total);
+}
+
+// ---------- BI-1: franjas de edad, servicio, canal, cierre, ranking (RB-BI-006/007/008/010/011) ----------
+
+const AGE_BRACKETS = [
+  { label: "18-25", min: 18, max: 25 },
+  { label: "25-35", min: 25, max: 35 },
+  { label: "35-45", min: 35, max: 45 },
+  { label: "45-55", min: 45, max: 55 },
+  { label: "55-65", min: 55, max: 65 },
+  { label: "65+", min: 65, max: Infinity },
+];
+
+/** RB-BI-006: histograma de socios por franja de edad fija. */
+export async function getAgeBrackets(orgId: string) {
+  const members = await prisma.member.findMany({
+    where: { orgId, state: { not: "PROSPECT" }, birthDate: { not: null } },
+    select: { birthDate: true },
+  });
+  const now = Date.now();
+  const counts = AGE_BRACKETS.map(() => 0);
+  for (const m of members) {
+    const age = (now - m.birthDate!.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    const idx = AGE_BRACKETS.findIndex((b) => age >= b.min && age < b.max);
+    if (idx >= 0) counts[idx]++;
+  }
+  return AGE_BRACKETS.map((b, i) => ({ bracket: b.label, count: counts[i] }));
+}
+
+/** RB-BI-007: socios activos agrupados por plan/servicio contratado. */
+export async function getMembersByService(orgId: string) {
+  const [rows, plans] = await Promise.all([
+    prisma.subscription.groupBy({
+      by: ["planId"],
+      where: { member: { orgId }, status: "ACTIVE" },
+      _count: { _all: true },
+    }),
+    prisma.membershipPlan.findMany({ where: { orgId }, select: { id: true, name: true, type: true, priceCents: true } }),
+  ]);
+  return rows
+    .map((r) => {
+      const plan = plans.find((p) => p.id === r.planId);
+      return { planId: r.planId, name: plan?.name ?? "—", type: plan?.type ?? null, priceCents: plan?.priceCents ?? 0, count: r._count._all };
+    })
+    .sort((a, b) => b.count - a.count);
+}
+
+/** RB-BI-008: leads agrupados por canal de origen, con nº de cerrados por canal. */
+export async function getAcquisitionChannels(orgId: string) {
+  const [leads, closed] = await Promise.all([
+    prisma.lead.groupBy({ by: ["channel"], where: { orgId }, _count: { _all: true } }),
+    prisma.lead.groupBy({ by: ["channel"], where: { orgId, status: "CERRADO" }, _count: { _all: true } }),
+  ]);
+  return leads
+    .map((l) => ({
+      channel: l.channel,
+      count: l._count._all,
+      closedCount: closed.find((c) => c.channel === l.channel)?._count._all ?? 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+/** RB-BI-010: ranking de servicios por nº de altas y por ingresos asociados. */
+export async function getTopServices(orgId: string, opts: { orderBy?: "count" | "revenue" } = {}) {
+  const [plans, subCounts, payments] = await Promise.all([
+    prisma.membershipPlan.findMany({ where: { orgId }, select: { id: true, name: true, type: true } }),
+    prisma.subscription.groupBy({ by: ["planId"], where: { member: { orgId } }, _count: { _all: true } }),
+    prisma.payment.findMany({
+      where: { orgId, status: "PAID", subscriptionId: { not: null } },
+      select: { amountCents: true, subscription: { select: { planId: true } } },
+    }),
+  ]);
+
+  const revenueByPlan = new Map<string, number>();
+  for (const p of payments) {
+    const planId = p.subscription?.planId;
+    if (!planId) continue;
+    revenueByPlan.set(planId, (revenueByPlan.get(planId) ?? 0) + p.amountCents);
+  }
+
+  const rows = plans.map((plan) => ({
+    planId: plan.id,
+    name: plan.name,
+    type: plan.type,
+    subscriptionsCount: subCounts.find((c) => c.planId === plan.id)?._count._all ?? 0,
+    revenueEuros: (revenueByPlan.get(plan.id) ?? 0) / 100,
+  }));
+
+  const orderBy = opts.orderBy ?? "count";
+  return rows.sort((a, b) => (orderBy === "revenue" ? b.revenueEuros - a.revenueEuros : b.subscriptionsCount - a.subscriptionsCount));
+}
+
+// RB-BI-011: pesos del score compuesto "mixed" (media ponderada 0-100), centralizados
+// aquí para no dispersar números mágicos entre la query y la UI.
+export const MEMBER_RANKING_WEIGHTS = { ltv: 0.5, adherence: 0.3, tenure: 0.2 } as const;
+const ADHERENCE_PERIOD_DAYS = 90;
+
+/** RB-BI-011: ranking de socios por LTV, adherencia (asistencia/reservas) y antigüedad. */
+export async function getMemberRanking(orgId: string, opts: { dimension?: "mixed" | "ltv" | "adherence" | "tenure" } = {}) {
+  const dimension = opts.dimension ?? "mixed";
+  const since = new Date();
+  since.setDate(since.getDate() - ADHERENCE_PERIOD_DAYS);
+
+  const members = await prisma.member.findMany({
+    where: { orgId, state: { not: "PROSPECT" } },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      joinedAt: true,
+      payments: { where: { status: "PAID" }, select: { amountCents: true } },
+      bookings: {
+        where: { session: { date: { gte: since } }, status: { in: ["ATTENDED", "NO_SHOW"] } },
+        select: { status: true },
+      },
+    },
+  });
+
+  const now = Date.now();
+  const base = members.map((m) => {
+    const ltvEuros = m.payments.reduce((s, p) => s + p.amountCents, 0) / 100;
+    const totalBookings = m.bookings.length;
+    const attended = m.bookings.filter((b) => b.status === "ATTENDED").length;
+    const adherencePct = totalBookings ? Math.round((attended / totalBookings) * 100) : 0;
+    const tenureDays = Math.round((now - m.joinedAt.getTime()) / (24 * 60 * 60 * 1000));
+    return { memberId: m.id, memberName: `${m.firstName} ${m.lastName}`, ltvEuros, adherencePct, tenureDays };
+  });
+
+  const normalize = (values: number[]) => {
+    const max = Math.max(1, ...values);
+    return (v: number) => (v / max) * 100;
+  };
+  const normLtv = normalize(base.map((r) => r.ltvEuros));
+  const normTenure = normalize(base.map((r) => r.tenureDays));
+
+  const rows = base.map((r) => ({
+    ...r,
+    mixedScore: Math.round(
+      normLtv(r.ltvEuros) * MEMBER_RANKING_WEIGHTS.ltv +
+        r.adherencePct * MEMBER_RANKING_WEIGHTS.adherence +
+        normTenure(r.tenureDays) * MEMBER_RANKING_WEIGHTS.tenure
+    ),
+  }));
+
+  const sortKey: Record<string, (r: (typeof rows)[number]) => number> = {
+    mixed: (r) => r.mixedScore,
+    ltv: (r) => r.ltvEuros,
+    adherence: (r) => r.adherencePct,
+    tenure: (r) => r.tenureDays,
+  };
+  return rows.sort((a, b) => sortKey[dimension](b) - sortKey[dimension](a));
 }
