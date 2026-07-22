@@ -73,6 +73,21 @@ model Center {
   @@index([orgId])
 }
 
+// ---------- Referencia geográfica (BI-3): CP → provincia ----------
+// Tabla de referencia España-wide, NO multi-tenant (es geografía, no dato de
+// negocio de una org concreta). Los 2 primeros dígitos de cualquier CP español
+// coinciden 1:1 con el código de provincia (01-52). Antes esta relación vivía
+// hardcodeada en lib/postal-codes-es.ts; se persiste aquí para que
+// getPostalCodeDistribution pueda hacer el join en una sola query SQL — así el
+// mapa de calor y la lista de "Distribución por provincia" leen exactamente el
+// mismo dataset y no pueden mostrar totales distintos entre sí.
+model PostalProvince {
+  code String @id // "01".."52"
+  name String
+  lat  Float
+  lng  Float
+}
+
 // ---------- Identidad y roles ----------
 
 enum Role {

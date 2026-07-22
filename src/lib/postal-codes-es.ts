@@ -1,9 +1,12 @@
-// BI-3 (RB-LEAD-010 upgrade): tabla estática de prefijo postal (2 dígitos) → coordenadas.
-// getPostalCodeDistribution (dashboard-queries.ts) ya agrupa leads/clientes por los dos
-// primeros dígitos del CP, que en España coinciden 1:1 con el código de provincia (01-52).
-// Fuente: coordenadas de las capitales de provincia españolas — dato geográfico público,
-// sin licencia restrictiva (equivalente al nivel de detalle que ya usa el resto del
-// dashboard). No se ha usado ningún servicio de geocodificación de pago.
+// BI-3 (RB-LEAD-010 upgrade): prefijo postal (2 dígitos) → coordenadas de la capital
+// de provincia. En España los 2 primeros dígitos de cualquier CP coinciden 1:1 con el
+// código de provincia (01-52). Este objeto ya NO se lee en tiempo de ejecución — es la
+// fuente que prisma/seed.ts usa para poblar la tabla `PostalProvince` (ver
+// schema.prisma), contra la que getPostalProvinceStats (dashboard-queries.ts) hace el
+// join real. Se mantiene aquí porque es más cómodo de editar como objeto TS que como
+// fila de seed suelta. Fuente: coordenadas de las capitales de provincia españolas —
+// dato geográfico público, sin licencia restrictiva. No se ha usado ningún servicio de
+// geocodificación de pago.
 export const PROVINCE_PREFIX_COORDS: Record<string, { name: string; lat: number; lng: number }> = {
   "01": { name: "Álava", lat: 42.8467, lng: -2.6716 },
   "02": { name: "Albacete", lat: 38.9943, lng: -1.8585 },
@@ -58,7 +61,3 @@ export const PROVINCE_PREFIX_COORDS: Record<string, { name: string; lat: number;
   "51": { name: "Ceuta", lat: 35.8894, lng: -5.3213 },
   "52": { name: "Melilla", lat: 35.2919, lng: -2.9382 },
 };
-
-export function coordsForPostalPrefix(prefix: string) {
-  return PROVINCE_PREFIX_COORDS[prefix] ?? null;
-}
