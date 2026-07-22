@@ -391,9 +391,12 @@ export async function getTopServices(orgId: string, opts: { orderBy?: "count" | 
 export const MEMBER_RANKING_WEIGHTS = { ltv: 0.5, adherence: 0.3, tenure: 0.2 } as const;
 const ADHERENCE_PERIOD_DAYS = 90;
 
+export const MEMBER_RANKING_PAGE_SIZE = 10;
+
 /** RB-BI-011: ranking de socios por LTV, adherencia (asistencia/reservas) y antigüedad. */
-export async function getMemberRanking(orgId: string, opts: { dimension?: "mixed" | "ltv" | "adherence" | "tenure" } = {}) {
+export async function getMemberRanking(orgId: string, opts: { dimension?: "mixed" | "ltv" | "adherence" | "tenure"; page?: number } = {}) {
   const dimension = opts.dimension ?? "mixed";
+  const page = Math.max(1, opts.page ?? 1);
   const since = new Date();
   since.setDate(since.getDate() - ADHERENCE_PERIOD_DAYS);
 
@@ -444,5 +447,17 @@ export async function getMemberRanking(orgId: string, opts: { dimension?: "mixed
     adherence: (r) => r.adherencePct,
     tenure: (r) => r.tenureDays,
   };
-  return rows.sort((a, b) => sortKey[dimension](b) - sortKey[dimension](a));
+  const sorted = rows.sort((a, b) => sortKey[dimension](b) - sortKey[dimension](a));
+
+  const totalPages = Math.ceil(sorted.length / MEMBER_RANKING_PAGE_SIZE);
+  const start = (page - 1) * MEMBER_RANKING_PAGE_SIZE;
+  const paged = sorted.slice(start, start + MEMBER_RANKING_PAGE_SIZE);
+
+  return {
+    items: paged,
+    page,
+    pageSize: MEMBER_RANKING_PAGE_SIZE,
+    total: sorted.length,
+    totalPages,
+  };
 }
