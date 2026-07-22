@@ -18,6 +18,7 @@ export type NavItem = { href: string; label: string; section: NavSection };
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general" },
+    { href: "/feedback", label: "Feedback", section: "Vista general" },
     { href: "/leads", label: "Leads", section: "Comercial" },
     { href: "/offers", label: "Ofertas", section: "Comercial" },
     { href: "/members", label: "Socios", section: "Operativa del centro" },
@@ -32,6 +33,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   ],
   CENTER_DIRECTOR: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general" },
+    { href: "/feedback", label: "Feedback", section: "Vista general" },
     { href: "/leads", label: "Leads", section: "Comercial" },
     { href: "/offers", label: "Ofertas", section: "Comercial" },
     { href: "/members", label: "Socios", section: "Operativa del centro" },

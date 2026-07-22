@@ -14,6 +14,8 @@ import {
   Line,
   Cell,
   LabelList,
+  PieChart,
+  Pie,
   type TooltipContentProps,
 } from "recharts";
 import {
@@ -23,6 +25,7 @@ import {
   MEMBER_STATE_LABEL,
   PAYMENT_METHOD_COLOR,
   PAYMENT_METHOD_LABEL,
+  CATEGORICAL,
 } from "@/lib/chart-colors";
 
 const axisStyle = { fontSize: 12, fontWeight: 600, fill: INK.muted };
@@ -299,6 +302,201 @@ export function RetentionCohortChart({
           activeDot={{ r: 6.5, fill: BRAND.ink, stroke: BRAND.ink }}
         />
       </ComposedChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function AgeBracketsChart({
+  data,
+}: {
+  data: { bracket: string; count: number }[];
+}) {
+  const { active, setActive } = useHover();
+  const maxIdx = data.reduce((best, d, i) => (d.count > (data[best]?.count ?? -1) ? i : best), 0);
+
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart data={data} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="bracket" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
+        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={32} />
+        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="socios" unit="" />} />
+        <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={700} animationEasing="ease-out">
+          {data.map((_, i) => (
+            <Cell
+              key={i}
+              cursor="pointer"
+              fill={active === i || i === maxIdx ? BRAND.yellow : BRAND.inkSoft}
+              opacity={active !== null && active !== i ? 0.4 : 1}
+              onMouseEnter={() => setActive(i)}
+              onMouseLeave={() => setActive(null)}
+            />
+          ))}
+          <LabelList
+            dataKey="count"
+            position="top"
+            style={{ fill: INK.secondary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** BI-1: donut categórico (servicio/canal) — paleta monocromática de marca, identidad siempre reforzada con leyenda directa. */
+export function DonutChart({
+  data,
+  metric,
+}: {
+  data: { label: string; value: number }[];
+  metric: string;
+}) {
+  const { active, setActive } = useHover();
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
+  const rows = data.map((d, i) => ({ ...d, dotColor: CATEGORICAL[i % CATEGORICAL.length] }));
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-6">
+      <ResponsiveContainer width={170} height={170} className="shrink-0">
+        <PieChart>
+          <Pie
+            data={rows}
+            dataKey="value"
+            nameKey="label"
+            innerRadius={50}
+            outerRadius={76}
+            paddingAngle={2}
+            stroke="#fff"
+            strokeWidth={2}
+            isAnimationActive
+            animationDuration={700}
+          >
+            {rows.map((r, i) => (
+              <Cell
+                key={r.label}
+                fill={r.dotColor}
+                cursor="pointer"
+                opacity={active !== null && active !== i ? 0.35 : 1}
+                onMouseEnter={() => setActive(i)}
+                onMouseLeave={() => setActive(null)}
+              />
+            ))}
+          </Pie>
+          <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric={metric} unit="" />} />
+        </PieChart>
+      </ResponsiveContainer>
+      <ul className="flex-1 w-full space-y-1.5 text-sm">
+        {rows.map((r, i) => (
+          <li
+            key={r.label}
+            className="flex items-center justify-between gap-2 cursor-pointer"
+            style={{ opacity: active !== null && active !== i ? 0.5 : 1 }}
+            onMouseEnter={() => setActive(i)}
+            onMouseLeave={() => setActive(null)}
+          >
+            <span className="flex items-center gap-2 text-text-2 capitalize">
+              <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: r.dotColor }} />
+              {r.label}
+            </span>
+            <span className="tz-nums font-semibold text-brand-text shrink-0">
+              {r.value} · {Math.round((r.value / total) * 100)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** BI-1: top N socios por dimensión seleccionada (RB-BI-011). */
+export function MemberRankingChart({
+  data,
+  dimension,
+}: {
+  data: { memberName: string; ltvEuros: number; adherencePct: number; tenureDays: number; mixedScore: number }[];
+  dimension: "mixed" | "ltv" | "adherence" | "tenure";
+}) {
+  const { active, setActive } = useHover();
+  const valueOf = (d: (typeof data)[number]) =>
+    dimension === "ltv" ? d.ltvEuros : dimension === "adherence" ? d.adherencePct : dimension === "tenure" ? d.tenureDays : d.mixedScore;
+  const unit = dimension === "ltv" ? "€" : dimension === "adherence" ? "%" : "";
+  const metric = dimension === "ltv" ? "LTV" : dimension === "adherence" ? "adherencia" : dimension === "tenure" ? "antigüedad (días)" : "score";
+  const rows = data.slice(0, 8).map((d) => ({ label: d.memberName, value: Math.round(valueOf(d)) }));
+
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 30)}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 40, left: 10, bottom: 0 }}>
+        <CartesianGrid {...gridProps} horizontal={false} />
+        <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={120} />
+        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric={metric} unit={unit as "€" | "%" | ""} />} />
+        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive animationDuration={700} animationEasing="ease-out">
+          {rows.map((_, i) => (
+            <Cell
+              key={i}
+              cursor="pointer"
+              fill={active === i || i === 0 ? BRAND.yellow : BRAND.inkSoft}
+              opacity={active !== null && active !== i ? 0.4 : 1}
+              onMouseEnter={() => setActive(i)}
+              onMouseLeave={() => setActive(null)}
+            />
+          ))}
+          <LabelList
+            dataKey="value"
+            position="right"
+            formatter={(v) => `${v}${unit}`}
+            style={{ fill: INK.primary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
+          />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** BI-1: ranking de servicios por altas o por ingresos (una sola métrica por eje, el toggle cambia cuál). */
+export function TopServicesChart({
+  data,
+  orderBy,
+}: {
+  data: { name: string; subscriptionsCount: number; revenueEuros: number }[];
+  orderBy: "count" | "revenue";
+}) {
+  const { active, setActive } = useHover();
+  const rows = data.map((d) => ({
+    label: d.name,
+    value: orderBy === "revenue" ? Math.round(d.revenueEuros) : d.subscriptionsCount,
+  }));
+  const unit = orderBy === "revenue" ? ("€" as const) : ("" as const);
+
+  return (
+    <ResponsiveContainer width="100%" height={200}>
+      <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 46, left: 10, bottom: 0 }}>
+        <CartesianGrid {...gridProps} horizontal={false} />
+        <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
+        <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={110} />
+        <Tooltip
+          cursor={false}
+          content={(props: TooltipContentProps) => <TzTooltip {...props} metric={orderBy === "revenue" ? "ingresos" : "altas"} unit={unit} />}
+        />
+        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationEasing="ease-out">
+          {rows.map((_, i) => (
+            <Cell
+              key={i}
+              cursor="pointer"
+              fill={active === i || i === 0 ? BRAND.yellow : BRAND.inkSoft}
+              opacity={active !== null && active !== i ? 0.4 : 1}
+              onMouseEnter={() => setActive(i)}
+              onMouseLeave={() => setActive(null)}
+            />
+          ))}
+          <LabelList
+            dataKey="value"
+            position="right"
+            formatter={(v) => `${Number(v).toLocaleString("es-ES")}${unit}`}
+            style={{ fill: INK.primary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
+          />
+        </Bar>
+      </BarChart>
     </ResponsiveContainer>
   );
 }
