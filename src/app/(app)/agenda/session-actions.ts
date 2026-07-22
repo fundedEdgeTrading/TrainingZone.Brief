@@ -18,8 +18,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
 
   const id = String(formData.get("id") ?? "") || null;
   const type = String(formData.get("type") ?? "personal") === "reduced" ? "reduced" : "personal";
-  let trainerId = String(formData.get("trainerId") ?? "");
-  if (session.user.role === "TRAINER") trainerId = session.user.id;
+  const trainerId = String(formData.get("trainerId") ?? "") || session.user.id;
   const dateRaw = String(formData.get("date") ?? "");
   const startTime = String(formData.get("startTime") ?? "");
   let endTime = String(formData.get("endTime") ?? "");

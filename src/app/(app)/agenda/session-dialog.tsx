@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { trainerColor, initials } from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
 import { useToast } from "@/components/ui/toast";
+import { TrainerTooltip } from "./trainer-tooltip";
 
 export type DialogState = {
   mode: "create" | "edit";
@@ -234,15 +235,15 @@ export default function SessionDialog({
                   const color = trainerColor(t.id);
                   const sel = dlg.trainerId === t.id;
                   return (
-                    <button
-                      key={t.id}
-                      title={t.name}
-                      onClick={() => patch({ trainerId: t.id })}
-                      className="w-7 h-7 rounded-full text-white text-sm shrink-0"
-                      style={{ background: color, boxShadow: sel ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : "none" }}
-                    >
-                      {sel ? "✓" : ""}
-                    </button>
+                    <TrainerTooltip key={t.id} name={t.name} color={color} className="shrink-0">
+                      <button
+                        onClick={() => patch({ trainerId: t.id })}
+                        className="w-7 h-7 rounded-full text-white text-sm shrink-0"
+                        style={{ background: color, boxShadow: sel ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : "none" }}
+                      >
+                        {sel ? "✓" : ""}
+                      </button>
+                    </TrainerTooltip>
                   );
                 })}
                 {trainers.length === 0 && <p className="text-xs text-muted">Sin entrenadores.</p>}

@@ -19,6 +19,7 @@ import {
 } from "./agenda-utils";
 import { moveSessionAction } from "./session-actions";
 import SessionDialog, { type DialogState } from "./session-dialog";
+import { TrainerTooltip } from "./trainer-tooltip";
 
 type Trainer = { id: string; name: string };
 type Member = { id: string; firstName: string; lastName: string };
@@ -196,6 +197,7 @@ export default function AgendaView({
 
   const gridHeight = (END_HOUR - START_HOUR) * ROW_HEIGHT;
   const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
+  const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -348,8 +350,10 @@ export default function AgendaView({
                         const widthPct = 100 / ev.total;
                         const color = trainerColor(ev.trainerId);
                         return (
-                          <div
+                          <TrainerTooltip
                             key={ev.id}
+                            name={trainerName[ev.trainerId] ?? "Sin entrenador"}
+                            color={color}
                             data-event-card
                             onMouseDown={(e) => {
                               if (!canEdit) return;
@@ -364,14 +368,13 @@ export default function AgendaView({
                                 sy: e.clientY,
                               };
                             }}
-                            className="absolute rounded-md text-white overflow-hidden"
+                            className="absolute rounded-md text-white"
                             style={{
                               top,
                               height,
                               left: `calc(${ev.col * widthPct}% + 1px)`,
                               width: `calc(${widthPct}% - 3px)`,
                               background: color,
-                              padding: "3px 7px",
                               boxShadow: "0 1px 2px rgba(29,29,28,.18)",
                               cursor: canEdit ? "grab" : "default",
                               zIndex: 2,
@@ -379,15 +382,17 @@ export default function AgendaView({
                             }}
                             title={ev.title}
                           >
-                            <div className="font-semibold text-xs leading-tight truncate">
-                              {ev.title}
-                              {ev.isRecurring ? " ↻" : ""}
+                            <div className="h-full overflow-hidden" style={{ padding: "3px 7px" }}>
+                              <div className="font-semibold text-xs leading-tight truncate">
+                                {ev.title}
+                                {ev.isRecurring ? " ↻" : ""}
+                              </div>
+                              <div className="text-[11px] opacity-90 truncate">
+                                {fmtHHMM(ev.startMin)} – {fmtHHMM(ev.endMin)}
+                                {ev.type === "reduced" ? " · Grupo" : ""}
+                              </div>
                             </div>
-                            <div className="text-[11px] opacity-90 truncate">
-                              {fmtHHMM(ev.startMin)} – {fmtHHMM(ev.endMin)}
-                              {ev.type === "reduced" ? " · Grupo" : ""}
-                            </div>
-                          </div>
+                          </TrainerTooltip>
                         );
                       })}
                     </div>
