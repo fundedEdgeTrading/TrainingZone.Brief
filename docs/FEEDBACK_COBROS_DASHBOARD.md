@@ -119,7 +119,7 @@ Los **enums ya soportan** los estados que necesitamos, pero **faltan las accione
 
 **`RB-PAGO-002` — Aplazar / posponer el cobro** 🆕. Permite mover la fecha de un cobro pendiente sin marcarlo como fallido ni pasar el socio a `DELINQUENT`. Modelo: el `Payment` en `PENDING` gana una fecha de vencimiento explícita (`dueDate`), y la regla de morosidad (`getBillingKpis`/`getDelinquentMembers`) **respeta el aplazamiento** (no cuenta como moroso hasta pasado `dueDate`). Registra motivo y nueva fecha. *(Sobre Stripe Billing: equivale a mover el `billing_cycle_anchor` / `trial_end` del próximo ciclo.)*
 
-**`RB-PAGO-003` — Devolución del importe (de todos los meses)** 🆕. Marca como `REFUNDED` uno, varios o **todos** los `Payment` `PAID` de un socio/suscripción y, si el cobro fue por Stripe, **emite el refund** vía `PaymentIntent`. Requiere **motivo obligatorio** y confirmación explícita ("devolver N cobros por X €"). ⚠️ **Caveat contable/legal:** en España una devolución implica **factura rectificativa** (VERI\*FACTU, marcado fuera del MVP por diseño — README D3 / plan §5.1). La acción deja el rastro en `AuditLog`; la emisión fiscal rectificativa se documenta como dependencia externa, **no** se inventa aquí.
+**`RB-PAGO-003` — Devolución del importe (de todos los meses)** 🆕. Marca como `REFUNDED` uno, varios o **todos** los `Payment` `PAID` de un socio/suscripción y, si el cobro fue por Stripe, **emite el refund** vía `PaymentIntent`. Requiere **motivo obligatorio** y confirmación explícita ("devolver N cobros por X €"). ⚠️ **Caveat contable/legal:** en España una devolución implica **factura rectificativa** (VERI\*FACTU, marcado fuera del MVP por diseño — README D3 / plan §5.1). La acción deja el rastro en `AuditLog`; la emisión fiscal rectificativa se documenta como dependencia externa, **no** se inventa aquí. 🚧 **Decisión D-2:** la parte de emisión real del refund contra Stripe (y su reconciliación por webhook) queda **bloqueada hasta que el cliente entregue las credenciales de Stripe**; hasta entonces, `refundPayments` solo puede operar en modo "solo registro local" (marca `REFUNDED` + `refundReason`/`refundedAt`, sin `stripeRefundId`) y debe rechazar/avisar si se intenta sobre un pago cobrado por Stripe.
 
 **`RB-PAGO-004` — Suspender / congelar la cuota** 🆕. Pausa la suscripción: `Subscription.status → FROZEN`, `Member.state → FROZEN`, se **detiene la generación del siguiente cobro** y (opcional) se registra hasta cuándo (`pauseUntil`). Al reanudar, vuelve a `ACTIVE`. Es una **pausa**, no una baja: conserva historial, plan e importe. Los enums `SubscriptionStatus.FROZEN`/`MemberState.FROZEN` **ya existen** — falta solo la acción. *(Sobre Stripe Billing: `pause_collection`.)*
 
@@ -205,7 +205,7 @@ model Lead {
 - **C.3.2 — Gráficas** en `src/app/(app)/dashboard/charts.tsx` con Recharts + `chart-colors.ts` (seguir `dataviz`: donut para sexo/servicio/canal, barras horizontales para franjas de edad y ranking, KPI + embudo para cierre). Nada de degradados; tokens `brand-*`.
 - **C.3.3 — Página** `src/app/(app)/dashboard/page.tsx`: añadir las nuevas `Card`/`KpiCard` en la retícula existente, respetando el orden (demografía junto a edad media/CP; comercial —canal, % cierre, servicio más vendido— en su propia banda; ranking al final).
 - **C.3.4 — Captura de `sex`**: formulario público de lead (`src/app/lead-form/...`), alta manual de lead y onboarding del socio (`src/app/onboarding/[token]`), con opción "prefiero no decirlo". Herencia lead→member en `confirmLeadClosureForMember`/conversión (`leads-queries.ts`).
-- **C.3.5 — Mapa de calor** (`RB-LEAD-010`, fase aparte): tabla local CP→coords + componente de mapa; alimentado por `getPostalCodeDistribution` (ya existe). Planificar por el riesgo abierto #3, no bloquea el resto del dashboard.
+- **C.3.5 — Mapa de calor** (`RB-LEAD-010`, fase aparte): tabla local CP→coords + componente de mapa con `react-leaflet`/`leaflet`/`leaflet.heat` (decisión D-6, tiles OpenStreetMap); alimentado por `getPostalCodeDistribution` (ya existe). Planificar por el riesgo abierto #3, no bloquea el resto del dashboard. Detalle técnico en `docs/FEEDBACK_COBROS_DASHBOARD_IMPLEMENTACION.md` §BI-3.
 
 ---
 
@@ -217,6 +217,7 @@ model Lead {
 | **FB-2** | Feedback de sesión del cliente `RB-FB-102` (si se aprueba) vía `SelfAssessment` | Portal (`RB-IA-005`) | Medio | F16 |
 | **PAGO-1** | Acciones locales: congelar/reanudar, cancelación programada, cambio de importe, producto puntual, aplazar | Campos §B.2 | **Medio** | F12 |
 | **PAGO-2** | Devolución + refund Stripe + reconciliación webhook | PAGO-1, cuenta Stripe | Alto (legal VERI\*FACTU) | F12 / riesgo §5.1 |
+| **PAGO-2b** 🚧 | **Bloqueada** hasta credenciales Stripe del cliente (decisión D-2). Mientras tanto, `refundPayments` opera solo en modo registro local (ver `RB-PAGO-003`) | PAGO-2, credenciales Stripe | — | F12 |
 | **BI-1** | Franjas de edad, gente por servicio, canal, % cierre, servicio más vendido, ranking | Datos ya en modelo | **Bajo-Medio** | F17 |
 | **BI-2** | Campo `sex` + captura + distribución `RB-BI-005` | Migración + formularios | Bajo | F17 |
 | **BI-3** | Mapa de calor real por CP `RB-LEAD-010` | Geocodificación (riesgo #3) | Alto | F17 |
@@ -225,16 +226,18 @@ model Lead {
 
 ---
 
-## Decisiones de negocio abiertas (a cerrar con el cliente)
+## Decisiones de negocio (cerradas)
 
-| # | Cuestión | Regla | Recomendación |
+| # | Cuestión | Regla | Decisión |
 |---|---|---|---|
-| D-1 | ¿El **cliente** deja su propio feedback de sesión, además del debrief del entrenador? | `RB-FB-102` | **Sí**, opcional y ligero, vía `SelfAssessment kind="post-sesion"`. Da el contraste entrenador⟷cliente. |
-| D-2 | Devolución "de todos los meses": ¿alcance por defecto = suscripción o socio completo? ¿Emisión de factura rectificativa ahora o luego? | `RB-PAGO-003` | Por **suscripción**, con opción "todo el socio"; rectificativa fiscal como dependencia VERI\*FACTU (fuera de MVP). |
-| D-3 | Congelación: ¿con fecha de fin obligatoria o indefinida hasta reactivar? | `RB-PAGO-004` | Ambas; `pauseUntil` opcional. |
-| D-4 | "Servicio más vendido": ¿por nº de altas o por € facturados? | `RB-BI-010` | Mostrar ambos; **orden por defecto = nº de altas**. |
-| D-5 | "Ranking de clientes": ¿dimensión (LTV, adherencia, antigüedad, mixto)? | `RB-BI-011` | **Mixto** configurable; default LTV + adherencia. |
-| D-6 | Mapa de calor: proveedor de geocodificación (tabla local vs. servicio externo) | `RB-LEAD-010` | **Tabla local** de CP españoles (coste 0, sin fuga de datos); externo solo si hace falta precisión. |
+| D-1 | ¿El **cliente** deja su propio feedback de sesión, además del debrief del entrenador? | `RB-FB-102` | ✅ **Sí**, opcional y ligero, vía `SelfAssessment kind="post-sesion"`. Da el contraste entrenador⟷cliente. |
+| D-2 | Devolución "de todos los meses": ¿alcance por defecto = suscripción o socio completo? ¿Emisión de factura rectificativa ahora o luego? | `RB-PAGO-003` | ✅ Por **suscripción**, con opción "todo el socio". La emisión de refund vía Stripe (`PaymentIntent`) y la rectificativa fiscal (VERI\*FACTU) quedan **fuera del MVP**: `RB-PAGO-003`/PAGO-2 no se implementa hasta disponer de credenciales de Stripe del cliente. Se deja preparado el modelo (`refundReason`/`refundedAt`/`stripeRefundId`) pero la acción y el webhook de refund se bloquean tras un flag/feature-gate hasta entonces. |
+| D-3 | Congelación: ¿con fecha de fin obligatoria o indefinida hasta reactivar? | `RB-PAGO-004` | ✅ **Ambas**; `pauseUntil` opcional. |
+| D-4 | "Servicio más vendido": ¿por nº de altas o por € facturados? | `RB-BI-010` | ✅ Mostrar ambos; **orden por defecto = nº de altas**. |
+| D-5 | "Ranking de clientes": ¿dimensión (LTV, adherencia, antigüedad, mixto)? | `RB-BI-011` | ✅ **Mixto** configurable; default LTV + adherencia. |
+| D-6 | Mapa de calor: proveedor de geocodificación (tabla local vs. servicio externo) | `RB-LEAD-010` | ✅ **Tabla local** de CP españoles (coste 0, sin fuga de datos). **Librería de mapa:** `react-leaflet` + `leaflet` + `leaflet.heat`, con tiles OpenStreetMap (sin API key, sin coste). Alternativa descartada por sobredimensionada para el volumen de datos: `deck.gl`. Ver `docs/FEEDBACK_COBROS_DASHBOARD_IMPLEMENTACION.md` §BI-3 para el detalle técnico. |
+
+Todas las decisiones D-1 a D-6 están cerradas. El plan de fases (arriba) y el detalle técnico accionable viven en **`docs/FEEDBACK_COBROS_DASHBOARD_IMPLEMENTACION.md`**.
 
 ---
 
