@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { canManageEpSlots } from "@/lib/rbac";
 import { saveSession, deleteSession, rescheduleSession } from "@/lib/agenda-queries";
+import { parseDateParam } from "@/lib/date-utils";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
@@ -46,13 +47,13 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     trainerId,
     title,
     type,
-    date: new Date(dateRaw),
+    date: parseDateParam(dateRaw),
     startTime,
     endTime,
     memberId,
     isTrial,
     recurrence,
-    recUntil: recurrence !== "NONE" && recUntilRaw ? new Date(recUntilRaw) : null,
+    recUntil: recurrence !== "NONE" && recUntilRaw ? parseDateParam(recUntilRaw) : null,
   });
 
   revalidatePath("/agenda");
@@ -88,7 +89,7 @@ export async function moveSessionAction(input: {
 
   await requireCenterRole(input.centerId, ["CENTER_DIRECTOR", "TRAINER"]);
 
-  const result = await rescheduleSession(session.user.orgId, input.id, new Date(input.date), input.startTime, input.endTime);
+  const result = await rescheduleSession(session.user.orgId, input.id, parseDateParam(input.date), input.startTime, input.endTime);
   if (!result.ok) return result;
 
   revalidatePath("/agenda");
