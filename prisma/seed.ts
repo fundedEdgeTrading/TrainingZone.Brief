@@ -19,6 +19,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
+import { PROVINCE_PREFIX_COORDS } from "@/lib/postal-codes-es";
 
 faker.seed(20260717);
 
@@ -1477,7 +1478,13 @@ async function main() {
     prisma.user.deleteMany(),
     prisma.center.deleteMany(),
     prisma.organization.deleteMany(),
+    prisma.postalProvince.deleteMany(),
   ]);
+
+  // Referencia CP→provincia (BI-3): España-wide, no depende de ninguna org.
+  await prisma.postalProvince.createMany({
+    data: Object.entries(PROVINCE_PREFIX_COORDS).map(([code, v]) => ({ code, name: v.name, lat: v.lat, lng: v.lng })),
+  });
 
   const passwordHash = await bcrypt.hash("demo1234", 10);
   for (const cfg of ORGS) {

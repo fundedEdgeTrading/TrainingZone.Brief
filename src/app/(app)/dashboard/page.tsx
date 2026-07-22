@@ -12,7 +12,8 @@ import {
   getLtvAndTicket,
   getMemberDemographics,
   getGoalsAggregate,
-  getPostalCodeDistribution,
+  getPostalProvinceStats,
+  POSTAL_DISTRIBUTION_PAGE_SIZE,
   getAgeBrackets,
   getMembersByService,
   getAcquisitionChannels,
@@ -20,10 +21,9 @@ import {
   getMemberRanking,
   getLeadCloseRate,
   getSexDistribution,
-  getPostalCodeHeatmapPoints,
   MEMBER_RANKING_PAGE_SIZE,
 } from "@/lib/dashboard-queries";
-import PostalHeatmap from "./postal-heatmap-loader";
+import PostalMapPanel from "./postal-map-panel";
 import { KpiCard, Card } from "@/components/kpi-card";
 import {
   RevenueByMonthChart,
@@ -49,7 +49,12 @@ const RANKING_DIMENSION_LABEL: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ servicesOrderBy?: string; rankingDimension?: string; rankingPage?: string }>;
+  searchParams: Promise<{
+    servicesOrderBy?: string;
+    rankingDimension?: string;
+    rankingPage?: string;
+    postalPage?: string;
+  }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
   const orgId = session.user.orgId;
@@ -59,6 +64,7 @@ export default async function DashboardPage({
     ? params.rankingDimension
     : "mixed") as "mixed" | "ltv" | "adherence" | "tenure";
   const rankingPage = Math.max(1, parseInt(params.rankingPage ?? "1", 10) || 1);
+  const postalPageParam = Math.max(1, parseInt(params.postalPage ?? "1", 10) || 1);
 
   const [
     kpis,
@@ -72,7 +78,7 @@ export default async function DashboardPage({
     ltvTicket,
     demographics,
     goalsAggregate,
-    postalDistribution,
+    postalProvinceStats,
     ageBrackets,
     membersByService,
     acquisitionChannels,
@@ -80,7 +86,6 @@ export default async function DashboardPage({
     memberRanking,
     leadCloseRate,
     sexDistribution,
-    postalHeatmapPoints,
   ] = await Promise.all([
     getKpis(orgId),
     getRevenueByMonth(orgId),
@@ -93,7 +98,7 @@ export default async function DashboardPage({
     getLtvAndTicket(orgId),
     getMemberDemographics(orgId),
     getGoalsAggregate(orgId),
-    getPostalCodeDistribution(orgId),
+    getPostalProvinceStats(orgId),
     getAgeBrackets(orgId),
     getMembersByService(orgId),
     getAcquisitionChannels(orgId),
@@ -101,10 +106,16 @@ export default async function DashboardPage({
     getMemberRanking(orgId, { dimension: rankingDimension, page: rankingPage }),
     getLeadCloseRate(orgId),
     getSexDistribution(orgId),
-    getPostalCodeHeatmapPoints(orgId),
   ]);
-  const maxPostal = Math.max(1, ...postalDistribution.map((p) => p.total));
   const maxFunnel = Math.max(1, ...Object.values(leadCloseRate.funnel));
+
+  const maxPostalTotal = Math.max(1, ...postalProvinceStats.map((p) => p.total));
+  const postalTotalPages = Math.max(1, Math.ceil(postalProvinceStats.length / POSTAL_DISTRIBUTION_PAGE_SIZE));
+  const postalPage = Math.min(postalPageParam, postalTotalPages);
+  const postalPageItems = postalProvinceStats.slice(
+    (postalPage - 1) * POSTAL_DISTRIBUTION_PAGE_SIZE,
+    postalPage * POSTAL_DISTRIBUTION_PAGE_SIZE
+  );
 
   const eur = (cents: number) =>
     (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -114,8 +125,14 @@ export default async function DashboardPage({
     url.set("rankingPage", String(page));
     if (params.rankingDimension) url.set("rankingDimension", params.rankingDimension);
     if (params.servicesOrderBy) url.set("servicesOrderBy", params.servicesOrderBy);
+    if (params.postalPage) url.set("postalPage", params.postalPage);
     return `/dashboard?${url.toString()}`;
   };
+
+  const postalOtherParams: Record<string, string> = {};
+  if (params.rankingDimension) postalOtherParams.rankingDimension = params.rankingDimension;
+  if (params.rankingPage) postalOtherParams.rankingPage = params.rankingPage;
+  if (params.servicesOrderBy) postalOtherParams.servicesOrderBy = params.servicesOrderBy;
 
   return (
     <div className="max-w-[1240px] mx-auto flex flex-col gap-5">
@@ -381,39 +398,15 @@ export default async function DashboardPage({
         )}
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
-        <Card
-          title="Mapa de calor (leads + clientes)"
-          meta="por provincia del código postal — RB-LEAD-010"
-          delay={0.64}
-        >
-          {postalHeatmapPoints.length === 0 ? (
-            <p className="text-sm text-brand-muted">Sin códigos postales geolocalizables todavía.</p>
-          ) : (
-            <PostalHeatmap points={postalHeatmapPoints} />
-          )}
-        </Card>
-
-        <Card title="Distribución por provincia" meta="detalle por prefijo de CP" delay={0.68}>
-          {postalDistribution.length === 0 ? (
-            <p className="text-sm text-brand-muted">Sin códigos postales registrados todavía.</p>
-          ) : (
-            <div className="space-y-2">
-              {postalDistribution.slice(0, 10).map((p) => (
-                <div key={p.prefix} className="flex items-center gap-3 text-sm">
-                  <span className="w-10 shrink-0 font-semibold text-brand-text tz-nums">{p.prefix}xxx</span>
-                  <div className="flex-1 h-3 rounded-full bg-tz-sand overflow-hidden">
-                    <div className="h-full bg-tz-black rounded-full" style={{ width: `${(p.total / maxPostal) * 100}%` }} />
-                  </div>
-                  <span className="w-24 shrink-0 text-xs text-brand-muted text-right">
-                    {p.leads} leads · {p.members} clientes
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+      <PostalMapPanel
+        points={postalProvinceStats}
+        pageItems={postalPageItems}
+        page={postalPage}
+        totalPages={postalTotalPages}
+        total={postalProvinceStats.length}
+        maxTotal={maxPostalTotal}
+        otherParams={postalOtherParams}
+      />
     </div>
   );
 }

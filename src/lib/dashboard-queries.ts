@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { coordsForPostalPrefix } from "@/lib/postal-codes-es";
 export { getLeadCloseRate } from "@/lib/leads-queries";
 
 export async function getKpis(orgId: string) {
@@ -235,44 +234,64 @@ export async function getGoalsAggregate(orgId: string) {
   return { totalGoals, achievedGoals, checkins: assessments.length, stalledCount, wantsMoreCount, changedGoalCount };
 }
 
-/** RB-LEAD-010/RB-BI-003: distribución de leads/clientes por código postal (proxy del mapa de radios). */
-export async function getPostalCodeDistribution(orgId: string) {
-  const [leads, members] = await Promise.all([
-    prisma.lead.findMany({ where: { orgId }, select: { postalCode: true } }),
-    prisma.member.findMany({ where: { orgId, postalCode: { not: null } }, select: { postalCode: true } }),
-  ]);
+// ---------- BI-3: distribución geográfica por provincia (RB-LEAD-010/RB-BI-003) ----------
+// El mapa de calor y la lista "Distribución por provincia" leen del mismo array
+// (getPostalProvinceStats), calculado con una única query que hace JOIN contra
+// PostalProvince (tabla de referencia CP→provincia, ver schema.prisma). Antes cada
+// tarjeta relanzaba su propia agregación en JS y la lista se truncaba a los 10
+// primeros en la vista sin que el mapa lo supiera, así que sus totales podían no
+// coincidir — con un único dataset compartido eso deja de ser posible.
 
-  const counts = new Map<string, { leads: number; members: number }>();
-  for (const l of leads) {
-    const prefix = l.postalCode.slice(0, 2);
-    const row = counts.get(prefix) ?? { leads: 0, members: 0 };
-    row.leads++;
-    counts.set(prefix, row);
-  }
-  for (const m of members) {
-    const prefix = m.postalCode!.slice(0, 2);
-    const row = counts.get(prefix) ?? { leads: 0, members: 0 };
-    row.members++;
-    counts.set(prefix, row);
-  }
+export const POSTAL_DISTRIBUTION_PAGE_SIZE = 8;
 
-  return [...counts.entries()]
-    .map(([prefix, v]) => ({ prefix, ...v, total: v.leads + v.members }))
+export type PostalProvinceStat = {
+  code: string;
+  name: string;
+  lat: number;
+  lng: number;
+  leads: number;
+  members: number;
+  total: number;
+};
+
+export async function getPostalProvinceStats(orgId: string): Promise<PostalProvinceStat[]> {
+  const rows = await prisma.$queryRaw<
+    { code: string; name: string; lat: number; lng: number; leads: bigint; members: bigint }[]
+  >`
+    SELECT
+      pp.code,
+      pp.name,
+      pp.lat,
+      pp.lng,
+      COALESCE(l.leads, 0) AS leads,
+      COALESCE(m.members, 0) AS members
+    FROM "PostalProvince" pp
+    LEFT JOIN (
+      SELECT LEFT("postalCode", 2) AS code, COUNT(*) AS leads
+      FROM "Lead"
+      WHERE "orgId" = ${orgId}
+      GROUP BY 1
+    ) l ON l.code = pp.code
+    LEFT JOIN (
+      SELECT LEFT("postalCode", 2) AS code, COUNT(*) AS members
+      FROM "Member"
+      WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL
+      GROUP BY 1
+    ) m ON m.code = pp.code
+  `;
+
+  return rows
+    .map((r) => ({
+      code: r.code,
+      name: r.name,
+      lat: r.lat,
+      lng: r.lng,
+      leads: Number(r.leads),
+      members: Number(r.members),
+      total: Number(r.leads) + Number(r.members),
+    }))
+    .filter((r) => r.total > 0)
     .sort((a, b) => b.total - a.total);
-}
-
-// ---------- BI-3: mapa de calor real por CP (upgrade RB-LEAD-010) ----------
-
-/** Une getPostalCodeDistribution con la tabla CP→coordenadas para alimentar el heatmap. */
-export async function getPostalCodeHeatmapPoints(orgId: string) {
-  const distribution = await getPostalCodeDistribution(orgId);
-  return distribution
-    .map((d) => {
-      const coords = coordsForPostalPrefix(d.prefix);
-      if (!coords) return null;
-      return { lat: coords.lat, lng: coords.lng, name: coords.name, count: d.total };
-    })
-    .filter((p): p is { lat: number; lng: number; name: string; count: number } => p !== null);
 }
 
 // ---------- BI-2: distribución por sexo (RB-BI-005) ----------
