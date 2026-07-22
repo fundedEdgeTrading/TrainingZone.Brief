@@ -21,6 +21,7 @@ import {
   getLeadCloseRate,
   getSexDistribution,
   getPostalCodeHeatmapPoints,
+  MEMBER_RANKING_PAGE_SIZE,
 } from "@/lib/dashboard-queries";
 import PostalHeatmap from "./postal-heatmap-loader";
 import { KpiCard, Card } from "@/components/kpi-card";
@@ -48,7 +49,7 @@ const RANKING_DIMENSION_LABEL: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ servicesOrderBy?: string; rankingDimension?: string }>;
+  searchParams: Promise<{ servicesOrderBy?: string; rankingDimension?: string; rankingPage?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
   const orgId = session.user.orgId;
@@ -57,6 +58,7 @@ export default async function DashboardPage({
   const rankingDimension = (["mixed", "ltv", "adherence", "tenure"].includes(params.rankingDimension ?? "")
     ? params.rankingDimension
     : "mixed") as "mixed" | "ltv" | "adherence" | "tenure";
+  const rankingPage = Math.max(1, parseInt(params.rankingPage ?? "1", 10) || 1);
 
   const [
     kpis,
@@ -96,7 +98,7 @@ export default async function DashboardPage({
     getMembersByService(orgId),
     getAcquisitionChannels(orgId),
     getTopServices(orgId, { orderBy: servicesOrderBy }),
-    getMemberRanking(orgId, { dimension: rankingDimension }),
+    getMemberRanking(orgId, { dimension: rankingDimension, page: rankingPage }),
     getLeadCloseRate(orgId),
     getSexDistribution(orgId),
     getPostalCodeHeatmapPoints(orgId),
@@ -106,6 +108,14 @@ export default async function DashboardPage({
 
   const eur = (cents: number) =>
     (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+
+  const buildRankingUrl = (page: number) => {
+    const url = new URLSearchParams();
+    url.set("rankingPage", String(page));
+    if (params.rankingDimension) url.set("rankingDimension", params.rankingDimension);
+    if (params.servicesOrderBy) url.set("servicesOrderBy", params.servicesOrderBy);
+    return `/dashboard?${url.toString()}`;
+  };
 
   return (
     <div className="max-w-[1240px] mx-auto flex flex-col gap-5">
@@ -311,11 +321,11 @@ export default async function DashboardPage({
           </div>
         }
       >
-        {memberRanking.length === 0 ? (
+        {memberRanking.items.length === 0 ? (
           <p className="text-sm text-brand-muted">Sin socios activos todavía.</p>
         ) : (
           <div className="space-y-5">
-            <MemberRankingChart data={memberRanking} dimension={rankingDimension} />
+            <MemberRankingChart data={memberRanking.items} dimension={rankingDimension} />
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-xs text-faint text-left">
@@ -328,7 +338,7 @@ export default async function DashboardPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {memberRanking.map((m) => (
+                  {memberRanking.items.map((m) => (
                     <tr key={m.memberId} className="border-t border-tz-sand">
                       <td className="py-2">{m.memberName}</td>
                       <td className="py-2 tz-nums">{eur(m.ltvEuros * 100)}</td>
@@ -340,6 +350,33 @@ export default async function DashboardPage({
                 </tbody>
               </table>
             </div>
+            {memberRanking.totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 pt-2 border-t border-tz-sand">
+                {memberRanking.page > 1 && (
+                  <Link href={buildRankingUrl(1)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                    Primero
+                  </Link>
+                )}
+                {memberRanking.page > 1 && (
+                  <Link href={buildRankingUrl(memberRanking.page - 1)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                    ← Anterior
+                  </Link>
+                )}
+                <span className="text-xs text-brand-muted mx-2">
+                  Página {memberRanking.page} de {memberRanking.totalPages}
+                </span>
+                {memberRanking.page < memberRanking.totalPages && (
+                  <Link href={buildRankingUrl(memberRanking.page + 1)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                    Siguiente →
+                  </Link>
+                )}
+                {memberRanking.page < memberRanking.totalPages && (
+                  <Link href={buildRankingUrl(memberRanking.totalPages)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                    Último
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Card>
