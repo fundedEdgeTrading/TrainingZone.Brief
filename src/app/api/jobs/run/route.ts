@@ -6,6 +6,7 @@ import { runFewSessionsScheduledRule, runLowPackBalanceRule } from "@/lib/traine
 import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { generateOfferSuggestions } from "@/lib/offers-queries";
+import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 
 /**
  * Disparador único para todas las reglas temporales del CRM (F10/F13/F14/F15):
@@ -22,7 +23,15 @@ export async function GET(req: NextRequest) {
   }
 
   const orgs = await prisma.organization.findMany({ select: { id: true } });
-  const summary = { leadOwnerAlerts: 0, fewSessionsAlerts: 0, lowPackAlerts: 0, stallAlerts: 0, checkins: 0, offerSuggestions: 0 };
+  const summary = {
+    leadOwnerAlerts: 0,
+    fewSessionsAlerts: 0,
+    lowPackAlerts: 0,
+    stallAlerts: 0,
+    checkins: 0,
+    offerSuggestions: 0,
+    scheduledCancellations: 0,
+  };
 
   for (const org of orgs) {
     summary.leadOwnerAlerts += await runLeadOwnerAlertRule(org.id);
@@ -31,6 +40,7 @@ export async function GET(req: NextRequest) {
     summary.stallAlerts += await runStallDetectionRule(org.id);
     summary.checkins += await runPeriodicCheckinRule(org.id);
     summary.offerSuggestions += await generateOfferSuggestions(org.id);
+    summary.scheduledCancellations += await runScheduledCancellationsRule(org.id);
   }
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), summary });

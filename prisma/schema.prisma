@@ -442,6 +442,10 @@ model Subscription {
   sessionsRemaining Int?
   createdAt         DateTime           @default(now())
 
+  // PAGO-1 (RB-PAGO-004/006): congelación temporal y cancelación programada.
+  pauseUntil DateTime? // null + status=FROZEN = congelación indefinida
+  cancelAt   DateTime? // fecha futura en la que el job de F10 pasa a CANCELLED
+
   member   Member         @relation(fields: [memberId], references: [id])
   plan     MembershipPlan @relation(fields: [planId], references: [id])
   payments Payment[]
@@ -588,6 +592,13 @@ model Payment {
   stripeCheckoutSessionId String? @unique // F12: sesión de checkout que originó el cobro
   stripePaymentIntentId   String? @unique // F12: PaymentIntent confirmado por el webhook
   createdAt      DateTime      @default(now())
+
+  // PAGO-1 (RB-PAGO-002/003): aplazamiento local y devolución (modo registro local — D-2,
+  // ver PAGO-2b para el refund real vía Stripe cuando el cliente entregue credenciales).
+  dueDate        DateTime? // aplazamiento: fecha límite futura que excluye el pago de morosidad
+  refundReason   String?
+  refundedAt     DateTime?
+  stripeRefundId String? @unique // permanece NULL hasta PAGO-2b
 
   organization Organization  @relation(fields: [orgId], references: [id])
   member       Member        @relation(fields: [memberId], references: [id])
@@ -797,6 +808,7 @@ model Lead {
   postalCode       String // RB-LEAD-010: estructurado, no dirección libre
   occupation       String // alimenta BI nicho (RB-BI-003)
   hasChildren      Boolean? // BI demográfico (RB-BI-003), pregunta opcional
+  sex              Sex? // BI-2/RB-BI-005: se hereda al Member al convertir (RB-LEAD-007)
   goals            String
   hasTrainedBefore Boolean
   hasTrainedNote   String?

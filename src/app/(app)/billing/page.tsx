@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import PaymentForm from "./payment-form";
 import StripeCheckoutForm from "./stripe-checkout-form";
+import { PostponePaymentAction, RefundPaymentAction } from "./payment-lifecycle-forms";
 import type { PaymentStatus } from "@prisma/client";
 
 function euros(cents: number) {
@@ -118,12 +119,18 @@ export default async function BillingPage({
               <th className="pb-2">Método</th>
               <th className="pb-2">Estado</th>
               <th className="pb-2">Recibo</th>
+              <th className="pb-2">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {payments.map((p) => (
               <tr key={p.id} className="border-t border-tz-sand">
-                <td className="py-2 tz-nums">{p.date.toLocaleDateString("es-ES")}</td>
+                <td className="py-2 tz-nums">
+                  {p.date.toLocaleDateString("es-ES")}
+                  {p.status === "PENDING" && p.dueDate && (
+                    <div className="text-[11px] text-faint">aplazado a {p.dueDate.toLocaleDateString("es-ES")}</div>
+                  )}
+                </td>
                 <td className="py-2">
                   <Link href={`/members/${p.member.id}`} className="text-tz-black hover:underline">
                     {p.member.firstName} {p.member.lastName}
@@ -135,6 +142,10 @@ export default async function BillingPage({
                   <Badge tone={PAYMENT_STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
                 </td>
                 <td className="py-2 text-faint">{p.receiptNumber}</td>
+                <td className="py-2">
+                  {p.status === "PENDING" && <PostponePaymentAction paymentId={p.id} />}
+                  {p.status === "PAID" && <RefundPaymentAction paymentId={p.id} />}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -20,6 +20,15 @@ import { BodyCompositionChart } from "./composition-chart";
 import { CompositionSummary } from "./composition-summary";
 import { buildCompositionView } from "@/lib/composition-view";
 import { ClientGoalsPanel, GoalTemplateForm, TrainerAssignSelect } from "./member-profile-forms";
+import {
+  FreezeSubscriptionForm,
+  ResumeSubscriptionButton,
+  ScheduleCancellationForm,
+  CancelScheduledCancellationButton,
+  UpdateSubscriptionPriceForm,
+  AddOneOffProductForm,
+} from "./subscription-forms";
+import { canManageBilling } from "@/lib/rbac";
 import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
 import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { StaffChatThread } from "./staff-chat-thread";
@@ -81,6 +90,8 @@ export default async function MemberDetailPage({
   ]);
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
+  const manageableSubscription = member.subscriptions.find((s) => s.status === "ACTIVE" || s.status === "FROZEN");
+  const canManageSub = canManageBilling(session.user.role);
 
   const canChat = await canAccessMemberChat(session.user.orgId, member.id, session.user.id, session.user.role);
   const [chatMessages, workoutPrograms] = await Promise.all([
@@ -266,6 +277,8 @@ export default async function MemberDetailPage({
                           <th className="pb-2">Fin</th>
                           <th className="pb-2">Estado</th>
                           <th className="pb-2">Precio</th>
+                          <th className="pb-2">Congelación</th>
+                          <th className="pb-2">Baja programada</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -276,11 +289,43 @@ export default async function MemberDetailPage({
                             <td className="py-2">{s.endDate ? s.endDate.toLocaleDateString("es-ES") : "—"}</td>
                             <td className="py-2">{s.status}</td>
                             <td className="py-2 tz-nums">{euros(s.priceCents)}</td>
+                            <td className="py-2 text-text-2">
+                              {s.status === "FROZEN" ? (s.pauseUntil ? `hasta ${s.pauseUntil.toLocaleDateString("es-ES")}` : "indefinida") : "—"}
+                            </td>
+                            <td className="py-2 text-text-2">{s.cancelAt ? s.cancelAt.toLocaleDateString("es-ES") : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
+
+                  {canManageSub && manageableSubscription && (
+                    <div className="border border-tz-linen rounded-lg p-4 space-y-5 bg-tz-bone/40">
+                      <h4 className="text-xs font-semibold text-muted uppercase">
+                        Gestión de suscripción · {manageableSubscription.plan.name}
+                      </h4>
+
+                      {manageableSubscription.status === "ACTIVE" ? (
+                        <FreezeSubscriptionForm subscriptionId={manageableSubscription.id} />
+                      ) : (
+                        <ResumeSubscriptionButton subscriptionId={manageableSubscription.id} memberId={member.id} />
+                      )}
+
+                      <UpdateSubscriptionPriceForm subscriptionId={manageableSubscription.id} />
+
+                      {manageableSubscription.cancelAt ? (
+                        <CancelScheduledCancellationButton subscriptionId={manageableSubscription.id} memberId={member.id} />
+                      ) : (
+                        <ScheduleCancellationForm subscriptionId={manageableSubscription.id} />
+                      )}
+
+                      <div className="pt-1 border-t border-tz-sand">
+                        <p className="text-xs text-brand-muted mb-2">Venta puntual (RB-PAGO-005)</p>
+                        <AddOneOffProductForm memberId={member.id} />
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <h4 className="text-xs font-semibold text-muted uppercase mb-2">Pagos recientes</h4>
                     <table className="w-full text-sm">
