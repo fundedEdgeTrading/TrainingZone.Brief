@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { Prisma, type Role } from "@prisma/client";
+import { Prisma, type Role, type Sex } from "@prisma/client";
 
 type Tx = Prisma.TransactionClient;
 
@@ -69,6 +69,7 @@ export async function createMemberWithInvitation(
     postalCode?: string | null;
     occupation?: string | null;
     hasChildren?: boolean | null;
+    sex?: Sex | null; // BI-2/RB-BI-005: heredado del lead de origen si se respondió
     channel?: string | null;
     originLeadId?: string | null;
     trainerId?: string | null;
@@ -87,6 +88,7 @@ export async function createMemberWithInvitation(
       postalCode: params.postalCode ?? null,
       occupation: params.occupation ?? null,
       hasChildren: params.hasChildren ?? null,
+      sex: params.sex ?? null,
       channel: params.channel ?? null,
       originLeadId: params.originLeadId ?? null,
       trainerId: params.trainerId ?? null,

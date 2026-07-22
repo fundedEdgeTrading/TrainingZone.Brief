@@ -63,13 +63,23 @@ export function PublicLeadForm({
           <Input name="occupation" required placeholder="Tu ocupación" />
         </Field>
       </div>
-      <Field label="¿Tienes hijos? (opcional)">
-        <Select name="hasChildren" defaultValue="">
-          <option value="">Prefiero no decirlo</option>
-          <option value="yes">Sí</option>
-          <option value="no">No</option>
-        </Select>
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="¿Tienes hijos? (opcional)">
+          <Select name="hasChildren" defaultValue="">
+            <option value="">Prefiero no decirlo</option>
+            <option value="yes">Sí</option>
+            <option value="no">No</option>
+          </Select>
+        </Field>
+        <Field label="Sexo (opcional)">
+          <Select name="sex" defaultValue="">
+            <option value="">Prefiero no decirlo</option>
+            <option value="FEMALE">Mujer</option>
+            <option value="MALE">Hombre</option>
+            <option value="OTHER">Otro</option>
+          </Select>
+        </Field>
+      </div>
       <Field label="¿Cuáles son tus objetivos?">
         <textarea name="goals" required rows={3} className="w-full rounded-control border border-brand-border bg-white px-3.5 py-2.5 text-sm" placeholder="Perder peso, ganar fuerza, sentirme mejor..." />
       </Field>

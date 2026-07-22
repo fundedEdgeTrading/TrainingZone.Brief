@@ -1,7 +1,7 @@
 "use server";
 
 import { getPublicLeadFormContext } from "@/lib/public-lead-queries";
-import { createLead, type LeadWriteResult } from "@/lib/leads-queries";
+import { createLead, type CreateLeadInput, type LeadWriteResult } from "@/lib/leads-queries";
 
 export async function submitPublicLead(
   orgSlug: string,
@@ -21,6 +21,7 @@ export async function submitPublicLead(
     postalCode: String(formData.get("postalCode") ?? ""),
     occupation: String(formData.get("occupation") ?? ""),
     hasChildren: formData.get("hasChildren") ? formData.get("hasChildren") === "yes" : null,
+    sex: (String(formData.get("sex") ?? "") || null) as CreateLeadInput["sex"],
     goals: String(formData.get("goals") ?? ""),
     hasTrainedBefore: formData.get("hasTrainedBefore") === "yes",
     hasTrainedNote: String(formData.get("hasTrainedNote") ?? "") || null,

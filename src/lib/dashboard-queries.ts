@@ -260,6 +260,27 @@ export async function getPostalCodeDistribution(orgId: string) {
     .sort((a, b) => b.total - a.total);
 }
 
+// ---------- BI-2: distribución por sexo (RB-BI-005) ----------
+
+const SEX_LABEL: Record<string, string> = { FEMALE: "Mujer", MALE: "Hombre", OTHER: "Otro" };
+
+/** RB-BI-005: distribución de socios por sexo. "No especificado" se muestra pero se excluye del % sobre respondidos. */
+export async function getSexDistribution(orgId: string) {
+  const rows = await prisma.member.groupBy({
+    by: ["sex"],
+    where: { orgId, state: { not: "PROSPECT" } },
+    _count: { _all: true },
+  });
+  const answered = rows.filter((r) => r.sex !== null);
+  const unspecified = rows.find((r) => r.sex === null)?._count._all ?? 0;
+
+  return {
+    answered: answered.map((r) => ({ sex: r.sex as string, label: SEX_LABEL[r.sex as string] ?? r.sex, count: r._count._all })),
+    unspecified,
+    total: rows.reduce((s, r) => s + r._count._all, 0),
+  };
+}
+
 // ---------- BI-1: franjas de edad, servicio, canal, cierre, ranking (RB-BI-006/007/008/010/011) ----------
 
 const AGE_BRACKETS = [

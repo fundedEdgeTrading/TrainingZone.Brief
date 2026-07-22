@@ -13,6 +13,7 @@ import {
   RetentionRiskLevel,
   SubscriptionStatus,
   Role,
+  Sex,
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
@@ -475,6 +476,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         postalCode: m.state === MemberState.PROSPECT ? null : pick(MADRID_POSTAL_CODES),
         occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
         hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
+        // BI-2 (RB-BI-005): ~80% responde, el resto se queda "sin especificar" (sex=null).
+        sex: m.state === MemberState.PROSPECT || Math.random() >= 0.8 ? null : pick([Sex.FEMALE, Sex.MALE, Sex.OTHER, Sex.FEMALE, Sex.MALE]),
       };
     }),
   });

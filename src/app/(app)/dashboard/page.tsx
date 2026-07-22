@@ -19,6 +19,7 @@ import {
   getTopServices,
   getMemberRanking,
   getLeadCloseRate,
+  getSexDistribution,
 } from "@/lib/dashboard-queries";
 import { KpiCard, Card } from "@/components/kpi-card";
 import {
@@ -74,6 +75,7 @@ export default async function DashboardPage({
     topServices,
     memberRanking,
     leadCloseRate,
+    sexDistribution,
   ] = await Promise.all([
     getKpis(orgId),
     getRevenueByMonth(orgId),
@@ -93,6 +95,7 @@ export default async function DashboardPage({
     getTopServices(orgId, { orderBy: servicesOrderBy }),
     getMemberRanking(orgId, { dimension: rankingDimension }),
     getLeadCloseRate(orgId),
+    getSexDistribution(orgId),
   ]);
   const maxPostal = Math.max(1, ...postalDistribution.map((p) => p.total));
   const maxFunnel = Math.max(1, ...Object.values(leadCloseRate.funnel));
@@ -162,7 +165,14 @@ export default async function DashboardPage({
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card title="Sexo" meta={`RB-BI-005 · ${sexDistribution.unspecified} sin especificar`} delay={0.52}>
+          {sexDistribution.answered.length === 0 ? (
+            <p className="text-sm text-brand-muted">Sin datos de sexo todavía.</p>
+          ) : (
+            <DonutChart data={sexDistribution.answered.map((s) => ({ label: s.label, value: s.count }))} metric="socios" />
+          )}
+        </Card>
         <Card title="Nicho principal (ocupación)" meta={`muestra: ${demographics.sampleSize}`} delay={0.56}>
           {demographics.topOccupations.length === 0 ? (
             <p className="text-sm text-brand-muted">Sin datos de ocupación todavía.</p>

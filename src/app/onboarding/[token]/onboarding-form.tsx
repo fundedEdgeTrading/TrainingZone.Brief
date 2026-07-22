@@ -65,6 +65,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
   const [consents, setConsents] = useState({ health: false, contract: false, images: false, marketing: false });
+  const [sex, setSex] = useState<"" | "FEMALE" | "MALE" | "OTHER">("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -89,6 +90,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
             consentHealth: consents.health,
             consentImages: consents.images,
             consentMarketing: consents.marketing,
+            sex,
           });
 
     if (!result.ok) {
@@ -217,6 +219,21 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
                 Para entrenar contigo de forma segura necesitamos tu consentimiento expreso. Puedes retirarlo en
                 cualquier momento desde tu perfil.
               </p>
+              <div className="mb-4">
+                <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-muted mb-1.5">
+                  Sexo (opcional)
+                </label>
+                <select
+                  value={sex}
+                  onChange={(e) => setSex(e.target.value as typeof sex)}
+                  className="w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none"
+                >
+                  <option value="">Prefiero no decirlo</option>
+                  <option value="FEMALE">Mujer</option>
+                  <option value="MALE">Hombre</option>
+                  <option value="OTHER">Otro</option>
+                </select>
+              </div>
               <div className="flex flex-col gap-2.5">
                 {CONSENT_DEFS.map((c) => {
                   const checked = consents[c.key];

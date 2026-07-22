@@ -43,7 +43,7 @@ export async function completeStaffOnboarding(token: string, password: string): 
 
 export async function completeMemberOnboarding(
   token: string,
-  input: { password: string; consentHealth: boolean; consentImages: boolean; consentMarketing: boolean }
+  input: { password: string; consentHealth: boolean; consentImages: boolean; consentMarketing: boolean; sex?: "FEMALE" | "MALE" | "OTHER" | "" }
 ): Promise<OnboardingResult> {
   if (input.password.length < 8) return { ok: false, error: "La contraseña debe tener al menos 8 caracteres." };
 
@@ -78,6 +78,8 @@ export async function completeMemberOnboarding(
       data: {
         userId: user.id,
         state: member.state === "PROSPECT" ? "TRIAL" : member.state,
+        // BI-2/RB-BI-005: solo se sobrescribe si el socio elige una opción (no pisa lo heredado del lead).
+        ...(input.sex ? { sex: input.sex } : {}),
         consentContract: true,
         consentContractAt: now,
         consentHealth: input.consentHealth,
