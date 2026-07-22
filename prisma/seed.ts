@@ -196,6 +196,39 @@ const NOTE_BODIES = [
   "Contento con el seguimiento, mantener al entrenador actual.",
 ];
 const MADRID_POSTAL_CODES = ["28001", "28004", "28009", "28013", "28020", "28028", "28035", "28045"];
+// F9/BI-3: pool de CP de socios para poblar el mapa de calor (dashboard-queries.ts
+// agrupa por los 2 primeros dígitos = provincia, ver postal-codes-es.ts). Los centros
+// físicos están todos en Madrid, así que la mayoría de socios son de Madrid, pero
+// EP online (ServiceKind.ONLINE) puede captar socios de cualquier provincia — de ahí
+// la cola larga de otras provincias, necesaria para que el mapa muestre más de un punto.
+const MEMBER_POSTAL_CODES: [string, number][] = [
+  ["28001", 7], ["28004", 7], ["28009", 6], ["28013", 6], ["28020", 6], ["28028", 6], ["28035", 6], ["28045", 6],
+  ["28016", 5], ["28100", 4], ["28850", 4], // Madrid capital + Alcobendas/Torrejón
+  ["08001", 3], ["08019", 2], // Barcelona
+  ["46001", 3], // Valencia
+  ["41001", 3], // Sevilla
+  ["29001", 3], // Málaga
+  ["03001", 2], // Alicante
+  ["18001", 2], // Granada
+  ["50001", 2], // Zaragoza
+  ["48001", 2], // Vizcaya
+  ["15001", 2], // A Coruña
+  ["30001", 2], // Murcia
+  ["47001", 2], // Valladolid
+  ["45001", 2], // Toledo
+  ["19001", 1], // Guadalajara
+  ["40001", 1], // Segovia
+  ["05001", 1], // Ávila
+  ["37001", 1], // Salamanca
+  ["06001", 1], // Badajoz
+  ["33001", 1], // Asturias
+  ["39001", 1], // Cantabria
+  ["07001", 1], // Baleares
+  ["35001", 1], // Las Palmas
+  ["17001", 1], // Girona
+  ["43001", 1], // Tarragona
+  ["11001", 1], // Cádiz
+];
 const OCCUPATIONS = [
   "Administrativo/a",
   "Profesor/a",
@@ -473,7 +506,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         consentImagesAt: consentImages ? m.joinedAt : null,
         consentMarketingAt: consentMarketing ? m.joinedAt : null,
         // F9 (RB-PERFIL): perfil extendido para poder enseñar BI demográfico (RB-BI-003).
-        postalCode: m.state === MemberState.PROSPECT ? null : pick(MADRID_POSTAL_CODES),
+        postalCode: m.state === MemberState.PROSPECT ? null : weightedPick(MEMBER_POSTAL_CODES),
         occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
         hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
         // BI-2 (RB-BI-005): ~80% responde, el resto se queda "sin especificar" (sex=null).
