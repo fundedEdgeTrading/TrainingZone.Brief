@@ -159,3 +159,42 @@ export async function getWeeklyDebriefReport(orgId: string, weekStart: Date): Pr
     }))
     .sort((a, b) => a.trainerName.localeCompare(b.trainerName));
 }
+
+// ---------- FB-2: feedback de sesión del cliente, para contrastar con el Debrief del entrenador ----------
+
+export type ClientFeedbackBySession = Map<string, { feeling: string; rpe: number | null; comment: string | null }[]>;
+
+/**
+ * RB-FB-102: SelfAssessment kind="post-sesion" de la semana, indexado por sessionId
+ * (vía el bookingId guardado en `structured`) para mostrarlo junto al SessionDebrief
+ * de la misma sesión — nunca junto al canal confidencial de TrainerRating.
+ */
+export async function getWeeklyClientFeedback(orgId: string, weekStart: Date): Promise<ClientFeedbackBySession> {
+  const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const assessments = await prisma.selfAssessment.findMany({
+    where: { orgId, kind: "post-sesion", createdAt: { gte: weekStart, lt: weekEnd } },
+    select: { text: true, structured: true },
+  });
+  if (assessments.length === 0) return new Map();
+
+  const bookingIds = assessments
+    .map((a) => (a.structured as { bookingId?: string } | null)?.bookingId)
+    .filter((id): id is string => !!id);
+  const bookings = await prisma.booking.findMany({
+    where: { id: { in: bookingIds } },
+    select: { id: true, sessionId: true },
+  });
+  const sessionIdByBooking = new Map(bookings.map((b) => [b.id, b.sessionId]));
+
+  const bySession: ClientFeedbackBySession = new Map();
+  for (const a of assessments) {
+    const structured = a.structured as { bookingId?: string; feeling?: string; rpe?: number | null } | null;
+    const sessionId = structured?.bookingId ? sessionIdByBooking.get(structured.bookingId) : undefined;
+    if (!sessionId || !structured?.feeling) continue;
+    const list = bySession.get(sessionId) ?? [];
+    list.push({ feeling: structured.feeling, rpe: structured.rpe ?? null, comment: a.text });
+    bySession.set(sessionId, list);
+  }
+  return bySession;
+}

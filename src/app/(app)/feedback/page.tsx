@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
-import { getWeeklyDebriefReport } from "@/lib/brief-queries";
+import { getWeeklyDebriefReport, getWeeklyClientFeedback } from "@/lib/brief-queries";
 import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
 import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
 import { PageHeader } from "@/components/ui/page-header";
@@ -23,9 +23,10 @@ export default async function FeedbackPage({
   const prevWeek = new Date(weekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
   const nextWeek = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const [weeklyReport, ratingSummary] = await Promise.all([
+  const [weeklyReport, ratingSummary, clientFeedback] = await Promise.all([
     getWeeklyDebriefReport(orgId, weekStart),
     getTrainerRatingSummary(orgId, session.user.role),
+    getWeeklyClientFeedback(orgId, weekStart),
   ]);
 
   const trainers = (ratingSummary ?? []).map((r) => ({ trainerId: r.trainerUserId, trainerName: r.name }));
@@ -101,22 +102,33 @@ export default async function FeedbackPage({
                 <th className="pb-2">🟡</th>
                 <th className="pb-2">🔴</th>
                 <th className="pb-2">Notas</th>
+                <th className="pb-2">Feedback cliente (post-sesión)</th>
               </tr>
             </thead>
             <tbody>
-              {(selectedTrainerId ? allSessions.filter((s) => s.trainerId === selectedTrainerId) : allSessions).map((s) => (
-                <tr key={s.sessionId} className="border-t border-tz-sand align-top">
-                  <td className="py-2">{s.sessionName}</td>
-                  <td className="py-2 text-text-2">{s.trainerName}</td>
-                  <td className="py-2 tz-nums text-text-2">{s.sessionDate.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}</td>
-                  <td className="py-2 tz-nums">{s.greenCount || ""}</td>
-                  <td className="py-2 tz-nums">{s.yellowCount || ""}</td>
-                  <td className="py-2 tz-nums">{s.redCount || ""}</td>
-                  <td className="py-2 text-xs text-muted max-w-[280px]">
-                    {s.notes.length === 0 ? "—" : s.notes.join(" · ")}
-                  </td>
-                </tr>
-              ))}
+              {(selectedTrainerId ? allSessions.filter((s) => s.trainerId === selectedTrainerId) : allSessions).map((s) => {
+                const feedback = clientFeedback.get(s.sessionId) ?? [];
+                return (
+                  <tr key={s.sessionId} className="border-t border-tz-sand align-top">
+                    <td className="py-2">{s.sessionName}</td>
+                    <td className="py-2 text-text-2">{s.trainerName}</td>
+                    <td className="py-2 tz-nums text-text-2">{s.sessionDate.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}</td>
+                    <td className="py-2 tz-nums">{s.greenCount || ""}</td>
+                    <td className="py-2 tz-nums">{s.yellowCount || ""}</td>
+                    <td className="py-2 tz-nums">{s.redCount || ""}</td>
+                    <td className="py-2 text-xs text-muted max-w-[280px]">
+                      {s.notes.length === 0 ? "—" : s.notes.join(" · ")}
+                    </td>
+                    <td className="py-2 text-xs text-muted max-w-[240px]">
+                      {feedback.length === 0
+                        ? "—"
+                        : feedback
+                            .map((f) => `${FEELING_ICON[f.feeling.toLowerCase() as keyof typeof FEELING_ICON] ?? ""}${f.rpe ? ` RPE ${f.rpe}` : ""}${f.comment ? ` · ${f.comment}` : ""}`)
+                            .join(" / ")}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -138,18 +150,32 @@ export default async function FeedbackPage({
                     <p className="text-sm text-brand-muted">Sin debriefs esta semana.</p>
                   ) : (
                     <ul className="space-y-2.5">
-                      {trainerSessions.map((s) => (
-                        <li key={s.sessionId} className="text-sm border-b border-tz-sand last:border-0 pb-2 last:pb-0">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-brand-text">{s.sessionName}</span>
-                            <span className="text-xs text-faint tz-nums">{s.sessionDate.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span>
-                          </div>
-                          <div className="text-xs text-muted mt-0.5">
-                            {FEELING_ICON.green} {s.greenCount} · {FEELING_ICON.yellow} {s.yellowCount} · {FEELING_ICON.red} {s.redCount}
-                          </div>
-                          {s.notes.length > 0 && <div className="text-xs text-brand-muted-2 mt-1">{s.notes.join(" · ")}</div>}
-                        </li>
-                      ))}
+                      {trainerSessions.map((s) => {
+                        const feedback = clientFeedback.get(s.sessionId) ?? [];
+                        return (
+                          <li key={s.sessionId} className="text-sm border-b border-tz-sand last:border-0 pb-2 last:pb-0">
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-brand-text">{s.sessionName}</span>
+                              <span className="text-xs text-faint tz-nums">{s.sessionDate.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span>
+                            </div>
+                            <div className="text-xs text-muted mt-0.5">
+                              Debrief: {FEELING_ICON.green} {s.greenCount} · {FEELING_ICON.yellow} {s.yellowCount} · {FEELING_ICON.red} {s.redCount}
+                            </div>
+                            {s.notes.length > 0 && <div className="text-xs text-brand-muted-2 mt-1">{s.notes.join(" · ")}</div>}
+                            {feedback.length > 0 && (
+                              <div className="text-xs text-brand-muted-2 mt-1">
+                                Feedback cliente:{" "}
+                                {feedback
+                                  .map(
+                                    (f) =>
+                                      `${FEELING_ICON[f.feeling.toLowerCase() as keyof typeof FEELING_ICON] ?? ""}${f.rpe ? ` RPE ${f.rpe}` : ""}${f.comment ? ` · ${f.comment}` : ""}`
+                                  )
+                                  .join(" / ")}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </Card>

@@ -35,6 +35,31 @@ export async function getMemberForUser(userId: string) {
   });
 }
 
+// FB-2/RB-FB-102: sesiones recientes marcadas ATTENDED sin feedback del cliente todavía
+// (SelfAssessment kind="post-sesion" con bookingId en structured, ver submitPostSessionFeedback).
+export async function getPendingSessionFeedback(memberId: string) {
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const attended = await prisma.booking.findMany({
+    where: { memberId, status: "ATTENDED", session: { date: { gte: since } } },
+    select: { id: true, session: { select: { name: true, date: true } } },
+    orderBy: { session: { date: "desc" } },
+    take: 5,
+  });
+  if (attended.length === 0) return [];
+
+  const given = await prisma.selfAssessment.findMany({
+    where: { memberId, kind: "post-sesion" },
+    select: { structured: true },
+  });
+  const answeredBookingIds = new Set(
+    given.map((g) => (g.structured as { bookingId?: string } | null)?.bookingId).filter((id): id is string => !!id)
+  );
+
+  return attended
+    .filter((b) => !answeredBookingIds.has(b.id))
+    .map((b) => ({ bookingId: b.id, sessionName: b.session.name, sessionDate: b.session.date }));
+}
+
 export async function getMemberProgress(memberId: string) {
   const bookings = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED" },
