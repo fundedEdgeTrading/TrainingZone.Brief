@@ -20,7 +20,9 @@ import {
   getMemberRanking,
   getLeadCloseRate,
   getSexDistribution,
+  getPostalCodeHeatmapPoints,
 } from "@/lib/dashboard-queries";
+import PostalHeatmap from "./postal-heatmap-loader";
 import { KpiCard, Card } from "@/components/kpi-card";
 import {
   RevenueByMonthChart,
@@ -76,6 +78,7 @@ export default async function DashboardPage({
     memberRanking,
     leadCloseRate,
     sexDistribution,
+    postalHeatmapPoints,
   ] = await Promise.all([
     getKpis(orgId),
     getRevenueByMonth(orgId),
@@ -96,6 +99,7 @@ export default async function DashboardPage({
     getMemberRanking(orgId, { dimension: rankingDimension }),
     getLeadCloseRate(orgId),
     getSexDistribution(orgId),
+    getPostalCodeHeatmapPoints(orgId),
   ]);
   const maxPostal = Math.max(1, ...postalDistribution.map((p) => p.total));
   const maxFunnel = Math.max(1, ...Object.values(leadCloseRate.funnel));
@@ -340,29 +344,39 @@ export default async function DashboardPage({
         )}
       </Card>
 
-      <Card
-        title="Distribución geográfica (leads + clientes)"
-        meta="por prefijo de código postal — proxy del mapa de radios (RB-LEAD-010)"
-        delay={0.64}
-      >
-        {postalDistribution.length === 0 ? (
-          <p className="text-sm text-brand-muted">Sin códigos postales registrados todavía.</p>
-        ) : (
-          <div className="space-y-2">
-            {postalDistribution.slice(0, 10).map((p) => (
-              <div key={p.prefix} className="flex items-center gap-3 text-sm">
-                <span className="w-10 shrink-0 font-semibold text-brand-text tz-nums">{p.prefix}xxx</span>
-                <div className="flex-1 h-3 rounded-full bg-tz-sand overflow-hidden">
-                  <div className="h-full bg-tz-black rounded-full" style={{ width: `${(p.total / maxPostal) * 100}%` }} />
+      <div className="grid grid-cols-1 lg:grid-cols-[1.3fr_1fr] gap-4">
+        <Card
+          title="Mapa de calor (leads + clientes)"
+          meta="por provincia del código postal — RB-LEAD-010"
+          delay={0.64}
+        >
+          {postalHeatmapPoints.length === 0 ? (
+            <p className="text-sm text-brand-muted">Sin códigos postales geolocalizables todavía.</p>
+          ) : (
+            <PostalHeatmap points={postalHeatmapPoints} />
+          )}
+        </Card>
+
+        <Card title="Distribución por provincia" meta="detalle por prefijo de CP" delay={0.68}>
+          {postalDistribution.length === 0 ? (
+            <p className="text-sm text-brand-muted">Sin códigos postales registrados todavía.</p>
+          ) : (
+            <div className="space-y-2">
+              {postalDistribution.slice(0, 10).map((p) => (
+                <div key={p.prefix} className="flex items-center gap-3 text-sm">
+                  <span className="w-10 shrink-0 font-semibold text-brand-text tz-nums">{p.prefix}xxx</span>
+                  <div className="flex-1 h-3 rounded-full bg-tz-sand overflow-hidden">
+                    <div className="h-full bg-tz-black rounded-full" style={{ width: `${(p.total / maxPostal) * 100}%` }} />
+                  </div>
+                  <span className="w-24 shrink-0 text-xs text-brand-muted text-right">
+                    {p.leads} leads · {p.members} clientes
+                  </span>
                 </div>
-                <span className="w-24 shrink-0 text-xs text-brand-muted text-right">
-                  {p.leads} leads · {p.members} clientes
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }

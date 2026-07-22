@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { coordsForPostalPrefix } from "@/lib/postal-codes-es";
 export { getLeadCloseRate } from "@/lib/leads-queries";
 
 export async function getKpis(orgId: string) {
@@ -258,6 +259,20 @@ export async function getPostalCodeDistribution(orgId: string) {
   return [...counts.entries()]
     .map(([prefix, v]) => ({ prefix, ...v, total: v.leads + v.members }))
     .sort((a, b) => b.total - a.total);
+}
+
+// ---------- BI-3: mapa de calor real por CP (upgrade RB-LEAD-010) ----------
+
+/** Une getPostalCodeDistribution con la tabla CP→coordenadas para alimentar el heatmap. */
+export async function getPostalCodeHeatmapPoints(orgId: string) {
+  const distribution = await getPostalCodeDistribution(orgId);
+  return distribution
+    .map((d) => {
+      const coords = coordsForPostalPrefix(d.prefix);
+      if (!coords) return null;
+      return { lat: coords.lat, lng: coords.lng, name: coords.name, count: d.total };
+    })
+    .filter((p): p is { lat: number; lng: number; name: string; count: number } => p !== null);
 }
 
 // ---------- BI-2: distribución por sexo (RB-BI-005) ----------
