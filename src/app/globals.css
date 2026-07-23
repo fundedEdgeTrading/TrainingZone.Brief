@@ -97,6 +97,14 @@
     transform: none;
   }
 }
+@keyframes tzProg {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}
 /* Dos keyframes idénticos para el wizard: alternarlos entre pasos retriggerea
    la animación aunque el navegador colapse animaciones con el mismo nombre. */
 @keyframes wizA {
