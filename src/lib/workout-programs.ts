@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
 import { createNotificationOnce } from "@/lib/notifications";
 
 /**
@@ -63,47 +62,4 @@ export async function completeWorkoutProgram(orgId: string, programId: string): 
 
 export async function listWorkoutPrograms(orgId: string, memberId: string) {
   return prisma.workoutProgram.findMany({ where: { orgId, memberId }, orderBy: { createdAt: "desc" } });
-}
-
-/**
- * RB-IA-005: autovaloración del cliente + "recomendación de IA" (mockeada:
- * regla simple sobre el texto/estructura, mismo principio que buildMockRoutine).
- */
-export async function submitSelfAssessment(
-  orgId: string,
-  memberId: string,
-  input: { kind: string; text?: string; structured?: Record<string, unknown> }
-) {
-  const stalled = input.structured?.stalled === true || (input.text ?? "").toLowerCase().includes("estanc");
-  const aiRecommendation = stalled
-    ? "Detectamos posible estancamiento. Tu entrenador se pondrá en contacto contigo para valorar un cambio (más días/semana, ajuste de objetivo o nutrición)."
-    : "¡Sigue así! Registramos tu progreso y tu entrenador lo revisará en tu próximo check-in.";
-
-  const assessment = await prisma.selfAssessment.create({
-    data: { orgId, memberId, kind: input.kind, text: input.text, structured: input.structured as Prisma.InputJsonValue | undefined, aiRecommendation },
-  });
-
-  if (stalled) {
-    const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { firstName: true, lastName: true, trainerId: true } });
-    const directors = member?.trainerId
-      ? [member.trainerId]
-      : (await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } })).map((d) => d.id);
-    for (const recipientUserId of directors) {
-      await createNotificationOnce({
-        orgId,
-        recipientUserId,
-        kind: "ALERT",
-        title: `${member?.firstName} ${member?.lastName}: se siente estancado/a`,
-        body: "Autovaloración del cliente (RB-IA-005). Contacta y valora una acción comercial.",
-        entityType: "Member",
-        entityId: memberId,
-      });
-    }
-  }
-
-  return { ok: true as const, assessmentId: assessment.id, aiRecommendation };
-}
-
-export async function listSelfAssessments(memberId: string) {
-  return prisma.selfAssessment.findMany({ where: { memberId }, orderBy: { createdAt: "desc" }, take: 10 });
 }
