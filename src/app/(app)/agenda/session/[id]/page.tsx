@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { getSessionDetail } from "@/lib/agenda-queries";
+import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,10 @@ export default async function SessionDetailPage({
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");
 
+  // El debrief es confidencial del entrenador asignado (o quien la dirigió) y
+  // dirección; ocultamos el acceso al resto para no dejar un enlace muerto.
+  const canOpenDebrief = canViewSessionDebrief(session.user.role, session.user.id, cls);
+
   return (
     <div className="tz-page space-y-4">
       <div>
@@ -66,12 +71,14 @@ export default async function SessionDetailPage({
               {booked.length}/{cls.capacity}
             </div>
             <div className="text-xs text-faint">plazas ocupadas</div>
-            <Link
-              href={`/brief/${cls.id}`}
-              className="inline-flex items-center mt-2 text-xs font-semibold rounded-control bg-tz-black text-white px-3.5 py-2 transition-colors duration-150 hover:bg-brand-ink-soft"
-            >
-              Abrir Session Brief →
-            </Link>
+            {canOpenDebrief && (
+              <Link
+                href={`/brief/${cls.id}`}
+                className="inline-flex items-center mt-2 text-xs font-semibold rounded-control bg-tz-black text-white px-3.5 py-2 transition-colors duration-150 hover:bg-brand-ink-soft"
+              >
+                Abrir Session Brief →
+              </Link>
+            )}
           </div>
         </div>
       </div>

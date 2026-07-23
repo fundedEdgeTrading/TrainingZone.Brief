@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { trainerColor, initials } from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
 import { useToast } from "@/components/ui/toast";
@@ -37,6 +38,8 @@ export default function SessionDialog({
   centerId,
   trainers,
   members,
+  currentUserId,
+  isDirection,
   onDone,
 }: {
   dlg: DialogState;
@@ -45,6 +48,8 @@ export default function SessionDialog({
   centerId: string;
   trainers: Trainer[];
   members: Member[];
+  currentUserId: string;
+  isDirection: boolean;
   onDone: () => void;
 }) {
   const [showMembers, setShowMembers] = useState(false);
@@ -287,6 +292,15 @@ export default function SessionDialog({
               )}
             </div>
           </div>
+
+          {dlg.mode === "edit" && dlg.id && (isDirection || dlg.trainerId === currentUserId) && (
+            <Link
+              href={`/brief/${dlg.id}`}
+              className="mt-5 flex items-center justify-center gap-2 w-full h-[42px] rounded-control border border-brand-border bg-white text-sm font-semibold text-brand-text hover:bg-tz-bone hover:border-brand-border-hover transition-colors"
+            >
+              Ver debrief de la sesión →
+            </Link>
+          )}
 
           <div className="flex justify-between items-center mt-6">
             {dlg.mode === "edit" ? (

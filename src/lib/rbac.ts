@@ -169,6 +169,19 @@ export function canViewTrainerRatings(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR";
 }
 
+// G.1 — Debrief individual de una sesión: confidencial del entrenador asignado
+// (o quien la dirigió realmente) más dirección. Recepción y el resto de
+// entrenadores quedan fuera de la vista por sesión; dirección conserva además
+// el informe semanal agregado (getWeeklyDebriefReport).
+export function canViewSessionDebrief(
+  role: Role,
+  actorUserId: string,
+  session: { trainerId: string | null; directedByUserId: string | null }
+): boolean {
+  if (role === "OWNER" || role === "CENTER_DIRECTOR") return true;
+  return session.trainerId === actorUserId || session.directedByUserId === actorUserId;
+}
+
 // F13/RB-RRHH-003 — buzón de propuestas: dirección + RRHH lo revisan.
 export function canReviewStaffProposals(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "HR_MANAGER";
