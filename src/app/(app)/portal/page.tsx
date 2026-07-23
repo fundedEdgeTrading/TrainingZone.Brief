@@ -7,8 +7,10 @@ import {
   getMemberHealthTransparency,
   getMemberMonthlyActivity,
 } from "@/lib/portal-queries";
+import { getAnnouncementsForMember, registerAnnouncementViews } from "@/lib/announcements-queries";
 import { KpiCard, Card } from "@/components/kpi-card";
 import ActivityChart from "./activity-chart";
+import { AnnouncementsBanner } from "./announcements-banner";
 
 const LIGHT_COLOR: Record<string, string> = { RED: "#8A3420", AMBER: "#8A5A12", GREEN: "#4B5A22" };
 
@@ -17,16 +19,27 @@ export default async function PortalHomePage() {
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
 
-  const [progress, adaptations, activity] = await Promise.all([
+  const [progress, adaptations, activity, announcements] = await Promise.all([
     getMemberProgress(member.id),
     getMemberHealthTransparency(member.id, session.user.orgId),
     getMemberMonthlyActivity(member.id),
+    getAnnouncementsForMember({
+      id: member.id,
+      orgId: member.orgId,
+      primaryCenterId: member.primaryCenterId,
+      state: member.state,
+    }),
   ]);
+
+  // RB-ANUN-003: contabilizar como vistos los anuncios que se le muestran.
+  await registerAnnouncementViews(member.id, announcements.map((a) => a.id));
 
   const activeSub = member.subscriptions[0];
 
   return (
     <div className="max-w-[1100px] mx-auto flex flex-col gap-5">
+      <AnnouncementsBanner announcements={announcements} />
+
       <div
         className="relative overflow-hidden flex items-end justify-between flex-wrap gap-4 bg-brand-ink rounded-[18px] px-8 py-[30px] tz-fade-up"
       >

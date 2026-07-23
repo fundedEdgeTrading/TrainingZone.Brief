@@ -38,3 +38,7 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
 export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return <select className={clsx(CONTROL, "cursor-pointer", className)} {...props} />;
 }
+
+export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={clsx(CONTROL, "resize-y min-h-[84px]", className)} {...props} />;
+}
