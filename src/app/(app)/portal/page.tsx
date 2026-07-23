@@ -37,53 +37,57 @@ export default async function PortalHomePage() {
   const activeSub = member.subscriptions[0];
 
   return (
-    <div className="max-w-[1100px] mx-auto flex flex-col gap-5">
-      <AnnouncementsBanner announcements={announcements} />
-
+    <div className="max-w-[1120px] mx-auto flex flex-col gap-[18px]">
       <div
-        className="relative overflow-hidden flex items-end justify-between flex-wrap gap-4 bg-brand-ink rounded-[18px] px-8 py-[30px] tz-fade-up"
+        className={`grid gap-4 tz-fade-up ${
+          announcements.length > 0 ? "grid-cols-1 md:grid-cols-[1.6fr_1fr]" : "grid-cols-1"
+        }`}
       >
-        <div className="relative z-10">
-          <div className="font-display font-bold text-xs tracking-[.16em] uppercase text-tz-linen">
-            Bienvenida de vuelta
+        <AnnouncementsBanner announcements={announcements} />
+
+        <div className="relative overflow-hidden bg-brand-ink rounded-[18px] p-[26px] h-[272px] flex flex-col justify-between border border-brand-border-dark box-border">
+          <div className="absolute -right-[54px] -bottom-[54px] w-[184px] h-[184px] rounded-full bg-brand-ink-soft" />
+          <div className="relative z-10">
+            <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-tz-linen">
+              Bienvenida de vuelta
+            </div>
+            <div className="font-display font-extrabold text-[34px] leading-none text-white mt-2 uppercase tracking-[-.01em]">
+              Hola, {member.firstName}
+            </div>
+            <p className="text-[13px] text-brand-muted-2 mt-3 leading-[1.55]">
+              Llevas <b className="text-white">{progress.totalThisMonth} sesiones</b> este mes.{" "}
+              {progress.totalThisMonth > 0 ? "¡Sigue con la racha!" : "Reserva tu próxima clase y arranca el mes."}
+            </p>
           </div>
-          <div className="font-display font-extrabold text-[40px] leading-none text-white mt-2 uppercase tracking-[-.01em]">
-            Hola, {member.firstName}
-          </div>
-          <p className="text-sm text-brand-muted-2 mt-2.5 max-w-[420px]">
-            Llevas <b className="text-white">{progress.totalThisMonth} sesiones</b> este mes.{" "}
-            {progress.totalThisMonth > 0 ? "¡Sigue con la racha!" : "Reserva tu próxima clase y arranca el mes."}
-          </p>
+          <Link
+            href="/portal/agenda"
+            className="relative z-10 self-start bg-tz-bone text-tz-black rounded-[10px] px-5 py-3 font-display font-extrabold text-sm uppercase tracking-[.03em] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-10px_rgba(29,29,28,.35)]"
+          >
+            Reservar clase →
+          </Link>
         </div>
-        <Link
-          href="/portal/agenda"
-          className="relative z-10 bg-tz-bone text-tz-black rounded-[10px] px-[22px] py-3.5 font-display font-extrabold text-[15px] uppercase tracking-[.03em] transition-[transform,box-shadow] duration-[180ms] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-10px_rgba(29,29,28,.35)]"
-        >
-          Reservar clase →
-        </Link>
-        <div className="absolute -right-[60px] -top-[60px] w-[220px] h-[220px] rounded-full bg-brand-ink-circle" />
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <KpiCard label="Sesiones este mes" value={String(progress.totalThisMonth)} size="lg" delay={0.04} />
+        <KpiCard label="Sesiones este mes" value={String(progress.totalThisMonth)} size="lg" delay={0.06} />
         <KpiCard label="Sesiones este año" value={String(progress.totalThisYear)} tone="good" size="lg" delay={0.1} />
-        <KpiCard label="Total histórico" value={String(progress.totalAllTime)} hint="¡sigue así!" size="lg" delay={0.16} />
+        <KpiCard label="Total histórico" value={String(progress.totalAllTime)} hint="¡sigue así!" size="lg" delay={0.14} />
         <KpiCard
           label="Tu mejor mes"
           value={progress.bestMonthCount ? String(progress.bestMonthCount) : "—"}
           hint={progress.bestMonthLabel || undefined}
           tone="accent"
           size="lg"
-          delay={0.22}
+          delay={0.18}
         />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
-        <Card title="Tu actividad" meta="Sesiones · últimos 6 meses" delay={0.1}>
+        <Card title="Tu actividad" meta="Sesiones · últimos 6 meses" delay={0.12}>
           <ActivityChart data={activity} />
         </Card>
 
-        <Card title="Tu plan" delay={0.16}>
+        <Card title="Tu plan" delay={0.12}>
           {activeSub ? (
             <div className="bg-brand-ink rounded-xl px-[18px] py-4">
               <div className="font-display font-extrabold text-xl text-tz-bone uppercase">
@@ -103,7 +107,7 @@ export default async function PortalHomePage() {
         </Card>
       </div>
 
-      <Card title="Transparencia · lo que adapta tu entrenador" delay={0.22}>
+      <Card title="Transparencia · lo que adapta tu entrenador" delay={0.18}>
         <p className="text-[13px] text-brand-muted -mt-3 mb-4">
           A partir de la información de salud que has consentido compartir.
         </p>

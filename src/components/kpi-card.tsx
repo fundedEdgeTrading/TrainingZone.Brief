@@ -33,19 +33,19 @@ export function KpiCard({
 }) {
   return (
     <div
-      className="relative overflow-hidden bg-brand-card border border-brand-border rounded-[14px] pt-[18px] px-[18px] pb-4 tz-fade-up transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,.25)] hover:border-brand-border-hover"
+      className="relative overflow-hidden bg-brand-card border border-brand-border rounded-[14px] pt-4 px-4 pb-3.5 tz-fade-up transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,.25)] hover:border-brand-border-hover"
       style={{ animationDelay: `${delay}s` }}
     >
       <span
         className="absolute top-0 left-0 w-[3px] h-full"
         style={{ background: STRIPE_COLOR[tone] }}
       />
-      <div className="font-display font-bold text-[11px] tracking-[.1em] uppercase text-brand-muted">
+      <div className="font-display font-bold text-[10px] tracking-[.1em] uppercase text-brand-muted">
         {label}
       </div>
       <div
-        className={`font-display font-extrabold leading-none tracking-[-.02em] whitespace-nowrap mt-2 ${TEXT_CLASS[tone]} ${
-          size === "lg" ? "text-[30px]" : "text-[22px]"
+        className={`font-display font-extrabold leading-none tracking-[-.02em] tabular-nums whitespace-nowrap mt-2 ${TEXT_CLASS[tone]} ${
+          size === "lg" ? "text-[28px]" : "text-[22px]"
         }`}
       >
         {value}
