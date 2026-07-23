@@ -2,16 +2,12 @@ import { test, expect } from "@playwright/test";
 import { loginAs } from "./helpers";
 
 test.describe("F16 — Portal del socio: IA, objetivos y chat", () => {
-  test("el socio ve su plan (objetivos, rutina, autovaloración)", async ({ page }) => {
+  test("el socio ve su plan (objetivos, rutina)", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/plan");
 
     await expect(page.getByRole("heading", { name: "Tus objetivos" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tu rutina para casa" })).toBeVisible();
-
-    await page.locator('textarea[name="text"]').fill("Me siento con más energía esta semana.");
-    await page.getByRole("button", { name: "Enviar autovaloración" }).click();
-    await expect(page.getByText("Autovaloración enviada")).toBeVisible();
   });
 
   test("el socio puede escribir en su chat con el centro", async ({ page }) => {

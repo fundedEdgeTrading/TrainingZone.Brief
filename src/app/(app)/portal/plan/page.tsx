@@ -7,10 +7,10 @@ import {
   getMemberRatingSummary,
   getMemberPlanAdherence,
 } from "@/lib/portal-queries";
-import { listWorkoutPrograms, listSelfAssessments } from "@/lib/workout-programs";
+import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
-import { RequestWorkoutButton, SelfAssessmentForm } from "./plan-client";
+import { RequestWorkoutButton } from "./plan-client";
 import { PendingSessionsRating } from "./pending-sessions";
 
 const STATUS_LABEL: Record<string, string> = { DRAFT: "Por confirmar", PENDING_TRAINER: "Por confirmar", ACTIVE: "Activa", COMPLETED: "Completada" };
@@ -36,10 +36,9 @@ export default async function PortalPlanPage() {
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
 
-  const [goals, programs, assessments, pending, ratings, adherence] = await Promise.all([
+  const [goals, programs, pending, ratings, adherence] = await Promise.all([
     getMemberGoals(member.id),
     listWorkoutPrograms(session.user.orgId, member.id),
-    listSelfAssessments(member.id),
     getPendingSessionFeedback(member.id),
     getMemberRatingSummary(member.id),
     getMemberPlanAdherence(member.id),
@@ -212,13 +211,6 @@ export default async function PortalPlanPage() {
             </ul>
           )}
         </div>
-      </Card>
-
-      <Card title="Autovaloración" meta="cuéntanos cómo vas">
-        <SelfAssessmentForm />
-        {assessments[0]?.aiRecommendation && (
-          <p className="text-sm text-brand-text-2 mt-3 bg-tz-bone border border-brand-border rounded-lg p-3">{assessments[0].aiRecommendation}</p>
-        )}
       </Card>
     </div>
   );

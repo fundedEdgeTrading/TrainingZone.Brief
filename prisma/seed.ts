@@ -1220,10 +1220,51 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
 
-  // ---------- F16: IA (rutinas), autovaloración y chat — foco en el socio demo ----------
+  // ---------- F16: IA (rutinas), valoraciones y chat — foco en el socio demo ----------
   if (cfg.demoMember && demoMemberId && demoMemberUserId) {
-    const demoTrainer = trainersByCenter[centerIdByKey.get(cfg.demoMember.centerKey)!]?.[0];
+    const demoCenterId = centerIdByKey.get(cfg.demoMember.centerKey)!;
+    const demoTrainer = trainersByCenter[demoCenterId]?.[0];
     await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id, heightCm: 170 } });
+
+    // FB-2: un par de sesiones recientes ya asistidas y sin valorar, para que "Mi
+    // plan" del socio demo muestre valoraciones pendientes (slider F16) nada más entrar.
+    const pendingRatingSessions = [
+      { daysAgo: 1, hour: 9, classType: "Funcional" },
+      { daysAgo: 0, hour: 8, classType: "Fuerza" },
+    ];
+    for (const s of pendingRatingSessions) {
+      const sessionDate = addDays(TODAY, -s.daysAgo);
+      sessionDate.setHours(0, 0, 0, 0);
+      const pendingSessionId = id();
+      await prisma.classSession.create({
+        data: {
+          id: pendingSessionId,
+          orgId,
+          centerId: demoCenterId,
+          name: `${s.classType} ${fmtTime(s.hour)}`,
+          classType: s.classType,
+          date: sessionDate,
+          startTime: fmtTime(s.hour),
+          endTime: fmtTime(s.hour + 1),
+          capacity: 12,
+          room: "Sala Funcional",
+          trainerId: demoTrainer?.id ?? null,
+          status: "SCHEDULED",
+        },
+      });
+      const checkedInAt = new Date(sessionDate);
+      checkedInAt.setHours(s.hour, randInt(0, 5));
+      await prisma.booking.create({
+        data: {
+          id: id(),
+          sessionId: pendingSessionId,
+          memberId: demoMemberId,
+          status: "ATTENDED",
+          bookedAt: addDays(sessionDate, -2),
+          checkedInAt,
+        },
+      });
+    }
 
     // Fotos, evolución y composición corporal (F9/CC1-CC3): consentimiento de imágenes y de
     // salud ya firmados (ver arriba). 9 tomas a lo largo de ~5 meses (portal del socio +

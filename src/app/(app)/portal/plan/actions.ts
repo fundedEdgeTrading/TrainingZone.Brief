@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { requestWorkoutProgram, submitSelfAssessment } from "@/lib/workout-programs";
+import { requestWorkoutProgram } from "@/lib/workout-programs";
 import { submitTrainerRating } from "@/lib/trainer-rating-access";
 
 export type PortalPlanResult = { ok: true } | { ok: false; error: string };
@@ -21,20 +21,6 @@ export async function requestWorkoutProgramAction(): Promise<PortalPlanResult> {
   if (!ctx) return { ok: false, error: "Socio no encontrado." };
   const result = await requestWorkoutProgram(ctx.session.user.orgId, ctx.member.id);
   if (!result.ok) return result;
-  revalidatePath("/portal/plan");
-  return { ok: true };
-}
-
-export async function submitSelfAssessmentAction(formData: FormData): Promise<PortalPlanResult> {
-  const ctx = await currentMember();
-  if (!ctx) return { ok: false, error: "Socio no encontrado." };
-  const text = String(formData.get("text") ?? "");
-  const stalled = formData.get("stalled") === "on";
-  await submitSelfAssessment(ctx.session.user.orgId, ctx.member.id, {
-    kind: "autovaloracion",
-    text,
-    structured: { stalled },
-  });
   revalidatePath("/portal/plan");
   return { ok: true };
 }
