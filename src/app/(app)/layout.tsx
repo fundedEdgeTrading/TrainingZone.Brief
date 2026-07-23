@@ -2,6 +2,7 @@ import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole } from "@/lib/rbac";
 import { listNotificationsForUser } from "@/lib/notifications";
+import { getPendingSessionFeedbackCountForUser } from "@/lib/portal-queries";
 import Sidebar from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
@@ -13,9 +14,8 @@ export default async function AppLayout({
 }) {
   const session = await requireSession();
   const { role, centerId, name, email } = session.user;
-  const nav = NAV_BY_ROLE[role];
 
-  const [org, center, notifications] = await Promise.all([
+  const [org, center, notifications, pendingPlanCount] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
       select: { name: true, logoUrl: true },
@@ -24,7 +24,13 @@ export default async function AppLayout({
       ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true } })
       : Promise.resolve(null),
     listNotificationsForUser(session.user.orgId, session.user.id),
+    role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id) : Promise.resolve(0),
   ]);
+
+  // Badge de "pendientes" en Mi plan (F16/valoración de sesiones): solo el socio.
+  const nav = NAV_BY_ROLE[role].map((item) =>
+    item.href === "/portal/plan" && pendingPlanCount > 0 ? { ...item, badge: pendingPlanCount } : item
+  );
 
   // NavBar: logo del centro, si no el de la organización, si no el de Apta (null).
   const logoUrl = center?.logoUrl ?? org?.logoUrl ?? null;

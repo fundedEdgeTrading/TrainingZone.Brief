@@ -31,6 +31,7 @@ export async function getMemberForUser(userId: string) {
     include: {
       primaryCenter: true,
       subscriptions: { where: { status: "ACTIVE" }, include: { plan: true }, orderBy: { startDate: "desc" } },
+      trainer: { select: { name: true } },
     },
   });
 }
@@ -41,7 +42,10 @@ export async function getPendingSessionFeedback(memberId: string) {
   const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const attended = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED", session: { date: { gte: since } } },
-    select: { id: true, session: { select: { name: true, date: true } } },
+    select: {
+      id: true,
+      session: { select: { name: true, date: true, startTime: true, classType: true, trainer: { select: { name: true } } } },
+    },
     orderBy: { session: { date: "desc" } },
     take: 5,
   });
@@ -57,7 +61,91 @@ export async function getPendingSessionFeedback(memberId: string) {
 
   return attended
     .filter((b) => !answeredBookingIds.has(b.id))
-    .map((b) => ({ bookingId: b.id, sessionName: b.session.name, sessionDate: b.session.date }));
+    .map((b) => ({
+      bookingId: b.id,
+      sessionName: b.session.name,
+      sessionDate: b.session.date,
+      time: b.session.startTime,
+      focus: b.session.classType,
+      trainerName: b.session.trainer?.name ?? null,
+    }));
+}
+
+export async function getPendingSessionFeedbackCountForUser(userId: string) {
+  const member = await prisma.member.findFirst({ where: { userId }, select: { id: true } });
+  if (!member) return 0;
+  return (await getPendingSessionFeedback(member.id)).length;
+}
+
+// Medias mostradas en "Mi plan": valoración al entrenador (TrainerRating.score,
+// 1-10) y autoevaluación (media de energía+RPE de los SelfAssessment "post-sesion").
+export async function getMemberRatingSummary(memberId: string) {
+  const [trainerAgg, selfRows] = await Promise.all([
+    prisma.trainerRating.aggregate({
+      where: { memberId, score: { not: null } },
+      _avg: { score: true },
+      _count: { _all: true },
+    }),
+    prisma.selfAssessment.findMany({ where: { memberId, kind: "post-sesion" }, select: { structured: true } }),
+  ]);
+
+  const selfScores = selfRows
+    .map((r) => r.structured as { energy?: number; rpe?: number } | null)
+    .filter((s): s is { energy: number; rpe: number } => typeof s?.energy === "number" && typeof s?.rpe === "number")
+    .map((s) => (s.energy + s.rpe) / 2);
+  const selfAvg = selfScores.length ? selfScores.reduce((a, b) => a + b, 0) / selfScores.length : null;
+
+  return {
+    trainerAvg: trainerAgg._avg.score,
+    trainerCount: trainerAgg._count._all,
+    selfAvg,
+    selfCount: selfScores.length,
+  };
+}
+
+// Adherencia del hero de "Mi plan": de las sesiones que el socio reservó y ya
+// tuvieron lugar en las últimas 4 semanas (asistidas + no-shows), cuántas asistió.
+export async function getMemberPlanAdherence(memberId: string) {
+  const since = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); // lunes de esta semana
+
+  const bookings = await prisma.booking.findMany({
+    where: { memberId, status: { in: ["ATTENDED", "NO_SHOW"] }, session: { date: { gte: since } } },
+    select: { status: true, session: { select: { date: true } } },
+  });
+
+  const committed = bookings.length;
+  const attended = bookings.filter((b) => b.status === "ATTENDED").length;
+  const pct = committed > 0 ? Math.round((attended / committed) * 100) : null;
+  const avgPerWeek = Math.round(committed / 4);
+
+  const weekBookings = bookings.filter((b) => b.session.date >= weekStart);
+  const weekCommitted = weekBookings.length;
+  const weekAttended = weekBookings.filter((b) => b.status === "ATTENDED").length;
+
+  // Racha: semanas consecutivas (terminando en la actual) con al menos una sesión asistida.
+  const attendedBookings = await prisma.booking.findMany({
+    where: { memberId, status: "ATTENDED" },
+    select: { session: { select: { date: true } } },
+  });
+  const attendedWeeks = new Set(
+    attendedBookings.map(({ session }) => {
+      const d = new Date(session.date);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return d.getTime();
+    })
+  );
+  let streakWeeks = 0;
+  const cursor = new Date(weekStart);
+  while (attendedWeeks.has(cursor.getTime())) {
+    streakWeeks++;
+    cursor.setDate(cursor.getDate() - 7);
+  }
+
+  return { pct, attended, committed, avgPerWeek, weekAttended, weekCommitted, streakWeeks };
 }
 
 export async function getMemberProgress(memberId: string) {

@@ -2,10 +2,9 @@
 
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/field";
 import { ActionForm } from "@/components/ui/action-form";
 import { useToast } from "@/components/ui/toast";
-import { requestWorkoutProgramAction, submitSelfAssessmentAction, submitTrainerRatingAction } from "./actions";
+import { requestWorkoutProgramAction, submitSelfAssessmentAction } from "./actions";
 
 export function RequestWorkoutButton({ hasPending }: { hasPending: boolean }) {
   const [pending, startTransition] = useTransition();
@@ -42,22 +41,6 @@ export function SelfAssessmentForm() {
       </label>
       <Button type="submit" size="sm">
         Enviar autovaloración
-      </Button>
-    </ActionForm>
-  );
-}
-
-export function TrainerRatingForm() {
-  return (
-    <ActionForm action={submitTrainerRatingAction} successMessage="Gracias, tu valoración es confidencial" className="space-y-3">
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-brand-muted">Puntuación (1-5)</span>
-        <Input name="score" type="number" min={1} max={5} className="w-20" />
-      </div>
-      <Input name="strengths" placeholder="¿Qué hace bien?" />
-      <Input name="improvements" placeholder="¿Qué podría mejorar?" />
-      <Button type="submit" size="sm" variant="secondary">
-        Enviar valoración
       </Button>
     </ActionForm>
   );

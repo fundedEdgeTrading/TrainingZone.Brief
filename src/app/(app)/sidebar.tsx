@@ -92,6 +92,11 @@ export default function Sidebar({
                       }`}
                     />
                     <span className="flex-1">{item.label}</span>
+                    {!!item.badge && (
+                      <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-critical text-white text-[11px] font-extrabold flex items-center justify-center">
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
