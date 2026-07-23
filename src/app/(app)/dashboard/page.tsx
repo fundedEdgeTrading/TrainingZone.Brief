@@ -12,7 +12,7 @@ import {
   getLtvAndTicket,
   getMemberDemographics,
   getGoalsAggregate,
-  getPostalProvinceStats,
+  getPostalCodeStats,
   getAgeBrackets,
   getMembersByService,
   getAcquisitionChannels,
@@ -75,7 +75,7 @@ export default async function DashboardPage({
     ltvTicket,
     demographics,
     goalsAggregate,
-    postalProvinceStats,
+    postalCodeStats,
     ageBrackets,
     membersByService,
     acquisitionChannels,
@@ -95,7 +95,7 @@ export default async function DashboardPage({
     getLtvAndTicket(orgId),
     getMemberDemographics(orgId),
     getGoalsAggregate(orgId),
-    getPostalProvinceStats(orgId),
+    getPostalCodeStats(orgId),
     getAgeBrackets(orgId),
     getMembersByService(orgId),
     getAcquisitionChannels(orgId),
@@ -381,7 +381,7 @@ export default async function DashboardPage({
         )}
       </Card>
 
-      <PostalMapPanel points={postalProvinceStats} />
+      <PostalMapPanel points={postalCodeStats} />
     </div>
   );
 }

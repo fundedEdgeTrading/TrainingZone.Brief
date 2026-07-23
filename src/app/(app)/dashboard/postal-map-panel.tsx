@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Card } from "@/components/kpi-card";
 import PostalHeatmap, { type MapMetric } from "./postal-heatmap-loader";
 
-type ProvinceStat = { code: string; name: string; lat: number; lng: number; leads: number; members: number; total: number };
+type PostalCodeStat = { code: string; name: string; lat: number; lng: number; leads: number; members: number; total: number };
 
 const SEGMENTS: { key: MapMetric; label: string }[] = [
   { key: "all", label: "Todos" },
@@ -12,12 +12,13 @@ const SEGMENTS: { key: MapMetric; label: string }[] = [
   { key: "members", label: "Clientes" },
 ];
 
-/** BI-3: mapa de calor + ranking de provincias fusionados en una única tarjeta
+/** BI-3: mapa de calor + ranking de barrios fusionados en una única tarjeta
  * (sustituye a la antigua pareja "Mapa de calor" / "Distribución por provincia"):
- * comparten estado (provincia resaltada/seleccionada) para el cruce mapa↔lista, y
- * ambos leen del mismo dataset (getPostalProvinceStats) así que sus totales nunca
- * pueden divergir entre sí. */
-export function PostalMapPanel({ points }: { points: ProvinceStat[] }) {
+ * comparten estado (barrio resaltado/seleccionado) para el cruce mapa↔lista, y
+ * ambos leen del mismo dataset (getPostalCodeStats) así que sus totales nunca
+ * pueden divergir entre sí. Granularidad de CP completo (no provincia): la
+ * primera puesta en preproducción solo tiene clientes de Zaragoza capital. */
+export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   const [metric, setMetric] = useState<MapMetric>("all");
   const [hovered, setHovered] = useState<string | null>(null);
   const [flyToCode, setFlyToCode] = useState<string | null>(null);
@@ -37,7 +38,7 @@ export function PostalMapPanel({ points }: { points: ProvinceStat[] }) {
   return (
     <Card
       title="Mapa de calor"
-      meta="leads + clientes por provincia"
+      meta="leads + clientes por barrio (Zaragoza)"
       delay={0.64}
       action={
         <div className="flex gap-[5px] bg-tz-bone border border-tz-sand rounded-full p-1">
@@ -67,7 +68,7 @@ export function PostalMapPanel({ points }: { points: ProvinceStat[] }) {
           <div className="flex flex-wrap gap-2.5 mb-4">
             <SummaryChip value={totalMembers} label="clientes" />
             <SummaryChip value={totalLeads} label="leads" />
-            <SummaryChip value={rows.length} label="provincias" />
+            <SummaryChip value={rows.length} label="barrios" />
             <div className="flex items-baseline gap-1.5 bg-tz-black rounded-xl px-3.5 py-2">
               <span className="text-[11px] font-semibold uppercase tracking-[.05em] text-apta-gold">foco</span>
               <span className="font-display font-bold text-sm text-tz-bone">{topName}</span>
@@ -111,7 +112,7 @@ export function PostalMapPanel({ points }: { points: ProvinceStat[] }) {
 
             <div className="flex flex-col">
               <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-brand-faint mb-2 px-1">
-                Ranking por provincia
+                Ranking por barrio
               </div>
               <div className="flex-1 overflow-y-auto max-h-[412px] pr-1 flex flex-col gap-[3px]">
                 {rows.map((p, i) => (

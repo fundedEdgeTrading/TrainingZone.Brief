@@ -73,17 +73,21 @@ model Center {
   @@index([orgId])
 }
 
-// ---------- Referencia geográfica (BI-3): CP → provincia ----------
-// Tabla de referencia España-wide, NO multi-tenant (es geografía, no dato de
-// negocio de una org concreta). Los 2 primeros dígitos de cualquier CP español
-// coinciden 1:1 con el código de provincia (01-52). Antes esta relación vivía
-// hardcodeada en lib/postal-codes-es.ts; se persiste aquí para que
-// getPostalCodeDistribution pueda hacer el join en una sola query SQL — así el
-// mapa de calor y la lista de "Distribución por provincia" leen exactamente el
-// mismo dataset y no pueden mostrar totales distintos entre sí.
-model PostalProvince {
-  code String @id // "01".."52"
-  name String
+// ---------- Referencia geográfica (BI-3): CP completo → barrio/zona ----------
+// Tabla de referencia NO multi-tenant (es geografía, no dato de negocio de una
+// org concreta). Antes agrupaba por los 2 primeros dígitos del CP (provincia,
+// ver el histórico de PostalProvince); se sustituyó por CP completo → barrio
+// porque la primera puesta en preproducción solo tiene socios/leads de
+// Zaragoza capital, y a esa escala la provincia deja de aportar detalle —
+// interesa ver la distribución barrio a barrio. Se persiste aquí (en vez de
+// vivir solo en lib/postal-codes-zaragoza.ts) para que getPostalCodeStats
+// pueda hacer el join en una sola query SQL — así el mapa de calor y el
+// ranking de barrios leen exactamente el mismo dataset y no pueden mostrar
+// totales distintos entre sí. Para expandir a otras ciudades, añadir aquí
+// (vía lib/postal-codes-zaragoza.ts, o un fichero por ciudad) sus CP → barrio.
+model PostalCodeArea {
+  code String @id // CP completo de 5 dígitos, p.ej. "50007"
+  name String // barrio o zona al que pertenece ese CP
   lat  Float
   lng  Float
 }

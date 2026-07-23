@@ -234,15 +234,18 @@ export async function getGoalsAggregate(orgId: string) {
   return { totalGoals, achievedGoals, checkins: assessments.length, stalledCount, wantsMoreCount, changedGoalCount };
 }
 
-// ---------- BI-3: distribución geográfica por provincia (RB-LEAD-010/RB-BI-003) ----------
-// El mapa de calor y la lista "Distribución por provincia" leen del mismo array
-// (getPostalProvinceStats), calculado con una única query que hace JOIN contra
-// PostalProvince (tabla de referencia CP→provincia, ver schema.prisma). Antes cada
-// tarjeta relanzaba su propia agregación en JS y la lista se truncaba a los 10
-// primeros en la vista sin que el mapa lo supiera, así que sus totales podían no
+// ---------- BI-3: distribución geográfica por barrio (RB-LEAD-010/RB-BI-003) ----------
+// El mapa de calor y el ranking de barrios leen del mismo array
+// (getPostalCodeStats), calculado con una única query que hace JOIN contra
+// PostalCodeArea (tabla de referencia CP completo→barrio, ver schema.prisma).
+// Antes se agrupaba por los 2 primeros dígitos del CP (provincia); con la
+// primera puesta en preproducción limitada a Zaragoza capital, se pasó a CP
+// completo para tener detalle por barrio en vez de un único punto (Zaragoza
+// provincia). Cada tarjeta relanzaba antes su propia agregación en JS y la
+// lista se truncaba sin que el mapa lo supiera, así que sus totales podían no
 // coincidir — con un único dataset compartido eso deja de ser posible.
 
-export type PostalProvinceStat = {
+export type PostalCodeStat = {
   code: string;
   name: string;
   lat: number;
@@ -252,30 +255,30 @@ export type PostalProvinceStat = {
   total: number;
 };
 
-export async function getPostalProvinceStats(orgId: string): Promise<PostalProvinceStat[]> {
+export async function getPostalCodeStats(orgId: string): Promise<PostalCodeStat[]> {
   const rows = await prisma.$queryRaw<
     { code: string; name: string; lat: number; lng: number; leads: bigint; members: bigint }[]
   >`
     SELECT
-      pp.code,
-      pp.name,
-      pp.lat,
-      pp.lng,
+      pca.code,
+      pca.name,
+      pca.lat,
+      pca.lng,
       COALESCE(l.leads, 0) AS leads,
       COALESCE(m.members, 0) AS members
-    FROM "PostalProvince" pp
+    FROM "PostalCodeArea" pca
     LEFT JOIN (
-      SELECT LEFT("postalCode", 2) AS code, COUNT(*) AS leads
+      SELECT "postalCode" AS code, COUNT(*) AS leads
       FROM "Lead"
       WHERE "orgId" = ${orgId}
       GROUP BY 1
-    ) l ON l.code = pp.code
+    ) l ON l.code = pca.code
     LEFT JOIN (
-      SELECT LEFT("postalCode", 2) AS code, COUNT(*) AS members
+      SELECT "postalCode" AS code, COUNT(*) AS members
       FROM "Member"
       WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL
       GROUP BY 1
-    ) m ON m.code = pp.code
+    ) m ON m.code = pca.code
   `;
 
   return rows
