@@ -13,7 +13,7 @@ export type NavSection =
   | "Administración"
   | "Mi cuenta";
 
-export type NavItem = { href: string; label: string; section: NavSection };
+export type NavItem = { href: string; label: string; section: NavSection; badge?: number };
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
