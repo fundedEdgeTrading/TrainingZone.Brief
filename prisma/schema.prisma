@@ -48,6 +48,8 @@ model Organization {
   trainerRatings         TrainerRating[]
   checkinScheduleConfigs CheckinScheduleConfig[]
   referenceRanges        ReferenceRange[]
+  announcements          Announcement[]
+  onlineWorkouts         OnlineWorkout[]
 }
 
 model Center {
@@ -68,6 +70,7 @@ model Center {
   staffMemberships CenterMembership[]
   leads            Lead[]
   timeClockEntries TimeClockEntry[]
+  announcements    Announcement[]
 
   @@unique([orgId, slug])
   @@index([orgId])
@@ -142,6 +145,7 @@ model User {
   trainerRatingsReceived TrainerRating[]    @relation("TrainerRatingSubject")
   paymentsSold          Payment[]           @relation("SoldBy")
   chatMessagesSent      ChatMessage[]
+  announcementsAuthored Announcement[]      @relation("AnnouncementAuthor")
 
   @@index([orgId])
 }
@@ -311,6 +315,7 @@ model Member {
   conversation    Conversation?
   personalizedOffers PersonalizedOffer[]
   trainerRatingsGiven TrainerRating[]
+  announcementViews  AnnouncementView[]
 
   @@unique([orgId, externalRef]) // idempotencia de la importación por socio del origen
   @@index([orgId])
@@ -468,6 +473,7 @@ model Subscription {
   member   Member         @relation(fields: [memberId], references: [id])
   plan     MembershipPlan @relation(fields: [planId], references: [id])
   payments Payment[]
+  bookings Booking[]
 
   @@index([memberId])
 }
@@ -569,13 +575,20 @@ model Booking {
   checkedInAt      DateTime?
   cancelledAt      DateTime?
 
-  session ClassSession    @relation(fields: [sessionId], references: [id])
-  member  Member          @relation(fields: [memberId], references: [id])
-  debrief SessionDebrief?
+  // Bono del que se descontó la sesión al reservar (RB-RES-006): al cancelar se
+  // devuelve el saldo a esta misma suscripción. Null cuando la reserva no
+  // consumió bono (cuota ilimitada/online, o entró en lista de espera).
+  subscriptionId String?
+
+  session      ClassSession    @relation(fields: [sessionId], references: [id])
+  member       Member          @relation(fields: [memberId], references: [id])
+  subscription Subscription?   @relation(fields: [subscriptionId], references: [id])
+  debrief      SessionDebrief?
 
   @@index([sessionId])
   @@index([memberId])
   @@index([status])
+  @@index([subscriptionId])
 }
 
 // ---------- Cobros (A.2.3) ----------
@@ -1088,4 +1101,88 @@ model ChatMessage {
   sender       User?        @relation(fields: [senderUserId], references: [id])
 
   @@index([conversationId])
+}
+
+// ---------- Anuncios y banners del Dashboard del socio (D.1) ----------
+// El Director de centros publica anuncios (imagen y/o texto) que el socio ve
+// al aterrizar en su portal. Alcance mixto: `centerId` null = anuncio global
+// de la empresa; con `centerId` = solo para socios de ese centro. Vigencia
+// opcional (startsAt/endsAt): si ambos son null, el anuncio se muestra hasta
+// que se desactiva/elimina a mano.
+
+enum AnnouncementCategory {
+  NEWS // informativo general
+  EVENT // quedada, evento del club
+  PROMO // promoción u oferta comercial
+  ALERT // aviso importante (cierre, cambio de horario)
+}
+
+// Segmentación de audiencia dentro del portal del socio.
+enum AnnouncementAudience {
+  ALL // todos los socios
+  MEMBERS // solo socios activos (excluye prospectos/prueba)
+}
+
+model Announcement {
+  id          String               @id @default(cuid())
+  orgId       String
+  centerId    String? // null = anuncio global de la empresa
+  title       String
+  body        String? // texto informativo del anuncio
+  imageUrl    String? // banner (data URL en esta demo)
+  category    AnnouncementCategory @default(NEWS)
+  audience    AnnouncementAudience @default(ALL)
+  tags        String[]             @default([]) // etiquetas libres para clasificar
+  pinned      Boolean              @default(false) // destacado: se muestra primero
+  active      Boolean              @default(true)
+  startsAt    DateTime? // inicio de vigencia (null = desde ya)
+  endsAt      DateTime? // fin de vigencia (null = sin expiración)
+  createdById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  organization Organization       @relation(fields: [orgId], references: [id])
+  center       Center?            @relation(fields: [centerId], references: [id])
+  createdBy    User?              @relation("AnnouncementAuthor", fields: [createdById], references: [id])
+  views        AnnouncementView[]
+
+  @@index([orgId])
+  @@index([centerId])
+}
+
+// Analítica de vistas: un socio cuenta como una vista por anuncio (RB-ANUN-003).
+model AnnouncementView {
+  id             String   @id @default(cuid())
+  announcementId String
+  memberId       String
+  viewedAt       DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  member       Member       @relation(fields: [memberId], references: [id])
+
+  @@unique([announcementId, memberId])
+  @@index([announcementId])
+  @@index([memberId])
+}
+
+// ---------- Biblioteca de entrenamientos online (D.2) ----------
+// El socio con plan ONLINE no reserva sesiones presenciales: accede a esta
+// biblioteca de entrenamientos pregrabados, sin límite de sesiones.
+model OnlineWorkout {
+  id           String   @id @default(cuid())
+  orgId        String
+  title        String
+  description  String?
+  category     String // "Fuerza" | "Movilidad" | "HIIT" ...
+  level        String // "Principiante" | "Intermedio" | "Avanzado"
+  durationMin  Int
+  thumbnailUrl String?
+  videoUrl     String
+  active       Boolean  @default(true)
+  publishedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
 }

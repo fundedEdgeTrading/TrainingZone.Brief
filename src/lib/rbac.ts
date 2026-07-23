@@ -27,6 +27,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/retention", label: "Retención", section: "Operativa del centro" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud" },
     { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud" },
+    { href: "/anuncios", label: "Anuncios", section: "Administración" },
     { href: "/rrhh", label: "RRHH", section: "Administración" },
     { href: "/organization", label: "Organización", section: "Administración" },
     { href: "/audit", label: "Auditoría", section: "Administración" },
@@ -40,6 +41,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
     { href: "/billing", label: "Cobros", section: "Operativa del centro" },
     { href: "/retention", label: "Retención", section: "Operativa del centro" },
+    { href: "/anuncios", label: "Anuncios", section: "Administración" },
     { href: "/rrhh", label: "RRHH", section: "Administración" },
   ],
   TRAINER: [
@@ -70,6 +72,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   ],
   PLATFORM_ADMIN: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general" },
+    { href: "/anuncios", label: "Anuncios", section: "Administración" },
     { href: "/organization", label: "Organización", section: "Administración" },
     { href: "/audit", label: "Auditoría", section: "Administración" },
   ],
@@ -149,6 +152,11 @@ export function canManageEpSlots(role: Role): boolean {
 // F14/RB-RRHH-013 — aprobar (luz verde) ofertas personalizadas.
 export function canApproveOffers(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR";
+}
+
+// D.1 — publicar anuncios/banners del Dashboard del socio: EXCLUSIVO de dirección.
+export function canManageAnnouncements(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "PLATFORM_ADMIN";
 }
 
 // F14/RB-RRHH-013 — proponer/elevar ofertas a dirección.

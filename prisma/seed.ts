@@ -160,7 +160,8 @@ type ExtraImputacion = {
   allocationPct: number;
   primaryAllocationPct?: number;
 };
-type DemoMemberCfg = { email: string; firstName: string; lastName: string; centerKey: string };
+type DemoPlanKey = "group10" | "group20" | "ep10" | "ep20" | "online";
+type DemoMemberCfg = { email: string; firstName: string; lastName: string; centerKey: string; planKey?: DemoPlanKey };
 type OrgSeedConfig = {
   name: string;
   slug: string;
@@ -323,17 +324,25 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   const ownerId = staffUsers.find((u) => u.role === "OWNER")?.id ?? staffUsers[0].id;
 
   // ---------- Catálogo comercial ----------
+  // Catálogo reducido (decisión de producto): dos modalidades con bono de X
+  // sesiones — Grupos reducidos y Entrenamiento personal — más el plan Online
+  // (biblioteca de vídeo, sin límite de sesiones).
   const plans = [
-    { id: id(), name: "Cuota mensual ilimitada", type: PlanType.MONTHLY, sessionsIncluded: null as number | null, priceCents: 4900, validityDays: 30 },
-    { id: id(), name: "Bono 10 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 10 as number | null, priceCents: 8000, validityDays: 60 },
-    { id: id(), name: "Bono 20 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 20 as number | null, priceCents: 15000, validityDays: 90 },
-    { id: id(), name: "Sesión suelta", type: PlanType.DROP_IN, sessionsIncluded: 1 as number | null, priceCents: 1200, validityDays: 7 },
-    { id: id(), name: "Personal Training 1:1 (4 sesiones)", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 4 as number | null, priceCents: 20000, validityDays: 30 },
-    { id: id(), name: "Dúo (2 personas)", type: PlanType.DUO, sessionsIncluded: 8 as number | null, priceCents: 12000, validityDays: 30 },
-    { id: id(), name: "Entrenamiento online 1:1", type: PlanType.ONLINE, sessionsIncluded: null as number | null, priceCents: 3900, validityDays: 30 },
+    { id: id(), name: "Grupos reducidos · Bono 10 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 10 as number | null, priceCents: 8000, validityDays: 60 },
+    { id: id(), name: "Grupos reducidos · Bono 20 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 20 as number | null, priceCents: 15000, validityDays: 90 },
+    { id: id(), name: "Entrenamiento personal · Bono 10 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 10 as number | null, priceCents: 22000, validityDays: 60 },
+    { id: id(), name: "Entrenamiento personal · Bono 20 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 20 as number | null, priceCents: 40000, validityDays: 90 },
+    { id: id(), name: "Entrenamiento online", type: PlanType.ONLINE, sessionsIncluded: null as number | null, priceCents: 3900, validityDays: 30 },
   ];
   await prisma.membershipPlan.createMany({ data: plans.map((p) => ({ ...p, orgId })) });
-  const [monthlyPlan, pack10, pack20, dropIn, personalTraining, , onlinePlan] = plans;
+  const [group10, group20, ep10, ep20, onlinePlan] = plans;
+  const plansByKey: Record<DemoPlanKey, typeof plans[number]> = {
+    group10,
+    group20,
+    ep10,
+    ep20,
+    online: onlinePlan,
+  };
 
   // ---------- Plantillas semanales (agenda) ----------
   type Tpl = {
@@ -523,18 +532,21 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     priceCents: number;
     sessionsRemaining: number | null;
   }[] = [];
+  const demoPlanKey = cfg.demoMember?.planKey;
   for (const m of members) {
     if (m.state === MemberState.PROSPECT) continue;
+    // El socio ancla de la demo recibe un plan determinista (para mostrar cada
+    // escenario: grupos con saldo, EP, u online). El resto se reparte entre las
+    // modalidades disponibles.
     const plan =
-      m.state === MemberState.TRIAL
-        ? dropIn
+      m.id === demoMemberId && demoPlanKey
+        ? plansByKey[demoPlanKey]
         : weightedPick<typeof plans[number]>([
-            [monthlyPlan, 50],
-            [pack10, 20],
-            [pack20, 10],
-            [personalTraining, 8],
-            [dropIn, 7],
-            [onlinePlan, 5],
+            [group10, 34],
+            [group20, 20],
+            [ep10, 18],
+            [ep20, 10],
+            [onlinePlan, 18],
           ]);
     const status: SubscriptionStatus =
       m.state === MemberState.CANCELLED
@@ -542,6 +554,13 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         : m.state === MemberState.FROZEN
         ? SubscriptionStatus.FROZEN
         : SubscriptionStatus.ACTIVE;
+    // El socio demo arranca con saldo intermedio garantizado (ni lleno ni a 0)
+    // para que se vea el contador y pueda reservar en la demo.
+    const sessionsRemaining = plan.sessionsIncluded
+      ? m.id === demoMemberId
+        ? Math.max(2, Math.round(plan.sessionsIncluded * 0.6))
+        : randInt(0, plan.sessionsIncluded)
+      : null;
     subscriptions.push({
       id: id(),
       memberId: m.id,
@@ -550,14 +569,14 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       endDate: m.cancelledAt,
       status,
       priceCents: plan.priceCents,
-      sessionsRemaining: plan.sessionsIncluded ? randInt(0, plan.sessionsIncluded) : null,
+      sessionsRemaining,
     });
   }
   await prisma.subscription.createMany({ data: subscriptions });
 
   // F9/RB-PERFIL-002 (decisión §11.4): EP y online SIEMPRE tienen entrenador
   // individual asignado explícitamente; "solo grupos" se queda sin trainerId.
-  const epOrOnlinePlanIds = new Set<string>([personalTraining.id, onlinePlan.id]);
+  const epOrOnlinePlanIds = new Set<string>([ep10.id, ep20.id, onlinePlan.id]);
   const trainerAssignments: { memberId: string; trainerId: string }[] = [];
   for (const sub of subscriptions) {
     if (sub.status !== SubscriptionStatus.ACTIVE || !epOrOnlinePlanIds.has(sub.planId)) continue;
@@ -1326,6 +1345,98 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
 
+  // ---------- D.1: Anuncios y banners del Dashboard del socio ----------
+  const directorForAnnouncements = staffUsers.find((u) => u.role === "CENTER_DIRECTOR") ?? staffUsers.find((u) => u.role === "OWNER");
+  const firstCenterId = centersData[0]?.id ?? null;
+  await prisma.announcement.createMany({
+    data: [
+      {
+        id: id(),
+        orgId,
+        centerId: null, // global
+        title: "Quedada del club de running + desayuno",
+        body: "Este sábado a las 9:00 nos vemos en la puerta para una salida suave de 5 km y desayuno después. ¡Apúntate en recepción!",
+        category: "EVENT",
+        audience: "ALL",
+        tags: ["running", "club", "quedada"],
+        pinned: true,
+        startsAt: addDays(TODAY, -2),
+        endsAt: addDays(TODAY, 6),
+        createdById: directorForAnnouncements?.id ?? null,
+      },
+      {
+        id: id(),
+        orgId,
+        centerId: null,
+        title: "Promo verano: 20% en tu próximo bono",
+        body: "Durante todo el mes, renueva cualquier bono de 20 sesiones y llévate un 20% de descuento. Consulta condiciones en recepción.",
+        category: "PROMO",
+        audience: "MEMBERS",
+        tags: ["promoción", "bonos"],
+        pinned: false,
+        startsAt: null,
+        endsAt: addDays(TODAY, 20),
+        createdById: directorForAnnouncements?.id ?? null,
+      },
+      ...(firstCenterId
+        ? [
+            {
+              id: id(),
+              orgId,
+              centerId: firstCenterId, // solo este centro
+              title: "Cambio de horario: sala cerrada el jueves por mantenimiento",
+              body: "El jueves de 14:00 a 16:00 la sala funcional estará cerrada por mantenimiento. Disculpa las molestias.",
+              category: "ALERT" as const,
+              audience: "ALL" as const,
+              tags: ["horario", "mantenimiento"],
+              pinned: false,
+              startsAt: null,
+              endsAt: null, // sin expiración
+              createdById: directorForAnnouncements?.id ?? null,
+            },
+          ]
+        : []),
+      {
+        id: id(),
+        orgId,
+        centerId: null,
+        title: "Nuevos entrenamientos online disponibles",
+        body: "Hemos añadido nuevas sesiones a la biblioteca online. Entra en tu sección de entrenamientos y pruébalas.",
+        category: "NEWS",
+        audience: "ALL",
+        tags: ["online", "novedad"],
+        pinned: false,
+        startsAt: null,
+        endsAt: null,
+        createdById: directorForAnnouncements?.id ?? null,
+      },
+    ],
+  });
+
+  // ---------- D.2: Biblioteca de entrenamientos online ----------
+  const onlineWorkoutsSeed = [
+    { title: "Movilidad de cadera 15'", description: "Rutina guiada para soltar cadera y zona lumbar antes de entrenar.", category: "Movilidad", level: "Principiante", durationMin: 15 },
+    { title: "HIIT sin material 20'", description: "Intervalos de alta intensidad para hacer en casa, solo peso corporal.", category: "HIIT", level: "Intermedio", durationMin: 20 },
+    { title: "Fuerza tren superior 30'", description: "Sesión de empuje y tracción con mancuernas o bandas.", category: "Fuerza", level: "Intermedio", durationMin: 30 },
+    { title: "Core y estabilidad 12'", description: "Trabajo anti-extensión y anti-rotación para un core fuerte.", category: "Core", level: "Principiante", durationMin: 12 },
+    { title: "Full body avanzado 40'", description: "Circuito completo de cuerpo entero para días con más energía.", category: "Fuerza", level: "Avanzado", durationMin: 40 },
+    { title: "Estiramientos post-entreno 10'", description: "Vuelta a la calma para mejorar recuperación y flexibilidad.", category: "Movilidad", level: "Principiante", durationMin: 10 },
+  ];
+  await prisma.onlineWorkout.createMany({
+    data: onlineWorkoutsSeed.map((w, i) => ({
+      id: id(),
+      orgId,
+      title: w.title,
+      description: w.description,
+      category: w.category,
+      level: w.level,
+      durationMin: w.durationMin,
+      videoUrl: "https://www.youtube.com/results?search_query=" + encodeURIComponent(w.title),
+      thumbnailUrl: null,
+      publishedAt: addDays(TODAY, -i * 3),
+    })),
+  });
+
   // ---------- F10: Notificaciones de ejemplo ----------
   const directorForNotif = staffUsers.find((u) => u.role === "OWNER" || u.role === "CENTER_DIRECTOR");
   if (directorForNotif) {
@@ -1401,7 +1512,7 @@ const ORGS: OrgSeedConfig[] = [
       { email: "entrenador@trainingzone.es", centerKey: "norte", role: "TRAINER", allocationPct: 40, primaryAllocationPct: 60 },
       { email: "direccion.centro@trainingzone.es", centerKey: "sur", role: "CENTER_DIRECTOR", allocationPct: 30 },
     ],
-    demoMember: { email: "socio@trainingzone.es", firstName: "Marta", lastName: "García López", centerKey: "centro" },
+    demoMember: { email: "socio@trainingzone.es", firstName: "Marta", lastName: "García López", centerKey: "centro", planKey: "group10" },
   },
   {
     name: "VITALIA WELLNESS",
@@ -1429,7 +1540,7 @@ const ORGS: OrgSeedConfig[] = [
     extraImputaciones: [
       { email: "entrenador@vitalia.es", centerKey: "retiro", role: "TRAINER", allocationPct: 35, primaryAllocationPct: 65 },
     ],
-    demoMember: { email: "socio@vitalia.es", firstName: "Lucía", lastName: "Fernández Soler", centerKey: "chamberi" },
+    demoMember: { email: "socio@vitalia.es", firstName: "Lucía", lastName: "Fernández Soler", centerKey: "chamberi", planKey: "online" },
   },
 ];
 
@@ -1437,6 +1548,9 @@ async function main() {
   console.log("Limpiando base de datos...");
   await prisma.$transaction([
     prisma.chatMessage.deleteMany(),
+    prisma.announcementView.deleteMany(),
+    prisma.announcement.deleteMany(),
+    prisma.onlineWorkout.deleteMany(),
     prisma.conversation.deleteMany(),
     prisma.selfAssessment.deleteMany(),
     prisma.workoutProgram.deleteMany(),
@@ -1497,12 +1611,12 @@ async function main() {
   console.log("    entrenador@trainingzone.es        (Entrenador — imputado a Centro + Norte)");
   console.log("    recepcion@trainingzone.es         (Recepción)");
   console.log("    rrhh@trainingzone.es              (RRHH — organización y equipo)");
-  console.log("    socio@trainingzone.es             (Socio — Marta García López)");
+  console.log("    socio@trainingzone.es             (Socio — Marta García López · bono Grupos reducidos)");
   console.log("  VITALIA WELLNESS (segunda empresa, multi-tenant):");
   console.log("    owner@vitalia.es                  (Dirección / Owner)");
   console.log("    entrenador@vitalia.es             (Entrenador — imputado a Chamberí + Retiro)");
   console.log("    rrhh@vitalia.es                   (RRHH)");
-  console.log("    socio@vitalia.es                  (Socio — Lucía Fernández)");
+  console.log("    socio@vitalia.es                  (Socio — Lucía Fernández · plan Online)");
 }
 
 main()

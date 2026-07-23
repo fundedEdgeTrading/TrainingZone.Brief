@@ -74,6 +74,13 @@ const PLAN_TYPE_TO_SERVICE: Record<string, ServiceKind> = {
   DUO: "GROUP",
 };
 
+// Servicio al que pertenece una sesión de agenda: las franjas de EP usan
+// classType "Personal Training" (RB-AGENDA-002); el resto son de grupo. No hay
+// sesiones presenciales "online" (el plan online es biblioteca de vídeo, D.2).
+export function sessionServiceKind(classType: string): "EP" | "GROUP" {
+  return classType === "Personal Training" ? "EP" : "GROUP";
+}
+
 export function getMemberServiceKinds(subscriptions: { status: string; plan: { type: string } }[]): ServiceKind[] {
   const kinds = new Set<ServiceKind>();
   for (const s of subscriptions) {
@@ -82,6 +89,35 @@ export function getMemberServiceKinds(subscriptions: { status: string; plan: { t
     if (kind) kinds.add(kind);
   }
   return [...kinds];
+}
+
+export function planServiceKind(planType: string): ServiceKind | undefined {
+  return PLAN_TYPE_TO_SERVICE[planType];
+}
+
+// RB-RES-006: saldo de sesiones que le queda al socio por tipo de servicio, a
+// partir de sus bonos activos. Un bono con `sessionsRemaining` null = ilimitado
+// (cuota mensual / online). Se agregan varios bonos del mismo servicio.
+export type SessionBalance = { serviceKind: ServiceKind; remaining: number | null; unlimited: boolean };
+
+export function getSessionBalances(
+  subscriptions: { status: string; sessionsRemaining: number | null; plan: { type: string } }[]
+): SessionBalance[] {
+  const byKind = new Map<ServiceKind, { remaining: number; unlimited: boolean }>();
+  for (const s of subscriptions) {
+    if (s.status !== "ACTIVE") continue;
+    const kind = PLAN_TYPE_TO_SERVICE[s.plan.type];
+    if (!kind) continue;
+    const acc = byKind.get(kind) ?? { remaining: 0, unlimited: false };
+    if (s.sessionsRemaining == null) acc.unlimited = true;
+    else acc.remaining += s.sessionsRemaining;
+    byKind.set(kind, acc);
+  }
+  return [...byKind.entries()].map(([serviceKind, v]) => ({
+    serviceKind,
+    remaining: v.unlimited ? null : v.remaining,
+    unlimited: v.unlimited,
+  }));
 }
 
 // RB-PERFIL-003: catálogo editable de objetivos concretos + asignación a un socio.
