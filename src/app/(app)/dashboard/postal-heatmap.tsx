@@ -5,8 +5,13 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 
-const HOME_CENTER: [number, number] = [40.2, -3.6];
-const HOME_ZOOM = 5.4;
+// Zaragoza capital (primera puesta en preproducción — ver postal-codes-zaragoza.ts):
+// los barrios están a pocos km entre sí, así que el mapa arranca ya centrado y con
+// zoom de ciudad en vez de la vista España-wide que tenía cuando agrupaba por
+// provincia (con esa vista, todos los puntos quedaban fusionados en un único blob).
+const HOME_CENTER: [number, number] = [41.6488, -0.8891];
+const HOME_ZOOM = 12.3;
+const SELECT_ZOOM = 14.5;
 const MIN_BUBBLE_PX = 20;
 const MAX_BUBBLE_PX = 64;
 
@@ -56,8 +61,8 @@ export function PostalHeatmap({
     const map = L.map(containerRef.current, {
       center: HOME_CENTER,
       zoom: HOME_ZOOM,
-      minZoom: 5,
-      maxZoom: 12,
+      minZoom: 10,
+      maxZoom: 17,
       scrollWheelZoom: false,
     });
     mapRef.current = map;
@@ -102,7 +107,7 @@ export function PostalHeatmap({
     const heat = L.heatLayer(heatPoints, {
       radius: 34,
       blur: 26,
-      maxZoom: 10,
+      maxZoom: HOME_ZOOM,
       minOpacity: 0.15,
       gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
     }).addTo(map);
@@ -161,7 +166,7 @@ export function PostalHeatmap({
     const map = mapRef.current;
     if (!map || !flyToCode) return;
     const point = points.find((p) => p.code === flyToCode);
-    if (point) map.flyTo([point.lat, point.lng], 8, { duration: 0.9 });
+    if (point) map.flyTo([point.lat, point.lng], SELECT_ZOOM, { duration: 0.9 });
   }, [flyToCode, points]);
 
   // "Vista general": vuelve al centro/zoom inicial cuando el padre pide un reset.

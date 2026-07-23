@@ -19,7 +19,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import { PROVINCE_PREFIX_COORDS } from "@/lib/postal-codes-es";
+import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
 
 faker.seed(20260717);
 
@@ -196,39 +196,35 @@ const NOTE_BODIES = [
   "Vuelve tras una temporada parado, ir progresivo las primeras semanas.",
   "Contento con el seguimiento, mantener al entrenador actual.",
 ];
-const MADRID_POSTAL_CODES = ["28001", "28004", "28009", "28013", "28020", "28028", "28035", "28045"];
-// F9/BI-3: pool de CP de socios para poblar el mapa de calor (dashboard-queries.ts
-// agrupa por los 2 primeros dígitos = provincia, ver postal-codes-es.ts). Los centros
-// físicos están todos en Madrid, así que la mayoría de socios son de Madrid, pero
-// EP online (ServiceKind.ONLINE) puede captar socios de cualquier provincia — de ahí
-// la cola larga de otras provincias, necesaria para que el mapa muestre más de un punto.
+// F9/BI-3: primera puesta en preproducción — el centro solo tiene socios/leads
+// de Zaragoza capital, así que todo el pool de CP se restringe a los barrios
+// de ZARAGOZA_POSTAL_CODES (ver postal-codes-zaragoza.ts), contra el que
+// dashboard-queries.ts hace el join por CP completo (ya no por provincia).
+const LEAD_POSTAL_CODES = Object.keys(ZARAGOZA_POSTAL_CODES);
+// Pool de CP de socios para poblar el mapa de calor, ponderado hacia los
+// barrios más poblados (Delicias, Casco Histórico, Universidad, Actur...) con
+// una cola larga hacia los barrios periféricos — para que el mapa muestre
+// tanto puntos grandes como pequeños repartidos por toda la ciudad.
 const MEMBER_POSTAL_CODES: [string, number][] = [
-  ["28001", 7], ["28004", 7], ["28009", 6], ["28013", 6], ["28020", 6], ["28028", 6], ["28035", 6], ["28045", 6],
-  ["28016", 5], ["28100", 4], ["28850", 4], // Madrid capital + Alcobendas/Torrejón
-  ["08001", 3], ["08019", 2], // Barcelona
-  ["46001", 3], // Valencia
-  ["41001", 3], // Sevilla
-  ["29001", 3], // Málaga
-  ["03001", 2], // Alicante
-  ["18001", 2], // Granada
-  ["50001", 2], // Zaragoza
-  ["48001", 2], // Vizcaya
-  ["15001", 2], // A Coruña
-  ["30001", 2], // Murcia
-  ["47001", 2], // Valladolid
-  ["45001", 2], // Toledo
-  ["19001", 1], // Guadalajara
-  ["40001", 1], // Segovia
-  ["05001", 1], // Ávila
-  ["37001", 1], // Salamanca
-  ["06001", 1], // Badajoz
-  ["33001", 1], // Asturias
-  ["39001", 1], // Cantabria
-  ["07001", 1], // Baleares
-  ["35001", 1], // Las Palmas
-  ["17001", 1], // Girona
-  ["43001", 1], // Tarragona
-  ["11001", 1], // Cádiz
+  ["50005", 8], // Delicias
+  ["50017", 5], // Delicias (Miralbueno)
+  ["50001", 6], // Casco Histórico
+  ["50006", 6], // Universidad
+  ["50007", 5], // San José
+  ["50013", 5], // Las Fuentes
+  ["50015", 5], // Actur - Rey Fernando
+  ["50018", 4], // Actur Norte
+  ["50002", 4], // La Magdalena
+  ["50003", 4], // San Pablo
+  ["50004", 4], // La Almozara
+  ["50010", 4], // Parque Roma
+  ["50008", 3], // Torrero - La Paz
+  ["50011", 3], // Oliver
+  ["50009", 3], // Casablanca
+  ["50014", 2], // Venecia
+  ["50012", 2], // Valdefierro
+  ["50016", 2], // Santa Isabel
+  ["50019", 2], // Valdespartera
 ];
 const OCCUPATIONS = [
   "Administrativo/a",
@@ -992,7 +988,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Castillo",
       phone: faker.phone.number({ style: "national" }),
       email: faker.internet.email({ firstName: "Marina", lastName: "Castillo" }).toLowerCase(),
-      postalCode: pick(MADRID_POSTAL_CODES),
+      postalCode: pick(LEAD_POSTAL_CODES),
       occupation: pick(OCCUPATIONS),
       hasChildren: null,
       goals: "Perder peso y ganar energía en el día a día",
@@ -1011,7 +1007,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Salinas",
       phone: faker.phone.number({ style: "national" }),
       email: null,
-      postalCode: pick(MADRID_POSTAL_CODES),
+      postalCode: pick(LEAD_POSTAL_CODES),
       occupation: pick(OCCUPATIONS),
       hasChildren: true,
       goals: "Prepararse para una carrera popular",
@@ -1030,7 +1026,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Roldán",
       phone: faker.phone.number({ style: "national" }),
       email: faker.internet.email({ firstName: "Aitana", lastName: "Roldan" }).toLowerCase(),
-      postalCode: pick(MADRID_POSTAL_CODES),
+      postalCode: pick(LEAD_POSTAL_CODES),
       occupation: pick(OCCUPATIONS),
       hasChildren: false,
       goals: "Tonificar y mejorar movilidad",
@@ -1049,7 +1045,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Aparicio",
       phone: faker.phone.number({ style: "national" }),
       email: faker.internet.email({ firstName: "Ruben", lastName: "Aparicio" }).toLowerCase(),
-      postalCode: pick(MADRID_POSTAL_CODES),
+      postalCode: pick(LEAD_POSTAL_CODES),
       occupation: pick(OCCUPATIONS),
       hasChildren: null,
       goals: "Ganar fuerza general",
@@ -1070,7 +1066,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             lastName: "Convertido",
             phone: faker.phone.number({ style: "national" }),
             email: faker.internet.email({ firstName: "historial", lastName: "convertido" }).toLowerCase(),
-            postalCode: pick(MADRID_POSTAL_CODES),
+            postalCode: pick(LEAD_POSTAL_CODES),
             occupation: pick(OCCUPATIONS),
             hasChildren: false,
             goals: "Ponerse en forma para el verano",
@@ -1478,12 +1474,14 @@ async function main() {
     prisma.user.deleteMany(),
     prisma.center.deleteMany(),
     prisma.organization.deleteMany(),
-    prisma.postalProvince.deleteMany(),
+    prisma.postalCodeArea.deleteMany(),
   ]);
 
-  // Referencia CP→provincia (BI-3): España-wide, no depende de ninguna org.
-  await prisma.postalProvince.createMany({
-    data: Object.entries(PROVINCE_PREFIX_COORDS).map(([code, v]) => ({ code, name: v.name, lat: v.lat, lng: v.lng })),
+  // Referencia CP completo→barrio (BI-3): no depende de ninguna org. De momento
+  // solo cubre Zaragoza capital (primera puesta en preproducción); ver
+  // postal-codes-zaragoza.ts para ampliar a otras ciudades.
+  await prisma.postalCodeArea.createMany({
+    data: Object.entries(ZARAGOZA_POSTAL_CODES).map(([code, v]) => ({ code, name: v.name, lat: v.lat, lng: v.lng })),
   });
 
   const passwordHash = await bcrypt.hash("demo1234", 10);
