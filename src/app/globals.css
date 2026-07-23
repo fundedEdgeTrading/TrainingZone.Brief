@@ -119,6 +119,16 @@
     transform: none;
   }
 }
+@keyframes tzSelectPop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .tz-wiz-a {
   animation: wizA 0.45s var(--ease-out-soft) both;
 }
@@ -384,6 +394,9 @@
 }
 .tz-shake {
   animation: tzShake 0.35s var(--ease-out-soft) both;
+}
+.tz-select-pop {
+  animation: tzSelectPop 0.16s var(--ease-out-soft) both;
 }
 
 .tz-logo-shine {
