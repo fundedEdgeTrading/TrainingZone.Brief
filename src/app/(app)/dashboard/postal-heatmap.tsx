@@ -4,53 +4,72 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
-import { INK } from "@/lib/chart-colors";
 
-// Centro del mapa: sede principal de la demo (Training Zone, Madrid). Constante de
-// configuración — en producción vendría de Organization/Center, no hardcodeada "mágica".
-const CENTER_COORDS: [number, number] = [40.4168, -3.7038];
-const DEFAULT_ZOOM = 6;
-const MIN_BUBBLE_PX = 28;
-const MAX_BUBBLE_PX = 62;
+const HOME_CENTER: [number, number] = [40.2, -3.6];
+const HOME_ZOOM = 5.4;
+const MIN_BUBBLE_PX = 20;
+const MAX_BUBBLE_PX = 64;
 
-type PostalPoint = { code: string; lat: number; lng: number; name: string; leads: number; members: number; total: number };
+export type PostalPoint = { code: string; lat: number; lng: number; name: string; leads: number; members: number; total: number };
+export type MapMetric = "all" | "leads" | "members";
+
+function valueOf(p: PostalPoint, metric: MapMetric) {
+  return metric === "leads" ? p.leads : metric === "members" ? p.members : p.total;
+}
 
 export function PostalHeatmap({
   points,
-  selectedCode,
+  metric,
+  hoveredCode,
+  onHoverProvince,
   onSelectProvince,
+  flyToCode,
+  resetSignal,
 }: {
   points: PostalPoint[];
-  selectedCode?: string | null;
+  metric: MapMetric;
+  hoveredCode?: string | null;
+  onHoverProvince?: (code: string | null) => void;
   onSelectProvince?: (code: string) => void;
+  flyToCode?: string | null;
+  /** Se incrementa desde el padre para pedir "Vista general" (flyTo al centro inicial). */
+  resetSignal?: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
-  const markersRef = useRef<Map<string, { marker: L.Marker; point: PostalPoint }>>(new Map());
-  // Ref con el callback siempre al día: así el efecto que crea los marcadores no
-  // necesita depender de `onSelectProvince` y no los recrea (perdiendo la animación
-  // de entrada) cada vez que cambia la selección desde la lista.
+  const heatRef = useRef<L.HeatLayer | null>(null);
+  const groupRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  // Refs con los callbacks siempre al día: así el efecto que construye capas no
+  // necesita depender de ellos y no recrea las burbujas (perdiendo la animación
+  // de entrada escalonada) en cada render.
+  const onHoverRef = useRef(onHoverProvince);
   const onSelectRef = useRef(onSelectProvince);
-  onSelectRef.current = onSelectProvince;
+  useEffect(() => {
+    onHoverRef.current = onHoverProvince;
+    onSelectRef.current = onSelectProvince;
+  }, [onHoverProvince, onSelectProvince]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
-      center: CENTER_COORDS,
-      zoom: DEFAULT_ZOOM,
+      center: HOME_CENTER,
+      zoom: HOME_ZOOM,
+      minZoom: 5,
+      maxZoom: 12,
       scrollWheelZoom: false,
     });
     mapRef.current = map;
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      maxZoom: 18,
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19,
     }).addTo(map);
 
     // El scroll normal de la página no debe quedar atrapado por el mapa: el zoom con
-    // rueda solo se activa mientras el ratón está sobre el mapa (patrón habitual en
-    // mapas embebidos dentro de una página con scroll).
+    // rueda solo se activa mientras el ratón está sobre el mapa.
     const enableScrollZoom = () => map.scrollWheelZoom.enable();
     const disableScrollZoom = () => map.scrollWheelZoom.disable();
     const el = containerRef.current;
@@ -65,70 +84,97 @@ export function PostalHeatmap({
     };
   }, []);
 
-  // Crea las burbujas de provincia. Depende solo de `points`, para que seleccionar
-  // una fila de la lista (cambia `selectedCode`) no recree los marcadores ni
-  // reinicie su animación de aparición.
+  // Reconstruye capa de calor + burbujas cuando cambian los datos o la métrica
+  // activa (Todos/Leads/Clientes): tamaños, opacidades y top-2 dependen de ella.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const maxCount = Math.max(1, ...points.map((p) => p.total));
-    const heatPoints: [number, number, number][] = points.map((p) => [p.lat, p.lng, p.total / maxCount]);
+    groupRef.current?.remove();
+    heatRef.current?.remove();
 
-    // Gradiente dentro de la paleta de marca (beige→negro), sin colores por defecto de la librería.
+    const group = L.layerGroup().addTo(map);
+    groupRef.current = group;
+    const markers = new Map<string, L.Marker>();
+
+    const maxV = Math.max(1, ...points.map((p) => valueOf(p, metric)));
+    const heatPoints: [number, number, number][] = points.map((p) => [p.lat, p.lng, valueOf(p, metric) / maxV]);
     const heat = L.heatLayer(heatPoints, {
-      radius: 32,
-      blur: 22,
+      radius: 34,
+      blur: 26,
       maxZoom: 10,
-      gradient: { 0.2: INK.baseline, 0.5: INK.muted, 0.8: INK.secondary, 1.0: INK.primary },
+      minOpacity: 0.15,
+      gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
     }).addTo(map);
+    heatRef.current = heat;
 
-    markersRef.current.clear();
-    const markers = points.map((p, i) => {
-      const size = Math.round(MIN_BUBBLE_PX + (p.total / maxCount) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX));
+    points.forEach((p, i) => {
+      const v = valueOf(p, metric);
+      const size = Math.round(MIN_BUBBLE_PX + Math.sqrt(v / maxV) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX));
+      const opacity = (0.45 + 0.5 * (v / maxV)).toFixed(2);
+      const isTop = i < 2;
+      const html = `<div class="tz-map-bubble${isTop ? " top" : ""}" style="width:${size}px;height:${size}px;--o:${opacity};animation-delay:${(i * 0.06).toFixed(2)}s;"><span class="tz-map-bubble-core"></span></div>`;
       const icon = L.divIcon({
-        className: "tz-postal-marker",
-        html: `<div class="tz-postal-bubble" style="animation-delay:${i * 35}ms;font-size:${Math.max(11, size * 0.34)}px">${p.total}</div>`,
+        html,
+        className: "tz-map-bubble-wrap",
         iconSize: [size, size],
         iconAnchor: [size / 2, size / 2],
       });
-      const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-      marker.bindTooltip(`<strong>${p.name}</strong><br/>${p.total} en total · ${p.members} socios · ${p.leads} leads`, {
-        direction: "top",
-        offset: [0, -size / 2],
-      });
+      const marker = L.marker([p.lat, p.lng], { icon, riseOnHover: true }).addTo(group);
+
+      const tip = `
+        <div style="padding:9px 12px;min-width:132px;">
+          <div style="font-weight:700;font-size:13px;color:#fff;margin-bottom:6px;">${p.name}</div>
+          <div style="display:flex;justify-content:space-between;gap:16px;font-size:11px;color:#c7bfad;"><span>Clientes</span><span style="font-weight:700;color:#f4f0e8;">${p.members}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:16px;font-size:11px;color:#c7bfad;margin-top:3px;"><span>Leads</span><span style="font-weight:700;color:#f4f0e8;">${p.leads}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:16px;font-size:11px;margin-top:6px;padding-top:6px;border-top:1px solid #33322c;"><span style="color:#c8ab72;font-weight:600;">Total</span><span style="font-weight:800;color:#c8ab72;">${p.total}</span></div>
+        </div>`;
+      marker.bindTooltip(tip, { className: "tz-map-tip", direction: "top", offset: [0, -8], sticky: false });
+      marker.on("mouseover", () => onHoverRef.current?.(p.code));
+      marker.on("mouseout", () => onHoverRef.current?.(null));
       marker.on("click", () => onSelectRef.current?.(p.code));
-      markersRef.current.set(p.code, { marker, point: p });
-      return marker;
+      markers.set(p.code, marker);
     });
+
+    markersRef.current = markers;
 
     return () => {
+      group.remove();
       heat.remove();
-      markers.forEach((m) => m.remove());
-      markersRef.current.clear();
+      markers.clear();
     };
-  }, [points]);
+  }, [points, metric]);
 
-  // Vuela hasta la provincia seleccionada (desde un click en el mapa o en la lista) y
-  // resalta su burbuja con un halo pulsante; la anterior vuelve a su estado normal.
+  // Resalte sincronizado (mapa <-> lista): la provincia activa escala su
+  // burbuja y abre su popover; las demás cierran el suyo.
+  useEffect(() => {
+    markersRef.current.forEach((marker, code) => {
+      const el = marker.getElement()?.querySelector<HTMLDivElement>(".tz-map-bubble");
+      el?.classList.toggle("tz-map-bubble-hi", code === hoveredCode);
+      if (code !== hoveredCode) marker.closeTooltip();
+    });
+    if (hoveredCode) markersRef.current.get(hoveredCode)?.openTooltip();
+  }, [hoveredCode]);
+
+  // Click en burbuja o en fila del ranking: vuela hasta la provincia.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || !flyToCode) return;
+    const point = points.find((p) => p.code === flyToCode);
+    if (point) map.flyTo([point.lat, point.lng], 8, { duration: 0.9 });
+  }, [flyToCode, points]);
 
-    markersRef.current.forEach(({ marker }, code) => {
-      const el = marker.getElement()?.querySelector<HTMLDivElement>(".tz-postal-bubble");
-      el?.classList.toggle("tz-postal-bubble--active", code === selectedCode);
-    });
-
-    if (selectedCode) {
-      const entry = markersRef.current.get(selectedCode);
-      if (entry) {
-        map.flyTo([entry.point.lat, entry.point.lng], Math.max(map.getZoom(), 7), { duration: 0.9 });
-      }
+  // "Vista general": vuelve al centro/zoom inicial cuando el padre pide un reset.
+  const isFirstReset = useRef(true);
+  useEffect(() => {
+    if (isFirstReset.current) {
+      isFirstReset.current = false;
+      return;
     }
-  }, [selectedCode]);
+    mapRef.current?.flyTo(HOME_CENTER, HOME_ZOOM, { duration: 0.8 });
+  }, [resetSignal]);
 
-  return <div ref={containerRef} className="w-full h-[380px] rounded-xl overflow-hidden" />;
+  return <div ref={containerRef} className="tz-map w-full h-[452px] bg-tz-sand" />;
 }
 
 export default PostalHeatmap;
