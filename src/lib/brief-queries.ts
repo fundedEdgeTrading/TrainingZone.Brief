@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { canViewHealthData } from "@/lib/rbac";
+import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import type { Role, AptitudeLight } from "@prisma/client";
 
 const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
@@ -31,6 +31,11 @@ export async function getSessionBrief({
     },
   });
   if (!session) return null;
+
+  // Solo el entrenador asignado (o quien dirigió la sesión) y dirección pueden
+  // abrir el debrief individual. Devolvemos null → notFound() para no revelar
+  // siquiera la existencia de la sesión a quien no le corresponde.
+  if (!canViewSessionDebrief(actorRole, actorUserId, session)) return null;
 
   const canSeeHealth = canViewHealthData(actorRole);
   const memberIds = session.bookings.map((b) => b.memberId);

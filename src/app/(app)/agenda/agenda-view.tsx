@@ -31,6 +31,8 @@ export default function AgendaView({
   trainers,
   members,
   canEdit,
+  currentUserId,
+  isDirection,
   centerSwitcher,
 }: {
   weekStartISO: string;
@@ -39,6 +41,8 @@ export default function AgendaView({
   trainers: Trainer[];
   members: Member[];
   canEdit: boolean;
+  currentUserId: string;
+  isDirection: boolean;
   centerSwitcher?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -412,6 +416,8 @@ export default function AgendaView({
           centerId={centerId}
           trainers={trainers}
           members={members}
+          currentUserId={currentUserId}
+          isDirection={isDirection}
           onDone={() => {
             setDlg(null);
             router.refresh();

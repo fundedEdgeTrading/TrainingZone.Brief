@@ -65,6 +65,8 @@ export default async function AgendaPage({
         trainers={trainers.map((t) => ({ id: t.id, name: t.name }))}
         members={members}
         canEdit={canEdit}
+        currentUserId={session.user.id}
+        isDirection={session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR"}
         centerSwitcher={
           centers.length > 1 ? <CenterSwitcher key="center-switcher" centers={centers} currentCenterId={centerId ?? ""} /> : null
         }
