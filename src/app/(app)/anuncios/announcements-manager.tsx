@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useTransition } from "react";
-import { Drawer } from "@/components/ui/drawer";
+import { Drawer, DrawerFooter } from "@/components/ui/drawer";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { ImageDropzone } from "@/components/ui/dropzone";
@@ -190,7 +190,7 @@ export default function AnnouncementsManager({
         kicker="Dashboard del socio"
         title={editing ? "Editar anuncio" : "Nuevo anuncio"}
       >
-        <form ref={formRef} action={submit} className="space-y-4">
+        <form ref={formRef} action={submit} className="flex flex-col gap-4 p-6 sm:p-7">
           <Field label="Título">
             <Input name="title" defaultValue={editing?.title ?? ""} placeholder="p.ej. Quedada del club de running" required />
           </Field>
@@ -247,16 +247,16 @@ export default function AnnouncementsManager({
             <input type="checkbox" name="pinned" defaultChecked={editing?.pinned ?? false} className="w-4 h-4" />
             Destacar (se muestra primero en el portal)
           </label>
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending && <ButtonSpinner />}
-              {editing ? "Guardar cambios" : "Publicar anuncio"}
-            </Button>
-          </div>
         </form>
+        <DrawerFooter>
+          <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button type="submit" disabled={pending} onClick={() => formRef.current?.requestSubmit()}>
+            {pending && <ButtonSpinner />}
+            {editing ? "Guardar cambios" : "Publicar anuncio"}
+          </Button>
+        </DrawerFooter>
       </Drawer>
     </div>
   );
