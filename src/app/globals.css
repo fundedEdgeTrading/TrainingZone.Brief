@@ -105,6 +105,14 @@
     width: 100%;
   }
 }
+@keyframes tzGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
 /* Dos keyframes idénticos para el wizard: alternarlos entre pasos retriggerea
    la animación aunque el navegador colapse animaciones con el mismo nombre. */
 @keyframes wizA {
