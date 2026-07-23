@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
-import { getMemberForUser, getBookableSessions, canCancelWithoutPenalty, getPendingSessionFeedback } from "@/lib/portal-queries";
+import { getMemberForUser, getBookableSessions, getPendingSessionFeedback } from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
 import { getOnlineWorkouts } from "@/lib/online-queries";
-import BookingButton from "./booking-button";
+import SessionCard from "./session-card";
 import { PostSessionFeedbackPrompts } from "./post-session-feedback";
 import { OnlineWorkoutLibrary } from "./online-library";
 
@@ -60,18 +60,29 @@ export default async function PortalAgendaPage() {
               key={b.serviceKind}
               className="flex items-center justify-between bg-brand-card border border-brand-border rounded-2xl px-5 py-4"
             >
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">
-                  {SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}
+              <div className="flex items-center gap-3">
+                {b.serviceKind === "GROUP" ? (
+                  <span className="inline-flex items-center shrink-0">
+                    <span className="w-3.5 h-3.5 rounded-full bg-[#4b5a22]" />
+                    <span className="w-3.5 h-3.5 rounded-full bg-[#7d8a54] -ml-[5px] border-2 border-white" />
+                    <span className="w-3.5 h-3.5 rounded-full bg-[#aab488] -ml-[5px] border-2 border-white" />
+                  </span>
+                ) : (
+                  <span className="w-4 h-4 rounded-full bg-brand-ink shrink-0" />
+                )}
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">
+                    {SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}
+                  </div>
+                  <div className="text-sm text-brand-muted mt-0.5">Sesiones disponibles en tu bono</div>
                 </div>
-                <div className="text-sm text-brand-muted mt-0.5">Sesiones disponibles en tu bono</div>
               </div>
               <div className="text-right">
                 {b.unlimited ? (
-                  <span className="font-display font-extrabold text-2xl text-good">∞</span>
+                  <span className="font-display font-extrabold text-3xl leading-none tabular-nums text-good">∞</span>
                 ) : (
                   <span
-                    className={`font-display font-extrabold text-3xl leading-none ${
+                    className={`font-display font-extrabold text-3xl leading-none tabular-nums ${
                       (b.remaining ?? 0) <= 0 ? "text-critical" : (b.remaining ?? 0) <= 2 ? "text-warning" : "text-brand-text"
                     }`}
                   >
@@ -112,52 +123,17 @@ export default async function PortalAgendaPage() {
       )}
 
       {Array.from(byDay.entries()).map(([day, daySessions], dayIdx) => (
-        <div
-          key={day}
-          className="bg-brand-card border border-brand-border rounded-2xl overflow-hidden tz-fade-up"
-          style={{ animationDelay: `${0.06 + dayIdx * 0.06}s` }}
-        >
-          <div className="px-5 py-3 bg-brand-ink font-display font-bold text-[13px] tracking-[.08em] uppercase text-tz-bone capitalize">
-            {day}
+        <div key={day} className="tz-fade-up" style={{ animationDelay: `${0.1 + dayIdx * 0.08}s` }}>
+          <div className="flex items-center gap-2.5 mb-3.5">
+            <span className="font-display font-extrabold text-[13px] uppercase tracking-[.08em] text-brand-text capitalize">
+              {day}
+            </span>
+            <span className="flex-1 h-px bg-[#e0d9cb]" />
           </div>
-          <div className="flex flex-col">
-            {daySessions.map((s, i) => {
-              const full = s.bookedCount >= s.capacity;
-              const booked = !!s.myBookingId;
-              return (
-                <div
-                  key={s.id}
-                  className={`flex items-center justify-between gap-4 px-5 py-[15px] ${i > 0 ? "border-t border-[#f0efe9]" : ""}`}
-                >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className="font-display font-extrabold text-xl text-brand-text w-[58px] shrink-0">
-                      {s.startTime}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-[15px] font-bold text-brand-text truncate">{s.name}</div>
-                      <div className="text-xs text-brand-muted mt-px truncate">
-                        {s.trainerName ?? "Sin entrenador"} · {s.bookedCount}/{s.capacity} plazas
-                        {full && !booked && " · lista de espera"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {booked && (
-                      <span className="inline-flex items-center bg-[#e9f9ef] text-good rounded-full px-[11px] py-1 text-xs font-bold">
-                        Reservada
-                      </span>
-                    )}
-                    <BookingButton
-                      sessionId={s.id}
-                      myBookingId={s.myBookingId}
-                      myBookingStatus={s.myBookingStatus}
-                      full={full}
-                      canCancelFreely={canCancelWithoutPenalty(s.startsAt)}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            {daySessions.map((s) => (
+              <SessionCard key={s.id} session={s} />
+            ))}
           </div>
         </div>
       ))}

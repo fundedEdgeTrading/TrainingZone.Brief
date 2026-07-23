@@ -22,7 +22,7 @@ export default function BookingButton({
   const toast = useToast();
 
   const baseClass =
-    "min-w-[150px] min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97]";
+    "flex-1 min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97]";
 
   const handleCancel = (id: string) => {
     startTransition(async () => {
