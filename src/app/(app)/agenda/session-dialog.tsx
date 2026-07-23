@@ -1,11 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { trainerColor, initials } from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
 import { useToast } from "@/components/ui/toast";
 import { TrainerTooltip } from "./trainer-tooltip";
+
+const noopSubscribe = () => () => {};
+function useMounted() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
 
 export type DialogState = {
   mode: "create" | "edit";
@@ -57,6 +63,7 @@ export default function SessionDialog({
   const [deleting, startDeleteTransition] = useTransition();
   const pending = saving || deleting;
   const toast = useToast();
+  const mounted = useMounted();
 
   const initialQuery = useMemo(() => {
     if (dlg.memberQuery) return dlg.memberQuery;
@@ -125,7 +132,9 @@ export default function SessionDialog({
   const inputCls =
     "border border-brand-border rounded-control px-[11px] py-[9px] text-sm text-brand-text outline-none focus:border-tz-black";
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       onMouseDown={onClose}
       className="fixed inset-0 z-[100] flex items-center justify-center p-5"
@@ -133,7 +142,7 @@ export default function SessionDialog({
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-[480px] max-w-full max-h-[90vh] overflow-y-auto bg-white rounded-2xl tz-fade-up"
+        className="w-[480px] max-w-full max-h-[min(90vh,90dvh)] overflow-y-auto bg-white rounded-2xl tz-fade-up"
         style={{ boxShadow: "var(--shadow-pop)" }}
       >
         <div className="flex justify-between items-center pt-4.5 px-4 pl-6">
@@ -321,6 +330,7 @@ export default function SessionDialog({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
