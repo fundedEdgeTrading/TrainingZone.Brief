@@ -24,10 +24,22 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   const [flyToCode, setFlyToCode] = useState<string | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
 
-  const rows = useMemo(() => [...points].sort((a, b) => b.total - a.total), [points]);
-  const maxTotal = Math.max(1, ...rows.map((p) => p.total));
-  const totalMembers = rows.reduce((s, p) => s + p.members, 0);
-  const totalLeads = rows.reduce((s, p) => s + p.leads, 0);
+  const metricValue = (p: PostalCodeStat) => (metric === "leads" ? p.leads : metric === "members" ? p.members : p.total);
+
+  // Filtrado por métrica: un barrio sin leads (o sin clientes) desaparece del
+  // mapa y del ranking cuando esa segmentación está activa, en vez de quedarse
+  // pintado a tamaño mínimo como si el filtro no hubiera hecho nada.
+  const rows = useMemo(
+    () =>
+      [...points]
+        .filter((p) => metricValue(p) > 0)
+        .sort((a, b) => metricValue(b) - metricValue(a)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [points, metric]
+  );
+  const maxValue = Math.max(1, ...rows.map((p) => metricValue(p)));
+  const totalMembers = points.reduce((s, p) => s + p.members, 0);
+  const totalLeads = points.reduce((s, p) => s + p.leads, 0);
   const topName = rows[0]?.name ?? "—";
 
   const select = (code: string) => {
@@ -63,6 +75,10 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
 
       {points.length === 0 ? (
         <p className="text-sm text-brand-muted">Sin códigos postales geolocalizables todavía.</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-brand-muted">
+          Sin {metric === "leads" ? "leads" : "clientes"} geolocalizables todavía.
+        </p>
       ) : (
         <>
           <div className="flex flex-wrap gap-2.5 mb-4">
@@ -132,13 +148,13 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-[13px] font-semibold text-brand-text truncate">{p.name}</span>
-                        <span className="text-[13px] font-extrabold text-brand-text tz-nums shrink-0">{p.total}</span>
+                        <span className="text-[13px] font-extrabold text-brand-text tz-nums shrink-0">{metricValue(p)}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-[5px]">
                         <div className="flex-1 h-[5px] rounded-full bg-tz-sand overflow-hidden">
                           <div
                             className="h-full rounded-full bg-tz-black transition-[width] duration-500"
-                            style={{ width: `${(p.total / maxTotal) * 100}%` }}
+                            style={{ width: `${(metricValue(p) / maxValue) * 100}%` }}
                           />
                         </div>
                         <span className="text-[10px] text-brand-muted whitespace-nowrap shrink-0 tz-nums">
