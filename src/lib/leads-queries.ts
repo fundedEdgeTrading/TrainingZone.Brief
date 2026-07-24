@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { LeadStatus, Role, Sex } from "@prisma/client";
+import type { LeadCloseType, LeadStatus, Role, Sex } from "@prisma/client";
 import { createMemberWithInvitation } from "@/lib/invitations";
 import { createNotificationOnce } from "@/lib/notifications";
 import { createHealthRecordForLead } from "@/lib/health-access";
@@ -86,6 +86,8 @@ export type CreateLeadInput = {
   ownerUserId?: string | null; // RB-LEAD-003: presencial → se autoasigna al actor; web → null
   healthNote?: string | null; // RB-LEAD-001: "ninguna" también es una respuesta válida
   actor?: { userId: string; role: Role } | null; // null = autocompletado por el propio lead (formulario público)
+  // Rediseño Leads: alta presencial con cierre inmediato ("Cerrado directamente").
+  directClose?: { planId?: string | null; trainerId?: string | null } | null;
 };
 
 const POSTAL_CODE_RE = /^\d{5}$/; // RB-LEAD-010: CP español, 5 dígitos
@@ -129,6 +131,17 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
     });
   }
 
+  if (input.directClose) {
+    if (!input.email?.trim()) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };
+    const converted = await initiateLeadConversion(input.orgId, lead.id, {
+      planId: input.directClose.planId ?? null,
+      trainerId: input.directClose.trainerId ?? null,
+      closeType: "DIRECTO",
+    });
+    if (!converted.ok) return converted;
+    await confirmLeadClosureForMember(input.orgId, converted.memberId);
+  }
+
   return { ok: true, leadId: lead.id };
 }
 
@@ -147,7 +160,7 @@ export async function assignLeadOwner(orgId: string, leadId: string, ownerUserId
 export async function updateLeadStage(
   orgId: string,
   leadId: string,
-  status: Extract<LeadStatus, "SEGUIMIENTO" | "CON_FECHA_VALORACION">
+  status: Extract<LeadStatus, "SIN_CONTACTAR" | "SEGUIMIENTO" | "CON_FECHA_VALORACION">
 ) {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true, status: true } });
   if (!lead) return { ok: false as const, error: "Lead no encontrado." };
@@ -184,7 +197,7 @@ export async function addLeadNote(orgId: string, leadId: string, authorUserId: s
 export async function initiateLeadConversion(
   orgId: string,
   leadId: string,
-  opts: { planId?: string | null; trainerId?: string | null }
+  opts: { planId?: string | null; trainerId?: string | null; closeType?: LeadCloseType }
 ) {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId } });
   if (!lead) return { ok: false as const, error: "Lead no encontrado." };
@@ -212,7 +225,16 @@ export async function initiateLeadConversion(
       trainerId: opts.trainerId ?? null,
     });
 
-    await tx.lead.update({ where: { id: lead.id }, data: { convertedMemberId: member.id, status: "SEGUIMIENTO" } });
+    await tx.lead.update({
+      where: { id: lead.id },
+      data: {
+        convertedMemberId: member.id,
+        status: "SEGUIMIENTO",
+        closeType: opts.closeType ?? "EMBUDO",
+        // Cierre online: lo genera la plataforma sin contacto previo → queda sin responsable.
+        ownerUserId: opts.closeType === "ONLINE" ? null : undefined,
+      },
+    });
     // RB-LEAD-007: traslada lesiones/patologías (sin recapturar) y bitácora.
     await tx.healthRecord.updateMany({ where: { leadId: lead.id }, data: { leadId: null, memberId: member.id } });
     const notes = await tx.leadNote.findMany({ where: { leadId: lead.id } });
@@ -319,6 +341,46 @@ export async function getLeadCloseRate(orgId: string, opts: { from?: Date; to?: 
     funnel,
     total: Object.values(funnel).reduce((s, v) => s + v, 0),
   };
+}
+
+/** Desglose de leads CERRADO por tipo de cierre, para el KPI "Cerrados". */
+export async function getLeadCloseTypeBreakdown(orgId: string) {
+  const rows = await prisma.lead.groupBy({
+    by: ["closeType"],
+    where: { orgId, status: "CERRADO" },
+    _count: { _all: true },
+  });
+  const countFor = (t: LeadCloseType) => rows.find((r) => r.closeType === t)?._count._all ?? 0;
+  return { embudo: countFor("EMBUDO"), directo: countFor("DIRECTO"), online: countFor("ONLINE") };
+}
+
+/** Leads sin responsable asignado y no archivados (requieren asignación). */
+export async function countLeadsWithoutOwner(orgId: string) {
+  return prisma.lead.count({
+    where: { orgId, ownerUserId: null, status: { notIn: ["CERRADO", "NO_CERRADO"] } },
+  });
+}
+
+/** Canales de origen — de dónde llegan los leads (gráfica de barras). */
+export async function getLeadChannelDistribution(orgId: string) {
+  const rows = await prisma.lead.groupBy({
+    by: ["channel"],
+    where: { orgId },
+    _count: { _all: true },
+    orderBy: { _count: { channel: "desc" } },
+  });
+  return rows.map((r) => ({ label: r.channel, count: r._count._all }));
+}
+
+/** Motivos de no cierre — por qué se pierden los leads (gráfica de barras). */
+export async function getLeadNoCloseReasonDistribution(orgId: string) {
+  const rows = await prisma.lead.groupBy({
+    by: ["noCloseReason"],
+    where: { orgId, status: "NO_CERRADO", noCloseReason: { not: null } },
+    _count: { _all: true },
+    orderBy: { _count: { noCloseReason: "desc" } },
+  });
+  return rows.map((r) => ({ label: r.noCloseReason as string, count: r._count._all }));
 }
 
 export type LeadRow = Awaited<ReturnType<typeof listLeads>>[number];

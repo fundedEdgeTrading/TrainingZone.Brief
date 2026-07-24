@@ -16,6 +16,10 @@ type FilterBarProps = {
   chipLabel: string;
   chipOptions: FilterOption[];
   chipDefault?: string;
+  extraChipName?: string;
+  extraChipLabel?: string;
+  extraChipOptions?: FilterOption[];
+  extraChipDefault?: string;
 };
 
 const TONE_HEX: Record<BadgeTone, string> = {
@@ -25,6 +29,7 @@ const TONE_HEX: Record<BadgeTone, string> = {
   trial: "#5c4a34",
   prospect: "#5b4552",
   neutral: "#6e6a5e",
+  gold: "#8a6d2f",
 };
 
 const TONE_BG_CLASS: Record<BadgeTone, string> = {
@@ -34,6 +39,7 @@ const TONE_BG_CLASS: Record<BadgeTone, string> = {
   trial: "bg-trial-bg",
   prospect: "bg-prospect-bg",
   neutral: "bg-neutral-bg",
+  gold: "bg-gold-bg",
 };
 
 export function FilterBar({
@@ -45,22 +51,30 @@ export function FilterBar({
   chipLabel,
   chipOptions,
   chipDefault,
+  extraChipName,
+  extraChipLabel,
+  extraChipOptions,
+  extraChipDefault,
 }: FilterBarProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [query, setQuery] = useState(searchDefault ?? "");
   const [chip, setChip] = useState(chipDefault ?? "");
+  const [extraChip, setExtraChip] = useState(extraChipDefault ?? "");
 
   const parts: string[] = [];
   if (query.trim()) parts.push(`«${query.trim()}»`);
   const chipOpt = chipOptions.find((o) => o.value === chip && o.value !== "");
   if (chipOpt) parts.push(chipOpt.label);
+  const extraChipOpt = extraChipOptions?.find((o) => o.value === extraChip && o.value !== "");
+  if (extraChipOpt) parts.push(extraChipOpt.label);
   const activeCount = parts.length;
 
   function applyFilters() {
     const p = new URLSearchParams();
     if (query.trim()) p.set(searchName, query.trim());
     if (chip) p.set(chipName, chip);
+    if (extraChip && extraChipName) p.set(extraChipName, extraChip);
     const qs = p.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
@@ -68,6 +82,7 @@ export function FilterBar({
   function clearFilters() {
     setQuery("");
     setChip("");
+    setExtraChip("");
     router.push(pathname);
   }
 
@@ -160,6 +175,46 @@ export function FilterBar({
             );
           })}
         </div>
+
+        {extraChipOptions && extraChipOptions.length > 0 && (
+          <>
+            <label className="block text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mt-[22px] mb-2.5">{extraChipLabel}</label>
+            <div className="flex flex-wrap gap-2 items-center">
+              {extraChipOptions.map((opt) => {
+                const active = opt.value === extraChip;
+                const useToneStyle = active && opt.value !== "" && opt.tone;
+                const fg = useToneStyle ? TONE_HEX[opt.tone!] : undefined;
+                return (
+                  <button
+                    key={opt.value || "__all__"}
+                    type="button"
+                    onClick={() => setExtraChip(opt.value)}
+                    className={`inline-flex items-center gap-[7px] px-[15px] py-2 rounded-pill text-[13px] font-semibold cursor-pointer transition-all duration-[180ms] ease-[cubic-bezier(.2,.8,.2,1)] ${
+                      !active
+                        ? "bg-white border border-brand-border text-brand-text-2"
+                        : useToneStyle
+                          ? `${TONE_BG_CLASS[opt.tone!]} border border-transparent`
+                          : "bg-tz-black text-tz-bone border border-transparent"
+                    }`}
+                    style={
+                      active
+                        ? useToneStyle
+                          ? { color: fg, boxShadow: `inset 0 0 0 1px ${fg}33, 0 4px 12px -8px ${fg}66` }
+                          : { boxShadow: "0 6px 16px -8px rgba(29,29,28,.5)" }
+                        : undefined
+                    }
+                  >
+                    <span
+                      className="w-[7px] h-[7px] rounded-[2px] shrink-0"
+                      style={{ background: !active ? "var(--color-faint)" : useToneStyle ? fg : "var(--color-tz-bone)" }}
+                    />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         <div className="flex items-center justify-between gap-3 mt-6 pt-5 border-t border-[#ede7dc] flex-wrap">
           <span className="text-[12.5px] text-faint">

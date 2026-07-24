@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select } from "@/components/ui/field";
 import { ActionForm } from "@/components/ui/action-form";
 import { useToast } from "@/components/ui/toast";
+import type { LeadCloseType } from "@prisma/client";
 import {
   updateLeadStageAction,
   assignLeadOwnerAction,
@@ -110,6 +111,18 @@ export function LeadNoteForm({ leadId }: { leadId: string }) {
   );
 }
 
+const CLOSE_TYPE_OPTIONS: { value: LeadCloseType; label: string; activeClass: string }[] = [
+  { value: "EMBUDO", label: "Embudo", activeClass: "bg-neutral-bg text-neutral" },
+  { value: "DIRECTO", label: "Directo", activeClass: "bg-trial-bg text-trial" },
+  { value: "ONLINE", label: "Online", activeClass: "bg-gold-bg text-gold" },
+];
+
+const SUBMIT_LABEL: Record<LeadCloseType, string> = {
+  EMBUDO: "Cerrar como Embudo · iniciar alta",
+  DIRECTO: "Cerrar como Directo · iniciar alta",
+  ONLINE: "Cerrar como Online · iniciar alta",
+};
+
 export function ConvertLeadForm({
   leadId,
   plans,
@@ -119,9 +132,29 @@ export function ConvertLeadForm({
   plans: { id: string; name: string }[];
   trainers: { id: string; name: string }[];
 }) {
+  const [closeType, setCloseType] = useState<LeadCloseType>("EMBUDO");
+
   return (
     <ActionForm action={convertLeadAction} successMessage="Alta iniciada: socio creado en periodo de prueba" className="space-y-3">
       <input type="hidden" name="leadId" value={leadId} />
+      <input type="hidden" name="closeType" value={closeType} />
+      <div>
+        <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Tipo de cierre</label>
+        <div className="flex gap-1.5">
+          {CLOSE_TYPE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setCloseType(opt.value)}
+              className={`flex-1 py-2 rounded-lg text-xs font-semibold border transition-colors duration-150 ${
+                closeType === opt.value ? `border-transparent ${opt.activeClass}` : "border-brand-border bg-white text-brand-text-2"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Plan inicial">
           <Select name="planId" defaultValue="">
@@ -145,11 +178,12 @@ export function ConvertLeadForm({
         </Field>
       </div>
       <Button type="submit" className="w-full">
-        Iniciar alta como socio
+        {SUBMIT_LABEL[closeType]}
       </Button>
       <p className="text-xs text-brand-muted">
-        RB-LEAD-005: el lead pasa a <strong>CERRADO</strong> automáticamente cuando se confirme el primer cobro (Stripe o
-        cobro registrado en Cobros).
+        <strong>Embudo</strong>: cierre tras seguimiento normal. <strong>Directo</strong>: alta presencial ya cerrada. <strong>Online</strong>: compra
+        por web, sin responsable. RB-LEAD-005: el lead pasa a <strong>CERRADO</strong> automáticamente cuando se confirme el primer cobro
+        (Stripe o cobro registrado en Cobros).
       </p>
     </ActionForm>
   );

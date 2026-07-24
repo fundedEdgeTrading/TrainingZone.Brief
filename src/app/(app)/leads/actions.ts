@@ -22,6 +22,8 @@ export async function createLeadAction(formData: FormData): Promise<LeadWriteRes
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   if (!canManageLeads(session.user.role)) return { ok: false, error: "No tienes permiso para crear leads." };
 
+  const mode = String(formData.get("mode") ?? "seguimiento");
+
   const result = await createLead({
     orgId: session.user.orgId,
     centerId: String(formData.get("centerId") ?? ""),
@@ -41,6 +43,10 @@ export async function createLeadAction(formData: FormData): Promise<LeadWriteRes
     // RB-LEAD-003: contacto presencial → responsable = quien lo atiende.
     ownerUserId: session.user.id,
     actor: { userId: session.user.id, role: session.user.role },
+    directClose:
+      mode === "directo"
+        ? { planId: String(formData.get("planId") ?? "") || null, trainerId: String(formData.get("trainerId") ?? "") || null }
+        : null,
   });
   if (result.ok) revalidatePath("/leads");
   return result;
@@ -60,7 +66,10 @@ export async function claimLeadAction(leadId: string): Promise<LeadActionResult>
   return assignLeadOwnerAction(leadId, session.user.id);
 }
 
-export async function updateLeadStageAction(leadId: string, status: "SEGUIMIENTO" | "CON_FECHA_VALORACION"): Promise<LeadActionResult> {
+export async function updateLeadStageAction(
+  leadId: string,
+  status: "SIN_CONTACTAR" | "SEGUIMIENTO" | "CON_FECHA_VALORACION"
+): Promise<LeadActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const result = await updateLeadStage(session.user.orgId, leadId, status);
   if (!result.ok) return result;
@@ -95,7 +104,8 @@ export async function convertLeadAction(formData: FormData): Promise<LeadActionR
   const leadId = String(formData.get("leadId") ?? "");
   const planId = String(formData.get("planId") ?? "") || null;
   const trainerId = String(formData.get("trainerId") ?? "") || null;
-  const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, trainerId });
+  const closeType = (String(formData.get("closeType") ?? "EMBUDO") || "EMBUDO") as "EMBUDO" | "DIRECTO" | "ONLINE";
+  const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, trainerId, closeType });
   if (!result.ok) return result;
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/members");

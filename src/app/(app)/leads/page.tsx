@@ -1,50 +1,106 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { canManageLeads, canManageOrg } from "@/lib/rbac";
-import { listLeads, listLeadChannels, listNoCloseReasons, listCentersForLead } from "@/lib/leads-queries";
-import { Badge } from "@/components/ui/badge";
+import {
+  listLeads,
+  listLeadChannels,
+  listNoCloseReasons,
+  listCentersForLead,
+  getLeadCloseRate,
+  getLeadCloseTypeBreakdown,
+  countLeadsWithoutOwner,
+  getLeadChannelDistribution,
+  getLeadNoCloseReasonDistribution,
+} from "@/lib/leads-queries";
+import { listAssignableStaff } from "@/lib/org-queries";
+import { listActivePlansForOrg } from "@/lib/members-queries";
+import { KpiCard } from "@/components/kpi-card";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import type { LeadStatus } from "@prisma/client";
+import type { LeadCloseType, LeadStatus } from "@prisma/client";
 import { NewLeadDrawer } from "./new-lead-drawer";
-import { ClaimLeadButton } from "./lead-actions-inline";
+import { LeadsBoard } from "./leads-board";
 import { LeadConfigPanel } from "./lead-config-panel";
 
-const COLUMNS: { status: LeadStatus; label: string }[] = [
-  { status: "SIN_CONTACTAR", label: "Sin contactar" },
-  { status: "SEGUIMIENTO", label: "Seguimiento" },
-  { status: "CON_FECHA_VALORACION", label: "Con fecha de valoración" },
-  { status: "CERRADO", label: "Cerrado" },
-  { status: "NO_CERRADO", label: "No cerrado" },
+const COLUMNS: { status: LeadStatus; label: string; tone: "neutral" | "trial" | "warning" | "good" | "critical"; dot: string }[] = [
+  { status: "SIN_CONTACTAR", label: "Sin contactar", tone: "neutral", dot: "#8a8574" },
+  { status: "SEGUIMIENTO", label: "Seguimiento", tone: "trial", dot: "#5c4a34" },
+  { status: "CON_FECHA_VALORACION", label: "Con fecha de valoración", tone: "warning", dot: "#8a5a12" },
+  { status: "CERRADO", label: "Cerrado", tone: "good", dot: "#4b5a22" },
+  { status: "NO_CERRADO", label: "No cerrado", tone: "critical", dot: "#8a3420" },
+];
+
+const CLOSE_TYPE_OPTIONS: { value: string; label: string; tone?: "trial" | "gold" }[] = [
+  { value: "", label: "Todos" },
+  { value: "EMBUDO", label: "Embudo" },
+  { value: "DIRECTO", label: "Directo", tone: "trial" },
+  { value: "ONLINE", label: "Online", tone: "gold" },
 ];
 
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; centerId?: string }>;
+  searchParams: Promise<{ q?: string; centerId?: string; closeType?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const params = await searchParams;
   const canCreate = canManageLeads(session.user.role);
+  const closeTypeFilter = (params.closeType || "") as LeadCloseType | "";
 
-  const [leads, channels, reasons, centers] = await Promise.all([
+  const [leads, channels, , centers, closeRate, closeBreakdown, withoutOwner, channelDist, reasonDist, plans, staff] = await Promise.all([
     listLeads(session.user.orgId, { q: params.q, centerId: params.centerId }),
     listLeadChannels(session.user.orgId),
     listNoCloseReasons(session.user.orgId),
     listCentersForLead(session.user.orgId),
+    getLeadCloseRate(session.user.orgId),
+    getLeadCloseTypeBreakdown(session.user.orgId),
+    countLeadsWithoutOwner(session.user.orgId),
+    getLeadChannelDistribution(session.user.orgId),
+    getLeadNoCloseReasonDistribution(session.user.orgId),
+    listActivePlansForOrg(session.user.orgId),
+    listAssignableStaff(session.user.orgId, ["TRAINER"]),
   ]);
 
-  const byStatus = new Map<LeadStatus, typeof leads>();
-  for (const col of COLUMNS) byStatus.set(col.status, []);
-  for (const lead of leads) byStatus.get(lead.status)?.push(lead);
+  const byStatus: Record<string, typeof leads> = {};
+  for (const col of COLUMNS) byStatus[col.status] = [];
+  for (const lead of leads) {
+    if (lead.status === "CERRADO" && closeTypeFilter && lead.closeType !== closeTypeFilter) continue;
+    byStatus[lead.status]?.push(lead);
+  }
+
+  const { funnel } = closeRate;
+  const decided = funnel.cerrado + funnel.noCerrado;
 
   return (
     <div className="tz-page space-y-4">
       <PageHeader
-        description={`${leads.length} leads en el embudo comercial`}
-        actions={canCreate ? <NewLeadDrawer centers={centers} channels={channels} /> : undefined}
+        kicker="Embudo comercial"
+        description={`${leads.length} leads en el embudo comercial · arrastra las tarjetas entre columnas`}
+        actions={canCreate ? <NewLeadDrawer centers={centers} channels={channels} plans={plans} trainers={staff} /> : undefined}
       />
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+        <KpiCard label="Leads totales" value={String(leads.length)} hint="en el embudo" tone="accent" />
+        <KpiCard
+          label="Tasa de cierre"
+          value={closeRate.closeRatePct === null ? "—" : `${closeRate.closeRatePct}%`}
+          hint={`${funnel.cerrado} de ${decided} decididos`}
+          tone="good"
+        />
+        <KpiCard
+          label="Cerrados"
+          value={String(funnel.cerrado)}
+          hint={`${closeBreakdown.embudo} embudo · ${closeBreakdown.directo} directo · ${closeBreakdown.online} online`}
+          tone="gold"
+        />
+        <KpiCard label="Con cita valoración" value={String(funnel.conFechaValoracion)} hint="agendadas" tone="warning" />
+        <KpiCard
+          label="Sin responsable"
+          value={String(withoutOwner)}
+          hint="requieren asignación"
+          tone={withoutOwner > 0 ? "critical" : "default"}
+        />
+      </div>
 
       <FilterBar
         kicker="Filtrar leads"
@@ -55,45 +111,19 @@ export default async function LeadsPage({
         chipLabel="Centro"
         chipDefault={params.centerId}
         chipOptions={[{ value: "", label: "Todos" }, ...centers.map((c) => ({ value: c.id, label: c.name }))]}
+        extraChipName="closeType"
+        extraChipLabel="Tipo de cierre (solo columna Cerrado)"
+        extraChipDefault={params.closeType}
+        extraChipOptions={CLOSE_TYPE_OPTIONS}
       />
 
       {leads.length === 0 ? (
         <EmptyState title="Sin leads" description="Todavía no hay contactos en el embudo comercial." />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
-          {COLUMNS.map((col) => {
-            const items = byStatus.get(col.status) ?? [];
-            return (
-              <div key={col.status} className="bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden">
-                <div className="px-3.5 py-3 border-b border-brand-border flex items-center justify-between">
-                  <span className="font-display font-bold text-[11px] uppercase tracking-[.1em] text-brand-muted">{col.label}</span>
-                  <Badge tone="neutral" dot={false}>
-                    {items.length}
-                  </Badge>
-                </div>
-                <div className="p-2.5 space-y-2 max-h-[70vh] overflow-y-auto">
-                  {items.map((lead) => (
-                    <div key={lead.id} className="rounded-control border border-brand-border bg-white p-3 hover:shadow-hover transition-shadow duration-200">
-                      <Link href={`/leads/${lead.id}`} className="font-semibold text-sm text-brand-text hover:underline">
-                        {lead.firstName} {lead.lastName}
-                      </Link>
-                      <p className="text-xs text-brand-muted mt-0.5">{lead.center.name}</p>
-                      <p className="text-xs text-faint mt-0.5">{lead.channel} · {lead.phone}</p>
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="text-xs text-brand-text-2">{lead.owner?.name ?? "Sin responsable"}</span>
-                        {!lead.owner && canCreate && <ClaimLeadButton leadId={lead.id} />}
-                      </div>
-                    </div>
-                  ))}
-                  {items.length === 0 && <p className="text-xs text-faint text-center py-4">Vacío</p>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <LeadsBoard columns={COLUMNS} leadsByStatus={byStatus} canClaim={canCreate} />
       )}
 
-      {canManageOrg(session.user.role) && <LeadConfigPanel channels={channels} reasons={reasons} />}
+      {canManageOrg(session.user.role) && <LeadConfigPanel channelDistribution={channelDist} reasonDistribution={reasonDist} />}
     </div>
   );
 }
