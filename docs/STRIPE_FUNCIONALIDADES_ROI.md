@@ -113,7 +113,7 @@ Tabla-resumen (detalle por bloque debajo). "Encaje" = qué tan directo es sobre 
 | A.8 | **Coupons / Promotion Codes** | Materializar `PersonalizedOffer` como descuento real y medible | ➕ Alto | F20 | `RB-PAGO-015` |
 | A.9 | **Stripe Tax** | IVA automático → neto vs bruto para dirección | 🆕 Medio | F24 | `RB-PAGO-016` |
 | A.10 | **Terminal** (TPV presencial) | Cobro con datáfono en recepción, en el mismo libro que el online | 🆕 Medio | F23 | `RB-PAGO-017` |
-| A.11 | **Connect** (cuentas conectadas) | Modelo plataforma: cada org (gimnasio) como cuenta conectada de **Apta** | 🆕 Estratégico | F25 | `RB-PAGO-018` |
+| A.11 | **Connect** (cuentas conectadas) | **Cada gimnasio, su propia cuenta Stripe** (decisión D-S1 ✅). Cimiento de todo lo demás | 🆕 **Núcleo** | **F18.0** | `RB-PAGO-018` |
 | A.12 | **Sigma / Data Pipeline / Reporting API** | Ingesta de la verdad financiera para el BI centralizado | 🆕 Alto | F22 | `RB-BI-012+` |
 | A.13 | **Radar** (antifraude) | Reglas antifraude y protección de contracargos | 🆕 Bajo | F24 | `RB-PAGO-019` |
 | A.14 | **Invoicing** (facturas Stripe) | Factura/recibo con PDF — ⚠️ **ojo VERI\*FACTU** (§A.9) | ➕ Bajo | F24 | `RB-PAGO-016` |
@@ -233,20 +233,39 @@ manual) entra **en el mismo libro** que el online. Ventaja de centralización: u
 `Payment`/conciliación para todo, sin cuadrar la caja del TPV del banco por separado. Encaje
 medio (requiere hardware); alto valor de "dato único" para dirección.
 
-## A.11 — Connect: el modelo de plataforma de Apta (F25, `RB-PAGO-018`) 🆕🧭
+## A.11 — Una cuenta Stripe POR GIMNASIO (decisión D-S1 ✅ CERRADA, `RB-PAGO-018`) 🆕🧭
 
-**La jugada estratégica de largo plazo, alineada con la naturaleza multi-tenant.** La app ya
-es multi-tenant (Training Zone, Vitalia... cada una una `Organization`). Con **Stripe Connect**,
-**Apta** (la plataforma) puede ser el *platform account* y cada gimnasio una **cuenta
-conectada**: cada org cobra a sus socios en **su propia cuenta Stripe**, y Apta puede
-(opcionalmente) cobrar una **application fee** por transacción o suscripción.
+> **DECISIÓN DE DIRECCIÓN (jul. 2026):** *"cada empresa de centro de entrenamiento tiene su
+> Stripe."* → **Cada `Organization` cobra a sus socios en SU PROPIA cuenta Stripe. Apta NO
+> centraliza el dinero ni cobra comisión por transacción: Apta es software puro (SaaS).**
+> El dinero de cada gimnasio va directo a la cuenta de ese gimnasio. Esto cierra la decisión
+> más importante del doc y **es la base de toda la F18+**.
 
-Esto habilita el modelo de negocio de **Apta como plataforma** (no solo software): ingresos
-por uso, onboarding self-service de nuevos gimnasios (F7, hoy fuera de alcance) con su propio
-alta de pagos, payouts independientes por org y aislamiento financiero real entre tenants.
-Es la decisión más grande del doc — **D-S1** (§Decisiones): *¿Apta cobra a los socios (Connect,
-modelo plataforma) o cada gimnasio conecta su cuenta Stripe directa (más simple, sin fee de
-plataforma)?* Condiciona todo F18+.
+**Qué implica esto (lo esencial).** Hoy el código está preparado para **UNA sola cuenta**
+Stripe global (una única `STRIPE_SECRET_KEY` en `.env`, leída en `src/lib/stripe.ts`). Con la
+decisión tomada, esa clave global **deja de servir**: la cuenta pasa a ser **un dato por
+organización**. Es el **cambio arquitectónico raíz** que habilita todo lo demás:
+`getStripeClient()` deja de leer una env global y pasa a **resolver la cuenta del `orgId`**
+(nueva tabla `StripeAccount`, §B.2). Todo lo que ya existe (checkout, webhook) se reescribe
+para actuar **sobre la cuenta correcta** del tenant.
+
+**Cómo se conecta cada gimnasio — dos caminos (recomendación clara):**
+
+| Camino | Cómo | Onboarding | Seguridad | Veredicto |
+|---|---|---|---|---|
+| **Stripe Connect (cuentas Standard)** ✅ **recomendado** | El gimnasio pulsa **"Conectar con Stripe"**, entra en *su* Stripe y autoriza (OAuth). Apta actúa en su nombre con la cabecera `Stripe-Account`, **sin fee de plataforma** | Un botón, sin pegar claves | Apta **nunca** guarda las claves secretas del gimnasio | El estándar multi-tenant. Un solo webhook (eventos Connect llevan el `account`) |
+| **Claves por org (directo)** | El gimnasio pega su `STRIPE_SECRET_KEY`/`webhook secret` en la config de su org (cifrados) | Manual, propenso a error | Apta custodia claves ajenas (peor) | Válido como MVP rápido, pero peor onboarding y más soporte |
+
+**Recomendación:** **Connect con cuentas Standard, sin application fee.** Cada gimnasio "tiene
+su Stripe" de verdad (su cuenta, su panel, sus payouts, sus datos fiscales), Apta solo
+orquesta, y el alta es un botón — lo que además destraba el **onboarding self-service de
+nuevos gimnasios** (F7, hoy fuera de alcance). Si algún día Apta quisiera monetizar por
+transacción, Connect ya deja esa puerta abierta (application fee) **sin rearquitectura** —
+pero hoy queda **descartado por decisión** (ver F25).
+
+> **Aclaración para no liarse:** "cada gimnasio tiene su Stripe" es para cobrar a **sus
+> socios**. Si Apta quiere cobrar a **los gimnasios** por usar el software, eso sería la cuenta
+> Stripe **de Apta** facturando a los gimnasios — un tema aparte, no en conflicto con esto.
 
 ## A.12 — Datos: Sigma, Data Pipeline, Reporting API (F22)
 
@@ -281,9 +300,9 @@ Pipeline se reservan para conciliación contable fina y auditoría, no para el d
 
 | Regla | Título | Depende de |
 |---|---|---|
-| `RB-PAGO-008` 🔁 | Cobro recurrente en **Stripe Billing** (`mode:"subscription"`); `Subscription`/`Payment` como espejo por webhook | Cuenta Stripe, D-S1 |
+| `RB-PAGO-008` 🔁 | Cobro recurrente en **Stripe Billing** (`mode:"subscription"`); `Subscription`/`Payment` como espejo por webhook | **F18.0** |
 | `RB-PAGO-009` ➕ | **SEPA Direct Debit** recurrente con mandato | F18 |
-| `RB-PAGO-010` ➕ | **Bizum** como método real (checkout / Payment Link) | Cuenta Stripe |
+| `RB-PAGO-010` ➕ | **Bizum** como método real (checkout / Payment Link) | F18.0 |
 | `RB-PAGO-011` ➕ | **Wallets + Link** (Apple/Google Pay) | Checkout |
 | `RB-PAGO-012` 🆕 | **Revenue Recovery**: Smart Retries + dunning + Card Account Updater; conciliación de fallo/recuperación | F18 |
 | `RB-PAGO-013` 🆕 | **Customer Portal** de Stripe enlazado desde el portal del socio | F18 |
@@ -291,7 +310,7 @@ Pipeline se reservan para conciliación contable fina y auditoría, no para el d
 | `RB-PAGO-015` ➕ | **Cupones** de Stripe como materialización de `PersonalizedOffer` aprobada | F14 + F18 |
 | `RB-PAGO-016` 🆕 | **Stripe Tax** (IVA) + Invoicing para neto y recibo (⚠️ VERI\*FACTU aparte) | D-S3 |
 | `RB-PAGO-017` 🆕 | **Terminal** (cobro presencial en el mismo libro) | Hardware |
-| `RB-PAGO-018` 🆕🧭 | **Connect**: Apta plataforma / cuentas conectadas por org | D-S1 |
+| `RB-PAGO-018` 🆕🧭 | **Connect Standard**: una cuenta Stripe **por gimnasio** (D-S1 ✅), sin fee de plataforma — cimiento F18.0 | Cuenta plataforma Apta |
 | `RB-PAGO-019` 🆕 | **Radar** antifraude + gestión de contracargos | Payments |
 
 ## B.2. Cambios de modelo (Prisma) — mínimos y compatibles hacia atrás
@@ -322,21 +341,26 @@ model PersonalizedOffer {
   stripeCouponId    String? // RB-PAGO-015: cupón que materializa la oferta aprobada (mide ROI del descuento, RB-BI-018)
 }
 
-// 🆕 Opcional (F25/Connect): cuenta Stripe por organización si Apta es plataforma
+// 🆕 NÚCLEO (decisión D-S1): la cuenta Stripe es un dato POR organización, no global.
+// Reemplaza a la STRIPE_SECRET_KEY única de .env. getStripeClient(orgId) resuelve aquí.
 model StripeAccount {
   id         String   @id @default(cuid())
   orgId      String   @unique
-  accountId  String   @unique // acct_... conectado
-  chargesEnabled Boolean @default(false)
+  accountId  String   @unique // acct_... conectado por el gimnasio (Connect Standard)
+  chargesEnabled Boolean @default(false) // el gimnasio completó el onboarding de Stripe
   payoutsEnabled Boolean @default(false)
   createdAt  DateTime @default(now())
   organization Organization @relation(fields: [orgId], references: [id])
 }
 ```
 
-> Todos los campos son **opcionales** → migración Prisma 7 estándar sin romper datos. `null`
-> en `stripeSubscriptionId` significa "cuota local/manual" y el código sigue el camino actual;
-> con valor, sigue el camino Stripe Billing. Convivencia limpia de ambos mundos.
+> Los campos de `Subscription`/`Payment`/`PersonalizedOffer` son **opcionales** → migración
+> Prisma 7 estándar sin romper datos (`null` en `stripeSubscriptionId` = cuota local/manual,
+> con valor = Stripe Billing; convivencia limpia). **`StripeAccount` sí es estructural**: es la
+> pieza que hace realidad "cada gimnasio, su Stripe" (D-S1) y de la que cuelga todo lo demás.
+> El cambio de código raíz que conlleva: `getStripeClient()` en `src/lib/stripe.ts` pasa de
+> leer una env global a **recibir `orgId` y resolver la cuenta del tenant**, y el webhook
+> enruta cada evento a la org de su `account`.
 
 ---
 
@@ -462,11 +486,14 @@ Lo importante es que **cada palanca es medible con un KPI concreto de la Parte C
 1. **Quick win sin Stripe:** MRR proxy local (`RB-BI-012`) + LTV:CAC por canal (`RB-BI-016`,
    solo falta el coste por canal). Da a dirección dos indicadores potentes **ya**, mientras se
    consigue la cuenta Stripe.
-2. **F18 (Billing) + F20 (Revenue Recovery):** en cuanto haya cuenta, subir la suscripción a
-   Stripe y encender la recuperación de ingresos — la palanca nº1.
-3. **F19 (Bizum/SEPA/wallets):** fricción de cobro, palanca de conversión.
-4. **F21 (Portal + Payment Links + cupones) y F22 (BI financiero completo).**
-5. **F23/F24/F25 (Terminal, Tax/Invoicing, Connect):** según estrategia (D-S1) y hardware.
+2. **F18.0 (cimiento):** "Conectar con Stripe" por gimnasio (Connect Standard) — es el primer
+   paso obligatorio ahora que cada empresa tiene su cuenta (D-S1). Sin esto no hay F18+.
+3. **F18 (Billing) + F20 (Revenue Recovery):** subir la suscripción a Stripe y encender la
+   recuperación de ingresos — la palanca nº1.
+4. **F19 (Bizum/SEPA/wallets):** fricción de cobro, palanca de conversión.
+5. **F21 (Portal + Payment Links + cupones) y F22 (BI financiero completo).**
+6. **F23/F24 (Terminal, Tax/Invoicing):** según hardware y decisión fiscal (D-S3). *(F25 —
+   application fee de plataforma— descartada por D-S1.)*
 
 ---
 
@@ -474,32 +501,36 @@ Lo importante es que **cada palanca es medible con un KPI concreto de la Parte C
 
 | Fase | Contenido | Depende de | Esfuerzo | Regla |
 |---|---|---|---|---|
-| **F18** | Stripe Billing: suscripción nativa + espejo por webhook; ciclo de vida delegado (pausa/cancel/importe) | Cuenta Stripe, **D-S1** | Alto | `RB-PAGO-008` |
-| **F19** | Métodos España: SEPA recurrente, Bizum, wallets + Link | F18 (SEPA), cuenta (resto) | Medio | `RB-PAGO-009/010/011` |
+| **F18.0** 🧭 | **Cimiento (D-S1): cuenta Stripe por gimnasio.** "Conectar con Stripe" (Connect Standard) + tabla `StripeAccount` + `getStripeClient(orgId)` per-org + webhook enrutado por `account` | Cuenta plataforma de Apta | Alto | `RB-PAGO-018` |
+| **F18** | Stripe Billing: suscripción nativa + espejo por webhook; ciclo de vida delegado (pausa/cancel/importe) | **F18.0** | Alto | `RB-PAGO-008` |
+| **F19** | Métodos España: SEPA recurrente, Bizum, wallets + Link | F18 (SEPA), F18.0 (resto) | Medio | `RB-PAGO-009/010/011` |
 | **F20** | Revenue Recovery (retries, dunning, Card Updater) + cupones de oferta | F18 | Medio | `RB-PAGO-012/015` |
 | **F21** | Customer Portal + Payment Links (autoservicio y productos puntuales) | F18 | Bajo-Medio | `RB-PAGO-013/014` |
 | **F22** | BI financiero: MRR/NRR/waterfall/forecast/neto/recuperado/LTV:CAC | F18 (datos) | Medio | `RB-BI-012…022` |
-| **F23** | Terminal (cobro presencial en el mismo libro) | Hardware | Medio | `RB-PAGO-017` |
+| **F23** | Terminal (cobro presencial en el mismo libro) | Hardware, F18.0 | Medio | `RB-PAGO-017` |
 | **F24** | Stripe Tax + Invoicing (neto/recibo) — ⚠️ VERI\*FACTU aparte | **D-S3** | Medio | `RB-PAGO-016/019` |
-| **F25** 🧭 | Connect: Apta plataforma / cuentas conectadas por org | **D-S1** | Alto | `RB-PAGO-018` |
+| **F25** 🧭 | *(Descartada por D-S1)* Monetización de plataforma vía application fee. Se deja documentada: Connect ya la permitiría sin rearquitectura si algún día cambia la estrategia | F18.0 | — | `RB-PAGO-018` |
 
 **Quick wins que NO esperan a la cuenta Stripe:** MRR proxy local (`RB-BI-012`) y LTV:CAC por
 canal (`RB-BI-016`) — se pueden construir sobre el modelo actual y dan valor de dirección desde ya.
 
 ---
 
-## Decisiones de negocio (ABIERTAS — necesitan la palabra de dirección)
+## Decisiones de negocio
 
-| # | Cuestión | Regla | Por qué importa |
+**D-S1 ya está CERRADA** por dirección (jul. 2026); D-S2…D-S5 siguen abiertas.
+
+| # | Cuestión | Regla | Estado / por qué importa |
 |---|---|---|---|
-| **D-S1** | **¿Apta cobra a los socios como plataforma (Connect, con application fee) o cada gimnasio conecta su cuenta Stripe directa (sin fee de plataforma)?** | `RB-PAGO-018` | Es la decisión raíz: condiciona el modelo de negocio de Apta y toda F18+. Connect = ingreso por transacción y self-service de tenants; directo = más simple y rápido. |
-| **D-S2** | ¿Método de suscripción por defecto: **tarjeta**, **SEPA** o ambos ofrecidos? | `RB-PAGO-008/009` | SEPA reduce churn por caducidad pero es asíncrono; tarjeta es inmediata pero caduca. Afecta a churn involuntario. |
+| **D-S1** ✅ | ¿Apta centraliza el cobro como plataforma o cada gimnasio tiene su propia cuenta Stripe? | `RB-PAGO-018` | **CERRADA: cada gimnasio tiene SU cuenta Stripe.** Apta no toca el dinero ni cobra por transacción (SaaS puro). Mecanismo recomendado: **Connect Standard** ("Conectar con Stripe", sin application fee). Vuelve la cuenta un dato por org (`StripeAccount`) → cimiento **F18.0**. |
+| **D-S2** | ¿Método de suscripción por defecto: **tarjeta**, **SEPA** o ambos ofrecidos? | `RB-PAGO-008/009` | Abierta. SEPA reduce churn por caducidad pero es asíncrono; tarjeta es inmediata pero caduca. Afecta a churn involuntario. |
 | **D-S3** | Facturación fiscal: ¿usamos Stripe Tax/Invoicing solo para **neto y recibo**, y VERI\*FACTU se resuelve con software fiscal externo certificado? | `RB-PAGO-016` | Cumplimiento legal español. Recomendación del doc: **sí**, no reinventar VERI\*FACTU aquí. |
 | **D-S4** | ¿Materializamos `PersonalizedOffer` como **cupón real de Stripe** para poder medir su ROI? | `RB-PAGO-015` / `RB-BI-018` | Cierra el círculo "oferta → descuento aplicado → ¿retuvo?". Recomendación: sí. |
 | **D-S5** | ¿Se necesita la **entrada de coste por canal** (marketing) para activar LTV:CAC? ¿Quién la mantiene? | `RB-BI-016` | Sin el coste, LTV:CAC queda a medias. Es una entrada manual mensual mínima con altísimo retorno de decisión. |
 
-> Estas decisiones son **estratégicas**, no técnicas: por eso quedan abiertas para dirección.
-> Todo lo demás del doc es plan de implementación una vez tomadas.
+> Estas decisiones son **estratégicas**, no técnicas: por eso las decide dirección. Con D-S1
+> ya cerrada (cada gimnasio, su Stripe), el cimiento **F18.0** queda definido; D-S2…D-S5 se
+> pueden cerrar sobre la marcha sin bloquear el arranque.
 
 ---
 
@@ -519,12 +550,13 @@ canal (`RB-BI-016`) — se pueden construir sobre el modelo actual y dan valor d
 | Churn involuntario / € recuperado | webhook `invoice.payment_failed`/`paid` + `recoveredFromFail` | 🆕 handlers + KPI |
 | Previsión de ingreso | `Subscription.currentPeriodEnd` / subscription schedules | 🆕 campo + query |
 | Tesorería / payouts | `Payment.payoutId` + Reporting API | 🆕 conciliación |
-| Modelo plataforma Apta | `StripeAccount` (por org) + Connect | 🆕 opcional (D-S1) |
+| Cuenta Stripe por gimnasio (D-S1) | `StripeAccount` (por org) + Connect Standard; `getStripeClient(orgId)` | 🆕 **núcleo** (cimiento F18.0) |
 
 ---
 
 *Fin del documento. Es estrategia + plan: no toca código y no requiere la cuenta Stripe para
 escribirse, pero deja todo anclado en el repo real para ejecutar en cuanto lleguen las
-credenciales y se cierren D-S1…D-S5. Emparejar con `FEEDBACK_COBROS_DASHBOARD.md` (F12 cobros /
+credenciales y se cierren D-S2…D-S5 (D-S1 ya cerrada: cada gimnasio, su Stripe → cimiento
+F18.0). Emparejar con `FEEDBACK_COBROS_DASHBOARD.md` (F12 cobros /
 F17 BI), `CRM_REGLAS_NEGOCIO.md` (el "qué/porqué") y `CRM_IMPLEMENTACION_FUNCIONALIDADES.md`
 (fases F8–F17). Este doc abre F18–F25 y extiende `RB-PAGO-008+` / `RB-BI-012+`.*
