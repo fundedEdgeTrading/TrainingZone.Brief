@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getStripeClient, isStripeConfigured } from "@/lib/stripe";
+import { stripeForOrg } from "@/lib/stripe";
 import { confirmLeadClosureForMember, revertLeadClosureForFailedPayment } from "@/lib/leads-queries";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
@@ -8,12 +8,11 @@ function appBaseUrl() {
   return (process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
-/** RB-PAGO-001: cobro por Stripe (checkout). Sustituye el cobro manual como canal principal. */
+/** RB-PAGO-001 + Parte C: cobro por Stripe (checkout) contra la cuenta conectada del gimnasio (RB-PAGO-018/RB-CONNECT-002). */
 export async function createCheckoutSession(orgId: string, memberId: string, planId: string, soldByUserId?: string): Promise<CheckoutResult> {
-  if (!isStripeConfigured()) {
-    return { ok: false, error: "Stripe no está configurado en este entorno (falta STRIPE_SECRET_KEY)." };
-  }
-  const stripe = getStripeClient()!;
+  const resolved = await stripeForOrg(orgId);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  const { stripe, accountId } = resolved;
 
   const [member, plan] = await Promise.all([
     prisma.member.findFirst({ where: { id: memberId, orgId }, select: { id: true, email: true, firstName: true, lastName: true } }),
@@ -22,14 +21,17 @@ export async function createCheckoutSession(orgId: string, memberId: string, pla
   if (!member) return { ok: false, error: "Socio no encontrado." };
   if (!plan) return { ok: false, error: "Plan no encontrado." };
 
-  const checkoutSession = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: member.email,
-    line_items: [{ price_data: { currency: "eur", product_data: { name: plan.name }, unit_amount: plan.priceCents }, quantity: 1 }],
-    success_url: `${appBaseUrl()}/billing?checkout=success`,
-    cancel_url: `${appBaseUrl()}/billing?checkout=cancelled`,
-    metadata: { orgId, memberId, planId, ...(soldByUserId ? { soldByUserId } : {}) },
-  });
+  const checkoutSession = await stripe.checkout.sessions.create(
+    {
+      mode: "payment",
+      customer_email: member.email,
+      line_items: [{ price_data: { currency: "eur", product_data: { name: plan.name }, unit_amount: plan.priceCents }, quantity: 1 }],
+      success_url: `${appBaseUrl()}/billing?checkout=success`,
+      cancel_url: `${appBaseUrl()}/billing?checkout=cancelled`,
+      metadata: { orgId, memberId, planId, ...(soldByUserId ? { soldByUserId } : {}) },
+    },
+    { stripeAccount: accountId }
+  );
 
   if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { Field, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -23,8 +24,7 @@ export default function StripeCheckoutForm({
   if (!configured) {
     return (
       <p className="text-sm text-brand-muted bg-tz-bone border border-brand-border rounded-lg p-4">
-        Stripe no está configurado en este entorno (falta <code>STRIPE_SECRET_KEY</code>/<code>STRIPE_WEBHOOK_SECRET</code>).
-        El cobro manual sigue disponible como puente hasta activarlo (ver plan de implementación, F12).
+        Conecta tu Stripe para cobrar a tus socios online. Ve a <Link href="/organization" className="underline font-medium">Organización</Link> y pulsa &quot;Conectar cobros con Stripe&quot;. El cobro manual sigue disponible como puente mientras tanto.
       </p>
     );
   }

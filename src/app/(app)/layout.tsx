@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole } from "@/lib/rbac";
@@ -18,7 +19,7 @@ export default async function AppLayout({
   const [org, center, notifications, pendingPlanCount] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
-      select: { name: true, logoUrl: true },
+      select: { name: true, logoUrl: true, platformStatus: true },
     }),
     centerId
       ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true } })
@@ -26,6 +27,12 @@ export default async function AppLayout({
     listNotificationsForUser(session.user.orgId, session.user.id),
     role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id) : Promise.resolve(0),
   ]);
+
+  // RB-PLAT-001: el acceso a la app se gatea por platformStatus. PLATFORM_ADMIN
+  // (soporte de Apta) queda exento para poder gestionar cualquier org.
+  if (role !== "PLATFORM_ADMIN" && org && org.platformStatus !== "ACTIVE" && org.platformStatus !== "TRIALING") {
+    redirect(role === "MEMBER" ? "/servicio-no-disponible" : "/activar");
+  }
 
   // Badge de "pendientes" en Mi plan (F16/valoración de sesiones): solo el socio.
   const nav = NAV_BY_ROLE[role].map((item) =>

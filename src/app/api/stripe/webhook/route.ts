@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { reconcileStripeCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
+import { prisma } from "@/lib/prisma";
+import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
 
-/** F12/RB-PAGO-002: el cierre de un lead depende de la confirmación de Stripe, nunca de una acción manual. */
+/**
+ * F12/RB-PAGO-002 + Parte A.4/C.4. Un único endpoint para los dos planos de
+ * cobro (§0): los eventos de cuentas CONECTADAS (Parte C, gimnasio → socios)
+ * llegan con `event.account` presente; los de PLATAFORMA (Apta → gimnasio,
+ * Parte A) llegan sin él. Se rutan por separado para no mezclarlos.
+ */
 export async function POST(req: NextRequest) {
   const stripe = getStripeClient();
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -15,28 +23,117 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   if (!signature) return NextResponse.json({ ok: false, error: "Falta la firma de Stripe." }, { status: 400 });
 
-  let event;
+  let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
   } catch {
     return NextResponse.json({ ok: false, error: "Firma inválida." }, { status: 400 });
   }
 
+  if (event.account) {
+    await handleConnectEvent(event);
+  } else {
+    await handlePlatformEvent(event);
+  }
+
+  return NextResponse.json({ ok: true });
+}
+
+/** Parte C: eventos de la cuenta conectada de un gimnasio (cobro a socios). */
+async function handleConnectEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
-      const session = event.data.object;
+      const session = event.data.object as Stripe.Checkout.Session;
       const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
       await reconcileStripeCheckoutCompleted(session.id, paymentIntentId);
       break;
     }
     case "checkout.session.expired": {
-      const session = event.data.object;
+      const session = event.data.object as Stripe.Checkout.Session;
       await reconcileStripePaymentFailed(session.id);
+      break;
+    }
+    case "account.updated": {
+      const account = event.data.object as Stripe.Account;
+      await refreshStripeAccountStatus(account.id);
       break;
     }
     default:
       break;
   }
+}
 
-  return NextResponse.json({ ok: true });
+/** Parte A.4: eventos de la suscripción de plataforma (Apta cobra al director). RB-PLAT-004: idempotente. */
+async function handlePlatformEvent(event: Stripe.Event) {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const orgId = session.metadata?.orgId;
+      const planCode = session.metadata?.planCode;
+      if (!orgId) break;
+
+      const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
+      await prisma.organization.update({
+        where: { id: orgId },
+        data: {
+          platformStatus: "ACTIVE",
+          platformPlan: planCode ?? undefined,
+          platformStripeSubscriptionId: subscriptionId ?? undefined,
+        },
+      });
+      break;
+    }
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const subscriptionId =
+        typeof (invoice as { subscription?: string | Stripe.Subscription | null }).subscription === "string"
+          ? (invoice as { subscription?: string }).subscription
+          : (invoice as { subscription?: Stripe.Subscription | null }).subscription?.id ?? null;
+      if (!subscriptionId) break;
+
+      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscriptionId } });
+      if (!org) break;
+
+      const periodEnd = invoice.lines?.data?.[0]?.period?.end;
+      await prisma.organization.update({
+        where: { id: org.id },
+        data: {
+          platformStatus: "ACTIVE",
+          currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : undefined,
+        },
+      });
+      break;
+    }
+    case "invoice.payment_failed": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const subscriptionId =
+        typeof (invoice as { subscription?: string | Stripe.Subscription | null }).subscription === "string"
+          ? (invoice as { subscription?: string }).subscription
+          : (invoice as { subscription?: Stripe.Subscription | null }).subscription?.id ?? null;
+      if (!subscriptionId) break;
+
+      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscriptionId } });
+      if (!org) break;
+
+      await prisma.organization.update({ where: { id: org.id }, data: { platformStatus: "PAST_DUE" } });
+      break;
+    }
+    case "customer.subscription.deleted": {
+      const subscription = event.data.object as Stripe.Subscription;
+      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscription.id } });
+      if (!org) break;
+
+      // Impago persistente vs baja voluntaria: Stripe marca `cancellation_details.reason`
+      // como "cancellation_requested" en la baja voluntaria; cualquier otro motivo
+      // (o dunning agotado) se trata como impago persistente (D-6: SUSPENDED, no se purga).
+      const voluntary = subscription.cancellation_details?.reason === "cancellation_requested";
+      await prisma.organization.update({
+        where: { id: org.id },
+        data: { platformStatus: voluntary ? "CANCELLED" : "SUSPENDED" },
+      });
+      break;
+    }
+    default:
+      break;
+  }
 }
