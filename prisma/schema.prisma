@@ -830,6 +830,16 @@ enum LeadStatus {
   NO_CERRADO
 }
 
+// Tipo de cierre de un lead CERRADO (rediseño premium de Leads):
+// EMBUDO = cierre tras seguimiento normal (por defecto al convertir).
+// DIRECTO = alta presencial creada ya cerrada (owner = quien la atiende).
+// ONLINE = generado por la plataforma al comprar por web; ownerUserId = null.
+enum LeadCloseType {
+  EMBUDO
+  DIRECTO
+  ONLINE
+}
+
 // Canales de origen ("cómo nos conociste") configurables por dirección sin
 // desplegar (RB-LEAD-004), misma filosofía que AptitudeRule.
 model LeadChannel {
@@ -878,6 +888,7 @@ model Lead {
   ownerUserId      String? // responsable del contacto (RB-LEAD-003)
   contactedAt      DateTime   @default(now()) // fecha de contacto automática (RB-LEAD-001)
   noCloseReason    String?    // obligatorio al pasar a NO_CERRADO (RB-LEAD-011)
+  closeType        LeadCloseType? // solo para CERRADO: embudo/directo/online
   convertedMemberId String?   @unique // enlace al Member creado si CERRADO (RB-LEAD-007)
   createdAt        DateTime   @default(now())
 

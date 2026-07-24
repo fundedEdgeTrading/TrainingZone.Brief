@@ -1,4 +1,4 @@
-type Tone = "default" | "good" | "warning" | "critical" | "accent";
+type Tone = "default" | "good" | "warning" | "critical" | "accent" | "gold";
 
 const STRIPE_COLOR: Record<Tone, string> = {
   default: "#d8ccb8",
@@ -6,6 +6,7 @@ const STRIPE_COLOR: Record<Tone, string> = {
   warning: "#8a5a12",
   critical: "#8a3420",
   accent: "#1d1d1c",
+  gold: "#c8ab72",
 };
 
 const TEXT_CLASS: Record<Tone, string> = {
@@ -14,6 +15,7 @@ const TEXT_CLASS: Record<Tone, string> = {
   warning: "text-warning-text",
   critical: "text-critical",
   accent: "text-brand-text",
+  gold: "text-brand-text",
 };
 
 export function KpiCard({

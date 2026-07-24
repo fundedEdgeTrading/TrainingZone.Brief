@@ -1,6 +1,6 @@
 import clsx from "clsx";
 
-export type BadgeTone = "good" | "warning" | "critical" | "trial" | "prospect" | "neutral";
+export type BadgeTone = "good" | "warning" | "critical" | "trial" | "prospect" | "neutral" | "gold";
 
 const TONE: Record<BadgeTone, string> = {
   good: "bg-good-bg text-good",
@@ -9,6 +9,7 @@ const TONE: Record<BadgeTone, string> = {
   trial: "bg-trial-bg text-trial",
   prospect: "bg-prospect-bg text-prospect",
   neutral: "bg-neutral-bg text-neutral",
+  gold: "bg-gold-bg text-gold",
 };
 
 export function Badge({

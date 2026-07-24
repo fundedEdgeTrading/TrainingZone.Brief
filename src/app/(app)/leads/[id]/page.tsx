@@ -25,6 +25,9 @@ const STATUS_LABEL: Record<string, string> = {
   NO_CERRADO: "No cerrado",
 };
 
+const CLOSE_TYPE_LABEL: Record<string, string> = { EMBUDO: "Embudo", DIRECTO: "Directo", ONLINE: "Online" };
+const CLOSE_TYPE_TONE: Record<string, "neutral" | "trial" | "gold"> = { EMBUDO: "neutral", DIRECTO: "trial", ONLINE: "gold" };
+
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const { id } = await params;
@@ -54,6 +57,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <Badge tone={lead.status === "CERRADO" ? "good" : lead.status === "NO_CERRADO" ? "critical" : "neutral"}>
               {STATUS_LABEL[lead.status]}
             </Badge>
+            {lead.status === "CERRADO" && lead.closeType && (
+              <Badge tone={CLOSE_TYPE_TONE[lead.closeType]} dot={false}>
+                Cierre {CLOSE_TYPE_LABEL[lead.closeType]}
+              </Badge>
+            )}
             <span className="text-brand-muted text-sm">Contactado hace {age} día(s) · {lead.center.name}</span>
           </span>
         }
@@ -140,14 +148,26 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           )}
 
           {lead.convertedMember ? (
-            <Card title="Alta en curso / cliente">
-              <p className="text-sm text-brand-text-2">
-                <Link href={`/members/${lead.convertedMember.id}`} className="text-brand-text font-semibold hover:underline">
-                  {lead.convertedMember.firstName} {lead.convertedMember.lastName}
-                </Link>{" "}
-                — estado {lead.convertedMember.state}
-              </p>
-            </Card>
+            lead.status === "CERRADO" ? (
+              <div className="rounded-2xl p-[22px] bg-good-bg border border-good/20">
+                <h3 className="font-display font-extrabold text-base uppercase tracking-[.01em] text-good mb-2">Cliente dado de alta</h3>
+                <p className="text-sm text-good">
+                  <Link href={`/members/${lead.convertedMember.id}`} className="font-semibold hover:underline">
+                    {lead.convertedMember.firstName} {lead.convertedMember.lastName}
+                  </Link>{" "}
+                  — estado {lead.convertedMember.state}
+                </p>
+              </div>
+            ) : (
+              <Card title="Alta en curso / cliente">
+                <p className="text-sm text-brand-text-2">
+                  <Link href={`/members/${lead.convertedMember.id}`} className="text-brand-text font-semibold hover:underline">
+                    {lead.convertedMember.firstName} {lead.convertedMember.lastName}
+                  </Link>{" "}
+                  — estado {lead.convertedMember.state}
+                </p>
+              </Card>
+            )
           ) : (
             !archived && (
               <Card title="Cerrar venta">

@@ -54,6 +54,8 @@
   --color-prospect-bg: #ede0e6;
   --color-neutral: #6e6a5e;
   --color-neutral-bg: #ebe9e1;
+  --color-gold: #8a6d2f;
+  --color-gold-bg: #f0e6d0;
   --color-pay-ok: #4b5a22;
 
   --font-sans: var(--font-poppins), "Poppins", system-ui, sans-serif;
