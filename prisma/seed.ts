@@ -20,6 +20,7 @@ import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
+import type { FeedbackDims } from "@/lib/feedback-queries";
 
 faker.seed(20260717);
 
@@ -1387,6 +1388,84 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
 
+  // ---------- Feedback: contraste cliente vs. debrief del entrenador ----------
+  // Página "Feedback" de Dirección (contraste de percepciones). Repartimos un
+  // puñado de socios activos entre las 4 categorías de alineación (RB de la
+  // página): punto ciego (el entrenador sobrestima), alineado, cliente +
+  // positivo, y sin feedback todavía — para que el tablero muestre las 4
+  // situaciones desde el primer arranque de la demo.
+  {
+    const trainerByMember = new Map(trainerAssignments.map((t) => [t.memberId, t.trainerId]));
+    const activeMembersForFeedback = members.filter((m) => m.state === MemberState.ACTIVE);
+
+    type FeedbackScenario = "ciego" | "alineado" | "cliente_positivo" | "sin_feedback";
+    const scenarioPattern: FeedbackScenario[] = ["ciego", "alineado", "cliente_positivo", "sin_feedback", "alineado", "ciego"];
+    const NOTES_BY_SCENARIO: Record<FeedbackScenario, string> = {
+      ciego: "Sesión muy sólida técnicamente, se le ve con buena energía y cumple el plan sin problema.",
+      alineado: "Buen ritmo, cumple el plan y se nota motivado/a. Todo en orden.",
+      cliente_positivo: "Progresa despacio pero de forma constante; seguimos ajustando cargas poco a poco.",
+      sin_feedback: "Sesión correcta, sin incidencias. Pendiente de que conteste la encuesta de satisfacción.",
+    };
+    const COMMENT_BY_SCENARIO: Record<Exclude<FeedbackScenario, "sin_feedback">, string> = {
+      ciego: "La verdad es que últimamente vengo más por costumbre, no sé si le estoy sacando partido.",
+      alineado: "Todo bien, contento con el plan y el trato del entrenador.",
+      cliente_positivo: "Estoy muy contento, noto que voy mejorando semana a semana.",
+    };
+
+    // El socio ancla de la demo (Marta) es el caso de "punto ciego" principal
+    // del handoff, para poder enseñarlo nada más entrar con dirección.
+    const feedbackCandidates = activeMembersForFeedback.filter((m) => m.id !== demoMemberId).slice(0, 17);
+    const anchor = demoMemberId ? activeMembersForFeedback.find((m) => m.id === demoMemberId) : undefined;
+    if (anchor) feedbackCandidates.unshift(anchor);
+
+    const clientFeedbackRows: ({ id: string; memberId: string; comment: string; submittedAt: Date } & FeedbackDims)[] = [];
+    const trainerDebriefRows: ({ id: string; memberId: string; trainerId: string; note: string; debriefAt: Date } & FeedbackDims)[] = [];
+
+    feedbackCandidates.forEach((m, i) => {
+      const scenario = m.id === demoMemberId ? "ciego" : scenarioPattern[i % scenarioPattern.length];
+      const trainerId = trainerByMember.get(m.id) ?? trainersByCenter[m.centerId]?.[0]?.id;
+      if (!trainerId) return;
+
+      const debriefAt = addDays(TODAY, -randInt(1, 6));
+      let trainer: FeedbackDims;
+      let client: FeedbackDims | null;
+      switch (scenario) {
+        case "ciego":
+          trainer = { sat: randInt(7, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(7, 8), esf: randInt(6, 8) };
+          client = { sat: randInt(3, 4), prog: randInt(4, 5), adher: randInt(4, 5), motiv: randInt(3, 5), esf: randInt(5, 6) };
+          break;
+        case "cliente_positivo":
+          trainer = { sat: randInt(5, 6), prog: randInt(5, 6), adher: randInt(5, 6), motiv: randInt(5, 6), esf: randInt(5, 6) };
+          client = { sat: randInt(8, 9), prog: randInt(7, 9), adher: randInt(8, 9), motiv: randInt(8, 9), esf: randInt(7, 9) };
+          break;
+        case "sin_feedback":
+          trainer = { sat: randInt(6, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(6, 8), esf: randInt(6, 8) };
+          client = null;
+          break;
+        case "alineado":
+        default:
+          trainer = { sat: randInt(7, 8), prog: randInt(7, 8), adher: randInt(7, 8), motiv: randInt(7, 8), esf: randInt(7, 8) };
+          client = { sat: randInt(7, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(7, 8), esf: randInt(6, 8) };
+          break;
+      }
+
+      trainerDebriefRows.push({ id: id(), memberId: m.id, trainerId, ...trainer, note: NOTES_BY_SCENARIO[scenario], debriefAt });
+
+      if (client) {
+        clientFeedbackRows.push({
+          id: id(),
+          memberId: m.id,
+          ...client,
+          comment: COMMENT_BY_SCENARIO[scenario as Exclude<FeedbackScenario, "sin_feedback">],
+          submittedAt: addDays(debriefAt, -randInt(0, 1)),
+        });
+      }
+    });
+
+    await prisma.trainerDebrief.createMany({ data: trainerDebriefRows });
+    await prisma.clientFeedback.createMany({ data: clientFeedbackRows });
+  }
+
   // ---------- D.1: Anuncios y banners del Dashboard del socio ----------
   const directorForAnnouncements = staffUsers.find((u) => u.role === "CENTER_DIRECTOR") ?? staffUsers.find((u) => u.role === "OWNER");
   const firstCenterId = centersData[0]?.id ?? null;
@@ -1607,6 +1686,8 @@ async function main() {
     prisma.auditLog.deleteMany(),
     prisma.memberNote.deleteMany(),
     prisma.memberProgressEntry.deleteMany(),
+    prisma.clientFeedback.deleteMany(),
+    prisma.trainerDebrief.deleteMany(),
     prisma.centerMembership.deleteMany(),
     prisma.retentionAlert.deleteMany(),
     prisma.sessionDebrief.deleteMany(),

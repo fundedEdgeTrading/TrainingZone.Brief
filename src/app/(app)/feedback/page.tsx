@@ -1,204 +1,207 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
-import { getWeeklyDebriefReport, getWeeklyClientFeedback } from "@/lib/brief-queries";
-import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
-import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
 import { PageHeader } from "@/components/ui/page-header";
-import { Card } from "@/components/kpi-card";
-import { EmptyState } from "@/components/ui/empty-state";
+import { Card, KpiCard } from "@/components/kpi-card";
+import { Badge } from "@/components/ui/badge";
+import {
+  listMemberFeedback,
+  listCentersForFeedback,
+  computeFeedbackKpis,
+  CATEGORY_LABEL,
+  CATEGORY_TONE,
+  type AlignmentCategory,
+  type SortBy,
+} from "@/lib/feedback-queries";
+import { AlignmentTrack } from "./alignment-track";
+import { FeedbackFilterBar } from "./feedback-filter-bar";
 
-const FEELING_ICON = { green: "🟢", yellow: "🟡", red: "🔴" } as const;
+const CAT_PARAM_TO_CATEGORY: Record<string, AlignmentCategory | "all"> = {
+  all: "all",
+  ciego: "ciego",
+  alineado: "alineado",
+  sin: "sin_feedback",
+};
+const CATEGORY_TO_CAT_PARAM: Record<AlignmentCategory, string> = {
+  ciego: "ciego",
+  cliente_positivo: "cliente_positivo", // sin chip dedicado en el filtro (ver README)
+  alineado: "alineado",
+  sin_feedback: "sin",
+};
+
+const SORT_PARAM_TO_SORTBY: Record<string, SortBy> = {
+  divergencia: "divergencia",
+  satisfaccion: "satisfaccion",
+  nombre: "nombre",
+};
+
+// highlightBlindSpots (README "Tweaks"): resalta las filas de punto ciego. Por
+// defecto true; no se expone control en la UI (no hay caso de uso para
+// desactivarlo en producción), así que queda fijo aquí en vez de vía prop.
+const HIGHLIGHT_BLIND_SPOTS = true;
+
+function initials(first: string, last: string) {
+  return `${first[0] ?? ""}${last[0] ?? ""}`.toUpperCase();
+}
 
 export default async function FeedbackPage({
   searchParams,
 }: {
-  searchParams: Promise<{ trainerId?: string; week?: string }>;
+  searchParams: Promise<{ q?: string; centerId?: string; cat?: string; sort?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
   const orgId = session.user.orgId;
   const params = await searchParams;
 
-  const weekStart = params.week ? parseDateParam(params.week) : startOfWeekMonday(new Date());
-  const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
-  const prevWeek = new Date(weekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const nextWeek = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const cat = params.cat ? CAT_PARAM_TO_CATEGORY[params.cat] ?? "all" : "all";
+  const sortBy = params.sort ? SORT_PARAM_TO_SORTBY[params.sort] ?? "divergencia" : "divergencia";
 
-  const [weeklyReport, ratingSummary, clientFeedback] = await Promise.all([
-    getWeeklyDebriefReport(orgId, weekStart),
-    getTrainerRatingSummary(orgId, session.user.role),
-    getWeeklyClientFeedback(orgId, weekStart),
+  const [rows, centers] = await Promise.all([
+    listMemberFeedback(orgId, { q: params.q, centerId: params.centerId, cat, sortBy }),
+    listCentersForFeedback(orgId),
   ]);
 
-  const trainers = (ratingSummary ?? []).map((r) => ({ trainerId: r.trainerUserId, trainerName: r.name }));
-  // Entrenadores con debrief esta semana pero sin fila en TrainerRating (aún sin valoraciones) también deben aparecer.
-  for (const t of weeklyReport) {
-    if (!trainers.some((x) => x.trainerId === t.trainerId)) trainers.push({ trainerId: t.trainerId, trainerName: t.trainerName });
-  }
-  trainers.sort((a, b) => a.trainerName.localeCompare(b.trainerName));
-
-  const selectedTrainerId = params.trainerId || "";
-  const visibleTrainers = selectedTrainerId ? trainers.filter((t) => t.trainerId === selectedTrainerId) : trainers;
-
-  const allSessions = weeklyReport.flatMap((t) => t.sessions.map((s) => ({ ...s, trainerName: t.trainerName, trainerId: t.trainerId })));
-
-  const weekLink = (opts: { trainerId?: string; week?: Date }) => {
-    const qs = new URLSearchParams();
-    const tId = opts.trainerId !== undefined ? opts.trainerId : selectedTrainerId;
-    if (tId) qs.set("trainerId", tId);
-    qs.set("week", formatDateParam(opts.week ?? weekStart));
-    return `/feedback?${qs.toString()}`;
-  };
+  const kpis = computeFeedbackKpis(rows);
 
   return (
-    <div className="tz-page space-y-6">
+    <div className="tz-page space-y-4">
       <PageHeader
-        description="Reporte semanal de Debriefs de sesión (RB-FB-101/103/104) junto a la valoración confidencial de entrenadores. La valoración solo la ve dirección — nunca el propio entrenador."
-        actions={
-          <div className="flex items-center gap-2 text-xs">
-            <Link href={weekLink({ week: prevWeek })} className="px-2 py-1 rounded-md text-muted hover:bg-tz-sand transition-colors duration-150">
-              ← semana anterior
-            </Link>
-            <span className="font-semibold text-tz-black tz-nums">
-              {weekStart.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} – {weekEnd.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+        kicker="Cliente vs. debrief"
+        description={
+          <span className="flex flex-col gap-1">
+            <span>
+              {kpis.collected} de {kpis.total} socios con feedback · compara lo que reportan con el debrief de su
+              entrenador
             </span>
-            <Link href={weekLink({ week: nextWeek })} className="px-2 py-1 rounded-md text-muted hover:bg-tz-sand transition-colors duration-150">
-              semana siguiente →
+            <Link href="/feedback/debriefs-semanales" className="text-brand-text-2 font-semibold hover:underline w-fit">
+              Ver reporte semanal de debriefs de sesión →
             </Link>
+          </span>
+        }
+        actions={
+          <div className="inline-flex items-center gap-4 bg-white border border-brand-border rounded-pill px-4 py-2 text-xs font-semibold text-brand-text-2">
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="w-3 h-3 rounded-full bg-brand-ink border-2 border-white"
+                style={{ boxShadow: "0 0 0 1px #d8ccb8" }}
+              />
+              Cliente
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="w-[11px] h-[11px] bg-apta-gold border-2 border-white rotate-45"
+                style={{ boxShadow: "0 0 0 1px #cbb98f" }}
+              />
+              Entrenador
+            </span>
           </div>
         }
       />
 
-      {trainers.length > 0 && (
-        <div className="flex flex-wrap gap-1 text-xs">
-          <Link
-            href={weekLink({ trainerId: "" })}
-            className={`px-2.5 py-1 rounded-md transition-colors duration-150 ${!selectedTrainerId ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"}`}
-          >
-            Todos
-          </Link>
-          {trainers.map((t) => (
-            <Link
-              key={t.trainerId}
-              href={weekLink({ trainerId: t.trainerId })}
-              className={`px-2.5 py-1 rounded-md transition-colors duration-150 ${selectedTrainerId === t.trainerId ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"}`}
-            >
-              {t.trainerName}
-            </Link>
-          ))}
-        </div>
-      )}
+      <div className="grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+        <KpiCard label="Feedback recogido" value={`${kpis.collected}/${kpis.total}`} hint={`${kpis.responseRate}% de respuesta`} tone="accent" />
+        <KpiCard
+          label="Satisfacción cliente"
+          value={kpis.clientAvgSat != null ? kpis.clientAvgSat.toFixed(1) : "—"}
+          hint="media sobre 10"
+          tone="accent"
+        />
+        <KpiCard
+          label="Valoración entrenador"
+          value={kpis.trainerAvgRating != null ? kpis.trainerAvgRating.toFixed(1) : "—"}
+          hint="debrief medio"
+          tone="accent"
+        />
+        <KpiCard
+          label="Puntos ciegos"
+          value={String(kpis.blindSpots)}
+          hint="el entrenador sobrestima"
+          tone={kpis.blindSpots > 0 ? "critical" : "default"}
+        />
+        <KpiCard
+          label="Socios en riesgo"
+          value={String(kpis.atRisk)}
+          hint="requieren seguimiento"
+          tone={kpis.atRisk > 0 ? "warning" : "default"}
+        />
+      </div>
 
-      <Card title="Reporte semanal de Debriefs" meta={`${allSessions.length} sesiones con debriefs`} delay={0.04}>
-        {allSessions.length === 0 ? (
-          <EmptyState title="Sin debriefs esta semana" description="No se han registrado Debriefs de sesión en el rango seleccionado." />
+      <FeedbackFilterBar
+        searchDefault={params.q}
+        centerOptions={[{ value: "", label: "Todos" }, ...centers.map((c) => ({ value: c.id, label: c.name }))]}
+        centerDefault={params.centerId}
+        catOptions={[
+          { value: "all", label: "Todos" },
+          { value: "ciego", label: "Puntos ciegos" },
+          { value: "alineado", label: "Alineados" },
+          { value: "sin", label: "Sin feedback" },
+        ]}
+        catDefault={cat !== "all" ? CATEGORY_TO_CAT_PARAM[cat] : "all"}
+        sortOptions={[
+          { value: "divergencia", label: "Mayor divergencia" },
+          { value: "satisfaccion", label: "Menor satisfacción" },
+          { value: "nombre", label: "Nombre" },
+        ]}
+        sortDefault={sortBy}
+      />
+
+      <Card title="SOCIOS" meta={`${rows.length} socio${rows.length === 1 ? "" : "s"}`}>
+        {rows.length === 0 ? (
+          <p className="text-[13px] text-faint text-center py-10">Sin resultados para este filtro.</p>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="text-xs text-faint text-left">
-              <tr>
-                <th className="pb-2">Sesión</th>
-                <th className="pb-2">Entrenador</th>
-                <th className="pb-2">Fecha</th>
-                <th className="pb-2">🟢</th>
-                <th className="pb-2">🟡</th>
-                <th className="pb-2">🔴</th>
-                <th className="pb-2">Notas</th>
-                <th className="pb-2">Feedback cliente (post-sesión)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(selectedTrainerId ? allSessions.filter((s) => s.trainerId === selectedTrainerId) : allSessions).map((s) => {
-                const feedback = clientFeedback.get(s.sessionId) ?? [];
-                return (
-                  <tr key={s.sessionId} className="border-t border-tz-sand align-top">
-                    <td className="py-2">{s.sessionName}</td>
-                    <td className="py-2 text-text-2">{s.trainerName}</td>
-                    <td className="py-2 tz-nums text-text-2">{s.sessionDate.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}</td>
-                    <td className="py-2 tz-nums">{s.greenCount || ""}</td>
-                    <td className="py-2 tz-nums">{s.yellowCount || ""}</td>
-                    <td className="py-2 tz-nums">{s.redCount || ""}</td>
-                    <td className="py-2 text-xs text-muted max-w-[280px]">
-                      {s.notes.length === 0 ? "—" : s.notes.join(" · ")}
-                    </td>
-                    <td className="py-2 text-xs text-muted max-w-[240px]">
-                      {feedback.length === 0
-                        ? "—"
-                        : feedback
-                            .map((f) => `${FEELING_ICON[f.feeling.toLowerCase() as keyof typeof FEELING_ICON] ?? ""}${f.rpe ? ` RPE ${f.rpe}` : ""}${f.comment ? ` · ${f.comment}` : ""}`)
-                            .join(" / ")}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </Card>
-
-      {visibleTrainers.length === 0 ? (
-        <div className="bg-brand-card border border-brand-border rounded-card shadow-card">
-          <EmptyState title="Sin entrenadores" description="No hay entrenadores dados de alta todavía." />
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {visibleTrainers.map((t) => {
-            const trainerSessions = weeklyReport.find((w) => w.trainerId === t.trainerId)?.sessions ?? [];
-            const rating = ratingSummary?.find((r) => r.trainerUserId === t.trainerId);
-            return (
-              <div key={t.trainerId} className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Card title={t.trainerName} meta="Debriefs de sesión (cliente)" delay={0.06}>
-                  {trainerSessions.length === 0 ? (
-                    <p className="text-sm text-brand-muted">Sin debriefs esta semana.</p>
-                  ) : (
-                    <ul className="space-y-2.5">
-                      {trainerSessions.map((s) => {
-                        const feedback = clientFeedback.get(s.sessionId) ?? [];
-                        return (
-                          <li key={s.sessionId} className="text-sm border-b border-tz-sand last:border-0 pb-2 last:pb-0">
-                            <div className="flex items-center justify-between">
-                              <span className="font-semibold text-brand-text">{s.sessionName}</span>
-                              <span className="text-xs text-faint tz-nums">{s.sessionDate.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span>
-                            </div>
-                            <div className="text-xs text-muted mt-0.5">
-                              Debrief: {FEELING_ICON.green} {s.greenCount} · {FEELING_ICON.yellow} {s.yellowCount} · {FEELING_ICON.red} {s.redCount}
-                            </div>
-                            {s.notes.length > 0 && <div className="text-xs text-brand-muted-2 mt-1">{s.notes.join(" · ")}</div>}
-                            {feedback.length > 0 && (
-                              <div className="text-xs text-brand-muted-2 mt-1">
-                                Feedback cliente:{" "}
-                                {feedback
-                                  .map(
-                                    (f) =>
-                                      `${FEELING_ICON[f.feeling.toLowerCase() as keyof typeof FEELING_ICON] ?? ""}${f.rpe ? ` RPE ${f.rpe}` : ""}${f.comment ? ` · ${f.comment}` : ""}`
-                                  )
-                                  .join(" / ")}
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </Card>
-
-                <Card title={t.trainerName} meta="Valoración del entrenador (confidencial)" delay={0.1}>
-                  {!rating || rating.count === 0 ? (
-                    <p className="text-sm text-brand-muted">Sin valoraciones registradas todavía.</p>
-                  ) : (
-                    <div className="flex items-baseline gap-3">
-                      <div className="font-display font-extrabold text-3xl text-brand-text tz-nums">
-                        {rating.avgScore?.toFixed(1) ?? "—"}
+          <div className="-mx-[22px]">
+            {rows.map((r) => {
+              const highlighted = HIGHLIGHT_BLIND_SPOTS && r.cat === "ciego";
+              return (
+                <Link
+                  key={r.memberId}
+                  href={`/feedback/${r.memberId}`}
+                  className={`flex items-center gap-4 flex-wrap px-[22px] py-4 border-b border-[#ede7dc] last:border-0 transition-colors duration-150 hover:bg-[#faf8f3] ${
+                    highlighted ? "bg-[#fbf1ec]" : ""
+                  }`}
+                >
+                  <div className="flex items-center gap-3" style={{ flex: "1 1 240px" }}>
+                    <span className="w-10 h-10 rounded-full bg-[#efe8dc] text-[#5c4a34] font-bold text-[13px] inline-flex items-center justify-center shrink-0">
+                      {initials(r.firstName, r.lastName)}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-brand-text truncate">
+                        {r.firstName} {r.lastName}
                       </div>
-                      <div className="text-sm text-brand-muted">
-                        media sobre {rating.count} valoración{rating.count === 1 ? "" : "es"} de socios
+                      <div className="text-xs text-brand-muted truncate">
+                        {r.planName ?? "Sin plan"} · {r.trainerName ?? "Sin entrenador"} · {r.centerName}
                       </div>
                     </div>
-                  )}
-                </Card>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                  </div>
+
+                  <div className="flex items-center gap-2.5" style={{ flex: "2 1 300px" }}>
+                    <span className={`text-sm font-bold tabular-nums w-9 text-right ${r.clientAvg != null ? "text-brand-text" : "text-[#c7bfad]"}`}>
+                      {r.clientAvg != null ? r.clientAvg.toFixed(1) : "—"}
+                    </span>
+                    <AlignmentTrack clientValue={r.clientAvg} trainerValue={r.trainerAvg} cat={r.cat} />
+                    <span className="text-sm font-bold tabular-nums w-9" style={{ color: "#8a6d2f" }}>
+                      {r.trainerAvg.toFixed(1)}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 justify-end" style={{ flex: "1 1 200px" }}>
+                    <Badge tone={CATEGORY_TONE[r.cat]}>{CATEGORY_LABEL[r.cat]}</Badge>
+                    {r.gap != null && (
+                      <span
+                        className="text-xs font-bold tabular-nums"
+                        style={{ color: r.cat === "ciego" ? "#8a3420" : r.cat === "cliente_positivo" ? "#5c4a34" : "#8a8574" }}
+                      >
+                        {r.gap >= 0 ? "+" : ""}
+                        {r.gap.toFixed(1)}
+                      </span>
+                    )}
+                    <span className="text-[#c7bfad]">›</span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

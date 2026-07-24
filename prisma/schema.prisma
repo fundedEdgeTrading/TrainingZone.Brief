@@ -175,6 +175,7 @@ model User {
   paymentsSold          Payment[]           @relation("SoldBy")
   chatMessagesSent      ChatMessage[]
   announcementsAuthored Announcement[]      @relation("AnnouncementAuthor")
+  trainerDebriefsGiven  TrainerDebrief[]
 
   @@index([orgId])
 }
@@ -345,6 +346,8 @@ model Member {
   personalizedOffers PersonalizedOffer[]
   trainerRatingsGiven TrainerRating[]
   announcementViews  AnnouncementView[]
+  clientFeedback      ClientFeedback[]
+  trainerDebriefs     TrainerDebrief[]
 
   @@unique([orgId, externalRef]) // idempotencia de la importación por socio del origen
   @@index([orgId])
@@ -505,6 +508,50 @@ model Subscription {
   bookings Booking[]
 
   @@index([memberId])
+}
+
+// ---------- Feedback (cliente vs. debrief del entrenador) ----------
+// Página "Feedback" de Dirección: contrasta lo que el socio reporta
+// (ClientFeedback) con lo que registra su entrenador en el debrief
+// (TrainerDebrief), ambos sobre las mismas 5 dimensiones 0-10, para detectar
+// desalineaciones de percepción ("puntos ciegos"). Solo importa el más
+// reciente de cada uno por socio; los agregados (medias, gap, categoría) se
+// calculan en `lib/feedback-queries.ts`, nunca se persisten.
+model ClientFeedback {
+  id          String   @id @default(cuid())
+  memberId    String
+  sat         Int
+  prog        Int
+  adher       Int
+  motiv       Int
+  esf         Int
+  comment     String?
+  submittedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@index([memberId])
+}
+
+model TrainerDebrief {
+  id        String   @id @default(cuid())
+  memberId  String
+  trainerId String
+  sat       Int
+  prog      Int
+  adher     Int
+  motiv     Int
+  esf       Int
+  note      String
+  debriefAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  member  Member @relation(fields: [memberId], references: [id])
+  trainer User   @relation(fields: [trainerId], references: [id])
+
+  @@index([memberId])
+  @@index([trainerId])
 }
 
 // ---------- Agenda y reservas (A.2.2) ----------
