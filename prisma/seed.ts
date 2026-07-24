@@ -1706,10 +1706,15 @@ async function main() {
     prisma.lead.deleteMany(),
     prisma.leadChannel.deleteMany(),
     prisma.noCloseReason.deleteMany(),
+    // Invitation referencia orgId/userId/memberId (RESTRICT): debe borrarse
+    // antes de Member/User/Organization o la limpieza falla por FK.
+    prisma.invitation.deleteMany(),
     prisma.member.deleteMany(),
     prisma.membershipPlan.deleteMany(),
     prisma.user.deleteMany(),
     prisma.center.deleteMany(),
+    // StripeAccount referencia orgId (RESTRICT): igual que Invitation.
+    prisma.stripeAccount.deleteMany(),
     prisma.organization.deleteMany(),
     prisma.postalCodeArea.deleteMany(),
   ]);
