@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
+import { createPaymentWithReceipt } from "@/lib/payments";
 import type { Prisma } from "@prisma/client";
 
 export type SubscriptionActionResult = { ok: true } | { ok: false; error: string };
@@ -84,8 +85,9 @@ export async function refundPayments(formData: FormData): Promise<SubscriptionAc
     await logAudit(session.user.orgId, session.user.id, "PAYMENT_REFUNDED_LOCAL", p.id, p.memberId, { reason, amountCents: p.amountCents });
   }
 
-  const memberId = payments[0]?.memberId;
-  if (memberId) revalidateMemberAndBilling(memberId);
+  for (const memberId of new Set(payments.map((p) => p.memberId))) {
+    revalidateMemberAndBilling(memberId);
+  }
   return { ok: true };
 }
 
@@ -150,19 +152,15 @@ export async function addOneOffProduct(formData: FormData): Promise<Subscription
   const member = await prisma.member.findFirst({ where: { id: memberId, orgId: session.user.orgId }, select: { id: true } });
   if (!member) return { ok: false, error: "Socio no encontrado." };
 
-  const count = await prisma.payment.count({ where: { orgId: session.user.orgId } });
-  const payment = await prisma.payment.create({
-    data: {
-      orgId: session.user.orgId,
-      memberId,
-      amountCents: Math.round(priceEuros * 100),
-      method: "CASH",
-      status: "PAID",
-      date: new Date(),
-      receiptNumber: `TZ-${2000 + count}`,
-      notes: `Venta puntual: ${description}`,
-      soldByUserId: session.user.id,
-    },
+  const payment = await createPaymentWithReceipt({
+    orgId: session.user.orgId,
+    memberId,
+    amountCents: Math.round(priceEuros * 100),
+    method: "CASH",
+    status: "PAID",
+    date: new Date(),
+    notes: `Venta puntual: ${description}`,
+    soldByUserId: session.user.id,
   });
   await logAudit(session.user.orgId, session.user.id, "ONE_OFF_PRODUCT_SOLD", payment.id, memberId, { description, amountCents: payment.amountCents });
 

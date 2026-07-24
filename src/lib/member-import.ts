@@ -23,7 +23,7 @@ export type ParsedMemberData = {
   lastInteractionAt: Date | null;
   joinedAt: Date | null;
   accountCreatedAt: Date | null;
-  state: MemberState;
+  state: MemberState | null;
   churnRisk: ChurnRisk | null;
   primaryAspiration: string | null;
   secondaryAspiration: string | null;
@@ -264,7 +264,9 @@ export function parseMembersCsv(text: string): ParsedCsv {
       lastInteractionAt: parseImportDate(raw.lastInteractionAt ?? null),
       joinedAt: parseImportDate(raw.joinedAt ?? null),
       accountCreatedAt: parseImportDate(raw.accountCreatedAt ?? null),
-      state: mapEnum(raw.state ?? null, STATE_MAP) ?? "PROSPECT",
+      // null si la columna falta o trae un valor no reconocido: en la
+      // actualización de un socio existente no debe pisar su estado actual.
+      state: mapEnum(raw.state ?? null, STATE_MAP),
       churnRisk: mapEnum(raw.churnRisk ?? null, RISK_MAP),
       primaryAspiration:
         raw.primaryAspiration && raw.primaryAspiration.toLowerCase() !== "none"

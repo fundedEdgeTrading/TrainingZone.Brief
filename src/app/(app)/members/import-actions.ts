@@ -24,6 +24,8 @@ const MAX_ROWS = 5000;
 // Campos que la importación escribe sobre un socio existente. Se omiten
 // firstName/lastName/email al actualizar solo si el CSV los trae vacíos (no es
 // el caso: son obligatorios), y externalRef nunca se toca en update (es la clave).
+// `state` se excluye a propósito: si el CSV no trae la columna o trae un valor
+// no reconocido, d.state es null y no debe pisar el estado actual del socio.
 function commonData(d: ParsedMemberData) {
   return {
     phone: d.phone,
@@ -38,7 +40,6 @@ function commonData(d: ParsedMemberData) {
     lastAccessAt: d.lastAccessAt,
     lastInteractionAt: d.lastInteractionAt,
     accountCreatedAt: d.accountCreatedAt,
-    state: d.state,
     churnRisk: d.churnRisk,
     primaryAspiration: d.primaryAspiration,
     secondaryAspiration: d.secondaryAspiration,
@@ -97,16 +98,15 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
     try {
       // Localiza al socio existente por la clave estable del origen y, en su
       // defecto, por email dentro de la organización — para no duplicar.
-      const existing = await prisma.member.findFirst({
-        where: {
-          orgId,
-          OR: [
-            ...(d.externalRef ? [{ externalRef: d.externalRef }] : []),
-            ...(d.email ? [{ email: d.email }] : []),
-          ],
-        },
-        select: { id: true },
-      });
+      // externalRef tiene prioridad: email no es único en Member, así que si
+      // ambos criterios apuntaran a socios distintos, un OR combinado podría
+      // devolver el socio equivocado y sobrescribir sus datos con los de otra
+      // persona.
+      const existing = d.externalRef
+        ? await prisma.member.findFirst({ where: { orgId, externalRef: d.externalRef }, select: { id: true } })
+        : d.email
+          ? await prisma.member.findFirst({ where: { orgId, email: d.email }, select: { id: true } })
+          : null;
 
       if (existing) {
         await prisma.member.update({
@@ -117,6 +117,7 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
             ...(d.email ? { email: d.email } : {}),
             ...(d.joinedAt ? { joinedAt: d.joinedAt } : {}),
             ...(d.externalRef ? { externalRef: d.externalRef } : {}),
+            ...(d.state ? { state: d.state } : {}),
             externalSource: "mywellness",
             ...commonData(d),
           },
@@ -132,6 +133,7 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
             email: d.email ?? "",
             ...(d.joinedAt ? { joinedAt: d.joinedAt } : {}),
             externalRef: d.externalRef,
+            state: d.state ?? "PROSPECT",
             externalSource: "mywellness",
             ...commonData(d),
           },

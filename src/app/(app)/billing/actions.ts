@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import type { PaymentMethod } from "@prisma/client";
 import { confirmLeadClosureForMember } from "@/lib/leads-queries";
 import { createCheckoutSession, type CheckoutResult } from "@/lib/stripe-checkout";
+import { createPaymentWithReceipt } from "@/lib/payments";
 
 export type PaymentActionResult = { ok: true } | { ok: false; error: string };
 
@@ -23,21 +23,16 @@ export async function registerManualPayment(formData: FormData): Promise<Payment
 
   if (!memberId || !amountEuros) return { ok: false, error: "Selecciona un socio e introduce un importe." };
 
-  const count = await prisma.payment.count({ where: { orgId: session.user.orgId } });
-
-  await prisma.payment.create({
-    data: {
-      orgId: session.user.orgId,
-      memberId,
-      subscriptionId,
-      amountCents: Math.round(amountEuros * 100),
-      method,
-      status: "PAID",
-      date: new Date(),
-      receiptNumber: `TZ-${2000 + count}`,
-      notes: "Registrado manualmente en mostrador",
-      soldByUserId: session.user.id,
-    },
+  await createPaymentWithReceipt({
+    orgId: session.user.orgId,
+    memberId,
+    subscriptionId,
+    amountCents: Math.round(amountEuros * 100),
+    method,
+    status: "PAID",
+    date: new Date(),
+    notes: "Registrado manualmente en mostrador",
+    soldByUserId: session.user.id,
   });
 
   await confirmLeadClosureForMember(session.user.orgId, memberId);

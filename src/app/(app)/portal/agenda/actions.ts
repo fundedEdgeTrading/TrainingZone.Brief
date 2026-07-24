@@ -17,69 +17,74 @@ export async function bookSession(sessionId: string): Promise<BookingActionResul
   const member = await getMemberForUser(session.user.id);
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
-  const cls = await prisma.classSession.findUnique({
-    where: { id: sessionId },
-    include: { bookings: { select: { status: true } } },
-  });
-  if (!cls || cls.status !== "SCHEDULED") {
-    return { ok: false, error: "Esta clase ya no está disponible para reservar." };
-  }
-
-  const existing = await prisma.booking.findFirst({
-    where: { sessionId, memberId: member.id, status: { in: ["BOOKED", "WAITLISTED"] } },
-  });
-  if (existing) return { ok: false, error: "Ya tienes una reserva para esta clase." };
-
-  const activeCount = cls.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
-  const overCapacity = activeCount >= cls.capacity;
-
-  // RB-RES-004: máximo 3 reservas futuras simultáneas.
-  const futureBookings = await prisma.booking.count({
-    where: {
-      memberId: member.id,
-      status: "BOOKED",
-      session: { date: { gte: new Date(new Date().toDateString()) } },
-    },
-  });
-  if (!overCapacity && futureBookings >= 3) {
-    return { ok: false, error: "Ya tienes 3 reservas activas: cancela alguna para reservar otra." };
-  }
-
   // RB-RES-006: la reserva efectiva (no la lista de espera) consume un bono del
   // servicio que corresponde a la sesión (EP o grupos). Se cobra al bono activo
   // con saldo; si el socio no tiene ningún bono de ese servicio con sesiones
   // disponibles, se bloquea y se le sugiere renovar.
-  const serviceKind = sessionServiceKind(cls.classType);
-  let chargeSubscriptionId: string | null = null;
+  const result = await prisma.$transaction(async (tx) => {
+    // Bloquea la fila de la sesión para serializar reservas concurrentes: sin
+    // este lock, dos peticiones simultáneas pueden leer el mismo aforo libre y
+    // reservar ambas por encima de `capacity` (double-booking).
+    await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${sessionId} FOR UPDATE`;
 
-  if (!overCapacity) {
-    const matching = member.subscriptions.filter(
-      (s) => s.status === "ACTIVE" && planServiceKind(s.plan.type) === serviceKind
-    );
-    if (matching.length === 0) {
-      return {
-        ok: false,
-        error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[serviceKind] ?? "este tipo"}.`,
-      };
+    const cls = await tx.classSession.findUnique({
+      where: { id: sessionId },
+      include: { bookings: { select: { status: true } } },
+    });
+    if (!cls || cls.status !== "SCHEDULED") {
+      return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
     }
-    // Bono ilimitado (sessionsRemaining null): no descuenta saldo.
-    const unlimited = matching.find((s) => s.sessionsRemaining == null);
-    if (!unlimited) {
-      const withBalance = matching
-        .filter((s) => (s.sessionsRemaining ?? 0) > 0)
-        .sort((a, b) => (a.sessionsRemaining ?? 0) - (b.sessionsRemaining ?? 0))[0];
-      if (!withBalance) {
+
+    const existing = await tx.booking.findFirst({
+      where: { sessionId, memberId: member.id, status: { in: ["BOOKED", "WAITLISTED"] } },
+    });
+    if (existing) return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
+
+    const activeCount = cls.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
+    const overCapacity = activeCount >= cls.capacity;
+
+    // RB-RES-004: máximo 3 reservas futuras simultáneas.
+    const futureBookings = await tx.booking.count({
+      where: {
+        memberId: member.id,
+        status: "BOOKED",
+        session: { date: { gte: new Date(new Date().toDateString()) } },
+      },
+    });
+    if (!overCapacity && futureBookings >= 3) {
+      return { ok: false as const, error: "Ya tienes 3 reservas activas: cancela alguna para reservar otra." };
+    }
+
+    const kind = sessionServiceKind(cls.classType);
+    let chargeSubscriptionId: string | null = null;
+
+    if (!overCapacity) {
+      const matching = member.subscriptions.filter(
+        (s) => s.status === "ACTIVE" && planServiceKind(s.plan.type) === kind
+      );
+      if (matching.length === 0) {
         return {
-          ok: false,
-          needsTopUp: true,
-          error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
+          ok: false as const,
+          error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.`,
         };
       }
-      chargeSubscriptionId = withBalance.id;
+      // Bono ilimitado (sessionsRemaining null): no descuenta saldo.
+      const unlimited = matching.find((s) => s.sessionsRemaining == null);
+      if (!unlimited) {
+        const withBalance = matching
+          .filter((s) => (s.sessionsRemaining ?? 0) > 0)
+          .sort((a, b) => (a.sessionsRemaining ?? 0) - (b.sessionsRemaining ?? 0))[0];
+        if (!withBalance) {
+          return {
+            ok: false as const,
+            needsTopUp: true,
+            error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
+          };
+        }
+        chargeSubscriptionId = withBalance.id;
+      }
     }
-  }
 
-  await prisma.$transaction(async (tx) => {
     await tx.booking.create({
       data: {
         sessionId,
@@ -95,11 +100,15 @@ export async function bookSession(sessionId: string): Promise<BookingActionResul
         data: { sessionsRemaining: { decrement: 1 } },
       });
     }
+
+    return { ok: true as const, waitlisted: overCapacity };
   });
+
+  if (!result.ok) return result;
 
   revalidatePath("/portal/agenda");
   revalidatePath("/portal");
-  return { ok: true, waitlisted: overCapacity };
+  return result;
 }
 
 export async function cancelMyBooking(bookingId: string): Promise<BookingActionResult> {
