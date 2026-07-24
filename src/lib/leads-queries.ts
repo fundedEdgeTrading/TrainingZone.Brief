@@ -191,6 +191,9 @@ export async function initiateLeadConversion(
   if (lead.convertedMemberId) return { ok: false as const, error: "Este lead ya tiene un alta en curso." };
   if (!lead.email) return { ok: false as const, error: "Se necesita un email para crear el acceso del cliente." };
 
+  const dup = await prisma.member.findFirst({ where: { orgId, email: lead.email }, select: { id: true } });
+  if (dup) return { ok: false as const, error: "Ya existe un socio con ese email." };
+
   const { member } = await prisma.$transaction(async (tx) => {
     const { member, invitation } = await createMemberWithInvitation(tx, {
       orgId,

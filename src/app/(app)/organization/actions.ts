@@ -153,6 +153,11 @@ export async function assignUserToCenter(formData: FormData): Promise<OrgActionR
   const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
   if (!userId || !centerId || !role) return { ok: false, error: "Selecciona la persona, el centro y el rol." };
 
+  // RRHH no puede imputar a nadie con administración de la organización (evita escalada de privilegios).
+  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
+    return { ok: false, error: "No tienes permiso para asignar ese rol." };
+  }
+
   const allocationPct = allocationRaw
     ? Math.min(100, Math.max(0, Math.round(Number(allocationRaw))))
     : null;

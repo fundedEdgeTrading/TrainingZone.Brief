@@ -33,8 +33,8 @@ export async function createAptitudeRule(formData: FormData): Promise<AptitudeRu
 }
 
 export async function deleteAptitudeRule(id: string): Promise<AptitudeRuleActionResult> {
-  await requireRole(["OWNER"]);
-  await prisma.aptitudeRule.delete({ where: { id } });
+  const session = await requireRole(["OWNER"]);
+  await prisma.aptitudeRule.deleteMany({ where: { id, orgId: session.user.orgId } });
   revalidatePath("/health/aptitude-rules");
   return { ok: true };
 }

@@ -713,6 +713,7 @@ model Payment {
   subscription Subscription? @relation(fields: [subscriptionId], references: [id])
   soldBy       User?         @relation("SoldBy", fields: [soldByUserId], references: [id])
 
+  @@unique([orgId, receiptNumber])
   @@index([orgId])
   @@index([memberId])
   @@index([date])
