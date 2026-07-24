@@ -22,6 +22,24 @@ export async function requireRole(allowed: Role[]) {
  * real (una persona puede trabajar en varios centros con distinto rol), no
  * solo contra el rol global.
  */
+/**
+ * RB-PLAT-001: gatea el acceso por `Organization.platformStatus` (A.3). Pensado
+ * para usarse fuera del layout de `(app)` — p.ej. en rutas server-only que no
+ * pasan por él. `PLATFORM_ADMIN` está exento (soporte de Apta).
+ */
+export async function requirePlatformActive() {
+  const session = await requireSession();
+  if (session.user.role === "PLATFORM_ADMIN") return session;
+
+  const org = await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { platformStatus: true },
+  });
+  if (org && (org.platformStatus === "ACTIVE" || org.platformStatus === "TRIALING")) return session;
+
+  redirect("/activar");
+}
+
 export async function requireCenterRole(centerId: string, allowed: Role[]) {
   const session = await requireSession();
   const { id: userId, role, orgId, centerId: baseCenterId } = session.user;

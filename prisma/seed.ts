@@ -260,7 +260,8 @@ const APTITUDE_RULES = [
 async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   const orgId = id();
   await prisma.organization.create({
-    data: { id: orgId, name: cfg.name, slug: cfg.slug, logoUrl: cfg.logoUrl },
+    // RB-PLAT-007: las orgs de demo nacen ACTIVE para no chocar con el muro de pago (A.3).
+    data: { id: orgId, name: cfg.name, slug: cfg.slug, logoUrl: cfg.logoUrl, platformStatus: "ACTIVE" },
   });
 
   // ---------- Centros ----------

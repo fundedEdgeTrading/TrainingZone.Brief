@@ -4,7 +4,13 @@ import type { Role } from "@prisma/client";
 export async function getOrganization(orgId: string) {
   return prisma.organization.findUnique({
     where: { id: orgId },
-    select: { id: true, name: true, slug: true, logoUrl: true },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      logoUrl: true,
+      stripeAccount: { select: { chargesEnabled: true, payoutsEnabled: true } },
+    },
   });
 }
 

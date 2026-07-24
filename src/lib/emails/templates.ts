@@ -79,6 +79,29 @@ export function renderMemberWelcomeEmail(opts: {
   });
 }
 
+export function renderVerifyEmail(opts: {
+  directorFirstName: string;
+  orgName: string;
+  orgLogoUrl: string;
+  verifyUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.orgLogoUrl,
+    logoAlt: opts.orgName,
+    eyebrow: "Confirma tu email",
+    title: `¡Hola, ${opts.directorFirstName}!<br>Confirma tu email de dirección.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Este email es tu canal de facturación y de recuperación de acceso para <b>${opts.orgName}</b>. Confírmalo para que no se pierda ningún aviso importante.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">No es obligatorio para seguir usando la plataforma: puedes confirmarlo cuando quieras.</p>`,
+    ctaLabel: "Confirmar mi email →",
+    ctaUrl: opts.verifyUrl,
+    noteHtml: `Este enlace caduca en <b style="color:${TEXT2}">7 días</b>. Si no has creado esta cuenta, puedes ignorar este email.`,
+    signOff: `Un saludo,<br><b>El equipo de Apta</b>`,
+    footerLine1: `${opts.orgName} · Recibes este email porque diste de alta tu organización.`,
+    footerLine2: `Política de privacidad · Contacto`,
+  });
+}
+
 export function renderStaffInviteEmail(opts: {
   staffFirstName: string;
   orgName: string;

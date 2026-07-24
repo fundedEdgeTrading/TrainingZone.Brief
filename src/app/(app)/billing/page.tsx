@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { listPayments, getBillingKpis, getDelinquentMembers, getMembersForPaymentForm } from "@/lib/billing-queries";
 import { listActivePlansForOrg } from "@/lib/members-queries";
-import { isStripeConfigured } from "@/lib/stripe";
+import { isStripeConfiguredForOrg } from "@/lib/stripe";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
 import { KpiCard, Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -26,12 +26,13 @@ export default async function BillingPage({
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
   const params = await searchParams;
 
-  const [kpis, payments, delinquent, membersForForm, plans] = await Promise.all([
+  const [kpis, payments, delinquent, membersForForm, plans, stripeConfigured] = await Promise.all([
     getBillingKpis(session.user.orgId),
     listPayments(session.user.orgId, { status: (params.status as PaymentStatus) || undefined }),
     getDelinquentMembers(session.user.orgId),
     getMembersForPaymentForm(session.user.orgId),
     listActivePlansForOrg(session.user.orgId),
+    isStripeConfiguredForOrg(session.user.orgId),
   ]);
 
   return (
@@ -46,7 +47,7 @@ export default async function BillingPage({
       </div>
 
       <Card title="Cobro por Stripe" meta="RB-PAGO-001 — canal objetivo" delay={0.1}>
-        <StripeCheckoutForm members={membersForForm} plans={plans} configured={isStripeConfigured()} />
+        <StripeCheckoutForm members={membersForForm} plans={plans} configured={stripeConfigured} />
       </Card>
 
       <Card title="Registrar cobro manual" meta="efectivo / tarjeta presencial / Bizum — puente hasta Stripe" delay={0.12}>

@@ -13,12 +13,40 @@ datasource db {
 
 // ---------- Tenancy ----------
 
+// Estado de la suscripción del gimnasio a Apta (Plano 1 — cobro de
+// plataforma, docs/PLATAFORMA_COBRO_SMTP_STRIPE_CONNECT_IMPLEMENTACION.md
+// Parte A). Distinto del cobro del gimnasio a sus socios (Plano 2 — Parte C).
+enum PlatformStatus {
+  PENDING_PAYMENT // registrada, aún no ha pagado (D-3). No usable (muro). Purgable por TTL (D-5).
+  TRIALING // opcional: acceso durante prueba (si se ofrece trial)
+  ACTIVE // suscripción al día → app usable
+  PAST_DUE // cobro recurrente falló; periodo de gracia antes de suspender
+  SUSPENDED // impago persistente; solo-lectura. NUNCA se purga (D-6)
+  CANCELLED // baja definitiva del cliente
+}
+
 model Organization {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
   logoUrl   String? // logo de marca para el NavBar; si es null se usa el de Apta
   createdAt DateTime @default(now())
+
+  // ---------- Cobro de plataforma (Apta → gimnasio, Parte A) ----------
+  platformStatus      PlatformStatus @default(PENDING_PAYMENT)
+  platformStatusSince DateTime       @default(now()) // base del TTL de purga (D-5)
+  platformPlan        String? // código de PlatformPlan (src/lib/platform-plans.ts); null hasta pagar
+  trialEndsAt         DateTime?
+  currentPeriodEnd    DateTime? // fin de ciclo (espejo de la suscripción de Stripe)
+  // Datos fiscales para la factura (D-4). No verifican "es director", son para facturar.
+  taxId        String?
+  billingEmail String?
+  billingName  String?
+  // Suscripción en el Stripe DE APTA (Plano 1). Distinto de StripeAccount (Plano 2, Parte C).
+  platformStripeCustomerId     String? @unique
+  platformStripeSubscriptionId String? @unique
+
+  stripeAccount StripeAccount?
 
   centers       Center[]
   users         User[]
@@ -117,6 +145,7 @@ model User {
   role         Role
   image        String?
   authProvider String   @default("demo") // "demo" | "microsoft-entra-id" (preparado, no activo)
+  emailVerifiedAt DateTime? // D-2: confirmación blanda del email del director (no bloquea login)
   createdAt    DateTime @default(now())
 
   organization        Organization      @relation(fields: [orgId], references: [id])
@@ -1163,6 +1192,22 @@ model AnnouncementView {
   @@unique([announcementId, memberId])
   @@index([announcementId])
   @@index([memberId])
+}
+
+// ---------- Stripe Connect (gimnasio → socios, Parte C) ----------
+// La cuenta Stripe es un dato POR organización (D-S1), no global. Reemplaza el
+// uso de la clave global para cobrar a socios. Sigue habiendo UNA sola clave
+// secreta (la de Apta): aquí solo se guarda el id de la cuenta conectada,
+// nunca una clave del gimnasio (RB-CONNECT-001).
+model StripeAccount {
+  id             String   @id @default(cuid())
+  orgId          String   @unique
+  accountId      String   @unique // acct_... conectado por el gimnasio (Connect Standard, OAuth)
+  chargesEnabled Boolean  @default(false) // el gimnasio completó el onboarding de Stripe
+  payoutsEnabled Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
 }
 
 // ---------- Biblioteca de entrenamientos online (D.2) ----------

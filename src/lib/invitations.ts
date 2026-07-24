@@ -25,6 +25,30 @@ async function unusablePasswordHash() {
   return bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10);
 }
 
+/**
+ * Alta pragmática del director (D-3/RB-PLAT-002): a diferencia de
+ * `createStaffWithInvitation`, crea el OWNER con una contraseña REAL (ya
+ * hasheada por el caller) y SIN invitación — el propio alta hace login
+ * automático, no hay baile de onboarding por token.
+ */
+export async function createOwnerAccount(
+  tx: Tx,
+  params: { orgId: string; name: string; email: string; passwordHash: string }
+) {
+  return tx.user.create({
+    data: {
+      orgId: params.orgId,
+      centerId: null,
+      name: params.name,
+      email: params.email,
+      passwordHash: params.passwordHash,
+      role: "OWNER",
+      authProvider: "demo",
+      emailVerifiedAt: null,
+    },
+  });
+}
+
 export async function createStaffWithInvitation(
   tx: Tx,
   params: { orgId: string; name: string; email: string; role: Role; centerId: string | null }

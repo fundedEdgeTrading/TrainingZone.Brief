@@ -63,7 +63,7 @@ export default function LoginPage() {
             >
               <span className="text-[13px] text-brand-muted-2">¿Tu empresa aún no está en la plataforma?</span>
               <Link
-                href="/register"
+                href="/signup"
                 className="text-[13px] font-bold text-tz-bone no-underline inline-flex items-center gap-1.5 border border-brand-border-dark rounded-pill px-4 py-[7px] whitespace-nowrap transition-colors duration-200 hover:bg-brand-ink-soft hover:border-apta-gold"
               >
                 Registrar organización <span aria-hidden="true">→</span>
