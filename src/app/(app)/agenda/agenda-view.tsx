@@ -205,7 +205,7 @@ export default function AgendaView({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="h-[60px] shrink-0 border-b border-brand-border flex items-center gap-2.5 pl-6 pr-5">
+      <div className="min-h-[60px] shrink-0 border-b border-brand-border flex flex-wrap items-center gap-2 lg:gap-2.5 px-3 py-2 lg:h-[60px] lg:px-6 lg:py-0">
         <button
           onClick={() => navigate(parseDateParam(formatDateParam(new Date())))}
           className="h-9 px-4 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text hover:bg-tz-bone hover:border-brand-border-hover transition-colors"
@@ -228,16 +228,16 @@ export default function AgendaView({
             ›
           </button>
         </div>
-        <span className="text-[19px] font-semibold text-brand-text tracking-[-.01em] capitalize">{monthLabel}</span>
+        <span className="text-[17px] lg:text-[19px] font-semibold text-brand-text tracking-[-.01em] capitalize">{monthLabel}</span>
         <div className="flex-1" />
         {centerSwitcher}
-        <div className="h-9 flex items-center gap-2 px-3.5 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text">
+        <div className="hidden lg:flex h-9 items-center gap-2 px-3.5 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text">
           Semana <span className="text-muted text-[10px]">▾</span>
         </div>
       </div>
 
-      <div className="flex flex-1 min-h-0">
-        <aside className="w-[248px] shrink-0 border-r border-tz-sand p-3.5 overflow-y-auto">
+      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
+        <aside className="w-full lg:w-[248px] shrink-0 max-h-[38vh] lg:max-h-none border-b lg:border-b-0 lg:border-r border-tz-sand p-3.5 overflow-y-auto">
           {canEdit && (
             <button
               onClick={() => openCreate(weekdayIdx(new Date()), 12 * 60)}
@@ -247,13 +247,15 @@ export default function AgendaView({
             </button>
           )}
 
-          <MiniCalendar
-            miniMonth={miniMonth}
-            setMiniMonth={setMiniMonth}
-            weekStart={weekStart}
-            todayISO={todayISO}
-            onPick={(d) => navigate(d)}
-          />
+          <div className="hidden lg:block">
+            <MiniCalendar
+              miniMonth={miniMonth}
+              setMiniMonth={setMiniMonth}
+              weekStart={weekStart}
+              todayISO={todayISO}
+              onPick={(d) => navigate(d)}
+            />
+          </div>
 
           <div className="pt-4 pb-1.5 border-t border-tz-sand mt-1">
             <div className="text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-2.5">Entrenadores</div>
@@ -283,31 +285,32 @@ export default function AgendaView({
         </aside>
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
-          <div className="flex shrink-0 border-b border-brand-border pr-2.5">
-            <div className="w-[60px] shrink-0" />
-            {weekDays.map((d, i) => {
-              const iso = formatDateParam(d);
-              const isToday = iso === todayISO;
-              return (
-                <div key={i} className="flex-1 text-center py-2 pb-1.5">
-                  <div
-                    className="text-[11px] font-semibold tracking-[.08em]"
-                    style={{ color: isToday ? "var(--color-tz-black)" : "var(--color-muted)" }}
-                  >
-                    {DAY_ABBR[i]}
-                  </div>
-                  <div
-                    className={isToday ? "mt-0.5 mx-auto w-11 h-11 rounded-full bg-tz-black text-tz-bone text-[23px] font-semibold flex items-center justify-center" : "mt-0.5 h-11 text-[23px] font-medium text-brand-text flex items-center justify-center"}
-                  >
-                    {d.getDate()}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <div ref={bodyRef} className="flex-1 overflow-auto min-h-0">
+            <div className="min-w-[640px]">
+              <div className="flex border-b border-brand-border pr-2.5 sticky top-0 z-[5] bg-white">
+                <div className="w-[60px] shrink-0" />
+                {weekDays.map((d, i) => {
+                  const iso = formatDateParam(d);
+                  const isToday = iso === todayISO;
+                  return (
+                    <div key={i} className="flex-1 text-center py-2 pb-1.5">
+                      <div
+                        className="text-[11px] font-semibold tracking-[.08em]"
+                        style={{ color: isToday ? "var(--color-tz-black)" : "var(--color-muted)" }}
+                      >
+                        {DAY_ABBR[i]}
+                      </div>
+                      <div
+                        className={isToday ? "mt-0.5 mx-auto w-11 h-11 rounded-full bg-tz-black text-tz-bone text-[23px] font-semibold flex items-center justify-center" : "mt-0.5 h-11 text-[23px] font-medium text-brand-text flex items-center justify-center"}
+                      >
+                        {d.getDate()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
 
-          <div ref={bodyRef} className="flex-1 overflow-y-auto min-h-0">
-            <div className="flex">
+              <div className="flex">
               <div className="w-[60px] shrink-0 relative" style={{ height: gridHeight }}>
                 {hours.map((h) => (
                   <div key={h} style={{ height: ROW_HEIGHT }} className="relative">
@@ -402,6 +405,7 @@ export default function AgendaView({
                     </div>
                   );
                 })}
+              </div>
               </div>
             </div>
           </div>
