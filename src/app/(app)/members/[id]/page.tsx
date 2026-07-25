@@ -269,34 +269,36 @@ export default async function MemberDetailPage({
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-xs font-semibold text-muted uppercase mb-2">Suscripciones</h4>
-                    <table className="w-full text-sm">
-                      <thead className="text-xs text-faint text-left">
-                        <tr>
-                          <th className="pb-2">Plan</th>
-                          <th className="pb-2">Inicio</th>
-                          <th className="pb-2">Fin</th>
-                          <th className="pb-2">Estado</th>
-                          <th className="pb-2">Precio</th>
-                          <th className="pb-2">Congelación</th>
-                          <th className="pb-2">Baja programada</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {member.subscriptions.map((s) => (
-                          <tr key={s.id} className="border-t border-tz-sand">
-                            <td className="py-2">{s.plan.name}</td>
-                            <td className="py-2">{s.startDate.toLocaleDateString("es-ES")}</td>
-                            <td className="py-2">{s.endDate ? s.endDate.toLocaleDateString("es-ES") : "—"}</td>
-                            <td className="py-2">{s.status}</td>
-                            <td className="py-2 tz-nums">{euros(s.priceCents)}</td>
-                            <td className="py-2 text-text-2">
-                              {s.status === "FROZEN" ? (s.pauseUntil ? `hasta ${s.pauseUntil.toLocaleDateString("es-ES")}` : "indefinida") : "—"}
-                            </td>
-                            <td className="py-2 text-text-2">{s.cancelAt ? s.cancelAt.toLocaleDateString("es-ES") : "—"}</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="text-xs text-faint text-left">
+                          <tr>
+                            <th className="pb-2">Plan</th>
+                            <th className="pb-2">Inicio</th>
+                            <th className="pb-2">Fin</th>
+                            <th className="pb-2">Estado</th>
+                            <th className="pb-2">Precio</th>
+                            <th className="pb-2">Congelación</th>
+                            <th className="pb-2">Baja programada</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {member.subscriptions.map((s) => (
+                            <tr key={s.id} className="border-t border-tz-sand">
+                              <td className="py-2">{s.plan.name}</td>
+                              <td className="py-2">{s.startDate.toLocaleDateString("es-ES")}</td>
+                              <td className="py-2">{s.endDate ? s.endDate.toLocaleDateString("es-ES") : "—"}</td>
+                              <td className="py-2">{s.status}</td>
+                              <td className="py-2 tz-nums">{euros(s.priceCents)}</td>
+                              <td className="py-2 text-text-2">
+                                {s.status === "FROZEN" ? (s.pauseUntil ? `hasta ${s.pauseUntil.toLocaleDateString("es-ES")}` : "indefinida") : "—"}
+                              </td>
+                              <td className="py-2 text-text-2">{s.cancelAt ? s.cancelAt.toLocaleDateString("es-ES") : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   {canManageSub && manageableSubscription && (
@@ -328,30 +330,32 @@ export default async function MemberDetailPage({
 
                   <div>
                     <h4 className="text-xs font-semibold text-muted uppercase mb-2">Pagos recientes</h4>
-                    <table className="w-full text-sm">
-                      <thead className="text-xs text-faint text-left">
-                        <tr>
-                          <th className="pb-2">Fecha</th>
-                          <th className="pb-2">Importe</th>
-                          <th className="pb-2">Método</th>
-                          <th className="pb-2">Estado</th>
-                          <th className="pb-2">Recibo</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {member.payments.map((p) => (
-                          <tr key={p.id} className="border-t border-tz-sand">
-                            <td className="py-2">{p.date.toLocaleDateString("es-ES")}</td>
-                            <td className="py-2 tz-nums">{euros(p.amountCents)}</td>
-                            <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
-                            <td className="py-2">
-                              <span className={PAYMENT_STATUS_CLASS[p.status]}>{p.status}</span>
-                            </td>
-                            <td className="py-2 text-faint">{p.receiptNumber}</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="text-xs text-faint text-left">
+                          <tr>
+                            <th className="pb-2">Fecha</th>
+                            <th className="pb-2">Importe</th>
+                            <th className="pb-2">Método</th>
+                            <th className="pb-2">Estado</th>
+                            <th className="pb-2">Recibo</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {member.payments.map((p) => (
+                            <tr key={p.id} className="border-t border-tz-sand">
+                              <td className="py-2">{p.date.toLocaleDateString("es-ES")}</td>
+                              <td className="py-2 tz-nums">{euros(p.amountCents)}</td>
+                              <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
+                              <td className="py-2">
+                                <span className={PAYMENT_STATUS_CLASS[p.status]}>{p.status}</span>
+                              </td>
+                              <td className="py-2 text-faint">{p.receiptNumber}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
               ),
@@ -375,32 +379,34 @@ export default async function MemberDetailPage({
                       <div className="text-muted">Tasa de no-show</div>
                     </div>
                   </div>
-                  <table className="w-full text-sm">
-                    <thead className="text-xs text-faint text-left">
-                      <tr>
-                        <th className="pb-2">Fecha</th>
-                        <th className="pb-2">Clase</th>
-                        <th className="pb-2">Estado</th>
-                        <th className="pb-2">Debrief</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {member.bookings.map((b) => (
-                        <tr key={b.id} className="border-t border-tz-sand">
-                          <td className="py-2">{b.session.date.toLocaleDateString("es-ES")}</td>
-                          <td className="py-2">{b.session.name}</td>
-                          <td className="py-2">{b.status}</td>
-                          <td className="py-2">
-                            {b.debrief ? (
-                              <span className={`inline-block w-2.5 h-2.5 rounded-full ${FEELING_DOT[b.debrief.feeling]}`} />
-                            ) : (
-                              "—"
-                            )}
-                          </td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="text-xs text-faint text-left">
+                        <tr>
+                          <th className="pb-2">Fecha</th>
+                          <th className="pb-2">Clase</th>
+                          <th className="pb-2">Estado</th>
+                          <th className="pb-2">Debrief</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {member.bookings.map((b) => (
+                          <tr key={b.id} className="border-t border-tz-sand">
+                            <td className="py-2">{b.session.date.toLocaleDateString("es-ES")}</td>
+                            <td className="py-2">{b.session.name}</td>
+                            <td className="py-2">{b.status}</td>
+                            <td className="py-2">
+                              {b.debrief ? (
+                                <span className={`inline-block w-2.5 h-2.5 rounded-full ${FEELING_DOT[b.debrief.feeling]}`} />
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ),
             },

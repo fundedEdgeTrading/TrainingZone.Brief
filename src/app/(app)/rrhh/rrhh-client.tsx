@@ -43,26 +43,28 @@ export function TimeClockWidget({ todayEntry, recent }: { todayEntry: Entry | nu
           </Button>
         )}
       </div>
-      <table className="w-full text-sm">
-        <thead className="text-xs text-faint text-left">
-          <tr>
-            <th className="pb-2">Fecha</th>
-            <th className="pb-2">Entrada</th>
-            <th className="pb-2">Salida</th>
-            <th className="pb-2">Firma</th>
-          </tr>
-        </thead>
-        <tbody>
-          {recent.map((e) => (
-            <tr key={e.id} className="border-t border-tz-sand">
-              <td className="py-2">{e.workDate.toLocaleDateString("es-ES")}</td>
-              <td className="py-2 tz-nums">{e.clockIn}</td>
-              <td className="py-2 tz-nums">{e.clockOut ?? "—"}</td>
-              <td className="py-2">{e.signedAt ? "✓" : "—"}</td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-xs text-faint text-left">
+            <tr>
+              <th className="pb-2">Fecha</th>
+              <th className="pb-2">Entrada</th>
+              <th className="pb-2">Salida</th>
+              <th className="pb-2">Firma</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {recent.map((e) => (
+              <tr key={e.id} className="border-t border-tz-sand">
+                <td className="py-2">{e.workDate.toLocaleDateString("es-ES")}</td>
+                <td className="py-2 tz-nums">{e.clockIn}</td>
+                <td className="py-2 tz-nums">{e.clockOut ?? "—"}</td>
+                <td className="py-2">{e.signedAt ? "✓" : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -124,7 +126,7 @@ export function CheckinConfigForm({
   config: { serviceKind: string; goalCheckinDays: number; trainerRatingDays: number };
 }) {
   return (
-    <ActionForm action={updateCheckinConfigAction} successMessage="Intervalo actualizado" resetOnSuccess={false} className="grid grid-cols-3 gap-2 items-end">
+    <ActionForm action={updateCheckinConfigAction} successMessage="Intervalo actualizado" resetOnSuccess={false} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-end">
       <input type="hidden" name="serviceKind" value={config.serviceKind} />
       <Field label={KIND_LABEL[config.serviceKind]}>
         <span className="text-xs text-brand-muted">Objetivos / Valoración (días)</span>
