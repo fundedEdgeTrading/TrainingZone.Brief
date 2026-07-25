@@ -20,9 +20,23 @@ export async function proxy(req: NextRequest) {
 
   if (isPublic) return NextResponse.next();
 
+  // Auth.js escribe la cookie de sesión como "__Secure-authjs.session-token"
+  // cuando se sirve por HTTPS, y sin prefijo cuando no. `getToken` no lo
+  // deduce del request: si no se le pasa `secureCookie` asume `false` y busca
+  // siempre el nombre sin prefijo (@auth/core/jwt: `cookieName =
+  // defaultCookies(secureCookie ?? false).sessionToken.name`), con lo que en
+  // producción nunca encuentra la cookie y todo acaba rebotado a /login. El
+  // nombre es además la sal de derivación de la clave (`salt = cookieName`),
+  // así que tiene que coincidir para poder descifrar el JWT.
+  //
+  // Detrás de un proxy inverso (Render, Fly, Nginx...) `nextUrl.protocol`
+  // llega como "http:", así que la fuente de verdad es `x-forwarded-proto`.
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const secureCookie = forwardedProto === "https" || req.nextUrl.protocol === "https:";
+
   let token;
   try {
-    token = await getToken({ req, secret: process.env.AUTH_SECRET });
+    token = await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie });
   } catch {
     token = null;
   }
