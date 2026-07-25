@@ -283,6 +283,7 @@ export default async function DashboardPage({
                 <Link
                   key={value}
                   href={`/dashboard?servicesOrderBy=${value}${params.rankingDimension ? `&rankingDimension=${params.rankingDimension}` : ""}`}
+                  scroll={false}
                   className={`px-2 py-1 rounded-md transition-colors duration-150 ${
                     servicesOrderBy === value ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"
                   }`}
@@ -311,6 +312,7 @@ export default async function DashboardPage({
               <Link
                 key={dim}
                 href={`/dashboard?rankingDimension=${dim}${params.servicesOrderBy ? `&servicesOrderBy=${params.servicesOrderBy}` : ""}`}
+                scroll={false}
                 className={`px-2 py-1 rounded-md transition-colors duration-150 ${
                   rankingDimension === dim ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"
                 }`}
@@ -353,12 +355,12 @@ export default async function DashboardPage({
             {memberRanking.totalPages > 1 && (
               <div className="flex items-center justify-center gap-2 pt-2 border-t border-tz-sand">
                 {memberRanking.page > 1 && (
-                  <Link href={buildRankingUrl(1)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                  <Link href={buildRankingUrl(1)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
                     Primero
                   </Link>
                 )}
                 {memberRanking.page > 1 && (
-                  <Link href={buildRankingUrl(memberRanking.page - 1)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                  <Link href={buildRankingUrl(memberRanking.page - 1)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
                     ← Anterior
                   </Link>
                 )}
@@ -366,12 +368,12 @@ export default async function DashboardPage({
                   Página {memberRanking.page} de {memberRanking.totalPages}
                 </span>
                 {memberRanking.page < memberRanking.totalPages && (
-                  <Link href={buildRankingUrl(memberRanking.page + 1)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                  <Link href={buildRankingUrl(memberRanking.page + 1)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
                     Siguiente →
                   </Link>
                 )}
                 {memberRanking.page < memberRanking.totalPages && (
-                  <Link href={buildRankingUrl(memberRanking.totalPages)} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
+                  <Link href={buildRankingUrl(memberRanking.totalPages)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
                     Último
                   </Link>
                 )}
