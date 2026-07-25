@@ -20,6 +20,7 @@ import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
+import { startOfWeekMonday } from "@/lib/date-utils";
 import type { FeedbackDims } from "@/lib/feedback-queries";
 
 faker.seed(20260717);
@@ -964,6 +965,362 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     }
   }
   await prisma.auditLog.createMany({ data: auditRows });
+
+  // ---------- RB-RRHH-005: panel del entrenador demo (Dani Herrero) ----------
+  // El resto de la demo reparte trainerId/agenda al azar, lo que deja el nuevo
+  // panel /trainer vacío o pobre según la suerte del run. Aquí se construyen a
+  // propósito, para entrenador@trainingzone.es: agenda de hoy cubriendo toda
+  // la franja horaria del centro, clientes de EP con historial real de
+  // asistencia (adherencia + debriefs pendientes) y semáforo de aptitud en los
+  // tres colores, y huecos de EP de la semana con tramos libres y reservados.
+  if (cfg.slug === "training-zone") {
+    const daniTrainer = staffUsers.find((u) => u.email === "entrenador@trainingzone.es");
+    const centroId = centerIdByKey.get("centro");
+    if (daniTrainer && centroId) {
+      // Agenda de hoy: una sesión ya generada por franja horaria del centro
+      // pasa a ser suya, para que la línea de tiempo tenga contenido repartido
+      // por la mañana y la tarde entre a la hora que se entre a la demo.
+      const todayCentroByHour = new Map<string, (typeof sessions)[number]>();
+      for (const s of sessions) {
+        if (s.centerId !== centroId || s.date.getTime() !== TODAY.getTime() || s.name.includes("(cancelada)")) continue;
+        if (!todayCentroByHour.has(s.startTime)) todayCentroByHour.set(s.startTime, s);
+      }
+      const daniTodaySessionIds = [...todayCentroByHour.values()].map((s) => s.id);
+      if (daniTodaySessionIds.length) {
+        await prisma.classSession.updateMany({ where: { id: { in: daniTodaySessionIds } }, data: { trainerId: daniTrainer.id } });
+      }
+
+      // Si el reparto aleatorio de plantillas ha dejado la agenda de hoy floja
+      // (según qué día de la semana caiga el seed), se completan franjas de
+      // clase típicas para que la línea de tiempo tenga un recorrido completo
+      // de mañana a noche, con socios reales de "centro" apuntados.
+      const AGENDA_HOURS = [7, 9, 10, 17, 18, 19, 20];
+      const GROUP_CLASS_TYPES = CLASS_TYPES.filter((c) => c !== "Personal Training");
+      const missingHours = AGENDA_HOURS.filter((h) => !todayCentroByHour.has(fmtTime(h)));
+      const centroActiveMemberIds = members.filter((m) => m.centerId === centroId && m.state === MemberState.ACTIVE).map((m) => m.id);
+      const fillCount = Math.max(0, 5 - daniTodaySessionIds.length);
+      for (let i = 0; i < Math.min(fillCount, missingHours.length); i++) {
+        const hour = missingHours[i];
+        const classType = GROUP_CLASS_TYPES[i % GROUP_CLASS_TYPES.length];
+        const fillSessionId = id();
+        await prisma.classSession.create({
+          data: {
+            id: fillSessionId,
+            orgId,
+            centerId: centroId,
+            name: `${classType} ${fmtTime(hour)}`,
+            classType,
+            date: TODAY,
+            startTime: fmtTime(hour),
+            endTime: fmtTime(hour + 1),
+            capacity: randInt(10, 16),
+            room: pick(["Sala 1", "Sala 2", "Sala Funcional"]),
+            trainerId: daniTrainer.id,
+            status: "SCHEDULED",
+          },
+        });
+        const attendees = centroActiveMemberIds.slice(i * 5, i * 5 + randInt(4, 8));
+        if (attendees.length) {
+          await prisma.booking.createMany({
+            data: attendees.map((memberId) => ({ id: id(), sessionId: fillSessionId, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) })),
+          });
+        }
+      }
+
+      const epWeekStart = startOfWeekMonday(new Date());
+      const thisCalendarMonthStart = new Date(TODAY.getFullYear(), TODAY.getMonth(), 1);
+
+      type EpClientSpec = {
+        firstName: string;
+        lastName: string;
+        emailLocal: string;
+        weekday: number; // 1=lunes ... 6=sábado
+        hour: number;
+        planKey: DemoPlanKey;
+        joinedAt: Date;
+        weeksBack: number;
+        noShowEvery: number; // cada cuántas sesiones falla (marca la adherencia)
+        debriefEvery: number; // cada cuántas sesiones se queda sin debrief (pendientes)
+        health?: { zone: string; desc: string; severity: HealthSeverity };
+        note?: string;
+        futureBooking: boolean;
+      };
+      const epClientSpecs: EpClientSpec[] = [
+        {
+          firstName: "Nacho",
+          lastName: "Bermejo",
+          emailLocal: "nacho.bermejo.demo",
+          weekday: 2,
+          hour: 18,
+          planKey: "ep10",
+          joinedAt: addDays(thisCalendarMonthStart, randInt(0, Math.max(0, TODAY.getDate() - 2))),
+          weeksBack: 2,
+          noShowEvery: 9,
+          debriefEvery: 5,
+          note: "Recién llegado de EP, viene con muchas ganas.",
+          futureBooking: true,
+        },
+        {
+          firstName: "Silvia",
+          lastName: "Cortés",
+          emailLocal: "silvia.cortes.demo",
+          weekday: 3,
+          hour: 9,
+          planKey: "ep10",
+          joinedAt: addDays(TODAY, -(8 * 7 + randInt(3, 10))),
+          weeksBack: 8,
+          noShowEvery: 4,
+          debriefEvery: 3,
+          health: { zone: "muñeca derecha", desc: "Lesión: muñeca derecha, sobrecarga muscular", severity: HealthSeverity.MEDIUM },
+          note: "Usa muñequeras en empuje; ir progresiva con la carga.",
+          futureBooking: true,
+        },
+        {
+          firstName: "Bruno",
+          lastName: "Casals",
+          emailLocal: "bruno.casals.demo",
+          weekday: 4,
+          hour: 19,
+          planKey: "ep20",
+          joinedAt: addDays(TODAY, -(9 * 7 + randInt(3, 10))),
+          weeksBack: 9,
+          noShowEvery: 2,
+          debriefEvery: 6,
+          health: { zone: "rodilla derecha", desc: "Lesión: rodilla derecha, esguince leve", severity: HealthSeverity.HIGH },
+          note: "Ha faltado varias veces seguidas — hacer seguimiento.",
+          futureBooking: false,
+        },
+        {
+          firstName: "Irene",
+          lastName: "Salcedo",
+          emailLocal: "irene.salcedo.demo",
+          weekday: 5,
+          hour: 10,
+          planKey: "online",
+          joinedAt: addDays(TODAY, -(12 * 7 + randInt(3, 10))),
+          weeksBack: 12,
+          noShowEvery: 8,
+          debriefEvery: 4,
+          note: "Muy motivada, objetivo puesto en una carrera en primavera.",
+          futureBooking: true,
+        },
+        {
+          firstName: "Teo",
+          lastName: "Vallejo",
+          emailLocal: "teo.vallejo.demo",
+          weekday: 1,
+          hour: 20,
+          planKey: "ep20",
+          joinedAt: addDays(TODAY, -(11 * 7 + randInt(3, 10))),
+          weeksBack: 11,
+          noShowEvery: 6,
+          debriefEvery: 3,
+          futureBooking: true,
+        },
+      ];
+
+      for (const spec of epClientSpecs) {
+        const plan = plansByKey[spec.planKey];
+        const memberId = id();
+        await prisma.member.create({
+          data: {
+            id: memberId,
+            orgId,
+            primaryCenterId: centroId,
+            firstName: spec.firstName,
+            lastName: spec.lastName,
+            email: `${spec.emailLocal}@example.com`,
+            phone: faker.phone.number({ style: "national" }),
+            birthDate: faker.date.birthdate({ min: 20, max: 60, mode: "age" }),
+            state: MemberState.ACTIVE,
+            joinedAt: spec.joinedAt,
+            trainerId: daniTrainer.id,
+            notes: spec.note ?? null,
+            consentContract: true,
+            consentHealth: true,
+            consentImages: false,
+            consentMarketing: true,
+            consentContractAt: spec.joinedAt,
+            consentHealthAt: spec.joinedAt,
+            consentMarketingAt: spec.joinedAt,
+            postalCode: weightedPick(MEMBER_POSTAL_CODES),
+            occupation: pick(OCCUPATIONS),
+            sex: pick([Sex.FEMALE, Sex.MALE]),
+          },
+        });
+        await prisma.subscription.create({
+          data: {
+            id: id(),
+            memberId,
+            planId: plan.id,
+            startDate: spec.joinedAt,
+            endDate: null,
+            status: SubscriptionStatus.ACTIVE,
+            priceCents: plan.priceCents,
+            sessionsRemaining: plan.sessionsIncluded ? Math.max(3, Math.round(plan.sessionsIncluded * 0.5)) : null,
+          },
+        });
+
+        if (spec.health) {
+          await prisma.healthRecord.create({
+            data: {
+              id: id(),
+              memberId,
+              type: HealthRecordType.INJURY,
+              zone: spec.health.zone,
+              description: spec.health.desc,
+              severity: spec.health.severity,
+              status: HealthStatus.ACTIVE,
+              reportedByUserId: daniTrainer.id,
+              reportedAt: addDays(spec.joinedAt, 14),
+              consentSignedAt: spec.joinedAt,
+            },
+          });
+        }
+
+        // Historial semanal de sesiones 1:1 ya pasadas: asistencia + debriefs.
+        let realizedCount = 0;
+        for (let w = spec.weeksBack; w >= 1; w--) {
+          const sessionDate = addDays(epWeekStart, -(w - 1) * 7 + (spec.weekday - 1));
+          if (sessionDate < spec.joinedAt || sessionDate >= TODAY) continue;
+          realizedCount++;
+          const sessionId = id();
+          await prisma.classSession.create({
+            data: {
+              id: sessionId,
+              orgId,
+              centerId: centroId,
+              name: `Personal Training ${fmtTime(spec.hour)}`,
+              classType: "Personal Training",
+              date: sessionDate,
+              startTime: fmtTime(spec.hour),
+              endTime: fmtTime(spec.hour + 1),
+              capacity: 1,
+              room: "Sala 2",
+              trainerId: daniTrainer.id,
+              status: "SCHEDULED",
+            },
+          });
+          const isNoShow = realizedCount % spec.noShowEvery === 0;
+          const bookingId = id();
+          let checkedInAt: Date | null = null;
+          if (!isNoShow) {
+            checkedInAt = new Date(sessionDate);
+            checkedInAt.setHours(spec.hour, randInt(-3, 5));
+          }
+          await prisma.booking.create({
+            data: {
+              id: bookingId,
+              sessionId,
+              memberId,
+              status: isNoShow ? BookingStatus.NO_SHOW : BookingStatus.ATTENDED,
+              bookedAt: addDays(sessionDate, -2),
+              checkedInAt,
+            },
+          });
+          if (!isNoShow && realizedCount % spec.debriefEvery !== 0) {
+            await prisma.sessionDebrief.create({
+              data: {
+                id: id(),
+                bookingId,
+                feeling: weightedPick<DebriefFeeling>([[DebriefFeeling.GREEN, 70], [DebriefFeeling.AMBER, 22], [DebriefFeeling.RED, 8]]),
+                rpe: randInt(5, 9),
+                note: null,
+              },
+            });
+          }
+        }
+
+        // Próxima cita reservada (esta semana o la siguiente si ya ha pasado).
+        if (spec.futureBooking) {
+          const thisWeekDate = addDays(epWeekStart, spec.weekday - 1);
+          const futureDate = thisWeekDate >= TODAY ? thisWeekDate : addDays(thisWeekDate, 7);
+          const futureSessionId = id();
+          await prisma.classSession.create({
+            data: {
+              id: futureSessionId,
+              orgId,
+              centerId: centroId,
+              name: `Personal Training ${fmtTime(spec.hour)}`,
+              classType: "Personal Training",
+              date: futureDate,
+              startTime: fmtTime(spec.hour),
+              endTime: fmtTime(spec.hour + 1),
+              capacity: 1,
+              room: "Sala 2",
+              trainerId: daniTrainer.id,
+              selfBookable: true,
+              status: "SCHEDULED",
+            },
+          });
+          await prisma.booking.create({
+            data: { id: id(), sessionId: futureSessionId, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) },
+          });
+        }
+      }
+
+      // Huecos de EP libres (sin reservar) repartidos por la semana, para que
+      // el gráfico de barras muestre tramos libres además de los reservados.
+      const freeSlotWeekdays = [2, 3, 4, 5, 6]; // martes .. sábado
+      for (const wd of freeSlotWeekdays) {
+        await prisma.classSession.create({
+          data: {
+            id: id(),
+            orgId,
+            centerId: centroId,
+            name: `Personal Training ${fmtTime(11)}`,
+            classType: "Personal Training",
+            date: addDays(epWeekStart, wd - 1),
+            startTime: fmtTime(11),
+            endTime: fmtTime(12),
+            capacity: 1,
+            room: "Sala 2",
+            trainerId: daniTrainer.id,
+            selfBookable: true,
+            status: "SCHEDULED",
+          },
+        });
+      }
+
+      // Huecos de EP ya reservados esta misma semana natural (no dependen de
+      // si el día ya ha pasado dentro de la semana — el gráfico de barras no
+      // filtra por fecha futura, solo por semana), para que el contraste
+      // reservado/libre se vea siempre, caiga el seed el día que caiga.
+      const epMemberPool = trainerAssignments
+        .filter((t) => members.find((m) => m.id === t.memberId)?.centerId === centroId)
+        .map((t) => t.memberId);
+      const reservedSlots = [
+        { weekday: 1, hour: 15 },
+        { weekday: 3, hour: 15 },
+        { weekday: 5, hour: 15 },
+      ];
+      for (let i = 0; i < reservedSlots.length; i++) {
+        const bookMemberId = epMemberPool[i % Math.max(1, epMemberPool.length)];
+        if (!bookMemberId) break;
+        const reservedSessionId = id();
+        await prisma.classSession.create({
+          data: {
+            id: reservedSessionId,
+            orgId,
+            centerId: centroId,
+            name: `Personal Training ${fmtTime(reservedSlots[i].hour)}`,
+            classType: "Personal Training",
+            date: addDays(epWeekStart, reservedSlots[i].weekday - 1),
+            startTime: fmtTime(reservedSlots[i].hour),
+            endTime: fmtTime(reservedSlots[i].hour + 1),
+            capacity: 1,
+            room: "Sala 2",
+            trainerId: daniTrainer.id,
+            selfBookable: true,
+            status: "SCHEDULED",
+          },
+        });
+        await prisma.booking.create({
+          data: { id: id(), sessionId: reservedSessionId, memberId: bookMemberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -3) },
+        });
+      }
+    }
+  }
 
   // ---------- F8: Embudo de Leads ----------
   const leadChannels = ["Boca a boca", "Instagram", "TikTok", "Web", "Vive/trabaja por la zona", "Otro"].map((label) => ({
