@@ -22,6 +22,7 @@ export function KpiCard({
   label,
   value,
   hint,
+  footer,
   tone = "default",
   size = "md",
   delay = 0,
@@ -29,6 +30,7 @@ export function KpiCard({
   label: string;
   value: string;
   hint?: string;
+  footer?: React.ReactNode;
   tone?: Tone;
   size?: "md" | "lg";
   delay?: number;
@@ -52,7 +54,7 @@ export function KpiCard({
       >
         {value}
       </div>
-      <div className="text-[11px] text-brand-muted-2 mt-1 min-h-[14px]">{hint}</div>
+      {footer ?? <div className="text-[11px] text-brand-muted-2 mt-1 min-h-[14px]">{hint}</div>}
     </div>
   );
 }
