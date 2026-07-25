@@ -623,6 +623,52 @@ textarea:focus-visible {
   display: none;
 }
 
+/* ===== Panel del entrenador (rediseño) ===== */
+@keyframes tzRise {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes tzRollUp {
+  from {
+    opacity: 0;
+    transform: translateY(0.5em);
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes tzDash {
+  from {
+    stroke-dashoffset: 176;
+  }
+}
+@keyframes tzLiveDot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes tzPulseRing {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
