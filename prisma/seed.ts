@@ -2074,7 +2074,7 @@ async function main() {
     prisma.stripeAccount.deleteMany(),
     prisma.organization.deleteMany(),
     prisma.postalCodeArea.deleteMany(),
-  ]);
+  ], { timeout: 30000 });
 
   // Referencia CP completo→barrio (BI-3): no depende de ninguna org. De momento
   // solo cubre Zaragoza capital (primera puesta en preproducción); ver
