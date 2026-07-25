@@ -49,55 +49,59 @@ export default async function RrhhPage() {
           {crossCheck.length === 0 ? (
             <p className="text-sm text-brand-muted">Sin fichajes con salida registrada en los últimos 14 días.</p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="text-xs text-faint text-left">
-                <tr>
-                  <th className="pb-2">Trabajador</th>
-                  <th className="pb-2">Fecha</th>
-                  <th className="pb-2">Fichado</th>
-                  <th className="pb-2">Dirigido</th>
-                  <th className="pb-2">Diferencia</th>
-                </tr>
-              </thead>
-              <tbody>
-                {crossCheck.map((row, i) => (
-                  <tr key={i} className="border-t border-tz-sand">
-                    <td className="py-2">{row.userName}</td>
-                    <td className="py-2">{row.workDate.toLocaleDateString("es-ES")}</td>
-                    <td className="py-2 tz-nums">{fmtHours(row.clockedMinutes)}</td>
-                    <td className="py-2 tz-nums">{fmtHours(row.directedMinutes)}</td>
-                    <td className={`py-2 tz-nums ${Math.abs(row.diffMinutes) > 30 ? "text-critical" : "text-brand-muted"}`}>
-                      {row.diffMinutes >= 0 ? "+" : ""}
-                      {fmtHours(row.diffMinutes)}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-faint text-left">
+                  <tr>
+                    <th className="pb-2">Trabajador</th>
+                    <th className="pb-2">Fecha</th>
+                    <th className="pb-2">Fichado</th>
+                    <th className="pb-2">Dirigido</th>
+                    <th className="pb-2">Diferencia</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {crossCheck.map((row, i) => (
+                    <tr key={i} className="border-t border-tz-sand">
+                      <td className="py-2">{row.userName}</td>
+                      <td className="py-2">{row.workDate.toLocaleDateString("es-ES")}</td>
+                      <td className="py-2 tz-nums">{fmtHours(row.clockedMinutes)}</td>
+                      <td className="py-2 tz-nums">{fmtHours(row.directedMinutes)}</td>
+                      <td className={`py-2 tz-nums ${Math.abs(row.diffMinutes) > 30 ? "text-critical" : "text-brand-muted"}`}>
+                        {row.diffMinutes >= 0 ? "+" : ""}
+                        {fmtHours(row.diffMinutes)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       )}
 
       {ratingSummary && (
         <Card title="Valoración de entrenadores" meta="RB-RRHH-011/012 — exclusivo dirección">
-          <table className="w-full text-sm">
-            <thead className="text-xs text-faint text-left">
-              <tr>
-                <th className="pb-2">Entrenador</th>
-                <th className="pb-2">Media</th>
-                <th className="pb-2">Valoraciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ratingSummary.map((r) => (
-                <tr key={r.trainerUserId} className="border-t border-tz-sand">
-                  <td className="py-2">{r.name}</td>
-                  <td className="py-2 tz-nums">{r.avgScore ? r.avgScore.toFixed(1) : "—"}</td>
-                  <td className="py-2 tz-nums">{r.count}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-faint text-left">
+                <tr>
+                  <th className="pb-2">Entrenador</th>
+                  <th className="pb-2">Media</th>
+                  <th className="pb-2">Valoraciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {ratingSummary.map((r) => (
+                  <tr key={r.trainerUserId} className="border-t border-tz-sand">
+                    <td className="py-2">{r.name}</td>
+                    <td className="py-2 tz-nums">{r.avgScore ? r.avgScore.toFixed(1) : "—"}</td>
+                    <td className="py-2 tz-nums">{r.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 

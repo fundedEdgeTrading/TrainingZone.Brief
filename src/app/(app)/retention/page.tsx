@@ -101,32 +101,34 @@ export default async function RetentionPage() {
       )}
 
       <Card title="Histórico de alertas" delay={0.24}>
-        <table className="w-full text-sm">
-          <thead className="text-xs text-faint text-left">
-            <tr>
-              <th className="pb-2">Socio</th>
-              <th className="pb-2">Riesgo</th>
-              <th className="pb-2">Caída</th>
-              <th className="pb-2">Creada</th>
-              <th className="pb-2">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {alerts.map((a) => (
-              <tr key={a.id} className="border-t border-tz-sand">
-                <td className="py-2">
-                  <Link href={`/members/${a.member.id}`} className="text-tz-black hover:underline">
-                    {a.member.firstName} {a.member.lastName}
-                  </Link>
-                </td>
-                <td className="py-2">{RISK_LABEL[a.riskLevel]}</td>
-                <td className="py-2 tz-nums">{a.dropPct}%</td>
-                <td className="py-2 text-muted tz-nums">{a.createdAt.toLocaleDateString("es-ES")}</td>
-                <td className="py-2 text-muted">{a.status}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-faint text-left">
+              <tr>
+                <th className="pb-2">Socio</th>
+                <th className="pb-2">Riesgo</th>
+                <th className="pb-2">Caída</th>
+                <th className="pb-2">Creada</th>
+                <th className="pb-2">Estado</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {alerts.map((a) => (
+                <tr key={a.id} className="border-t border-tz-sand">
+                  <td className="py-2">
+                    <Link href={`/members/${a.member.id}`} className="text-tz-black hover:underline">
+                      {a.member.firstName} {a.member.lastName}
+                    </Link>
+                  </td>
+                  <td className="py-2">{RISK_LABEL[a.riskLevel]}</td>
+                  <td className="py-2 tz-nums">{a.dropPct}%</td>
+                  <td className="py-2 text-muted tz-nums">{a.createdAt.toLocaleDateString("es-ES")}</td>
+                  <td className="py-2 text-muted">{a.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

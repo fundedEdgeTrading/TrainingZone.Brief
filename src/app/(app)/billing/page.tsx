@@ -56,39 +56,41 @@ export default async function BillingPage({
 
       {delinquent.length > 0 && (
         <Card title="Socios morosos" meta={String(delinquent.length)} delay={0.18}>
-          <table className="w-full text-sm">
-            <thead className="text-xs text-faint text-left">
-              <tr>
-                <th className="pb-2">Socio</th>
-                <th className="pb-2">Centro</th>
-                <th className="pb-2">Plan</th>
-                <th className="pb-2">Último pago</th>
-              </tr>
-            </thead>
-            <tbody>
-              {delinquent.map((m) => (
-                <tr key={m.id} className="border-t border-tz-sand">
-                  <td className="py-2">
-                    <Link href={`/members/${m.id}`} className="text-tz-black hover:underline">
-                      {m.firstName} {m.lastName}
-                    </Link>
-                  </td>
-                  <td className="py-2 text-text-2">{m.primaryCenter.name}</td>
-                  <td className="py-2 text-text-2">{m.subscriptions[0]?.plan.name ?? "—"}</td>
-                  <td className="py-2">
-                    {m.payments[0] ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Badge tone={PAYMENT_STATUS_TONE[m.payments[0].status]}>{STATUS_LABEL[m.payments[0].status]}</Badge>
-                        <span className="text-muted tz-nums">{m.payments[0].date.toLocaleDateString("es-ES")}</span>
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-faint text-left">
+                <tr>
+                  <th className="pb-2">Socio</th>
+                  <th className="pb-2">Centro</th>
+                  <th className="pb-2">Plan</th>
+                  <th className="pb-2">Último pago</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {delinquent.map((m) => (
+                  <tr key={m.id} className="border-t border-tz-sand">
+                    <td className="py-2">
+                      <Link href={`/members/${m.id}`} className="text-tz-black hover:underline">
+                        {m.firstName} {m.lastName}
+                      </Link>
+                    </td>
+                    <td className="py-2 text-text-2">{m.primaryCenter.name}</td>
+                    <td className="py-2 text-text-2">{m.subscriptions[0]?.plan.name ?? "—"}</td>
+                    <td className="py-2">
+                      {m.payments[0] ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Badge tone={PAYMENT_STATUS_TONE[m.payments[0].status]}>{STATUS_LABEL[m.payments[0].status]}</Badge>
+                          <span className="text-muted tz-nums">{m.payments[0].date.toLocaleDateString("es-ES")}</span>
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 
@@ -111,46 +113,48 @@ export default async function BillingPage({
           </div>
         }
       >
-        <table className="w-full text-sm">
-          <thead className="text-xs text-faint text-left">
-            <tr>
-              <th className="pb-2">Fecha</th>
-              <th className="pb-2">Socio</th>
-              <th className="pb-2">Importe</th>
-              <th className="pb-2">Método</th>
-              <th className="pb-2">Estado</th>
-              <th className="pb-2">Recibo</th>
-              <th className="pb-2">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.map((p) => (
-              <tr key={p.id} className="border-t border-tz-sand">
-                <td className="py-2 tz-nums">
-                  {p.date.toLocaleDateString("es-ES")}
-                  {p.status === "PENDING" && p.dueDate && (
-                    <div className="text-[11px] text-faint">aplazado a {p.dueDate.toLocaleDateString("es-ES")}</div>
-                  )}
-                </td>
-                <td className="py-2">
-                  <Link href={`/members/${p.member.id}`} className="text-tz-black hover:underline">
-                    {p.member.firstName} {p.member.lastName}
-                  </Link>
-                </td>
-                <td className="py-2 tz-nums font-semibold">{euros(p.amountCents)}</td>
-                <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
-                <td className="py-2">
-                  <Badge tone={PAYMENT_STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
-                </td>
-                <td className="py-2 text-faint">{p.receiptNumber}</td>
-                <td className="py-2">
-                  {p.status === "PENDING" && <PostponePaymentAction paymentId={p.id} />}
-                  {p.status === "PAID" && <RefundPaymentAction paymentId={p.id} />}
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-faint text-left">
+              <tr>
+                <th className="pb-2">Fecha</th>
+                <th className="pb-2">Socio</th>
+                <th className="pb-2">Importe</th>
+                <th className="pb-2">Método</th>
+                <th className="pb-2">Estado</th>
+                <th className="pb-2">Recibo</th>
+                <th className="pb-2">Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {payments.map((p) => (
+                <tr key={p.id} className="border-t border-tz-sand">
+                  <td className="py-2 tz-nums">
+                    {p.date.toLocaleDateString("es-ES")}
+                    {p.status === "PENDING" && p.dueDate && (
+                      <div className="text-[11px] text-faint">aplazado a {p.dueDate.toLocaleDateString("es-ES")}</div>
+                    )}
+                  </td>
+                  <td className="py-2">
+                    <Link href={`/members/${p.member.id}`} className="text-tz-black hover:underline">
+                      {p.member.firstName} {p.member.lastName}
+                    </Link>
+                  </td>
+                  <td className="py-2 tz-nums font-semibold">{euros(p.amountCents)}</td>
+                  <td className="py-2">{PAYMENT_METHOD_LABEL[p.method]}</td>
+                  <td className="py-2">
+                    <Badge tone={PAYMENT_STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
+                  </td>
+                  <td className="py-2 text-faint">{p.receiptNumber}</td>
+                  <td className="py-2">
+                    {p.status === "PENDING" && <PostponePaymentAction paymentId={p.id} />}
+                    {p.status === "PAID" && <RefundPaymentAction paymentId={p.id} />}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );
