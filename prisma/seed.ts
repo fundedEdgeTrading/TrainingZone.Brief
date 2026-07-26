@@ -1834,6 +1834,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         centerId: null, // global
         title: "Quedada del club de running + desayuno",
         body: "Este sábado a las 9:00 nos vemos en la puerta para una salida suave de 5 km y desayuno después. ¡Apúntate en recepción!",
+        imageUrl: "https://loremflickr.com/1200/675/running,marathon",
         category: "EVENT",
         audience: "ALL",
         tags: ["running", "club", "quedada"],
@@ -1848,6 +1849,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         centerId: null,
         title: "Promo verano: 20% en tu próximo bono",
         body: "Durante todo el mes, renueva cualquier bono de 20 sesiones y llévate un 20% de descuento. Consulta condiciones en recepción.",
+        imageUrl: "https://loremflickr.com/1200/675/gym,fitness",
         category: "PROMO",
         audience: "MEMBERS",
         tags: ["promoción", "bonos"],
@@ -1864,6 +1866,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
               centerId: firstCenterId, // solo este centro
               title: "Cambio de horario: sala cerrada el jueves por mantenimiento",
               body: "El jueves de 14:00 a 16:00 la sala funcional estará cerrada por mantenimiento. Disculpa las molestias.",
+              imageUrl: "https://loremflickr.com/1200/675/maintenance,gym",
               category: "ALERT" as const,
               audience: "ALL" as const,
               tags: ["horario", "mantenimiento"],
@@ -1880,6 +1883,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         centerId: null,
         title: "Nuevos entrenamientos online disponibles",
         body: "Hemos añadido nuevas sesiones a la biblioteca online. Entra en tu sección de entrenamientos y pruébalas.",
+        imageUrl: "https://loremflickr.com/1200/675/workout,laptop",
         category: "NEWS",
         audience: "ALL",
         tags: ["online", "novedad"],
