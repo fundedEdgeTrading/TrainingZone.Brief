@@ -118,6 +118,8 @@ src/lib/rbac.ts              Matriz de permisos por rol + navegación
 src/lib/guard.ts             requireRole() — guarda de página por rol
 src/lib/health-access.ts     Único punto de lectura de datos de salud + auditoría
 src/app/(app)/...            Módulos: dashboard, members, agenda, brief, billing, retention, health, audit, portal, organization
+src/app/api/mobile/v1/...    API JSON con auth por token para la app nativa (docs/APP_MOVIL_NATIVA_PLAN.md)
+apps/mobile/                 App nativa Expo/React Native (portal del socio) — ver apps/mobile/README.md
 ```
 
 ## Qué queda fuera de esta entrega (a propósito)
