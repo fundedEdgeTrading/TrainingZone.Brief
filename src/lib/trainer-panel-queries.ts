@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData } from "@/lib/rbac";
-import { startOfWeekMonday } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam } from "@/lib/date-utils";
+import { expandOccurrences, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import type { AptitudeLight, Role } from "@prisma/client";
 
 const ADHERENCE_PERIOD_DAYS = 90;
@@ -60,6 +61,11 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   monthStart.setHours(0, 0, 0, 0);
   const prevMonthStart = new Date(monthStart);
   prevMonthStart.setMonth(prevMonthStart.getMonth() - 1);
+  // Acotado por arriba: sin fin de mes, "horas de este mes" sumaba también las
+  // sesiones ya agendadas de meses siguientes y el delta comparaba un rango
+  // abierto contra un mes cerrado.
+  const monthEnd = new Date(monthStart);
+  monthEnd.setMonth(monthEnd.getMonth() + 1);
 
   const weekStart = startOfWeekMonday(now);
   const weekEnd = addDays(weekStart, 7);
@@ -68,7 +74,8 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const since90 = addDays(today, -ADHERENCE_PERIOD_DAYS);
   const sevenDaysAgo = addDays(today, -7);
 
-  const ownSessionFilter = { OR: [{ trainerId: trainerUserId }, { directedByUserId: trainerUserId }] };
+  const ownSessionFilter = ownSessionsWhere(trainerUserId);
+  const tomorrow = addDays(today, 1);
 
   const [
     epClientsRaw,
@@ -89,19 +96,19 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       },
     }),
     prisma.classSession.findMany({
-      where: { orgId, date: { gte: monthStart }, status: "SCHEDULED", ...ownSessionFilter },
-      select: { classType: true, startTime: true, endTime: true },
+      where: { orgId, status: "SCHEDULED", ...sessionsInRangeWhere(monthStart, monthEnd), ...ownSessionFilter },
+      select: { classType: true, startTime: true, endTime: true, date: true, recurrence: true, recUntil: true },
     }),
     prisma.classSession.findMany({
-      where: { orgId, date: { gte: prevMonthStart, lt: monthStart }, status: "SCHEDULED", ...ownSessionFilter },
-      select: { classType: true, startTime: true, endTime: true },
+      where: { orgId, status: "SCHEDULED", ...sessionsInRangeWhere(prevMonthStart, monthStart), ...ownSessionFilter },
+      select: { classType: true, startTime: true, endTime: true, date: true, recurrence: true, recUntil: true },
     }),
     prisma.classSession.findMany({
-      where: { orgId, date: { gte: sparklineStart, lt: weekEnd }, status: "SCHEDULED", classType: { not: "Personal Training" }, ...ownSessionFilter },
-      select: { date: true, startTime: true, endTime: true },
+      where: { orgId, status: "SCHEDULED", classType: { not: "Personal Training" }, ...sessionsInRangeWhere(sparklineStart, weekEnd), ...ownSessionFilter },
+      select: { date: true, startTime: true, endTime: true, recurrence: true, recUntil: true },
     }),
     prisma.classSession.findMany({
-      where: { orgId, date: today, status: "SCHEDULED", ...ownSessionFilter },
+      where: { orgId, status: "SCHEDULED", ...sessionsInRangeWhere(today, tomorrow), ...ownSessionFilter },
       include: {
         bookings: {
           where: { status: { not: "CANCELLED" } },
@@ -110,13 +117,16 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       },
       orderBy: { startTime: "asc" },
     }),
+    // Hasta `tomorrow`, no hasta `today`: una sesión que terminó esta mañana ya
+    // tiene el debrief pendiente. Excluirla dejaba la tarjeta de la agenda de
+    // hoy avisando de un pendiente que la lista de Pendientes no mostraba.
     prisma.classSession.findMany({
-      where: { orgId, date: { gte: sevenDaysAgo, lt: today }, status: "SCHEDULED", ...ownSessionFilter },
+      where: { orgId, status: "SCHEDULED", ...sessionsInRangeWhere(sevenDaysAgo, tomorrow), ...ownSessionFilter },
       include: { bookings: { where: { status: { not: "CANCELLED" } }, select: { status: true, debrief: { select: { id: true } } } } },
       orderBy: [{ date: "desc" }, { startTime: "desc" }],
     }),
     prisma.classSession.findMany({
-      where: { orgId, trainerId: trainerUserId, classType: "Personal Training", selfBookable: true, status: "SCHEDULED", date: { gte: weekStart, lt: weekEnd } },
+      where: { orgId, trainerId: trainerUserId, classType: "Personal Training", selfBookable: true, status: "SCHEDULED", ...sessionsInRangeWhere(weekStart, weekEnd) },
       include: { bookings: { where: { status: { not: "CANCELLED" } }, select: { id: true } } },
     }),
     prisma.auditLog.findMany({
@@ -130,18 +140,24 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   ]);
 
   // ---------- KPIs: horas EP / grupos, delta mensual, adherencia media ----------
-  function sumMinutesByType(sessions: { classType: string; startTime: string; endTime: string }[]) {
+  // Una serie recurrente cuenta una vez por ocurrencia dentro del rango, no una
+  // vez por fila: si no, una sesión semanal sumaba una sola hora al mes.
+  function sumMinutesByType(
+    sessions: { classType: string; startTime: string; endTime: string; date: Date; recurrence: "NONE" | "WEEKLY" | "WEEKDAYS"; recUntil: Date | null }[],
+    from: Date,
+    to: Date
+  ) {
     let ep = 0;
     let group = 0;
     for (const s of sessions) {
-      const minutes = timeToMinutes(s.endTime) - timeToMinutes(s.startTime);
+      const minutes = (timeToMinutes(s.endTime) - timeToMinutes(s.startTime)) * occurrencesInRange(s, from, to).length;
       if (s.classType === "Personal Training") ep += minutes;
       else group += minutes;
     }
     return { ep, group };
   }
-  const thisMonth = sumMinutesByType(monthSessions);
-  const prevMonth = sumMinutesByType(prevMonthSessions);
+  const thisMonth = sumMinutesByType(monthSessions, monthStart, monthEnd);
+  const prevMonth = sumMinutesByType(prevMonthSessions, prevMonthStart, monthStart);
   const epHours = Number((thisMonth.ep / 60).toFixed(1));
   const groupHours = Number((thisMonth.group / 60).toFixed(1));
   const monthDelta = Number(((thisMonth.ep - prevMonth.ep) / 60).toFixed(1));
@@ -149,10 +165,11 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const sparklineBuckets = Array.from({ length: 6 }, (_, i) => {
     const bucketStart = addDays(weekStart, -(5 - i) * 7);
     const bucketEnd = addDays(bucketStart, 7);
-    const minutes = sparklineSessions
-      .filter((s) => s.date >= bucketStart && s.date < bucketEnd)
-      .reduce((sum, s) => sum + (timeToMinutes(s.endTime) - timeToMinutes(s.startTime)), 0);
-    return minutes;
+    return sparklineSessions.reduce(
+      (sum, s) =>
+        sum + (timeToMinutes(s.endTime) - timeToMinutes(s.startTime)) * occurrencesInRange(s, bucketStart, bucketEnd).length,
+      0
+    );
   });
   const sparklineMax = Math.max(1, ...sparklineBuckets);
   const groupSparkline = sparklineBuckets.map((m) => Math.max(8, Math.round((m / sparklineMax) * 100)));
@@ -316,19 +333,28 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const nextInMinutes = currentSession ? 0 : nextSession?.minutesUntil ?? null;
 
   // ---------- Pendientes: debriefs, briefs, aptitud ----------
-  const pendingDebriefs = pastWeekSessionsRaw
-    .map((s) => {
+  // `expandOccurrences` ordena ascendente; en Pendientes interesa lo más reciente arriba.
+  const pendingDebriefs = expandOccurrences(pastWeekSessionsRaw, sevenDaysAgo, tomorrow)
+    .reverse()
+    .map(({ session: s, date }) => {
       const active = s.bookings;
       const attended = active.filter((b) => b.status === "ATTENDED");
       if (!attended.length || attended.every((b) => b.debrief)) return null;
-      const sessionDate = new Date(s.date);
-      sessionDate.setHours(...(s.endTime.split(":").map(Number) as [number, number]), 0, 0);
-      const isToday = s.date.getTime() === today.getTime();
-      const dayLabel = isToday ? "Hoy" : s.date.getTime() === addDays(today, -1).getTime() ? "Ayer" : s.date.toLocaleDateString("es-ES", { weekday: "long" });
+      const endedAt = new Date(date);
+      endedAt.setHours(...(s.endTime.split(":").map(Number) as [number, number]), 0, 0);
+      // Una sesión de hoy solo tiene el debrief pendiente cuando ya ha acabado.
+      if (endedAt > now) return null;
+      const dayLabel =
+        date.getTime() === today.getTime()
+          ? "Hoy"
+          : date.getTime() === addDays(today, -1).getTime()
+            ? "Ayer"
+            : date.toLocaleDateString("es-ES", { weekday: "long" });
       return {
         sessionId: s.id,
+        occurrenceDate: formatDateParam(date),
         label: `${dayLabel} · ${s.startTime}`,
-        relative: formatRelative(now.getTime() - sessionDate.getTime()),
+        relative: formatRelative(now.getTime() - endedAt.getTime()),
         title: s.classType,
         detail: `${attended.length} ${attended.length === 1 ? "asistente" : "asistentes"} · sin semáforo asignado`,
       };
@@ -342,6 +368,7 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       const nowMin = now.getHours() * 60 + now.getMinutes();
       return {
         sessionId: s.id,
+        occurrenceDate: formatDateParam(today),
         label: `Hoy · ${s.startTime}`,
         relative: formatRelative(-(startMin - nowMin) * 60000),
         title: s.title,
@@ -368,7 +395,7 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const slotsByDay = Array.from({ length: 7 }, (_, i) => {
     const day = addDays(weekStart, i);
     const isToday = day.getTime() === today.getTime();
-    const daySessions = epSlotSessionsRaw.filter((s) => s.date.getTime() === day.getTime());
+    const daySessions = epSlotSessionsRaw.filter((s) => occursOn(s, day));
     return {
       dayLabel: WEEKDAY_LABELS[i],
       isToday,
@@ -382,8 +409,9 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     reservedPct: Math.round((d.reservedCount / slotsMax) * 100),
     freePct: Math.round((d.freeCount / slotsMax) * 100),
   }));
-  const epSlotsPublished = epSlotSessionsRaw.length;
-  const epSlotsReserved = epSlotSessionsRaw.filter((s) => s.bookings.length > 0).length;
+  // Contados por ocurrencia de la semana, igual que las barras, no por fila.
+  const epSlotsPublished = slotsByDay.reduce((sum, d) => sum + d.reservedCount + d.freeCount, 0);
+  const epSlotsReserved = slotsByDay.reduce((sum, d) => sum + d.reservedCount, 0);
 
   return {
     epHours,

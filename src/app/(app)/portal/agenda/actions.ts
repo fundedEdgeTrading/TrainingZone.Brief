@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import { getMemberForUser } from "@/lib/portal-queries";
@@ -108,6 +109,8 @@ export async function bookSession(sessionId: string): Promise<BookingActionResul
 
   revalidatePath("/portal/agenda");
   revalidatePath("/portal");
+  // La reserva cambia el aforo y el roster que ven el entrenador y el brief.
+  revalidateSessionViews();
   return result;
 }
 
@@ -139,6 +142,8 @@ export async function cancelMyBooking(bookingId: string): Promise<BookingActionR
 
   revalidatePath("/portal/agenda");
   revalidatePath("/portal");
+  // La reserva cambia el aforo y el roster que ven el entrenador y el brief.
+  revalidateSessionViews();
   return { ok: true, waitlisted: false };
 }
 

@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getSessionBrief } from "@/lib/brief-queries";
+import { parseDateParam } from "@/lib/date-utils";
+import { occursOn } from "@/lib/session-occurrences";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import BriefCard from "./brief-card";
@@ -10,11 +12,14 @@ const LIGHT_ORDER: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
 
 export default async function SessionBriefPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ d?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const { id } = await params;
+  const { d } = await searchParams;
 
   const brief = await getSessionBrief({
     orgId: session.user.orgId,
@@ -25,6 +30,11 @@ export default async function SessionBriefPage({
   if (!brief) notFound();
 
   const { session: cls, roster, canSeeHealth } = brief;
+
+  // `cls.date` es la fecha base de la serie. Para una sesión recurrente, el día
+  // que el entrenador está mirando llega en `?d=` desde el índice o el panel;
+  // solo lo aceptamos si de verdad hay una ocurrencia ese día.
+  const occurrenceDate = d && occursOn(cls, parseDateParam(d)) ? parseDateParam(d) : cls.date;
 
   // Primero quienes necesitan atención (evitar > adaptar > resto), luego alfabético.
   const sorted = [...roster].sort(
@@ -48,7 +58,7 @@ export default async function SessionBriefPage({
             Session Brief · {cls.name}
           </h1>
           <p className="text-sm text-muted">
-            {cls.date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
+            {occurrenceDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
             {cls.startTime} · {cls.center.name} · {cls.trainer?.name ?? "Sin entrenador"}
           </p>
           <p className="text-sm text-text-2 max-w-2xl">

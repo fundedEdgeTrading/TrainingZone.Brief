@@ -1,10 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { canManageEpSlots } from "@/lib/rbac";
 import { saveSession, deleteSession, rescheduleSession } from "@/lib/agenda-queries";
 import { parseDateParam } from "@/lib/date-utils";
+import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
@@ -56,7 +56,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     recUntil: recurrence !== "NONE" && recUntilRaw ? parseDateParam(recUntilRaw) : null,
   });
 
-  revalidatePath("/agenda");
+  revalidateSessionViews();
   return { ok: true };
 }
 
@@ -73,7 +73,7 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   const result = await deleteSession(session.user.orgId, id);
   if (!result.ok) return result;
 
-  revalidatePath("/agenda");
+  revalidateSessionViews();
   return { ok: true };
 }
 
@@ -92,6 +92,6 @@ export async function moveSessionAction(input: {
   const result = await rescheduleSession(session.user.orgId, input.id, parseDateParam(input.date), input.startTime, input.endTime);
   if (!result.ok) return result;
 
-  revalidatePath("/agenda");
+  revalidateSessionViews();
   return { ok: true };
 }

@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { getSessionDetail } from "@/lib/agenda-queries";
+import { parseDateParam } from "@/lib/date-utils";
+import { occursOn } from "@/lib/session-occurrences";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
@@ -20,13 +22,20 @@ const STATUS_LABEL: Record<string, string> = {
 
 export default async function SessionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ d?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const { id } = await params;
+  const { d } = await searchParams;
   const cls = await getSessionDetail(session.user.orgId, id);
   if (!cls) notFound();
+
+  // `cls.date` es la fecha base de la serie recurrente; el día concreto que se
+  // está mirando viene en `?d=` y solo se acepta si existe esa ocurrencia.
+  const occurrenceDate = d && occursOn(cls, parseDateParam(d)) ? parseDateParam(d) : cls.date;
 
   // Ámbito de centro: el staff no organizacional solo abre sesiones de centros
   // a los que está imputado (su centro base o vía CenterMembership).
@@ -55,7 +64,7 @@ export default async function SessionDetailPage({
           <div>
             <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">{cls.name}</h1>
             <p className="text-sm text-muted mt-1">
-              {cls.date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
+              {occurrenceDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
               {cls.startTime}–{cls.endTime} · {cls.center.name} {cls.room ? `· ${cls.room}` : ""}
             </p>
             <p className="text-sm text-muted">Entrenador: {cls.trainer?.name ?? "Sin asignar"}</p>

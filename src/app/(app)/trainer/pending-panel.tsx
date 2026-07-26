@@ -3,7 +3,16 @@
 import Link from "next/link";
 import { useState } from "react";
 
-type ScheduleItem = { sessionId: string; label: string; relative: string; title: string; detail: string };
+// `occurrenceDate` (YYYY-MM-DD) distingue el día concreto de una serie
+// recurrente, cuya fila comparten todas las ocurrencias.
+type ScheduleItem = {
+  sessionId: string;
+  occurrenceDate: string;
+  label: string;
+  relative: string;
+  title: string;
+  detail: string;
+};
 type AptitudeItem = {
   memberId: string;
   name: string;
@@ -106,8 +115,8 @@ function ScheduleList({
     <div className="flex flex-col gap-2">
       {items.map((item, i) => (
         <Link
-          key={item.sessionId}
-          href={`${hrefBase}/${item.sessionId}`}
+          key={`${item.sessionId}-${item.occurrenceDate}`}
+          href={`${hrefBase}/${item.sessionId}?d=${item.occurrenceDate}`}
           className="block p-3 rounded-xl bg-brand-bg border border-tz-sand tz-fade-up transition-[transform,border-color] duration-200 hover:border-brand-border-hover hover:-translate-y-[2px]"
           style={{ animationDelay: `${i * 0.06}s` }}
         >
