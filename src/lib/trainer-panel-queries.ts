@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData } from "@/lib/rbac";
-import { startOfWeekMonday, formatDateParam } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam, zonedNow } from "@/lib/date-utils";
 import { expandOccurrences, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import type { AptitudeLight, Role } from "@prisma/client";
 
@@ -51,8 +51,10 @@ type Tone = "good" | "warning" | "critical" | "gold" | "neutral";
 
 /** RB-RRHH-005 (rediseño): panel operativo del entrenador — agenda de hoy, pendientes,
  * huecos de EP, reconocimiento y clientes de EP, todo derivado de datos reales. */
-export async function getTrainerPanelData(orgId: string, trainerUserId: string, actorRole: Role, agendaDay?: Date) {
-  const now = new Date();
+export async function getTrainerPanelData(orgId: string, trainerUserId: string, actorRole: Role, timezone: string, agendaDay?: Date) {
+  // La hora del servidor no sirve: corre en UTC y "sesión en curso" u "hoy"
+  // deben leerse en la hora del navegador del entrenador (ver `zonedNow`).
+  const now = zonedNow(timezone);
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
 
@@ -62,7 +64,7 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   selectedDay.setHours(0, 0, 0, 0);
   const agendaIsToday = selectedDay.getTime() === today.getTime();
 
-  const monthStart = new Date();
+  const monthStart = new Date(now);
   monthStart.setDate(1);
   monthStart.setHours(0, 0, 0, 0);
   const prevMonthStart = new Date(monthStart);
