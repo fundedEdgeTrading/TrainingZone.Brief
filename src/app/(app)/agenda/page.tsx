@@ -11,13 +11,18 @@ import CenterSwitcher from "./center-switcher";
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ center?: string; week?: string }>;
+  searchParams: Promise<{ center?: string; week?: string; day?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const params = await searchParams;
 
   const centers = await getCentersForUser(session.user);
   const centerId = params.center || session.user.centerId || centers[0]?.id;
+
+  // `day` solo lo usa la vista móvil (un día por pantalla) al saltar de semana
+  // con las flechas: marca con qué día debe abrirse la semana de destino.
+  const dayParam = Number(params.day);
+  const initialDayIndex = Number.isInteger(dayParam) && dayParam >= 0 && dayParam <= 6 ? dayParam : null;
 
   const refDate = params.week ? parseDateParam(params.week) : new Date();
   const weekStart = startOfWeekMonday(refDate);
@@ -56,9 +61,12 @@ export default async function AgendaPage({
   }
 
   return (
-    <div className="tz-page h-[calc(100vh-140px)] min-h-[560px] bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden tz-fade-up">
+    // En móvil la agenda ocupa todo el hueco visible (cabecera 72px + padding
+    // del main 16/40) para que la rejilla no compita con el scroll de página.
+    <div className="tz-page h-[calc(100dvh-128px)] min-h-[420px] lg:h-[calc(100vh-140px)] lg:min-h-[560px] bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden tz-fade-up">
       <AgendaView
         key={formatDateParam(weekStart)}
+        initialDayIndex={initialDayIndex}
         weekStartISO={formatDateParam(weekStart)}
         centerId={centerId ?? ""}
         occurrences={occurrences}

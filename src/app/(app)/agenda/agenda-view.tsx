@@ -7,7 +7,10 @@ import {
   START_HOUR,
   END_HOUR,
   ROW_HEIGHT,
+  ROW_HEIGHT_MOBILE,
   DAY_ABBR,
+  DAY_LETTER,
+  DAY_NAME,
   MONTHS,
   trainerColor,
   addDays,
@@ -20,7 +23,9 @@ import {
 import { moveSessionAction } from "./session-actions";
 import SessionDialog, { type DialogState } from "./session-dialog";
 import { TrainerTooltip } from "./trainer-tooltip";
+import TrainerFilter from "./trainer-filter";
 import { usePointerDrag } from "@/lib/use-pointer-drag";
+import { useIsMobile } from "@/lib/use-media-query";
 
 type Trainer = { id: string; name: string };
 type Member = { id: string; firstName: string; lastName: string };
@@ -34,6 +39,7 @@ export default function AgendaView({
   canEdit,
   currentUserId,
   isDirection,
+  initialDayIndex,
   centerSwitcher,
 }: {
   weekStartISO: string;
@@ -44,9 +50,11 @@ export default function AgendaView({
   canEdit: boolean;
   currentUserId: string;
   isDirection: boolean;
+  initialDayIndex?: number | null;
   centerSwitcher?: React.ReactNode;
 }) {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const weekStart = useMemo(() => parseDateParam(weekStartISO), [weekStartISO]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
   const todayISO = useMemo(() => formatDateParam(new Date()), []);
@@ -54,6 +62,7 @@ export default function AgendaView({
     const d = new Date();
     return d.getHours() * 60 + d.getMinutes();
   }, []);
+  const todayIdxInWeek = useMemo(() => weekDays.findIndex((d) => formatDateParam(d) === todayISO), [weekDays, todayISO]);
 
   const [visible, setVisible] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(trainers.map((t) => [t.id, true]))
@@ -69,6 +78,13 @@ export default function AgendaView({
     setEvents(occurrences);
   }
 
+  // En móvil la rejilla pinta un único día (la semana entera en 360px deja
+  // columnas de 45px, ilegibles e imposibles de tocar). Este es el día en
+  // pantalla; en escritorio se siguen viendo los siete.
+  const [selectedDay, setSelectedDay] = useState(() =>
+    initialDayIndex != null ? initialDayIndex : todayIdxInWeek >= 0 ? todayIdxInWeek : 0
+  );
+
   const [miniMonth, setMiniMonth] = useState(weekStartISO.slice(0, 7));
   const [dlg, setDlg] = useState<DialogState | null>(null);
 
@@ -76,19 +92,39 @@ export default function AgendaView({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
+  const rowHeight = isMobile ? ROW_HEIGHT_MOBILE : ROW_HEIGHT;
+  const viewDays = useMemo(
+    () => (isMobile ? [selectedDay] : Array.from({ length: 7 }, (_, i) => i)),
+    [isMobile, selectedDay]
+  );
+
+  // El efecto de scroll no debe reaccionar a cada arrastre, así que lee los
+  // eventos por ref en vez de tenerlos como dependencia.
+  const eventsRef = useRef(events);
   useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = (7 - START_HOUR) * ROW_HEIGHT;
-  }, []);
+    eventsRef.current = events;
+  });
+
+  // Al entrar (y al cambiar de día o de layout) colocamos la vista en la
+  // primera sesión del día; si no hay, en la hora actual.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const inView = eventsRef.current.filter((e) => !isMobile || e.dayIndex === selectedDay);
+    const firstStart = inView.length ? Math.min(...inView.map((e) => e.startMin)) : null;
+    const anchor = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60, firstStart ?? nowMin));
+    el.scrollTop = Math.max(0, ((anchor - START_HOUR * 60) / 60) * rowHeight - rowHeight * 0.5);
+  }, [isMobile, selectedDay, rowHeight, nowMin]);
 
   function geom(clientX: number, clientY: number) {
     const el = gridRef.current;
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    const dayW = r.width / 7;
-    let day = Math.floor((clientX - r.left) / dayW);
-    day = Math.max(0, Math.min(6, day));
-    const min = START_HOUR * 60 + ((clientY - r.top) / ROW_HEIGHT) * 60;
-    return { day, min };
+    const colW = r.width / viewDays.length;
+    let col = Math.floor((clientX - r.left) / colW);
+    col = Math.max(0, Math.min(viewDays.length - 1, col));
+    const min = START_HOUR * 60 + ((clientY - r.top) / rowHeight) * 60;
+    return { day: viewDays[col], min };
   }
 
   // Un solo gesto activo: mover una sesión existente o pulsar en hueco libre
@@ -136,8 +172,32 @@ export default function AgendaView({
     },
   });
 
-  function navigate(newWeekStart: Date) {
-    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}`);
+  function navigate(newWeekStart: Date, day?: number) {
+    const dayParam = day != null ? `&day=${day}` : "";
+    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}`);
+  }
+
+  /** Flechas: en escritorio saltan de semana; en móvil, de día en día. */
+  function shift(delta: number) {
+    if (!isMobile) {
+      navigate(addDays(weekStart, delta * 7));
+      return;
+    }
+    const next = selectedDay + delta;
+    if (next >= 0 && next <= 6) {
+      setSelectedDay(next);
+      return;
+    }
+    navigate(addDays(weekStart, delta * 7), next < 0 ? 6 : 0);
+  }
+
+  function goToday() {
+    const today = new Date();
+    if (todayIdxInWeek >= 0) {
+      setSelectedDay(todayIdxInWeek);
+      return;
+    }
+    navigate(parseDateParam(formatDateParam(today)), weekdayIdx(today));
   }
 
   function openCreate(day: number, minRaw: number) {
@@ -183,7 +243,9 @@ export default function AgendaView({
     });
   }
 
-  const monthLabel = `${MONTHS[weekDays[3].getMonth()]} ${weekDays[3].getFullYear()}`;
+  const labelDay = weekDays[isMobile ? selectedDay : 3];
+  const monthName = MONTHS[labelDay.getMonth()];
+  const monthLabel = `${isMobile ? monthName.slice(0, 3) : monthName} ${labelDay.getFullYear()}`;
 
   const perDay = useMemo(() => {
     const cols: (WeekOccurrence & { col: number; total: number })[][] = Array.from({ length: 7 }, () => []);
@@ -194,63 +256,70 @@ export default function AgendaView({
     return cols;
   }, [events, visible]);
 
-  const gridHeight = (END_HOUR - START_HOUR) * ROW_HEIGHT;
+  const gridHeight = (END_HOUR - START_HOUR) * rowHeight;
   const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
   const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="min-h-[60px] shrink-0 border-b border-brand-border flex flex-wrap items-center gap-2 lg:gap-2.5 px-3 py-2 lg:min-h-[60px] lg:px-6 lg:py-2.5">
+      <div className="shrink-0 border-b border-brand-border flex flex-wrap items-center gap-1.5 lg:gap-2.5 px-2.5 py-1.5 lg:min-h-[60px] lg:px-6 lg:py-2.5">
         <button
-          onClick={() => navigate(parseDateParam(formatDateParam(new Date())))}
-          className="h-9 px-4 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text hover:bg-tz-bone hover:border-brand-border-hover transition-colors"
+          onClick={goToday}
+          className="h-9 px-3 lg:px-4 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text hover:bg-tz-bone hover:border-brand-border-hover transition-colors"
         >
           Hoy
         </button>
         <div className="flex items-center gap-0.5">
           <button
-            aria-label="Semana anterior"
-            onClick={() => navigate(addDays(weekStart, -7))}
-            className="w-[38px] h-[38px] rounded-full text-text-2 text-xl hover:bg-tz-bone transition-colors"
+            aria-label={isMobile ? "Día anterior" : "Semana anterior"}
+            onClick={() => shift(-1)}
+            className="w-9 h-9 lg:w-[38px] lg:h-[38px] rounded-full text-text-2 text-xl hover:bg-tz-bone transition-colors"
           >
             ‹
           </button>
           <button
-            aria-label="Semana siguiente"
-            onClick={() => navigate(addDays(weekStart, 7))}
-            className="w-[38px] h-[38px] rounded-full text-text-2 text-xl hover:bg-tz-bone transition-colors"
+            aria-label={isMobile ? "Día siguiente" : "Semana siguiente"}
+            onClick={() => shift(1)}
+            className="w-9 h-9 lg:w-[38px] lg:h-[38px] rounded-full text-text-2 text-xl hover:bg-tz-bone transition-colors"
           >
             ›
           </button>
         </div>
-        <span className="text-[17px] lg:text-[19px] font-semibold text-brand-text tracking-[-.01em] capitalize">{monthLabel}</span>
+        <span className="text-[15px] lg:text-[19px] font-semibold text-brand-text tracking-[-.01em] capitalize truncate">
+          {monthLabel}
+        </span>
         <div className="flex-1" />
+        <TrainerFilter
+          className="lg:hidden"
+          trainers={trainers}
+          visible={visible}
+          onToggle={(id) => setVisible((v) => ({ ...v, [id]: !(v[id] !== false) }))}
+          onSetAll={(value) => setVisible(Object.fromEntries(trainers.map((t) => [t.id, value])))}
+        />
         {centerSwitcher}
         <div className="hidden lg:flex h-9 items-center gap-2 px-3.5 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text">
           Semana <span className="text-muted text-[10px]">▾</span>
         </div>
       </div>
 
-      <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-        <aside className="w-full lg:w-[248px] shrink-0 max-h-[38vh] lg:max-h-none border-b lg:border-b-0 lg:border-r border-tz-sand p-3.5 overflow-y-auto">
+      <div className="flex flex-1 min-h-0">
+        <aside className="hidden lg:block w-[248px] shrink-0 border-r border-tz-sand p-3.5 overflow-y-auto">
           {canEdit && (
             <button
-              onClick={() => openCreate(weekdayIdx(new Date()), 12 * 60)}
+              onClick={() => openCreate(todayIdxInWeek >= 0 ? todayIdxInWeek : 0, 12 * 60)}
               className="flex items-center justify-center gap-2 w-full h-[46px] rounded-xl bg-tz-black text-tz-bone text-sm font-semibold shadow-card hover:bg-brand-ink-soft transition-colors mb-5"
             >
               <span className="text-xl leading-none font-normal">+</span> Nueva sesión
             </button>
           )}
 
-          <div className="hidden lg:block">
-            <MiniCalendar
-              miniMonth={miniMonth}
-              setMiniMonth={setMiniMonth}
-              weekStart={weekStart}
-              todayISO={todayISO}
-              onPick={(d) => navigate(d)}
-            />
-          </div>
+          <MiniCalendar
+            miniMonth={miniMonth}
+            setMiniMonth={setMiniMonth}
+            weekStart={weekStart}
+            todayISO={todayISO}
+            onPick={(d) => navigate(d)}
+          />
 
           <div className="pt-4 pb-1.5 border-t border-tz-sand mt-1">
             <div className="text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-2.5">Entrenadores</div>
@@ -280,35 +349,75 @@ export default function AgendaView({
         </aside>
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
-          <div ref={bodyRef} className="flex-1 overflow-auto min-h-0">
-            <div className="min-w-[640px]">
-              <div className="flex border-b border-brand-border pr-2.5 sticky top-0 z-[5] bg-white">
-                <div className="w-[60px] shrink-0" />
-                {weekDays.map((d, i) => {
-                  const iso = formatDateParam(d);
-                  const isToday = iso === todayISO;
-                  return (
-                    <div key={i} className="flex-1 text-center py-2 pb-1.5">
-                      <div
-                        className="text-[11px] font-semibold tracking-[.08em]"
-                        style={{ color: isToday ? "var(--color-tz-black)" : "var(--color-muted)" }}
-                      >
-                        {DAY_ABBR[i]}
+          {isMobile && (
+            <div className="shrink-0 flex gap-0.5 border-b border-brand-border px-1.5 py-1.5">
+              {weekDays.map((d, i) => {
+                const isToday = formatDateParam(d) === todayISO;
+                const isSel = i === selectedDay;
+                const count = perDay[i].length;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setSelectedDay(i)}
+                    aria-pressed={isSel}
+                    aria-label={`${DAY_NAME[i]} ${d.getDate()}`}
+                    className={`flex-1 flex flex-col items-center gap-[3px] rounded-xl py-1.5 transition-colors ${
+                      isSel ? "bg-tz-black text-tz-bone" : isToday ? "bg-tz-bone text-brand-text" : "text-brand-text"
+                    }`}
+                  >
+                    <span className={`text-[10px] font-bold tracking-[.06em] ${isSel ? "opacity-70" : "text-muted"}`}>
+                      {DAY_LETTER[i]}
+                    </span>
+                    <span className="text-[17px] font-semibold leading-none">{d.getDate()}</span>
+                    <span
+                      className="h-1 w-1 rounded-full"
+                      style={{
+                        background: count === 0 ? "transparent" : isSel ? "var(--color-tz-bone)" : "var(--color-tz-black)",
+                      }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="relative flex-1 min-h-0">
+          {isMobile && perDay[selectedDay].length === 0 && (
+            <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center px-8 text-center text-[13px] text-faint">
+              Sin sesiones este día
+            </div>
+          )}
+          <div ref={bodyRef} className="h-full overflow-auto overscroll-contain">
+            <div className={isMobile ? "w-full" : "min-w-[640px]"}>
+              {!isMobile && (
+                <div className="flex border-b border-brand-border pr-2.5 sticky top-0 z-[5] bg-white">
+                  <div className="w-[60px] shrink-0" />
+                  {weekDays.map((d, i) => {
+                    const iso = formatDateParam(d);
+                    const isToday = iso === todayISO;
+                    return (
+                      <div key={i} className="flex-1 text-center py-2 pb-1.5">
+                        <div
+                          className="text-[11px] font-semibold tracking-[.08em]"
+                          style={{ color: isToday ? "var(--color-tz-black)" : "var(--color-muted)" }}
+                        >
+                          {DAY_ABBR[i]}
+                        </div>
+                        <div
+                          className={isToday ? "mt-0.5 mx-auto w-11 h-11 rounded-full bg-tz-black text-tz-bone text-[23px] font-semibold flex items-center justify-center" : "mt-0.5 h-11 text-[23px] font-medium text-brand-text flex items-center justify-center"}
+                        >
+                          {d.getDate()}
+                        </div>
                       </div>
-                      <div
-                        className={isToday ? "mt-0.5 mx-auto w-11 h-11 rounded-full bg-tz-black text-tz-bone text-[23px] font-semibold flex items-center justify-center" : "mt-0.5 h-11 text-[23px] font-medium text-brand-text flex items-center justify-center"}
-                      >
-                        {d.getDate()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="flex">
-              <div className="w-[60px] shrink-0 relative" style={{ height: gridHeight }}>
+              <div className={`${isMobile ? "w-[46px]" : "w-[60px]"} shrink-0 relative`} style={{ height: gridHeight }}>
                 {hours.map((h) => (
-                  <div key={h} style={{ height: ROW_HEIGHT }} className="relative">
+                  <div key={h} style={{ height: rowHeight }} className="relative">
                     {h !== START_HOUR && (
                       <span className="absolute -top-[7px] right-2 text-[10px] text-muted bg-white px-0.5">{h}:00</span>
                     )}
@@ -320,37 +429,39 @@ export default function AgendaView({
                 className="relative flex flex-1 min-w-0"
                 style={{
                   height: gridHeight,
-                  background: `repeating-linear-gradient(to bottom, var(--color-tz-sand) 0, var(--color-tz-sand) 1px, transparent 1px, transparent ${ROW_HEIGHT}px)`,
+                  background: `repeating-linear-gradient(to bottom, var(--color-tz-sand) 0, var(--color-tz-sand) 1px, transparent 1px, transparent ${rowHeight}px)`,
                 }}
               >
-                {weekDays.map((d, i) => {
+                {viewDays.map((dayIndex, col) => {
+                  const d = weekDays[dayIndex];
                   const iso = formatDateParam(d);
                   const isToday = iso === todayISO;
                   const showNow = isToday && nowMin >= START_HOUR * 60 && nowMin <= END_HOUR * 60;
                   return (
                     <div
-                      key={i}
-                      className="flex-1 relative border-l border-tz-sand"
+                      key={dayIndex}
+                      className={`flex-1 relative ${col === 0 && isMobile ? "" : "border-l border-tz-sand"}`}
                       onPointerDown={(e) => {
                         if ((e.target as HTMLElement).closest("[data-event-card]")) return;
                         const g = geom(e.clientX, e.clientY);
                         if (!g) return;
-                        drag.start(e, { kind: "column", day: i, min: g.min });
+                        drag.start(e, { kind: "column", day: dayIndex, min: g.min });
                       }}
                     >
                       {showNow && (
                         <div
                           className="absolute left-0 right-0 z-[4]"
-                          style={{ top: ((nowMin - START_HOUR * 60) / 60) * ROW_HEIGHT, height: 2, background: "var(--color-critical)" }}
+                          style={{ top: ((nowMin - START_HOUR * 60) / 60) * rowHeight, height: 2, background: "var(--color-critical)" }}
                         >
                           <span className="absolute -left-[5px] -top-1 w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-critical)" }} />
                         </div>
                       )}
-                      {perDay[i].map((ev) => {
-                        const top = ((ev.startMin - START_HOUR * 60) / 60) * ROW_HEIGHT;
-                        const height = Math.max(20, ((ev.endMin - ev.startMin) / 60) * ROW_HEIGHT - 2);
+                      {perDay[dayIndex].map((ev) => {
+                        const top = ((ev.startMin - START_HOUR * 60) / 60) * rowHeight;
+                        const height = Math.max(22, ((ev.endMin - ev.startMin) / 60) * rowHeight - 2);
                         const widthPct = 100 / ev.total;
                         const color = trainerColor(ev.trainerId);
+                        const showTrainer = isMobile && ev.total === 1 && height >= 56;
                         return (
                           <TrainerTooltip
                             key={ev.id}
@@ -382,8 +493,8 @@ export default function AgendaView({
                             }}
                             title={ev.title}
                           >
-                            <div className="h-full overflow-hidden" style={{ padding: "3px 7px" }}>
-                              <div className="font-semibold text-xs leading-tight truncate">
+                            <div className="h-full overflow-hidden" style={{ padding: isMobile ? "4px 9px" : "3px 7px" }}>
+                              <div className={`font-semibold leading-tight truncate ${isMobile ? "text-[13px]" : "text-xs"}`}>
                                 {ev.title}
                                 {ev.isRecurring ? " ↻" : ""}
                               </div>
@@ -391,6 +502,9 @@ export default function AgendaView({
                                 {fmtHHMM(ev.startMin)} – {fmtHHMM(ev.endMin)}
                                 {ev.type === "reduced" ? " · Grupo" : ""}
                               </div>
+                              {showTrainer && (
+                                <div className="text-[11px] opacity-80 truncate mt-px">{trainerName[ev.trainerId] ?? "Sin entrenador"}</div>
+                              )}
                             </div>
                           </TrainerTooltip>
                         );
@@ -402,8 +516,19 @@ export default function AgendaView({
               </div>
             </div>
           </div>
+          </div>
         </section>
       </div>
+
+      {canEdit && isMobile && (
+        <button
+          onClick={() => openCreate(selectedDay, selectedDay === todayIdxInWeek ? nowMin : 9 * 60)}
+          aria-label="Nueva sesión"
+          className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-tz-black text-tz-bone shadow-pop active:scale-95 transition-transform"
+        >
+          <span className="text-3xl leading-none font-normal">+</span>
+        </button>
+      )}
 
       {dlg && (
         <SessionDialog
@@ -469,7 +594,7 @@ function MiniCalendar({
         </div>
       </div>
       <div className="grid grid-cols-7 text-center text-faint text-[10px] font-semibold mb-0.5">
-        {["L", "M", "X", "J", "V", "S", "D"].map((c, i) => (
+        {DAY_LETTER.map((c, i) => (
           <span key={i}>{c}</span>
         ))}
       </div>
