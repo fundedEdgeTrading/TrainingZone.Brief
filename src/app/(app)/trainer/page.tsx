@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getTrainerPanelData, formatHoursEs } from "@/lib/trainer-panel-queries";
+import { formatDateParam, parseDateParam } from "@/lib/date-utils";
+import { addDays } from "@/app/(app)/agenda/agenda-utils";
 import { KpiCard, Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,13 +20,35 @@ function initials(firstName: string, lastName: string) {
   return `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
 }
 
+/** Título de la tarjeta de agenda según el día navegado, nunca anterior a hoy. */
+function agendaCardTitle(selectedDay: Date, today: Date) {
+  const diffDays = Math.round((selectedDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  if (diffDays === 0) return "Agenda de hoy";
+  if (diffDays === 1) return "Agenda de mañana";
+  const label = selectedDay.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  return `Agenda · ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
 const APTITUDE_DOT: Record<string, string> = { GREEN: "#4B5A22", AMBER: "#8A5A12", RED: "#8A3420" };
 const ADHERENCE_COLOR = (pct: number) => (pct >= 85 ? "#4B5A22" : pct >= 70 ? "#8A5A12" : "#8A3420");
 
-export default async function TrainerPanelPage() {
+export default async function TrainerPanelPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ day?: string }>;
+}) {
   const session = await requireRole(["TRAINER"]);
+  const params = await searchParams;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const requestedDay = params.day ? parseDateParam(params.day) : new Date(today);
+  requestedDay.setHours(0, 0, 0, 0);
+  // Nunca hacia atrás: un `day` pasado por URL anterior a hoy se acota a hoy.
+  const selectedDay = requestedDay < today ? today : requestedDay;
+
   const [data, center] = await Promise.all([
-    getTrainerPanelData(session.user.orgId, session.user.id, session.user.role),
+    getTrainerPanelData(session.user.orgId, session.user.id, session.user.role, selectedDay),
     session.user.centerId
       ? prisma.center.findUnique({ where: { id: session.user.centerId }, select: { name: true } })
       : Promise.resolve(null),
@@ -36,9 +60,6 @@ export default async function TrainerPanelPage() {
   const kicker = `${dateLabel.charAt(0).toUpperCase()}${dateLabel.slice(1)}${center?.name ? ` · ${center.name}` : ""}`;
 
   const sessionCount = data.todaySessions.length;
-  const rangeLabel = sessionCount
-    ? `${data.todaySessions[0].startTime}–${data.todaySessions[sessionCount - 1].endTime}`
-    : null;
   const statusLabel = [
     data.completedCount > 0 ? `${data.completedCount} completada${data.completedCount > 1 ? "s" : ""}` : null,
     data.currentSession ? "1 en curso" : null,
@@ -50,6 +71,14 @@ export default async function TrainerPanelPage() {
   const spotlight = data.currentSession ?? data.nextSession ?? null;
   const progressPct = data.currentSession?.progressPct ?? 0;
   const dashOffset = spotlightKind === "current" ? Math.round(176 * (1 - progressPct / 100)) : 176;
+
+  const agendaSessionCount = data.agendaSessions.length;
+  const agendaRangeLabel = agendaSessionCount
+    ? `${data.agendaSessions[0].startTime}–${data.agendaSessions[agendaSessionCount - 1].endTime}`
+    : null;
+  const canGoPrevDay = selectedDay.getTime() > today.getTime();
+  const prevDayHref = `/trainer?day=${formatDateParam(addDays(selectedDay, -1))}`;
+  const nextDayHref = `/trainer?day=${formatDateParam(addDays(selectedDay, 1))}`;
 
   return (
     <div className="tz-page">
@@ -169,13 +198,44 @@ export default async function TrainerPanelPage() {
         <div className="flex-[1_1_600px] min-w-0 flex flex-col gap-5">
           {/* AGENDA DE HOY */}
           <Card
-            title="Agenda de hoy"
-            meta={rangeLabel ? `${sessionCount} sesiones · ${rangeLabel}` : undefined}
+            title={agendaCardTitle(selectedDay, today)}
+            meta={agendaRangeLabel ? `${agendaSessionCount} sesiones · ${agendaRangeLabel}` : undefined}
             delay={0.28}
-            action={statusLabel ? <span className="text-xs font-semibold text-brand-muted">{statusLabel}</span> : undefined}
+            action={
+              <div className="flex items-center gap-3">
+                {data.agendaIsToday && statusLabel && <span className="text-xs font-semibold text-brand-muted">{statusLabel}</span>}
+                <div className="flex items-center gap-1">
+                  {!data.agendaIsToday && (
+                    <Link href="/trainer" className="mr-1 text-xs font-bold uppercase tracking-[.06em] text-brand-muted hover:text-brand-text">
+                      Hoy
+                    </Link>
+                  )}
+                  {canGoPrevDay ? (
+                    <Link
+                      href={prevDayHref}
+                      aria-label="Día anterior"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-brand-border text-brand-text-2 transition-colors hover:bg-brand-bg hover:text-brand-text"
+                    >
+                      ‹
+                    </Link>
+                  ) : (
+                    <span aria-hidden className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-brand-border text-brand-text-2 opacity-30">
+                      ‹
+                    </span>
+                  )}
+                  <Link
+                    href={nextDayHref}
+                    aria-label="Día siguiente"
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-brand-border text-brand-text-2 transition-colors hover:bg-brand-bg hover:text-brand-text"
+                  >
+                    ›
+                  </Link>
+                </div>
+              </div>
+            }
           >
-            {/* Spotlight */}
-            {spotlightKind === "empty" ? (
+            {/* Spotlight: solo aplica al día real de hoy, es estado en tiempo real */}
+            {!data.agendaIsToday ? null : spotlightKind === "empty" ? (
               <div className="rounded-[14px] bg-brand-ink p-6 mb-[22px] [&_h3]:text-tz-bone [&_p]:text-tz-linen">
                 <EmptyState
                   title="Día completado"
@@ -287,14 +347,18 @@ export default async function TrainerPanelPage() {
             )}
 
             {/* Timeline */}
-            {data.todaySessions.length === 0 ? null : (
+            {data.agendaSessions.length === 0 ? (
+              data.agendaIsToday ? null : (
+                <EmptyState title="Sin sesiones" description="No tienes sesiones programadas ese día." />
+              )
+            ) : (
               // El timeline crece con las sesiones del día: se acota para que la
               // tarjeta no empuje el resto del panel y se navega con scroll propio.
               <div className="max-h-[420px] overflow-y-auto -mr-1.5 pr-1.5">
                 <div className="relative pl-[26px]">
                   <span className="absolute left-[5px] top-[6px] bottom-[6px] w-[2px] rounded-full bg-gradient-to-b from-tz-linen to-tz-sand" />
                   <div className="flex flex-col">
-                  {data.todaySessions.map((s, i) => (
+                  {data.agendaSessions.map((s, i) => (
                     <Link
                       key={s.id}
                       href={s.status === "past" ? `/agenda/session/${s.id}` : `/brief/${s.id}`}
