@@ -1,11 +1,10 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireSession } from "@/lib/session";
 import { requireRole } from "@/lib/guard";
 import { canManageEpSlots } from "@/lib/rbac";
 import { setSessionDirector, setSessionSelfBookable } from "@/lib/agenda-queries";
+import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
@@ -13,7 +12,7 @@ export async function setSessionDirectorAction(sessionId: string, directedByUser
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const result = await setSessionDirector(session.user.orgId, sessionId, directedByUserId || null);
   if (!result.ok) return result;
-  revalidatePath(`/agenda/session/${sessionId}`);
+  revalidateSessionViews(sessionId);
   return { ok: true };
 }
 
@@ -22,15 +21,19 @@ export async function setSessionSelfBookableAction(sessionId: string, selfBookab
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso." };
   const result = await setSessionSelfBookable(session.user.orgId, sessionId, selfBookable);
   if (!result.ok) return result;
-  revalidatePath(`/agenda/session/${sessionId}`);
+  revalidateSessionViews(sessionId);
   return { ok: true };
 }
 
 export type CheckInActionResult = { ok: true; checkedIn: boolean } | { ok: false; error: string };
 
 export async function toggleCheckIn(bookingId: string, sessionId: string): Promise<CheckInActionResult> {
-  await requireSession();
-  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  const actor = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  // Acotado a la sesión y a la organización del actor: `findUnique` por id
+  // dejaba pasar el check-in de una reserva de cualquier otra organización.
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, sessionId, session: { orgId: actor.user.orgId } },
+  });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
 
   const newStatus = booking.status === "ATTENDED" ? "BOOKED" : "ATTENDED";
@@ -41,6 +44,6 @@ export async function toggleCheckIn(bookingId: string, sessionId: string): Promi
       checkedInAt: newStatus === "ATTENDED" ? new Date() : null,
     },
   });
-  revalidatePath(`/agenda/session/${sessionId}`);
+  revalidateSessionViews(sessionId);
   return { ok: true, checkedIn: newStatus === "ATTENDED" };
 }
