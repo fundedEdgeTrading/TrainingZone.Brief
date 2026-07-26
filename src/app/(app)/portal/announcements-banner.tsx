@@ -42,7 +42,7 @@ export function AnnouncementsBanner({
 
   return (
     <div
-      className="relative overflow-hidden rounded-[18px] h-[272px] bg-brand-ink border border-brand-border-dark tz-fade-up"
+      className="relative overflow-hidden rounded-[18px] min-h-[272px] bg-brand-ink border border-brand-border-dark tz-fade-up"
       onMouseEnter={() => pauseOnHover && setPaused(true)}
       onMouseLeave={() => pauseOnHover && setPaused(false)}
     >
@@ -51,21 +51,9 @@ export function AnnouncementsBanner({
         style={{ transform: `translateX(-${current * 100}%)` }}
       >
         {announcements.map((a) => (
-          <div
-            key={a.id}
-            className="flex-[0_0_100%] h-full relative overflow-hidden flex flex-col justify-center px-[38px] pr-[128px] py-[26px] box-border"
-          >
-            <div className="absolute -right-16 -top-16 w-[230px] h-[230px] rounded-full bg-brand-ink-soft" />
-            {a.imageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={a.imageUrl}
-                alt=""
-                className="absolute right-[26px] top-1/2 -translate-y-1/2 w-[190px] h-[190px] rounded-2xl object-cover z-10 shadow-lg"
-              />
-            )}
-            <div className="relative z-20 max-w-full">
-              <div className="flex gap-2 items-center mb-3.5">
+          <div key={a.id} className="flex-[0_0_100%] h-full relative overflow-hidden flex flex-wrap box-border">
+            <div className="flex-1 min-w-[340px] flex flex-col justify-center gap-3.5 px-7 py-[30px] pb-[34px]">
+              <div className="flex gap-2 items-center">
                 <span
                   className={`text-[11px] font-bold uppercase tracking-[.06em] rounded-full px-2.5 py-[3px] ${
                     CATEGORY_TONE[a.category] ?? "bg-white/15 text-white"
@@ -79,14 +67,14 @@ export function AnnouncementsBanner({
                   </span>
                 )}
               </div>
-              <div className="font-display font-extrabold text-[23px] leading-[1.08] text-white uppercase tracking-[-.01em] line-clamp-2">
+              <div className="font-display font-extrabold text-[23px] leading-[1.08] text-white uppercase tracking-[-.01em] line-clamp-2 text-pretty">
                 {a.title}
               </div>
               {a.body && (
-                <p className="text-[13.5px] text-brand-muted-2 mt-2.5 max-w-[540px] leading-[1.5] line-clamp-2">{a.body}</p>
+                <p className="text-[13.5px] text-brand-muted-2 leading-[1.5] line-clamp-2 text-pretty">{a.body}</p>
               )}
               {a.tags.length > 0 && (
-                <div className="flex gap-1.5 mt-3.5">
+                <div className="flex gap-1.5 flex-wrap">
                   {a.tags.map((t) => (
                     <span key={t} className="text-[11px] rounded-full px-2.5 py-[3px] bg-white/10 text-brand-muted-2">
                       #{t}
@@ -94,34 +82,43 @@ export function AnnouncementsBanner({
                   ))}
                 </div>
               )}
+
+              {count > 1 && (
+                <div className="flex items-center gap-2.5">
+                  <span className="font-display font-bold text-xs tracking-[.1em] text-brand-muted-2">
+                    {String(current + 1).padStart(2, "0")} / {String(count).padStart(2, "0")}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Anterior"
+                    onClick={() => go(current - 1)}
+                    className="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[.06] text-tz-bone hover:bg-white/[.16] text-[18px] leading-none flex items-center justify-center"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Siguiente"
+                    onClick={() => go(current + 1)}
+                    className="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[.06] text-tz-bone hover:bg-white/[.16] text-[18px] leading-none flex items-center justify-center"
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
             </div>
+
+            {a.imageUrl && (
+              <div className="flex-[0_1_41%] min-w-[230px] min-h-[190px] relative overflow-hidden bg-brand-ink-soft">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                <div className="absolute inset-0 shadow-[inset_1px_0_0_rgba(255,255,255,.08)]" />
+                <div className="absolute inset-y-0 left-0 w-[88px] bg-gradient-to-r from-brand-ink to-transparent" />
+              </div>
+            )}
           </div>
         ))}
       </div>
-
-      {count > 1 && (
-        <div className="absolute bottom-4 right-[18px] z-20 flex items-center gap-2.5">
-          <span className="font-display font-bold text-xs tracking-[.1em] text-brand-muted-2">
-            {String(current + 1).padStart(2, "0")} / {String(count).padStart(2, "0")}
-          </span>
-          <button
-            type="button"
-            aria-label="Anterior"
-            onClick={() => go(current - 1)}
-            className="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[.06] text-tz-bone hover:bg-white/[.16] text-[18px] leading-none flex items-center justify-center"
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            aria-label="Siguiente"
-            onClick={() => go(current + 1)}
-            className="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[.06] text-tz-bone hover:bg-white/[.16] text-[18px] leading-none flex items-center justify-center"
-          >
-            ›
-          </button>
-        </div>
-      )}
 
       {count > 1 && (
         <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/[.12] z-20">
