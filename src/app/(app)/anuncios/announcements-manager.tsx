@@ -58,6 +58,11 @@ export default function AnnouncementsManager({
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<AnnouncementRow | null>(null);
   const [imageUrl, setImageUrl] = useState<string>("");
+  // El drawer nunca se desmonta (solo se oculta), así que los inputs que el
+  // gestor haya tocado conservan su valor al abrirlo con otro anuncio: los
+  // `defaultValue` nuevos no se aplican a un input ya "sucio". Cambiar la key
+  // en cada apertura fuerza el remontaje y con él el formulario correcto.
+  const [formKey, setFormKey] = useState(0);
   const [pending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
   const toast = useToast();
@@ -65,12 +70,14 @@ export default function AnnouncementsManager({
   function openCreate() {
     setEditing(null);
     setImageUrl("");
+    setFormKey((k) => k + 1);
     setOpen(true);
   }
 
   function openEdit(a: AnnouncementRow) {
     setEditing(a);
     setImageUrl(a.imageUrl ?? "");
+    setFormKey((k) => k + 1);
     setOpen(true);
   }
 
@@ -190,7 +197,7 @@ export default function AnnouncementsManager({
         kicker="Dashboard del socio"
         title={editing ? "Editar anuncio" : "Nuevo anuncio"}
       >
-        <form ref={formRef} action={submit} className="flex flex-col gap-4 p-6 sm:p-7">
+        <form key={formKey} ref={formRef} action={submit} className="flex flex-col gap-4 p-6 sm:p-7">
           <Field label="Título">
             <Input name="title" defaultValue={editing?.title ?? ""} placeholder="p.ej. Quedada del club de running" required />
           </Field>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import clsx from "clsx";
 import { useToast } from "./toast";
 
@@ -38,9 +38,31 @@ export function ImageDropzone({
 }) {
   const inputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
+  const hiddenRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(defaultValue ?? null);
   const [dragOver, setDragOver] = useState(false);
   const toast = useToast();
+
+  // `preview` es estado de React, así que no se entera de dos cosas que sí
+  // afectan al resto del formulario:
+  //   1. Un formulario reutilizado sin desmontarse (el drawer solo se oculta)
+  //      que pasa un `defaultValue` nuevo al editar otro registro.
+  //   2. form.reset() tras guardar, que sí limpia los inputs normales.
+  // Sin esto, la vista previa —y el hidden input que viaja en el FormData— se
+  // quedaban con la imagen del registro anterior y se reenviaba en el siguiente.
+  const [lastDefault, setLastDefault] = useState(defaultValue ?? null);
+  if (lastDefault !== (defaultValue ?? null)) {
+    setLastDefault(defaultValue ?? null);
+    setPreview(defaultValue ?? null);
+  }
+
+  useEffect(() => {
+    const form = hiddenRef.current?.form;
+    if (!form) return;
+    const onReset = () => setPreview(defaultValue ?? null);
+    form.addEventListener("reset", onReset);
+    return () => form.removeEventListener("reset", onReset);
+  }, [defaultValue]);
 
   function handleFile(file: File | undefined) {
     if (!file) return;
@@ -68,7 +90,7 @@ export function ImageDropzone({
           {label}
         </label>
       )}
-      <input type="hidden" name={name} value={preview ?? ""} />
+      <input ref={hiddenRef} type="hidden" name={name} value={preview ?? ""} />
       <button
         type="button"
         id={inputId}
