@@ -20,6 +20,7 @@ import {
 import { moveSessionAction } from "./session-actions";
 import SessionDialog, { type DialogState } from "./session-dialog";
 import { TrainerTooltip } from "./trainer-tooltip";
+import { usePointerDrag } from "@/lib/use-pointer-drag";
 
 type Trainer = { id: string; name: string };
 type Member = { id: string; firstName: string; lastName: string };
@@ -73,8 +74,7 @@ export default function AgendaView({
 
   const gridRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ id: string; grabDelta: number; dur: number; moved: boolean; sx: number; sy: number } | null>(null);
-  const colDownRef = useRef<{ day: number; min: number; sy: number; moved: boolean } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = (7 - START_HOUR) * ROW_HEIGHT;
@@ -91,55 +91,50 @@ export default function AgendaView({
     return { day, min };
   }
 
-  useEffect(() => {
-    function onMove(e: MouseEvent) {
-      if (dragRef.current) {
-        const g = geom(e.clientX, e.clientY);
-        if (!g) return;
-        const drag = dragRef.current;
-        if (!drag.moved && Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) > 4) drag.moved = true;
-        if (drag.moved) {
-          let ns = snap(g.min - drag.grabDelta, 15);
-          ns = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - drag.dur, ns));
-          setEvents((evs) =>
-            evs.map((ev) => (ev.id === drag.id ? { ...ev, dayIndex: g.day, startMin: ns, endMin: ns + drag.dur } : ev))
-          );
-        }
-      } else if (colDownRef.current) {
-        if (Math.abs(e.clientY - colDownRef.current.sy) > 4) colDownRef.current.moved = true;
+  // Un solo gesto activo: mover una sesión existente o pulsar en hueco libre
+  // para crear una nueva. En táctil hay que mantener pulsado para arrastrar.
+  type Gesture =
+    | { kind: "event"; id: string; grabDelta: number; dur: number }
+    | { kind: "column"; day: number; min: number };
+
+  const drag = usePointerDrag<Gesture>({
+    threshold: 4,
+    onActivate: (g) => {
+      if (g.kind === "event") setDraggingId(g.id);
+    },
+    onMove: (gesture, p) => {
+      if (gesture.kind !== "event") return;
+      const g = geom(p.x, p.y);
+      if (!g) return;
+      let ns = snap(g.min - gesture.grabDelta, 15);
+      ns = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - gesture.dur, ns));
+      setEvents((evs) =>
+        evs.map((ev) => (ev.id === gesture.id ? { ...ev, dayIndex: g.day, startMin: ns, endMin: ns + gesture.dur } : ev))
+      );
+    },
+    onEnd: (gesture, _p, moved) => {
+      setDraggingId(null);
+      if (gesture.kind === "column") {
+        if (!moved && canEdit) openCreate(gesture.day, gesture.min);
+        return;
       }
-    }
-    function onUp() {
-      if (dragRef.current) {
-        const drag = dragRef.current;
-        dragRef.current = null;
-        if (!drag.moved) {
-          openEdit(drag.id);
-        } else if (canEdit) {
-          const ev = events.find((e) => e.id === drag.id);
-          if (ev) {
-            const date = formatDateParam(addDays(weekStart, ev.dayIndex));
-            moveSessionAction({ id: ev.id, centerId, date, startTime: fmtHHMM(ev.startMin), endTime: fmtHHMM(ev.endMin) }).then(
-              (res) => {
-                if (!res.ok) router.refresh();
-              }
-            );
-          }
-        }
-      } else if (colDownRef.current) {
-        const cd = colDownRef.current;
-        colDownRef.current = null;
-        if (!cd.moved && canEdit) openCreate(cd.day, cd.min);
+      if (!moved) {
+        openEdit(gesture.id);
+        return;
       }
-    }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, weekStart, canEdit, centerId]);
+      if (!canEdit) return;
+      const ev = events.find((e) => e.id === gesture.id);
+      if (!ev) return;
+      const date = formatDateParam(addDays(weekStart, ev.dayIndex));
+      moveSessionAction({ id: ev.id, centerId, date, startTime: fmtHHMM(ev.startMin), endTime: fmtHHMM(ev.endMin) }).then((res) => {
+        if (!res.ok) router.refresh();
+      });
+    },
+    onCancel: () => {
+      setDraggingId(null);
+      setEvents(occurrences);
+    },
+  });
 
   function navigate(newWeekStart: Date) {
     router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}`);
@@ -336,11 +331,11 @@ export default function AgendaView({
                     <div
                       key={i}
                       className="flex-1 relative border-l border-tz-sand"
-                      onMouseDown={(e) => {
+                      onPointerDown={(e) => {
                         if ((e.target as HTMLElement).closest("[data-event-card]")) return;
                         const g = geom(e.clientX, e.clientY);
                         if (!g) return;
-                        colDownRef.current = { day: i, min: g.min, sy: e.clientY, moved: false };
+                        drag.start(e, { kind: "column", day: i, min: g.min });
                       }}
                     >
                       {showNow && (
@@ -362,29 +357,27 @@ export default function AgendaView({
                             name={trainerName[ev.trainerId] ?? "Sin entrenador"}
                             color={color}
                             data-event-card
-                            onMouseDown={(e) => {
+                            onPointerDown={(e) => {
                               if (!canEdit) return;
                               e.stopPropagation();
                               const g = geom(e.clientX, e.clientY);
-                              dragRef.current = {
+                              drag.start(e, {
+                                kind: "event",
                                 id: ev.id,
                                 grabDelta: g ? g.min - ev.startMin : 0,
                                 dur: ev.endMin - ev.startMin,
-                                moved: false,
-                                sx: e.clientX,
-                                sy: e.clientY,
-                              };
+                              });
                             }}
-                            className="absolute rounded-md text-white"
+                            className="absolute rounded-md text-white select-none [-webkit-touch-callout:none]"
                             style={{
                               top,
                               height,
                               left: `calc(${ev.col * widthPct}% + 1px)`,
                               width: `calc(${widthPct}% - 3px)`,
                               background: color,
-                              boxShadow: "0 1px 2px rgba(29,29,28,.18)",
-                              cursor: canEdit ? "grab" : "default",
-                              zIndex: 2,
+                              boxShadow: draggingId === ev.id ? "0 10px 24px -6px rgba(29,29,28,.45)" : "0 1px 2px rgba(29,29,28,.18)",
+                              cursor: canEdit ? (draggingId === ev.id ? "grabbing" : "grab") : "default",
+                              zIndex: draggingId === ev.id ? 3 : 2,
                               borderLeft: "3px solid rgba(255,255,255,.35)",
                             }}
                             title={ev.title}

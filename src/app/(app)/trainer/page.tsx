@@ -288,9 +288,12 @@ export default async function TrainerPanelPage() {
 
             {/* Timeline */}
             {data.todaySessions.length === 0 ? null : (
-              <div className="relative pl-[26px]">
-                <span className="absolute left-[5px] top-[6px] bottom-[6px] w-[2px] rounded-full bg-gradient-to-b from-tz-linen to-tz-sand" />
-                <div className="flex flex-col">
+              // El timeline crece con las sesiones del día: se acota para que la
+              // tarjeta no empuje el resto del panel y se navega con scroll propio.
+              <div className="max-h-[420px] overflow-y-auto -mr-1.5 pr-1.5">
+                <div className="relative pl-[26px]">
+                  <span className="absolute left-[5px] top-[6px] bottom-[6px] w-[2px] rounded-full bg-gradient-to-b from-tz-linen to-tz-sand" />
+                  <div className="flex flex-col">
                   {data.todaySessions.map((s, i) => (
                     <Link
                       key={s.id}
@@ -315,6 +318,7 @@ export default async function TrainerPanelPage() {
                       <Badge tone={s.chipTone}>{s.chipLabel}</Badge>
                     </Link>
                   ))}
+                  </div>
                 </div>
               </div>
             )}

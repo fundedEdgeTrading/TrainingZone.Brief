@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import type { LeadCloseType, LeadStatus } from "@prisma/client";
 import { updateLeadStageAction, claimLeadAction } from "./actions";
 import type { LeadRow } from "@/lib/leads-queries";
+import { usePointerDrag } from "@/lib/use-pointer-drag";
 
 type Column = { status: LeadStatus; label: string; tone: BadgeTone; dot: string };
 
@@ -31,12 +32,12 @@ export function LeadsBoard({ columns, leadsByStatus, canClaim }: { columns: Colu
   const [, startTransition] = useTransition();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<LeadStatus | null>(null);
+  // Fantasma que sigue al puntero mientras se arrastra (en táctil el dedo tapa
+  // la tarjeta original, así que se necesita una pista visual desplazada).
+  const [ghost, setGhost] = useState<{ label: string; x: number; y: number } | null>(null);
+  const justDraggedRef = useRef(false);
 
-  function handleDrop(status: LeadStatus) {
-    setDragOver(null);
-    const leadId = draggingId;
-    setDraggingId(null);
-    if (!leadId) return;
+  function handleDrop(leadId: string, status: LeadStatus) {
     if (!DRAGGABLE_TARGETS.has(status)) {
       router.push(`/leads/${leadId}`);
       return;
@@ -48,6 +49,38 @@ export function LeadsBoard({ columns, leadsByStatus, canClaim }: { columns: Colu
     });
   }
 
+  /** Columna bajo el puntero: el fantasma lleva `pointer-events:none` para no taparla. */
+  function columnAt(x: number, y: number): LeadStatus | null {
+    const el = document.elementFromPoint(x, y)?.closest("[data-lead-column]");
+    return (el?.getAttribute("data-lead-column") as LeadStatus | undefined) ?? null;
+  }
+
+  const drag = usePointerDrag<{ id: string; label: string }>({
+    onActivate: (lead, p) => {
+      setDraggingId(lead.id);
+      setGhost({ label: lead.label, x: p.x, y: p.y });
+    },
+    onMove: (_lead, p) => {
+      setGhost((g) => (g ? { ...g, x: p.x, y: p.y } : g));
+      setDragOver(columnAt(p.x, p.y));
+    },
+    onEnd: (lead, p, moved) => {
+      setDraggingId(null);
+      setGhost(null);
+      setDragOver(null);
+      if (!moved) return;
+      justDraggedRef.current = true;
+      window.setTimeout(() => (justDraggedRef.current = false), 0);
+      const status = columnAt(p.x, p.y);
+      if (status) handleDrop(lead.id, status);
+    },
+    onCancel: () => {
+      setDraggingId(null);
+      setGhost(null);
+      setDragOver(null);
+    },
+  });
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 items-start">
       {columns.map((col) => {
@@ -56,15 +89,7 @@ export function LeadsBoard({ columns, leadsByStatus, canClaim }: { columns: Colu
         return (
           <div
             key={col.status}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(col.status);
-            }}
-            onDragLeave={() => setDragOver((s) => (s === col.status ? null : s))}
-            onDrop={(e) => {
-              e.preventDefault();
-              handleDrop(col.status);
-            }}
+            data-lead-column={col.status}
             className={`rounded-card shadow-card overflow-hidden border transition-colors duration-150 ${
               isOver ? "bg-[#faf8f3]" : "bg-brand-card"
             }`}
@@ -81,10 +106,17 @@ export function LeadsBoard({ columns, leadsByStatus, canClaim }: { columns: Colu
               {items.map((lead) => (
                 <div
                   key={lead.id}
-                  draggable
-                  onDragStart={() => setDraggingId(lead.id)}
-                  onDragEnd={() => setDraggingId(null)}
-                  className={`rounded-control border border-brand-border bg-white p-2.5 cursor-grab active:cursor-grabbing hover:shadow-hover hover:border-brand-border-hover transition-[box-shadow,border-color,opacity] duration-200 ${
+                  onPointerDown={(e) => {
+                    if ((e.target as HTMLElement).closest("button")) return;
+                    drag.start(e, { id: lead.id, label: `${lead.firstName} ${lead.lastName}` });
+                  }}
+                  // Tras arrastrar, el `click` de cierre no debe navegar al detalle.
+                  onClickCapture={(e) => {
+                    if (!justDraggedRef.current) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  className={`rounded-control border border-brand-border bg-white p-2.5 cursor-grab active:cursor-grabbing hover:shadow-hover hover:border-brand-border-hover transition-[box-shadow,border-color,opacity] duration-200 touch-pan-y select-none [-webkit-touch-callout:none] ${
                     draggingId === lead.id ? "opacity-40" : ""
                   }`}
                 >
@@ -146,6 +178,14 @@ export function LeadsBoard({ columns, leadsByStatus, canClaim }: { columns: Colu
           </div>
         );
       })}
+      {ghost && (
+        <div
+          className="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 rounded-control border border-brand-ink bg-white px-3 py-2 text-sm font-semibold text-brand-text shadow-pop"
+          style={{ left: ghost.x, top: ghost.y }}
+        >
+          {ghost.label}
+        </div>
+      )}
     </div>
   );
 }
