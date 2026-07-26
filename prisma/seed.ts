@@ -1891,7 +1891,15 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       },
     });
 
-    const conversation = await prisma.conversation.create({ data: { orgId, memberId: demoMemberId } });
+    // Conversation.memberId es @unique: con upsert este bloque aguanta que la
+    // fila ya exista (relanzar el seed sobre una limpieza incompleta, o dos
+    // pasadas sobre la misma base) en vez de romper con P2002.
+    const conversation = await prisma.conversation.upsert({
+      where: { memberId: demoMemberId },
+      update: {},
+      create: { orgId, memberId: demoMemberId },
+    });
+    await prisma.chatMessage.deleteMany({ where: { conversationId: conversation.id } });
     await prisma.chatMessage.createMany({
       data: [
         { id: id(), conversationId: conversation.id, senderKind: "TRAINER", senderUserId: demoTrainer?.id ?? null, body: "¡Hola! ¿Qué tal la rodilla esta semana?", createdAt: addDays(TODAY, -2) },
