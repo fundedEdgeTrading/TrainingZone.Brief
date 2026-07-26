@@ -56,7 +56,15 @@ export function AnnouncementsBanner({
             className="flex-[0_0_100%] h-full relative overflow-hidden flex flex-col justify-center px-[38px] pr-[128px] py-[26px] box-border"
           >
             <div className="absolute -right-16 -top-16 w-[230px] h-[230px] rounded-full bg-brand-ink-soft" />
-            <div className="relative z-10 max-w-full">
+            {a.imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={a.imageUrl}
+                alt=""
+                className="absolute right-[26px] top-1/2 -translate-y-1/2 w-[190px] h-[190px] rounded-2xl object-cover z-10 shadow-lg"
+              />
+            )}
+            <div className="relative z-20 max-w-full">
               <div className="flex gap-2 items-center mb-3.5">
                 <span
                   className={`text-[11px] font-bold uppercase tracking-[.06em] rounded-full px-2.5 py-[3px] ${
