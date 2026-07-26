@@ -51,10 +51,16 @@ type Tone = "good" | "warning" | "critical" | "gold" | "neutral";
 
 /** RB-RRHH-005 (rediseño): panel operativo del entrenador — agenda de hoy, pendientes,
  * huecos de EP, reconocimiento y clientes de EP, todo derivado de datos reales. */
-export async function getTrainerPanelData(orgId: string, trainerUserId: string, actorRole: Role) {
+export async function getTrainerPanelData(orgId: string, trainerUserId: string, actorRole: Role, agendaDay?: Date) {
   const now = new Date();
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
+
+  // Día mostrado en la tarjeta "Agenda de hoy": hoy por defecto, o el día
+  // navegado (nunca antes de hoy, ver `trainer/page.tsx`).
+  const selectedDay = new Date(agendaDay ?? today);
+  selectedDay.setHours(0, 0, 0, 0);
+  const agendaIsToday = selectedDay.getTime() === today.getTime();
 
   const monthStart = new Date();
   monthStart.setDate(1);
@@ -138,6 +144,21 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       select: { status: true },
     }),
   ]);
+
+  // Solo se consulta aparte cuando se navega a un día distinto de hoy; el caso
+  // por defecto reutiliza `todaySessionsRaw` sin una segunda ida a BD.
+  const agendaDaySessionsRaw = agendaIsToday
+    ? todaySessionsRaw
+    : await prisma.classSession.findMany({
+        where: { orgId, status: "SCHEDULED", ...sessionsInRangeWhere(selectedDay, addDays(selectedDay, 1)), ...ownSessionFilter },
+        include: {
+          bookings: {
+            where: { status: { not: "CANCELLED" } },
+            include: { member: { select: { id: true, firstName: true, lastName: true } }, debrief: { select: { rpe: true } } },
+          },
+        },
+        orderBy: { startTime: "asc" },
+      });
 
   // ---------- KPIs: horas EP / grupos, delta mensual, adherencia media ----------
   // Una serie recurrente cuenta una vez por ocurrencia dentro del rango, no una
@@ -256,11 +277,21 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const adherenceAvg = epClients.length ? Math.round(epClients.reduce((s, c) => s + c.adherencePct, 0) / epClients.length) : 0;
 
   // ---------- Agenda de hoy + spotlight ----------
-  const todaySessions = todaySessionsRaw.map((s) => {
+  // `sessionsInRangeWhere` es deliberadamente amplio a nivel de BD (deja pasar
+  // cualquier fila de una serie recurrente vigente, sin comprobar el día de la
+  // semana); sin proyectar con `expandOccurrences` antes de mapear, la agenda
+  // mostraba también series que ese día en concreto no tienen ocurrencia.
+  function buildSessionItem(s: (typeof todaySessionsRaw)[number], dayIsToday: boolean) {
     const startMin = timeToMinutes(s.startTime);
     const endMin = timeToMinutes(s.endTime);
     const nowMin = now.getHours() * 60 + now.getMinutes();
-    const status: "past" | "current" | "upcoming" = nowMin >= endMin ? "past" : nowMin >= startMin ? "current" : "upcoming";
+    const status: "past" | "current" | "upcoming" = !dayIsToday
+      ? "upcoming"
+      : nowMin >= endMin
+        ? "past"
+        : nowMin >= startMin
+          ? "current"
+          : "upcoming";
     const active = s.bookings.filter((b) => b.status !== "CANCELLED");
     const attended = active.filter((b) => b.status === "ATTENDED");
     const noShow = active.filter((b) => b.status === "NO_SHOW");
@@ -321,11 +352,18 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       chipTone,
       progressPct: status === "current" ? Math.round(Math.min(100, Math.max(0, ((nowMin - startMin) / (endMin - startMin)) * 100))) : 0,
       minutesRemaining: status === "current" ? Math.max(0, endMin - nowMin) : null,
-      minutesUntil: status === "upcoming" ? Math.max(0, startMin - nowMin) : null,
+      minutesUntil: status === "upcoming" && dayIsToday ? Math.max(0, startMin - nowMin) : null,
       soloMember,
       soloMemberId: isPersonal ? active[0]?.member.id ?? null : null,
     };
-  });
+  }
+
+  const todaySessions = expandOccurrences(todaySessionsRaw, today, tomorrow).map(({ session }) => buildSessionItem(session, true));
+  // Reutiliza `todaySessions` cuando se navega al día de hoy: mismo cálculo,
+  // sin proyectar dos veces.
+  const agendaSessions = agendaIsToday
+    ? todaySessions
+    : expandOccurrences(agendaDaySessionsRaw, selectedDay, addDays(selectedDay, 1)).map(({ session }) => buildSessionItem(session, false));
 
   const currentSession = todaySessions.find((s) => s.status === "current") ?? null;
   const nextSession = currentSession ? null : todaySessions.find((s) => s.status === "upcoming") ?? null;
@@ -427,6 +465,9 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     nextSession,
     completedCount,
     nextInMinutes,
+    agendaDay: selectedDay,
+    agendaIsToday,
+    agendaSessions,
     pendingDebriefs,
     pendingBriefs,
     aptitudeAlerts,
