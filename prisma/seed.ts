@@ -14,6 +14,7 @@ import {
   SubscriptionStatus,
   Role,
   Sex,
+  Prisma,
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
@@ -69,6 +70,13 @@ function demoAvatarUrl(seed: string, initials: string) {
   return svgDataUri(
     `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="hsl(${hue},45%,55%)"/><text x="150" y="172" font-family="Arial,sans-serif" font-size="110" font-weight="700" fill="#fff" text-anchor="middle">${initials}</text></svg>`
   );
+}
+// Fotos de archivo para los anuncios: Lorem Picsum sirve imágenes de Unsplash
+// bajo licencia Unsplash (uso comercial libre y sin atribución), así que la demo
+// no arrastra material con derechos. La semilla fija la foto: el mismo anuncio
+// enseña siempre la misma imagen entre reseeds.
+function stockPhoto(seed: string) {
+  return `https://picsum.photos/seed/tz-${seed}/1200/675`;
 }
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -145,7 +153,6 @@ type CenterCfg = {
   slug: string;
   address: string;
   logoUrl?: string | null;
-  templateCount: number;
   capacityRange: [number, number];
   memberCount: number;
 };
@@ -162,7 +169,7 @@ type ExtraImputacion = {
   allocationPct: number;
   primaryAllocationPct?: number;
 };
-type DemoPlanKey = "group10" | "group20" | "ep10" | "ep20" | "online";
+type DemoPlanKey = "group4" | "group8" | "group12" | "ep4" | "ep8" | "ep12";
 type DemoMemberCfg = { email: string; firstName: string; lastName: string; centerKey: string; planKey?: DemoPlanKey };
 type OrgSeedConfig = {
   name: string;
@@ -327,25 +334,20 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   const ownerId = staffUsers.find((u) => u.role === "OWNER")?.id ?? staffUsers[0].id;
 
   // ---------- Catálogo comercial ----------
-  // Catálogo reducido (decisión de producto): dos modalidades con bono de X
-  // sesiones — Grupos reducidos y Entrenamiento personal — más el plan Online
-  // (biblioteca de vídeo, sin límite de sesiones).
+  // Catálogo (decisión de producto): dos modalidades — Grupos reducidos y
+  // Entrenamiento personal — cada una con bonos de 4, 8 y 12 sesiones.
   const plans = [
-    { id: id(), name: "Grupos reducidos · Bono 10 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 10 as number | null, priceCents: 8000, validityDays: 60 },
-    { id: id(), name: "Grupos reducidos · Bono 20 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 20 as number | null, priceCents: 15000, validityDays: 90 },
-    { id: id(), name: "Entrenamiento personal · Bono 10 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 10 as number | null, priceCents: 22000, validityDays: 60 },
-    { id: id(), name: "Entrenamiento personal · Bono 20 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 20 as number | null, priceCents: 40000, validityDays: 90 },
-    { id: id(), name: "Entrenamiento online", type: PlanType.ONLINE, sessionsIncluded: null as number | null, priceCents: 3900, validityDays: 30 },
+    { id: id(), name: "Grupos reducidos · Bono 4 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 4 as number | null, priceCents: 4000, validityDays: 30 },
+    { id: id(), name: "Grupos reducidos · Bono 8 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 8 as number | null, priceCents: 7200, validityDays: 60 },
+    { id: id(), name: "Grupos reducidos · Bono 12 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 12 as number | null, priceCents: 10200, validityDays: 90 },
+    { id: id(), name: "Entrenamiento personal · Bono 4 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 4 as number | null, priceCents: 14000, validityDays: 30 },
+    { id: id(), name: "Entrenamiento personal · Bono 8 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 8 as number | null, priceCents: 26400, validityDays: 60 },
+    { id: id(), name: "Entrenamiento personal · Bono 12 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 12 as number | null, priceCents: 37200, validityDays: 90 },
   ];
   await prisma.membershipPlan.createMany({ data: plans.map((p) => ({ ...p, orgId })) });
-  const [group10, group20, ep10, ep20, onlinePlan] = plans;
-  const plansByKey: Record<DemoPlanKey, typeof plans[number]> = {
-    group10,
-    group20,
-    ep10,
-    ep20,
-    online: onlinePlan,
-  };
+  const [group4, group8, group12, ep4, ep8, ep12] = plans;
+  const plansByKey: Record<DemoPlanKey, typeof plans[number]> = { group4, group8, group12, ep4, ep8, ep12 };
+  const epPlanIds = new Set<string>([ep4.id, ep8.id, ep12.id]);
 
   // ---------- Plantillas semanales (agenda) ----------
   type Tpl = {
@@ -362,25 +364,95 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     popularity: number;
   };
   const templates: Tpl[] = [];
-  const slotHours = [7, 9, 10, 17, 18, 19, 20];
+  // Parrilla semanal fija: un club real repite el mismo horario cada semana. Se
+  // declara explícitamente (en lugar de sortearla) para que la agenda sea
+  // coherente — sin dos clases en la misma sala a la misma hora, sin entrenador
+  // duplicado y con el nombre de la sesión casando siempre con su tipo de clase.
+  const GROUP_GRID: { weekday: number; start: string; classType: string }[] = [
+    { weekday: 1, start: "07:00", classType: "Funcional" },
+    { weekday: 1, start: "09:30", classType: "Movilidad" },
+    { weekday: 1, start: "18:00", classType: "Fuerza" },
+    { weekday: 1, start: "19:00", classType: "CrossTraining" },
+    { weekday: 2, start: "07:00", classType: "HIIT" },
+    { weekday: 2, start: "10:00", classType: "Fuerza" },
+    { weekday: 2, start: "18:00", classType: "Funcional" },
+    { weekday: 2, start: "19:00", classType: "Movilidad" },
+    { weekday: 3, start: "07:00", classType: "Funcional" },
+    { weekday: 3, start: "09:30", classType: "Fuerza" },
+    { weekday: 3, start: "18:00", classType: "CrossTraining" },
+    { weekday: 3, start: "19:00", classType: "HIIT" },
+    { weekday: 4, start: "07:00", classType: "Fuerza" },
+    { weekday: 4, start: "10:00", classType: "Movilidad" },
+    { weekday: 4, start: "18:00", classType: "Funcional" },
+    { weekday: 4, start: "19:00", classType: "Fuerza" },
+    { weekday: 5, start: "07:00", classType: "HIIT" },
+    { weekday: 5, start: "09:30", classType: "Funcional" },
+    { weekday: 5, start: "18:00", classType: "CrossTraining" },
+    { weekday: 6, start: "10:00", classType: "CrossTraining" },
+    { weekday: 6, start: "11:00", classType: "Movilidad" },
+  ];
+  // Franjas 1:1 de entrenamiento personal, fuera de las horas punta de grupo.
+  const PT_GRID: { weekday: number; start: string }[] = [1, 2, 3, 4, 5].flatMap((weekday) => [
+    { weekday, start: "08:00" },
+    { weekday, start: "17:00" },
+  ]);
+  const GROUP_ROOMS = ["Sala Funcional", "Box"];
+  // Las clases de tarde llenan más que las de primera hora: la popularidad guía
+  // luego cuántas reservas genera cada plantilla.
+  const slotPopularity = (start: string) => {
+    const h = Number(start.slice(0, 2));
+    return h >= 18 ? 0.85 : h >= 17 ? 0.7 : h >= 9 ? 0.55 : 0.45;
+  };
+  const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
   for (const c of centersData) {
     const trainers = trainersByCenter[c.id];
-    for (let i = 0; i < c.templateCount; i++) {
-      const weekday = randInt(1, 6);
-      const hour = pick(slotHours);
-      const classType = pick(CLASS_TYPES);
+    // Reservas ya ocupadas por (entrenador|sala) para no solapar en la rejilla.
+    const busy = new Set<string>();
+    const overlaps = (who: string, weekday: number, from: number, to: number) => {
+      for (let t = from; t < to; t += 5) if (busy.has(`${who}|${weekday}|${t}`)) return true;
+      return false;
+    };
+    const occupy = (who: string, weekday: number, from: number, to: number) => {
+      for (let t = from; t < to; t += 5) busy.add(`${who}|${weekday}|${t}`);
+    };
+
+    const slots = [
+      ...GROUP_GRID.map((g) => ({ ...g, durationMin: 50, isPt: false })),
+      ...PT_GRID.map((g) => ({ ...g, classType: "Personal Training", durationMin: 60, isPt: true })),
+    ];
+    let rotation = 0;
+    for (const slot of slots) {
+      const from = toMin(slot.start);
+      const to = from + slot.durationMin;
+      // Reparto rotatorio, saltando a quien ya tenga algo en esa franja.
+      let trainerId: string | null = null;
+      for (let k = 0; k < trainers.length; k++) {
+        const cand = trainers[(rotation + k) % trainers.length];
+        if (!overlaps(cand.id, slot.weekday, from, to)) {
+          trainerId = cand.id;
+          break;
+        }
+      }
+      rotation++;
+      const room = slot.isPt
+        ? "Sala 1"
+        : GROUP_ROOMS.find((r) => !overlaps(r, slot.weekday, from, to)) ?? GROUP_ROOMS[0];
+      if (trainerId) occupy(trainerId, slot.weekday, from, to);
+      occupy(room, slot.weekday, from, to);
+
       templates.push({
         id: id(),
         centerId: c.id,
-        name: `${classType} ${fmtTime(hour)}`,
-        classType,
-        weekday,
-        startTime: fmtTime(hour),
-        durationMin: classType === "Personal Training" ? 60 : 50,
-        capacity: classType === "Personal Training" ? 1 : randInt(...c.capacityRange),
-        room: pick(["Sala 1", "Sala 2", "Sala Funcional", "Box"]),
-        trainerId: trainers.length ? pick(trainers).id : null,
-        popularity: 0.45 + Math.random() * 0.5,
+        name: `${slot.classType} ${slot.start}`,
+        classType: slot.classType,
+        weekday: slot.weekday,
+        startTime: slot.start,
+        durationMin: slot.durationMin,
+        capacity: slot.isPt ? 1 : randInt(...c.capacityRange),
+        room,
+        trainerId,
+        popularity: slot.isPt ? 0.9 : slotPopularity(slot.start),
       });
     }
   }
@@ -412,6 +484,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     cancelledAt: Date | null;
     userId: string | null;
     preferredTemplates: Tpl[];
+    planKey: DemoPlanKey;
     atRisk: boolean;
     isDemoAnchor: boolean;
   };
@@ -422,6 +495,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   for (const c of centersData) {
     const centerTemplates = templates.filter((t) => t.centerId === c.id && t.classType !== "Personal Training");
+    const ptTemplates = templates.filter((t) => t.centerId === c.id && t.classType === "Personal Training");
+    let ptCursor = 0;
     for (let i = 0; i < c.memberCount; i++) {
       const isDemoAnchor = !!cfg.demoMember && c.key === cfg.demoMember.centerKey && i === 0;
       const state = isDemoAnchor
@@ -441,11 +516,33 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       const firstName = isDemoAnchor ? cfg.demoMember!.firstName : faker.person.firstName();
       const lastName = isDemoAnchor ? cfg.demoMember!.lastName : `${faker.person.lastName()} ${faker.person.lastName()}`;
 
-      const nPref = randInt(1, 3);
+      // El bono contratado decide a qué asiste: quien tiene Grupos reducidos
+      // reserva clases colectivas y quien tiene EP ocupa una franja 1:1 fija.
+      // Sin esta correspondencia la agenda mostraría socios de EP en clases de
+      // grupo (y al revés), que es justo la incoherencia que había que quitar.
+      const planKey: DemoPlanKey = isDemoAnchor
+        ? cfg.demoMember!.planKey ?? "group8"
+        : weightedPick<DemoPlanKey>([
+            ["group4", 14],
+            ["group8", 26],
+            ["group12", 22],
+            ["ep4", 10],
+            ["ep8", 16],
+            ["ep12", 12],
+          ]);
+      const isEp = planKey.startsWith("ep");
+
       const preferredTemplates: Tpl[] = [];
-      const pool = [...centerTemplates];
-      for (let k = 0; k < nPref && pool.length; k++) {
-        preferredTemplates.push(pool.splice(randInt(0, pool.length - 1), 1)[0]);
+      if (isEp && ptTemplates.length) {
+        // Franja 1:1 propia y estable (capacidad 1: repartir evita colisiones).
+        preferredTemplates.push(ptTemplates[ptCursor % ptTemplates.length]);
+        ptCursor++;
+      } else {
+        const nPref = randInt(1, 3);
+        const pool = [...centerTemplates];
+        for (let k = 0; k < nPref && pool.length; k++) {
+          preferredTemplates.push(pool.splice(randInt(0, pool.length - 1), 1)[0]);
+        }
       }
 
       const atRisk = state === MemberState.ACTIVE && !isDemoAnchor && Math.random() < 0.14;
@@ -463,6 +560,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         cancelledAt,
         userId: isDemoAnchor ? demoMemberUserId : null,
         preferredTemplates,
+        planKey,
         atRisk,
         isDemoAnchor,
       });
@@ -485,12 +583,19 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
 
+  // Se recuerda quién firmó imágenes para poder generarle luego la serie de
+  // fotos de seguimiento sin volver a consultar la base de datos.
+  const consentImagesByMember = new Map<string, boolean>();
   await prisma.member.createMany({
     data: members.map((m) => {
       // El socio ancla de la demo (p.ej. Marta) tiene foto de perfil y todos los
       // consentimientos firmados, para poder enseñar Fotos y Evolución en el front.
-      const consentHealth = m.isDemoAnchor || Math.random() < 0.45;
-      const consentImages = m.isDemoAnchor;
+      const consentHealth = m.isDemoAnchor || Math.random() < 0.7;
+      // Con consentimiento de imágenes se les puede generar la serie de fotos de
+      // seguimiento; se firma en la mayoría de altas para que las galerías de
+      // evolución tengan contenido en varios socios, no solo en el ancla.
+      const consentImages = m.isDemoAnchor || Math.random() < 0.65;
+      consentImagesByMember.set(m.id, consentImages);
       const consentMarketing = m.isDemoAnchor || Math.random() < 0.6;
       return {
         id: m.id,
@@ -535,22 +640,11 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     priceCents: number;
     sessionsRemaining: number | null;
   }[] = [];
-  const demoPlanKey = cfg.demoMember?.planKey;
   for (const m of members) {
     if (m.state === MemberState.PROSPECT) continue;
-    // El socio ancla de la demo recibe un plan determinista (para mostrar cada
-    // escenario: grupos con saldo, EP, u online). El resto se reparte entre las
-    // modalidades disponibles.
-    const plan =
-      m.id === demoMemberId && demoPlanKey
-        ? plansByKey[demoPlanKey]
-        : weightedPick<typeof plans[number]>([
-            [group10, 34],
-            [group20, 20],
-            [ep10, 18],
-            [ep20, 10],
-            [onlinePlan, 18],
-          ]);
+    // El plan ya se decidió al crear el socio (junto con sus franjas preferidas),
+    // así que aquí solo se materializa la suscripción correspondiente.
+    const plan = plansByKey[m.planKey];
     const status: SubscriptionStatus =
       m.state === MemberState.CANCELLED
         ? SubscriptionStatus.CANCELLED
@@ -577,16 +671,17 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
   await prisma.subscription.createMany({ data: subscriptions });
 
-  // F9/RB-PERFIL-002 (decisión §11.4): EP y online SIEMPRE tienen entrenador
-  // individual asignado explícitamente; "solo grupos" se queda sin trainerId.
-  const epOrOnlinePlanIds = new Set<string>([ep10.id, ep20.id, onlinePlan.id]);
+  // F9/RB-PERFIL-002 (decisión §11.4): EP SIEMPRE tiene entrenador individual
+  // asignado explícitamente; "solo grupos" se queda sin trainerId. El entrenador
+  // es el de su franja 1:1, para que ficha y agenda cuenten lo mismo.
   const trainerAssignments: { memberId: string; trainerId: string }[] = [];
   for (const sub of subscriptions) {
-    if (sub.status !== SubscriptionStatus.ACTIVE || !epOrOnlinePlanIds.has(sub.planId)) continue;
+    if (sub.status !== SubscriptionStatus.ACTIVE || !epPlanIds.has(sub.planId)) continue;
     const member = members.find((m) => m.id === sub.memberId)!;
     const centerTrainers = trainersByCenter[member.centerId];
     if (!centerTrainers?.length) continue;
-    trainerAssignments.push({ memberId: member.id, trainerId: pick(centerTrainers).id });
+    const slotTrainerId = member.preferredTemplates[0]?.trainerId ?? null;
+    trainerAssignments.push({ memberId: member.id, trainerId: slotTrainerId ?? pick(centerTrainers).id });
   }
   for (const t of trainerAssignments) {
     await prisma.member.update({ where: { id: t.memberId }, data: { trainerId: t.trainerId } });
@@ -903,6 +998,63 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
   await prisma.memberNote.createMany({ data: noteRows });
 
+  // ---------- Seguimiento y evolución (CC1-CC3) ----------
+  // Serie de mediciones + fotos de seguimiento para los socios que han firmado
+  // el consentimiento de imágenes. Las "fotos" son siluetas SVG generadas aquí
+  // mismo (no hay ninguna persona real retratada ni material con derechos) y su
+  // ancho de cintura/brazos sigue los datos de cada toma, así que el comparador
+  // antes/después enseña un cambio real. El socio ancla se salta este bloque:
+  // tiene su propia serie larga, con desglose Tanita, más abajo.
+  const progressRows: Prisma.MemberProgressEntryCreateManyInput[] = [];
+  for (const m of members) {
+    if (m.isDemoAnchor || m.state === MemberState.PROSPECT) continue;
+    if (!consentImagesByMember.get(m.id)) continue;
+    const daysSinceJoin = Math.floor((TODAY.getTime() - m.joinedAt.getTime()) / DAY);
+    if (daysSinceJoin < 45) continue;
+    const takes = randInt(4, 7);
+    const span = Math.min(daysSinceJoin, 150);
+    // Punto de partida y mejora acumulada a lo largo de la serie.
+    let weightKg = 60 + Math.random() * 32;
+    let bodyFatPct = 20 + Math.random() * 15;
+    let waistCm = 72 + Math.random() * 24;
+    const stepW = (0.4 + Math.random() * 0.7) * (Math.random() < 0.82 ? 1 : -1);
+    for (let k = 0; k < takes; k++) {
+      const days = -Math.round(span - (span / (takes - 1)) * k);
+      const measuredAt = addDays(TODAY, days);
+      const isTanita = k === takes - 1 || k === 0;
+      progressRows.push({
+        id: id(),
+        memberId: m.id,
+        date: measuredAt,
+        measuredAt: isTanita ? measuredAt : null,
+        weightKg: Number(weightKg.toFixed(1)),
+        bodyFatPct: Number(bodyFatPct.toFixed(1)),
+        waistCm: Math.round(waistCm),
+        muscleMassKg: Number((weightKg * (1 - bodyFatPct / 100) * 0.52).toFixed(1)),
+        boneMassKg: Number((weightKg * 0.038).toFixed(1)),
+        bodyWaterPct: Number((72 - bodyFatPct * 0.6).toFixed(1)),
+        ...(isTanita
+          ? {
+              visceralFatRating: clamp(Math.round(bodyFatPct / 4), 1, 15),
+              bmrKcal: Math.round(370 + 21.6 * weightKg * (1 - bodyFatPct / 100)),
+              metabolicAge: clamp(Math.round(22 + bodyFatPct * 0.6), 18, 70),
+              bmi: Number((weightKg / 1.72 ** 2).toFixed(1)),
+              source: "TANITA" as const,
+            }
+          : { source: "MANUAL" as const }),
+        photoFrontUrl: bodySilhouetteSvg({ view: "front", weightKg, bodyFatPct, waistCm }),
+        photoSideUrl: bodySilhouetteSvg({ view: "side", weightKg, bodyFatPct, waistCm }),
+        photoBackUrl: bodySilhouetteSvg({ view: "front", weightKg, bodyFatPct, waistCm }),
+      });
+      weightKg -= stepW;
+      bodyFatPct -= stepW * 0.6;
+      waistCm -= stepW * 0.9;
+    }
+  }
+  for (let i = 0; i < progressRows.length; i += 500) {
+    await prisma.memberProgressEntry.createMany({ data: progressRows.slice(i, i + 500) });
+  }
+
   // ---------- Semáforo de Aptitud (G.2) ----------
   await prisma.aptitudeRule.createMany({
     data: APTITUDE_RULES.map((r) => ({ id: id(), orgId, injuryZone: r.injuryZone, blockArea: r.blockArea, light: r.light, adaptation: r.adaptation, editedByUserId: ownerId })),
@@ -975,17 +1127,18 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   // tres colores, y huecos de EP de la semana con tramos libres y reservados.
   if (cfg.slug === "training-zone") {
     const daniTrainer = staffUsers.find((u) => u.email === "entrenador@trainingzone.es");
-    const centroId = centerIdByKey.get("centro");
-    if (daniTrainer && centroId) {
+    const daniCenterKey = cfg.staff.find((s) => s.email === "entrenador@trainingzone.es")?.centerKey ?? null;
+    const daniCenterId = daniCenterKey ? centerIdByKey.get(daniCenterKey) : undefined;
+    if (daniTrainer && daniCenterId) {
       // Agenda de hoy: una sesión ya generada por franja horaria del centro
       // pasa a ser suya, para que la línea de tiempo tenga contenido repartido
       // por la mañana y la tarde entre a la hora que se entre a la demo.
-      const todayCentroByHour = new Map<string, (typeof sessions)[number]>();
+      const todayDaniByHour = new Map<string, (typeof sessions)[number]>();
       for (const s of sessions) {
-        if (s.centerId !== centroId || s.date.getTime() !== TODAY.getTime() || s.name.includes("(cancelada)")) continue;
-        if (!todayCentroByHour.has(s.startTime)) todayCentroByHour.set(s.startTime, s);
+        if (s.centerId !== daniCenterId || s.date.getTime() !== TODAY.getTime() || s.name.includes("(cancelada)")) continue;
+        if (!todayDaniByHour.has(s.startTime)) todayDaniByHour.set(s.startTime, s);
       }
-      const daniTodaySessionIds = [...todayCentroByHour.values()].map((s) => s.id);
+      const daniTodaySessionIds = [...todayDaniByHour.values()].map((s) => s.id);
       if (daniTodaySessionIds.length) {
         await prisma.classSession.updateMany({ where: { id: { in: daniTodaySessionIds } }, data: { trainerId: daniTrainer.id } });
       }
@@ -994,10 +1147,13 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       // (según qué día de la semana caiga el seed), se completan franjas de
       // clase típicas para que la línea de tiempo tenga un recorrido completo
       // de mañana a noche, con socios reales de "centro" apuntados.
-      const AGENDA_HOURS = [7, 9, 10, 17, 18, 19, 20];
+      const AGENDA_HOURS = [6, 12, 15, 16, 20];
       const GROUP_CLASS_TYPES = CLASS_TYPES.filter((c) => c !== "Personal Training");
-      const missingHours = AGENDA_HOURS.filter((h) => !todayCentroByHour.has(fmtTime(h)));
-      const centroActiveMemberIds = members.filter((m) => m.centerId === centroId && m.state === MemberState.ACTIVE).map((m) => m.id);
+      const missingHours = AGENDA_HOURS.filter((h) => !todayDaniByHour.has(fmtTime(h)));
+      // Solo socios de bono de grupo: quien tiene EP entrena 1:1, no en clase.
+      const daniCenterActiveMemberIds = members
+        .filter((m) => m.centerId === daniCenterId && m.state === MemberState.ACTIVE && !m.planKey.startsWith("ep"))
+        .map((m) => m.id);
       const fillCount = Math.max(0, 5 - daniTodaySessionIds.length);
       for (let i = 0; i < Math.min(fillCount, missingHours.length); i++) {
         const hour = missingHours[i];
@@ -1007,19 +1163,19 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           data: {
             id: fillSessionId,
             orgId,
-            centerId: centroId,
+            centerId: daniCenterId,
             name: `${classType} ${fmtTime(hour)}`,
             classType,
             date: TODAY,
             startTime: fmtTime(hour),
             endTime: fmtTime(hour + 1),
-            capacity: randInt(10, 16),
-            room: pick(["Sala 1", "Sala 2", "Sala Funcional"]),
+            capacity: randInt(8, 12),
+            room: "Sala Funcional",
             trainerId: daniTrainer.id,
             status: "SCHEDULED",
           },
         });
-        const attendees = centroActiveMemberIds.slice(i * 5, i * 5 + randInt(4, 8));
+        const attendees = daniCenterActiveMemberIds.slice(i * 5, i * 5 + randInt(4, 8));
         if (attendees.length) {
           await prisma.booking.createMany({
             data: attendees.map((memberId) => ({ id: id(), sessionId: fillSessionId, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) })),
@@ -1052,7 +1208,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           emailLocal: "nacho.bermejo.demo",
           weekday: 2,
           hour: 18,
-          planKey: "ep10",
+          planKey: "ep8",
           joinedAt: addDays(thisCalendarMonthStart, randInt(0, Math.max(0, TODAY.getDate() - 2))),
           weeksBack: 2,
           noShowEvery: 9,
@@ -1066,7 +1222,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           emailLocal: "silvia.cortes.demo",
           weekday: 3,
           hour: 9,
-          planKey: "ep10",
+          planKey: "ep8",
           joinedAt: addDays(TODAY, -(8 * 7 + randInt(3, 10))),
           weeksBack: 8,
           noShowEvery: 4,
@@ -1081,7 +1237,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           emailLocal: "bruno.casals.demo",
           weekday: 4,
           hour: 19,
-          planKey: "ep20",
+          planKey: "ep12",
           joinedAt: addDays(TODAY, -(9 * 7 + randInt(3, 10))),
           weeksBack: 9,
           noShowEvery: 2,
@@ -1096,7 +1252,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           emailLocal: "irene.salcedo.demo",
           weekday: 5,
           hour: 10,
-          planKey: "online",
+          planKey: "ep4",
           joinedAt: addDays(TODAY, -(12 * 7 + randInt(3, 10))),
           weeksBack: 12,
           noShowEvery: 8,
@@ -1110,7 +1266,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           emailLocal: "teo.vallejo.demo",
           weekday: 1,
           hour: 20,
-          planKey: "ep20",
+          planKey: "ep12",
           joinedAt: addDays(TODAY, -(11 * 7 + randInt(3, 10))),
           weeksBack: 11,
           noShowEvery: 6,
@@ -1126,7 +1282,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           data: {
             id: memberId,
             orgId,
-            primaryCenterId: centroId,
+            primaryCenterId: daniCenterId,
             firstName: spec.firstName,
             lastName: spec.lastName,
             email: `${spec.emailLocal}@example.com`,
@@ -1189,7 +1345,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             data: {
               id: sessionId,
               orgId,
-              centerId: centroId,
+              centerId: daniCenterId,
               name: `Personal Training ${fmtTime(spec.hour)}`,
               classType: "Personal Training",
               date: sessionDate,
@@ -1240,7 +1396,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             data: {
               id: futureSessionId,
               orgId,
-              centerId: centroId,
+              centerId: daniCenterId,
               name: `Personal Training ${fmtTime(spec.hour)}`,
               classType: "Personal Training",
               date: futureDate,
@@ -1267,7 +1423,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           data: {
             id: id(),
             orgId,
-            centerId: centroId,
+            centerId: daniCenterId,
             name: `Personal Training ${fmtTime(11)}`,
             classType: "Personal Training",
             date: addDays(epWeekStart, wd - 1),
@@ -1287,7 +1443,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       // filtra por fecha futura, solo por semana), para que el contraste
       // reservado/libre se vea siempre, caiga el seed el día que caiga.
       const epMemberPool = trainerAssignments
-        .filter((t) => members.find((m) => m.id === t.memberId)?.centerId === centroId)
+        .filter((t) => members.find((m) => m.id === t.memberId)?.centerId === daniCenterId)
         .map((t) => t.memberId);
       const reservedSlots = [
         { weekday: 1, hour: 15 },
@@ -1302,7 +1458,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           data: {
             id: reservedSessionId,
             orgId,
-            centerId: centroId,
+            centerId: daniCenterId,
             name: `Personal Training ${fmtTime(reservedSlots[i].hour)}`,
             classType: "Personal Training",
             date: addDays(epWeekStart, reservedSlots[i].weekday - 1),
@@ -1825,7 +1981,6 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   // ---------- D.1: Anuncios y banners del Dashboard del socio ----------
   const directorForAnnouncements = staffUsers.find((u) => u.role === "CENTER_DIRECTOR") ?? staffUsers.find((u) => u.role === "OWNER");
-  const firstCenterId = centersData[0]?.id ?? null;
   await prisma.announcement.createMany({
     data: [
       {
@@ -1833,8 +1988,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         orgId,
         centerId: null, // global
         title: "Quedada del club de running + desayuno",
-        body: "Este sábado a las 9:00 nos vemos en la puerta para una salida suave de 5 km y desayuno después. ¡Apúntate en recepción!",
-        imageUrl: "https://loremflickr.com/1200/675/running,marathon",
+        body: "Este sábado a las 9:00 nos vemos en la puerta para una salida suave de 5 km por la ribera del Ebro y desayuno después. ¡Apúntate en recepción!",
+        imageUrl: stockPhoto("running"),
         category: "EVENT",
         audience: "ALL",
         tags: ["running", "club", "quedada"],
@@ -1847,9 +2002,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         id: id(),
         orgId,
         centerId: null,
-        title: "Promo verano: 20% en tu próximo bono",
-        body: "Durante todo el mes, renueva cualquier bono de 20 sesiones y llévate un 20% de descuento. Consulta condiciones en recepción.",
-        imageUrl: "https://loremflickr.com/1200/675/gym,fitness",
+        title: "Promo: 20% en tu bono de 12 sesiones",
+        body: "Durante todo el mes, renueva cualquier bono de 12 sesiones — Grupos reducidos o Entrenamiento personal — y llévate un 20% de descuento. Consulta condiciones en recepción.",
+        imageUrl: stockPhoto("gym-weights"),
         category: "PROMO",
         audience: "MEMBERS",
         tags: ["promoción", "bonos"],
@@ -1858,15 +2013,31 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         endsAt: addDays(TODAY, 20),
         createdById: directorForAnnouncements?.id ?? null,
       },
-      ...(firstCenterId
-        ? [
-            {
+      {
+        id: id(),
+        orgId,
+        centerId: null,
+        title: "Nueva clase de Movilidad los sábados a las 11:00",
+        body: "Añadimos una sesión de movilidad para cerrar la semana: trabajo de cadera, zona lumbar y hombro. Plazas limitadas, reserva desde la app.",
+        imageUrl: stockPhoto("mobility-stretch"),
+        category: "NEWS",
+        audience: "ALL",
+        tags: ["movilidad", "horario", "novedad"],
+        pinned: false,
+        startsAt: null,
+        endsAt: null,
+        createdById: directorForAnnouncements?.id ?? null,
+      },
+      // Uno por centro, para que el filtrado por centro se vea en la demo.
+      ...centersData.map((c, i) =>
+        i === 0
+          ? {
               id: id(),
               orgId,
-              centerId: firstCenterId, // solo este centro
-              title: "Cambio de horario: sala cerrada el jueves por mantenimiento",
-              body: "El jueves de 14:00 a 16:00 la sala funcional estará cerrada por mantenimiento. Disculpa las molestias.",
-              imageUrl: "https://loremflickr.com/1200/675/maintenance,gym",
+              centerId: c.id,
+              title: `${c.name}: sala funcional cerrada el jueves por mantenimiento`,
+              body: "El jueves de 14:00 a 16:00 la sala funcional estará cerrada por mantenimiento. Las clases de tarde se mantienen con normalidad.",
+              imageUrl: stockPhoto("gym-empty"),
               category: "ALERT" as const,
               audience: "ALL" as const,
               tags: ["horario", "mantenimiento"],
@@ -1874,24 +2045,23 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
               startsAt: null,
               endsAt: null, // sin expiración
               createdById: directorForAnnouncements?.id ?? null,
-            },
-          ]
-        : []),
-      {
-        id: id(),
-        orgId,
-        centerId: null,
-        title: "Nuevos entrenamientos online disponibles",
-        body: "Hemos añadido nuevas sesiones a la biblioteca online. Entra en tu sección de entrenamientos y pruébalas.",
-        imageUrl: "https://loremflickr.com/1200/675/workout,laptop",
-        category: "NEWS",
-        audience: "ALL",
-        tags: ["online", "novedad"],
-        pinned: false,
-        startsAt: null,
-        endsAt: null,
-        createdById: directorForAnnouncements?.id ?? null,
-      },
+            }
+          : {
+              id: id(),
+              orgId,
+              centerId: c.id,
+              title: `${c.name}: jornada de puertas abiertas`,
+              body: "El próximo viernes puedes traer a un acompañante gratis a tu clase de grupo. Avísanos en recepción para reservarle plaza.",
+              imageUrl: stockPhoto("group-class"),
+              category: "EVENT" as const,
+              audience: "ALL" as const,
+              tags: ["evento", "invitados"],
+              pinned: false,
+              startsAt: addDays(TODAY, -1),
+              endsAt: addDays(TODAY, 12),
+              createdById: directorForAnnouncements?.id ?? null,
+            }
+      ),
     ],
   });
 
@@ -1953,8 +2123,57 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
 
+  // ---------- Coherencia final de la agenda ----------
+  // La parrilla semanal nace sin solapes, pero varios bloques posteriores montan
+  // sesiones a medida encima (panel del entrenador demo, huecos de EP, sesiones
+  // pendientes de feedback del socio ancla) y pueden dejar al mismo entrenador
+  // en dos sitios a la vez. En vez de cuadrar a mano cada hora — frágil en
+  // cuanto se toque cualquiera de esos bloques — se pasa una revisión al final:
+  // el solape se reasigna a un compañero libre del mismo centro. Así lo que se
+  // ve en /agenda siempre cuadra con lo que se ve en la ficha del entrenador.
+  const scheduled = await prisma.classSession.findMany({
+    where: { orgId, status: "SCHEDULED", trainerId: { not: null } },
+    select: { id: true, centerId: true, date: true, startTime: true, endTime: true, trainerId: true, classType: true },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
+  });
+  // El 1:1 va primero: un cliente de EP entrena con SU entrenador, así que si
+  // hay choque es la clase de grupo la que se cubre con un compañero.
+  const allSessions = [
+    ...scheduled.filter((s) => s.classType === "Personal Training"),
+    ...scheduled.filter((s) => s.classType !== "Personal Training"),
+  ];
+  const busyByTrainer = new Map<string, { from: number; to: number }[]>();
+  const asMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+  const fixes: { id: string; trainerId: string | null }[] = [];
+  for (const s of allSessions) {
+    const dayKey = s.date.toISOString().slice(0, 10);
+    const from = asMin(s.startTime);
+    const to = asMin(s.endTime);
+    const free = (trainerId: string) =>
+      !(busyByTrainer.get(`${trainerId}|${dayKey}`) ?? []).some((b) => from < b.to && b.from < to);
+    const occupy = (trainerId: string) => {
+      const key = `${trainerId}|${dayKey}`;
+      busyByTrainer.set(key, [...(busyByTrainer.get(key) ?? []), { from, to }]);
+    };
+    if (free(s.trainerId!)) {
+      occupy(s.trainerId!);
+      continue;
+    }
+    const stand = (trainersByCenter[s.centerId] ?? []).find((t) => t.id !== s.trainerId && free(t.id));
+    if (stand) {
+      occupy(stand.id);
+      fixes.push({ id: s.id, trainerId: stand.id });
+    } else {
+      // Sin nadie libre, la sesión se queda sin entrenador antes que mentir.
+      fixes.push({ id: s.id, trainerId: null });
+    }
+  }
+  for (const f of fixes) {
+    await prisma.classSession.update({ where: { id: f.id }, data: { trainerId: f.trainerId } });
+  }
+
   console.log(
-    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas`
+    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas · ${fixes.length} solapes corregidos`
   );
 }
 
@@ -1966,63 +2185,35 @@ const ORGS: OrgSeedConfig[] = [
     historyDays: 210,
     futureDays: 60,
     centers: [
-      { key: "centro", name: "TRAINING ZONE Centro", slug: "centro", address: "Calle Mayor 12, Madrid", templateCount: 11, capacityRange: [10, 16], memberCount: 130 },
-      { key: "norte", name: "TRAINING ZONE Norte", slug: "norte", address: "Av. de la Ilustración 45, Madrid", templateCount: 9, capacityRange: [8, 14], memberCount: 85 },
-      { key: "sur", name: "TRAINING ZONE Sur", slug: "sur", address: "Calle Toledo 88, Madrid", templateCount: 8, capacityRange: [8, 12], memberCount: 70 },
+      // La Jota genera 5 socios aleatorios porque recibe además los 5 clientes
+      // de EP construidos a medida para el panel del entrenador demo (ver
+      // RB-RRHH-005 más abajo): 5 + 5 = los 10 socios del centro.
+      { key: "lajota", name: "TRAINING ZONE La Jota", slug: "la-jota", address: "Av. de Cataluña 42, Zaragoza", capacityRange: [8, 12], memberCount: 5 },
+      { key: "puertacarmen", name: "TRAINING ZONE Puerta del Carmen", slug: "puerta-del-carmen", address: "Paseo Pamplona 15, Zaragoza", capacityRange: [8, 12], memberCount: 10 },
     ],
+    // Un único director de organización (OWNER, rol más alto), un director por
+    // centro y tres entrenadores por centro. Recepción, RRHH y admin de
+    // plataforma se mantienen porque sin ellos esos módulos no tienen con quién
+    // demostrarse.
     staff: [
       { name: "Sergio Martín", email: "sergio@trainingzone.es", role: "OWNER", centerKey: null },
-      { name: "Beatriz Ruiz", email: "direccion.centro@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "centro" },
-      { name: "Dani Herrero", email: "entrenador@trainingzone.es", role: "TRAINER", centerKey: "centro" },
-      { name: "Ana Cabrera", email: "recepcion@trainingzone.es", role: "RECEPTION", centerKey: "centro" },
-      { name: "Laura Gimeno", email: "laura.gimeno@trainingzone.es", role: "TRAINER", centerKey: "centro" },
-      { name: "Marcos Iglesias", email: "marcos.iglesias@trainingzone.es", role: "TRAINER", centerKey: "centro" },
-      { name: "Diego Ramos", email: "diego.ramos@trainingzone.es", role: "TRAINER", centerKey: "centro" },
-      { name: "Elena Vidal", email: "elena.vidal@trainingzone.es", role: "TRAINER", centerKey: "norte" },
-      { name: "Javier Soto", email: "javier.soto@trainingzone.es", role: "TRAINER", centerKey: "norte" },
-      { name: "Sara Ortiz", email: "sara.ortiz@trainingzone.es", role: "TRAINER", centerKey: "norte" },
-      { name: "Carla Nuñez", email: "carla.nunez@trainingzone.es", role: "TRAINER", centerKey: "sur" },
-      { name: "Hugo Marín", email: "hugo.marin@trainingzone.es", role: "TRAINER", centerKey: "sur" },
-      { name: "Patricia Domínguez", email: "direccion.norte@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "norte" },
-      { name: "Rubén Castillo", email: "direccion.sur@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "sur" },
-      { name: "Nuria Paredes", email: "recepcion.norte@trainingzone.es", role: "RECEPTION", centerKey: "norte" },
-      { name: "Óscar Bravo", email: "recepcion.sur@trainingzone.es", role: "RECEPTION", centerKey: "sur" },
+      { name: "Beatriz Ruiz", email: "direccion.lajota@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "lajota" },
+      { name: "Rubén Castillo", email: "direccion.puertacarmen@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "puertacarmen" },
+      { name: "Dani Herrero", email: "entrenador@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
+      { name: "Laura Gimeno", email: "laura.gimeno@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
+      { name: "Marcos Iglesias", email: "marcos.iglesias@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
+      { name: "Elena Vidal", email: "elena.vidal@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
+      { name: "Javier Soto", email: "javier.soto@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
+      { name: "Sara Ortiz", email: "sara.ortiz@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
+      { name: "Ana Cabrera", email: "recepcion.lajota@trainingzone.es", role: "RECEPTION", centerKey: "lajota" },
+      { name: "Óscar Bravo", email: "recepcion.puertacarmen@trainingzone.es", role: "RECEPTION", centerKey: "puertacarmen" },
       { name: "Cristina Molina", email: "rrhh@trainingzone.es", role: "HR_MANAGER", centerKey: null },
       { name: "Piensaenweb Admin", email: "admin@piensaenweb.dev", role: "PLATFORM_ADMIN", centerKey: null },
     ],
     extraImputaciones: [
-      { email: "entrenador@trainingzone.es", centerKey: "norte", role: "TRAINER", allocationPct: 40, primaryAllocationPct: 60 },
-      { email: "direccion.centro@trainingzone.es", centerKey: "sur", role: "CENTER_DIRECTOR", allocationPct: 30 },
+      { email: "entrenador@trainingzone.es", centerKey: "puertacarmen", role: "TRAINER", allocationPct: 40, primaryAllocationPct: 60 },
     ],
-    demoMember: { email: "socio@trainingzone.es", firstName: "Marta", lastName: "García López", centerKey: "centro", planKey: "group10" },
-  },
-  {
-    name: "VITALIA WELLNESS",
-    slug: "vitalia",
-    logoUrl: "/brand/vitalia-logo.svg",
-    historyDays: 150,
-    futureDays: 45,
-    centers: [
-      { key: "chamberi", name: "Vitalia Chamberí", slug: "chamberi", address: "Calle de Almagro 22, Madrid", templateCount: 9, capacityRange: [8, 14], memberCount: 82 },
-      // Retiro sin logo propio → hereda el de la organización (Vitalia) en el NavBar.
-      { key: "retiro", name: "Vitalia Retiro", slug: "retiro", address: "Av. Menéndez Pelayo 15, Madrid", logoUrl: null, templateCount: 7, capacityRange: [8, 12], memberCount: 58 },
-    ],
-    staff: [
-      { name: "Nerea Salas", email: "owner@vitalia.es", role: "OWNER", centerKey: null },
-      { name: "Pablo Herrán", email: "direccion.chamberi@vitalia.es", role: "CENTER_DIRECTOR", centerKey: "chamberi" },
-      { name: "Marta Iñiguez", email: "direccion.retiro@vitalia.es", role: "CENTER_DIRECTOR", centerKey: "retiro" },
-      { name: "Iván Lozano", email: "entrenador@vitalia.es", role: "TRAINER", centerKey: "chamberi" },
-      { name: "Claudia Reyes", email: "claudia.reyes@vitalia.es", role: "TRAINER", centerKey: "chamberi" },
-      { name: "Gonzalo Prieto", email: "gonzalo.prieto@vitalia.es", role: "TRAINER", centerKey: "retiro" },
-      { name: "Alba Serrano", email: "alba.serrano@vitalia.es", role: "TRAINER", centerKey: "retiro" },
-      { name: "Marta Gil", email: "recepcion.chamberi@vitalia.es", role: "RECEPTION", centerKey: "chamberi" },
-      { name: "Sergio Pastor", email: "recepcion.retiro@vitalia.es", role: "RECEPTION", centerKey: "retiro" },
-      { name: "Rocío Vega", email: "rrhh@vitalia.es", role: "HR_MANAGER", centerKey: null },
-    ],
-    extraImputaciones: [
-      { email: "entrenador@vitalia.es", centerKey: "retiro", role: "TRAINER", allocationPct: 35, primaryAllocationPct: 65 },
-    ],
-    demoMember: { email: "socio@vitalia.es", firstName: "Lucía", lastName: "Fernández Soler", centerKey: "chamberi", planKey: "online" },
+    demoMember: { email: "socio@trainingzone.es", firstName: "Marta", lastName: "García López", centerKey: "lajota", planKey: "group12" },
   },
 ];
 
@@ -2093,19 +2284,25 @@ async function main() {
   }
 
   console.log("\nSeed completado.");
+  console.log("TRAINING ZONE · centros: La Jota y Puerta del Carmen");
   console.log("Usuarios demo (contraseña: demo1234):");
-  console.log("  TRAINING ZONE:");
-  console.log("    sergio@trainingzone.es            (Dirección / Owner)");
-  console.log("    direccion.centro@trainingzone.es  (Dirección de centro)");
-  console.log("    entrenador@trainingzone.es        (Entrenador — imputado a Centro + Norte)");
-  console.log("    recepcion@trainingzone.es         (Recepción)");
-  console.log("    rrhh@trainingzone.es              (RRHH — organización y equipo)");
-  console.log("    socio@trainingzone.es             (Socio — Marta García López · bono Grupos reducidos)");
-  console.log("  VITALIA WELLNESS (segunda empresa, multi-tenant):");
-  console.log("    owner@vitalia.es                  (Dirección / Owner)");
-  console.log("    entrenador@vitalia.es             (Entrenador — imputado a Chamberí + Retiro)");
-  console.log("    rrhh@vitalia.es                   (RRHH)");
-  console.log("    socio@vitalia.es                  (Socio — Lucía Fernández · plan Online)");
+  console.log("  Organización");
+  console.log("    sergio@trainingzone.es                    Dirección de organización (Owner)");
+  console.log("    rrhh@trainingzone.es                      RRHH");
+  console.log("    admin@piensaenweb.dev                     Admin de plataforma");
+  console.log("  La Jota");
+  console.log("    direccion.lajota@trainingzone.es          Dirección de centro");
+  console.log("    entrenador@trainingzone.es                Entrenador (Dani Herrero · panel /trainer)");
+  console.log("    laura.gimeno@trainingzone.es              Entrenadora");
+  console.log("    marcos.iglesias@trainingzone.es           Entrenador");
+  console.log("    recepcion.lajota@trainingzone.es          Recepción");
+  console.log("    socio@trainingzone.es                     Socio (Marta García López · bono 12 grupos)");
+  console.log("  Puerta del Carmen");
+  console.log("    direccion.puertacarmen@trainingzone.es    Dirección de centro");
+  console.log("    elena.vidal@trainingzone.es               Entrenadora");
+  console.log("    javier.soto@trainingzone.es               Entrenador");
+  console.log("    sara.ortiz@trainingzone.es                Entrenadora");
+  console.log("    recepcion.puertacarmen@trainingzone.es    Recepción");
 }
 
 main()
