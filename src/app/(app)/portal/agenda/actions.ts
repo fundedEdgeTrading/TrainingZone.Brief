@@ -4,107 +4,16 @@ import { revalidatePath } from "next/cache";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
-import { getMemberForUser } from "@/lib/portal-queries";
-import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { getMemberForUser, bookSessionForMember, cancelBookingForMember, type BookingResult } from "@/lib/portal-queries";
 
-export type BookingActionResult =
-  | { ok: true; waitlisted: boolean }
-  | { ok: false; error: string; needsTopUp?: boolean };
-
-const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GROUP: "grupos reducidos" };
+export type BookingActionResult = BookingResult;
 
 export async function bookSession(sessionId: string): Promise<BookingActionResult> {
   const session = await requireRole(["MEMBER"]);
   const member = await getMemberForUser(session.user.id);
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
-  // RB-RES-006: la reserva efectiva (no la lista de espera) consume un bono del
-  // servicio que corresponde a la sesión (EP o grupos). Se cobra al bono activo
-  // con saldo; si el socio no tiene ningún bono de ese servicio con sesiones
-  // disponibles, se bloquea y se le sugiere renovar.
-  const result = await prisma.$transaction(async (tx) => {
-    // Bloquea la fila de la sesión para serializar reservas concurrentes: sin
-    // este lock, dos peticiones simultáneas pueden leer el mismo aforo libre y
-    // reservar ambas por encima de `capacity` (double-booking).
-    await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${sessionId} FOR UPDATE`;
-
-    const cls = await tx.classSession.findUnique({
-      where: { id: sessionId },
-      include: { bookings: { select: { status: true } } },
-    });
-    if (!cls || cls.status !== "SCHEDULED") {
-      return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
-    }
-
-    const existing = await tx.booking.findFirst({
-      where: { sessionId, memberId: member.id, status: { in: ["BOOKED", "WAITLISTED"] } },
-    });
-    if (existing) return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
-
-    const activeCount = cls.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
-    const overCapacity = activeCount >= cls.capacity;
-
-    // RB-RES-004: máximo 3 reservas futuras simultáneas.
-    const futureBookings = await tx.booking.count({
-      where: {
-        memberId: member.id,
-        status: "BOOKED",
-        session: { date: { gte: new Date(new Date().toDateString()) } },
-      },
-    });
-    if (!overCapacity && futureBookings >= 3) {
-      return { ok: false as const, error: "Ya tienes 3 reservas activas: cancela alguna para reservar otra." };
-    }
-
-    const kind = sessionServiceKind(cls.classType);
-    let chargeSubscriptionId: string | null = null;
-
-    if (!overCapacity) {
-      const matching = member.subscriptions.filter(
-        (s) => s.status === "ACTIVE" && planServiceKind(s.plan.type) === kind
-      );
-      if (matching.length === 0) {
-        return {
-          ok: false as const,
-          error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.`,
-        };
-      }
-      // Bono ilimitado (sessionsRemaining null): no descuenta saldo.
-      const unlimited = matching.find((s) => s.sessionsRemaining == null);
-      if (!unlimited) {
-        const withBalance = matching
-          .filter((s) => (s.sessionsRemaining ?? 0) > 0)
-          .sort((a, b) => (a.sessionsRemaining ?? 0) - (b.sessionsRemaining ?? 0))[0];
-        if (!withBalance) {
-          return {
-            ok: false as const,
-            needsTopUp: true,
-            error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
-          };
-        }
-        chargeSubscriptionId = withBalance.id;
-      }
-    }
-
-    await tx.booking.create({
-      data: {
-        sessionId,
-        memberId: member.id,
-        status: overCapacity ? "WAITLISTED" : "BOOKED",
-        waitlistPosition: overCapacity ? activeCount - cls.capacity + 1 : null,
-        subscriptionId: chargeSubscriptionId,
-      },
-    });
-    if (chargeSubscriptionId) {
-      await tx.subscription.update({
-        where: { id: chargeSubscriptionId },
-        data: { sessionsRemaining: { decrement: 1 } },
-      });
-    }
-
-    return { ok: true as const, waitlisted: overCapacity };
-  });
-
+  const result = await bookSessionForMember(member, sessionId);
   if (!result.ok) return result;
 
   revalidatePath("/portal/agenda");
@@ -119,32 +28,14 @@ export async function cancelMyBooking(bookingId: string): Promise<BookingActionR
   const member = await getMemberForUser(session.user.id);
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
-  const booking = await prisma.booking.findFirst({ where: { id: bookingId, memberId: member.id } });
-  if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
-
-  // RB-RES-006: al cancelar una reserva que consumió bono, se devuelve la sesión
-  // al mismo bono. La lista de espera nunca descontó, así que no se reembolsa.
-  const refundSubscriptionId =
-    booking.status === "BOOKED" && booking.subscriptionId ? booking.subscriptionId : null;
-
-  await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: bookingId },
-      data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
-    });
-    if (refundSubscriptionId) {
-      await tx.subscription.update({
-        where: { id: refundSubscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
-      });
-    }
-  });
+  const result = await cancelBookingForMember(member.id, bookingId);
+  if (!result.ok) return result;
 
   revalidatePath("/portal/agenda");
   revalidatePath("/portal");
   // La reserva cambia el aforo y el roster que ven el entrenador y el brief.
   revalidateSessionViews();
-  return { ok: true, waitlisted: false };
+  return result;
 }
 
 export type PostSessionFeedbackResult = { ok: true } | { ok: false; error: string };

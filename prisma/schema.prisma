@@ -166,6 +166,7 @@ model User {
   assignedMembers       Member[]            @relation("AssignedMemberTrainer")
   directedSessions      ClassSession[]      @relation("DirectedSessions")
   workoutProgramsConfirmed WorkoutProgram[] @relation("WorkoutConfirmedBy")
+  mobileRefreshTokens   MobileRefreshToken[]
   notifications         Notification[]      @relation("NotificationRecipient")
   timeClockEntries      TimeClockEntry[]
   staffProposalsAuthored StaffProposal[]
@@ -1289,4 +1290,23 @@ model OnlineWorkout {
   organization Organization @relation(fields: [orgId], references: [id])
 
   @@index([orgId])
+}
+
+// ---------- App móvil nativa (F0) — auth por token ----------
+// La sesión web usa cookie (NextAuth); la app nativa no puede leerla. El
+// access token (JWT corto) se valida sin tocar la BD; este refresh token
+// (opaco, rotatorio) es lo único que se persiste, para poder revocar sesiones
+// de dispositivo (logout) y detectar reuso de un token ya rotado.
+model MobileRefreshToken {
+  id           String    @id @default(cuid())
+  userId       String
+  tokenHash    String    @unique // sha256 del token opaco; nunca se guarda en claro
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+  revokedAt    DateTime?
+  replacedById String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
