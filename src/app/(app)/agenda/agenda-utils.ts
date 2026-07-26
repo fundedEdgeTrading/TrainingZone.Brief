@@ -5,8 +5,13 @@
 export const START_HOUR = 6;
 export const END_HOUR = 22;
 export const ROW_HEIGHT = 56; // px por hora
+// En móvil solo se pinta un día, así que la hora puede ocupar más alto: las
+// tarjetas crecen y se pueden tocar/arrastrar con el dedo sin apuntar.
+export const ROW_HEIGHT_MOBILE = 72;
 
 export const DAY_ABBR = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
+export const DAY_LETTER = ["L", "M", "X", "J", "V", "S", "D"];
+export const DAY_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
 export const MONTHS = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",

@@ -22,7 +22,7 @@ export default function CenterSwitcher({
         params.set("center", e.target.value);
         router.push(`${pathname}?${params.toString()}`);
       }}
-      className="w-auto max-w-full sm:max-w-[220px]"
+      className="w-auto max-w-[190px] sm:max-w-[220px]"
     >
       {centers.map((c) => (
         <option key={c.id} value={c.id}>
