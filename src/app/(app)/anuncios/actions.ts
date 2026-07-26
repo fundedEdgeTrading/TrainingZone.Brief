@@ -19,10 +19,13 @@ async function requireManager() {
 }
 
 // Convierte "YYYY-MM-DD" (input date) en Date, o null si viene vacío.
-function parseDate(raw: FormDataEntryValue | null): Date | null {
+// `endOfDay` para la fecha de fin: el gestor entiende "Hasta el 31" como que el
+// anuncio se ve *durante* el 31. Guardándolo a las 00:00 el filtro `endsAt >= now`
+// lo ocultaba en el portal desde el primer minuto de ese día.
+function parseDate(raw: FormDataEntryValue | null, endOfDay = false): Date | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
-  const d = new Date(s);
+  const d = new Date(endOfDay ? `${s}T23:59:59.999Z` : s);
   return isNaN(d.getTime()) ? null : d;
 }
 
@@ -41,7 +44,7 @@ function parseForm(formData: FormData) {
     .map((t) => t.trim())
     .filter(Boolean);
   const startsAt = parseDate(formData.get("startsAt"));
-  const endsAt = parseDate(formData.get("endsAt"));
+  const endsAt = parseDate(formData.get("endsAt"), true);
   return { title, body, imageUrl, category, audience, centerId, pinned, tags, startsAt, endsAt };
 }
 
