@@ -205,7 +205,7 @@ export default function AgendaView({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="min-h-[60px] shrink-0 border-b border-brand-border flex flex-wrap items-center gap-2 lg:gap-2.5 px-3 py-2 lg:h-[60px] lg:px-6 lg:py-0">
+      <div className="min-h-[60px] shrink-0 border-b border-brand-border flex flex-wrap items-center gap-2 lg:gap-2.5 px-3 py-2 lg:min-h-[60px] lg:px-6 lg:py-2.5">
         <button
           onClick={() => navigate(parseDateParam(formatDateParam(new Date())))}
           className="h-9 px-4 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text hover:bg-tz-bone hover:border-brand-border-hover transition-colors"

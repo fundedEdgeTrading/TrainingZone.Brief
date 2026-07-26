@@ -140,8 +140,10 @@ export function Select({
     onChange?.({ target: { value: opt.value, name } } as unknown as React.ChangeEvent<HTMLSelectElement>);
   }
 
+  const hasWidthOverride = /(^|\s)w-/.test(className ?? "");
+
   return (
-    <div ref={rootRef} className={clsx("relative w-full", className)}>
+    <div ref={rootRef} className={clsx("relative", !hasWidthOverride && "w-full", className)}>
       {name && <input type="hidden" name={name} value={currentValue} required={required} />}
       <button
         type="button"
