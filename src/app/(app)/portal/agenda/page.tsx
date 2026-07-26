@@ -117,6 +117,8 @@ export default async function PortalAgendaPage() {
           items={pendingFeedback.map((p) => ({
             bookingId: p.bookingId,
             sessionName: p.sessionName,
+            startTime: p.time,
+            trainerName: p.trainerName,
             sessionDate: p.sessionDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
           }))}
         />
