@@ -1,5 +1,11 @@
 import type { NextRequest } from "next/server";
-import { getBookableSessions, getPendingSessionFeedback } from "@/lib/portal-queries";
+import {
+  getBookableSessions,
+  getPendingSessionFeedback,
+  getMemberUpcomingBookings,
+  countsTowardsActiveLimit,
+  MAX_ACTIVE_BOOKINGS,
+} from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
 import { requireMember } from "../../_lib/require-member";
 import { apiOk } from "../../_lib/response";
@@ -12,17 +18,31 @@ export async function GET(req: NextRequest) {
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
   const balances = getSessionBalances(
-    member.subscriptions.map((s) => ({ status: s.status, sessionsRemaining: s.sessionsRemaining, plan: { type: s.plan.type } }))
+    member.subscriptions.map((s) => ({
+      status: s.status,
+      sessionsRemaining: s.sessionsRemaining,
+      plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
+    }))
   );
 
-  const [sessions, pendingFeedback] = await Promise.all([
+  const [sessions, pendingFeedback, upcomingBookings] = await Promise.all([
     getBookableSessions(claims.orgId, member.primaryCenterId, member.id, {
       trainerId: member.trainerId,
       hasGroupService: serviceKinds.includes("GROUP"),
       hasEpService: serviceKinds.includes("EP"),
     }),
     getPendingSessionFeedback(member.id),
+    getMemberUpcomingBookings(member.id),
   ]);
 
-  return apiOk({ sessions, balances, pendingFeedback });
+  return apiOk({
+    sessions,
+    balances,
+    pendingFeedback,
+    upcomingBookings,
+    activeBookings: {
+      count: upcomingBookings.filter(countsTowardsActiveLimit).length,
+      max: MAX_ACTIVE_BOOKINGS,
+    },
+  });
 }

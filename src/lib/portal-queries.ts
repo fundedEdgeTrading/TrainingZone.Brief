@@ -231,9 +231,30 @@ export async function getMemberHealthTransparency(memberId: string, orgId: strin
     .map((r) => ({ blockArea: r.blockArea, light: r.light, adaptation: r.adaptation }));
 }
 
-const BOOKING_WINDOW_DAYS = 7; // RB-RES-002
+export const BOOKING_WINDOW_DAYS = 7; // RB-RES-002
 const MIN_LEAD_MINUTES = 30; // RB-RES-001
 const CANCEL_WINDOW_HOURS = 4; // RB-RES-005
+export const MAX_ACTIVE_BOOKINGS = 3; // RB-RES-004
+
+/**
+ * Instante real de comienzo de una sesión: `ClassSession.date` guarda el día a
+ * medianoche y la hora vive aparte en `startTime` ("HH:MM"). Todas las reglas
+ * de reserva (antelación mínima, ventana de 7 días, "reserva activa") se miden
+ * contra este instante, no contra el día suelto — si no, una clase de esta
+ * mañana seguiría contando como reserva futura durante todo el día.
+ */
+export function sessionStartsAt(date: Date, startTime: string) {
+  const [h, m] = startTime.split(":").map(Number);
+  const startsAt = new Date(date);
+  startsAt.setHours(h, m, 0, 0);
+  return startsAt;
+}
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 /**
  * RB-AGENDA-001: visibilidad segmentada. El socio de grupos ve las clases de
@@ -273,9 +294,7 @@ export async function getBookableSessions(
 
   return sessions
     .map((s) => {
-      const [h, m] = s.startTime.split(":").map(Number);
-      const startsAt = new Date(s.date);
-      startsAt.setHours(h, m, 0, 0);
+      const startsAt = sessionStartsAt(s.date, s.startTime);
       const activeBookings = s.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW");
       const myBooking = s.bookings.find((b) => b.memberId === memberId && (b.status === "BOOKED" || b.status === "WAITLISTED"));
       return {
@@ -294,11 +313,102 @@ export async function getBookableSessions(
         myBookingStatus: myBooking?.status ?? null,
       };
     })
-    .filter((s) => s.canBook || s.myBookingId);
+    .filter((s) => s.canBook || s.myBookingId)
+    .filter((s) => s.startsAt <= windowEnd);
 }
 
 export function canCancelWithoutPenalty(startsAt: Date) {
   return startsAt.getTime() - Date.now() >= CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
+}
+
+export type UpcomingBooking = {
+  bookingId: string;
+  status: "BOOKED" | "WAITLISTED";
+  waitlistPosition: number | null;
+  sessionId: string;
+  sessionName: string;
+  classType: string;
+  startsAt: Date;
+  startTime: string;
+  endTime: string;
+  centerName: string;
+  trainerName: string | null;
+  /** La clase la anuló el centro: la reserva sigue viva pero ya no ocupa cupo. */
+  sessionCancelled: boolean;
+  canCancelFreely: boolean;
+};
+
+/**
+ * Todas las reservas vivas del socio para clases que aún no han empezado, sin
+ * filtrar por ventana de reserva, centro ni tipo de servicio.
+ *
+ * El listado de "Reservar clase" solo enseña los próximos 7 días del centro del
+ * socio (RB-RES-002/RB-AGENDA-001), mientras que el tope de reservas activas
+ * (RB-RES-004) cuenta *todas* sus reservas futuras. Con solo aquel listado, una
+ * reserva fuera de esa ventana —una franja de EP que le agendó su entrenador a
+ * mano, una clase que el centro movió a otro día— era invisible para el socio y
+ * aun así le consumía cupo: veía una sola reserva en pantalla y la app le decía
+ * que ya tenía 3. Esta consulta es la que alimenta "Tus próximas reservas", de
+ * forma que lo que se cuenta y lo que se ve sean siempre lo mismo.
+ */
+export async function getMemberUpcomingBookings(
+  memberId: string,
+  db: Pick<typeof prisma, "booking"> = prisma
+): Promise<UpcomingBooking[]> {
+  const bookings = await db.booking.findMany({
+    where: {
+      memberId,
+      status: { in: ["BOOKED", "WAITLISTED"] },
+      session: { date: { gte: startOfToday() } },
+    },
+    select: {
+      id: true,
+      status: true,
+      waitlistPosition: true,
+      session: {
+        select: {
+          id: true,
+          name: true,
+          classType: true,
+          date: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          center: { select: { name: true } },
+          trainer: { select: { name: true } },
+        },
+      },
+    },
+  });
+
+  const now = Date.now();
+  return bookings
+    .map((b) => ({
+      bookingId: b.id,
+      status: b.status as "BOOKED" | "WAITLISTED",
+      waitlistPosition: b.waitlistPosition,
+      sessionId: b.session.id,
+      sessionName: b.session.name,
+      classType: b.session.classType,
+      startsAt: sessionStartsAt(b.session.date, b.session.startTime),
+      startTime: b.session.startTime,
+      endTime: b.session.endTime,
+      centerName: b.session.center.name,
+      trainerName: b.session.trainer?.name ?? null,
+      sessionCancelled: b.session.status !== "SCHEDULED",
+    }))
+    .filter((b) => b.startsAt.getTime() > now)
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
+    .map((b) => ({ ...b, canCancelFreely: canCancelWithoutPenalty(b.startsAt) }));
+}
+
+/**
+ * Reservas que consumen cupo de RB-RES-004: las de clases que todavía no han
+ * empezado y que el centro no ha anulado. Una clase que el centro canceló deja
+ * de bloquear cupo (el socio no puede asistir a ella).
+ */
+export function countsTowardsActiveLimit(b: Pick<UpcomingBooking, "sessionCancelled">) {
+  return !b.sessionCancelled;
 }
 
 export type BookingResult =
@@ -307,15 +417,22 @@ export type BookingResult =
 
 type MemberForBooking = {
   id: string;
+  primaryCenterId: string;
+  trainerId: string | null;
   subscriptions: { id: string; status: string; sessionsRemaining: number | null; plan: { type: string } }[];
 };
 
 const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GROUP: "grupos reducidos" };
 
 /**
- * Núcleo de la reserva (RB-RES-004/006), extraído de la Server Action del
- * portal (`portal/agenda/actions.ts`) para que la API móvil (F0) lo reutilice
- * sin duplicar la lógica de negocio — "no se reescribe el backend" (§11).
+ * Núcleo de la reserva (RB-RES-001/002/004/006), extraído de la Server Action
+ * del portal (`portal/agenda/actions.ts`) para que la API móvil (F0) lo
+ * reutilice sin duplicar la lógica de negocio — "no se reescribe el backend"
+ * (§11). Las reglas de qué se puede reservar (centro, antelación, ventana,
+ * franjas de EP autorreservables) se validan aquí y no solo al construir el
+ * listado: la API móvil recibe un `sessionId` del cliente, así que filtrar solo
+ * en `getBookableSessions` dejaba la puerta abierta a reservar por id una clase
+ * de otro centro, ya empezada o fuera de la ventana de 7 días.
  */
 export async function bookSessionForMember(member: MemberForBooking, sessionId: string): Promise<BookingResult> {
   return prisma.$transaction(async (tx) => {
@@ -331,6 +448,24 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     if (!cls || cls.status !== "SCHEDULED") {
       return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
     }
+    if (cls.centerId !== member.primaryCenterId) {
+      return { ok: false as const, error: "Esta clase es de otro centro." };
+    }
+
+    const now = new Date();
+    const startsAt = sessionStartsAt(cls.date, cls.startTime);
+    // RB-RES-001: antelación mínima. RB-RES-002: ventana de 7 días vista.
+    if (startsAt.getTime() - now.getTime() < MIN_LEAD_MINUTES * 60 * 1000) {
+      return { ok: false as const, error: `Esta clase empieza en menos de ${MIN_LEAD_MINUTES} minutos: ya no admite reservas.` };
+    }
+    if (startsAt.getTime() - now.getTime() > BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
+      return { ok: false as const, error: `Solo puedes reservar con ${BOOKING_WINDOW_DAYS} días de antelación.` };
+    }
+    // RB-AGENDA-001/002: de EP, el socio solo autorreserva las franjas que su
+    // propio entrenador ha marcado como autorreservables.
+    if (sessionServiceKind(cls.classType) === "EP" && (!cls.selfBookable || cls.trainerId !== member.trainerId)) {
+      return { ok: false as const, error: "Esta franja de entrenamiento personal la gestiona tu entrenador." };
+    }
 
     const existing = await tx.booking.findFirst({
       where: { sessionId, memberId: member.id, status: { in: ["BOOKED", "WAITLISTED"] } },
@@ -340,16 +475,16 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     const activeCount = cls.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
     const overCapacity = activeCount >= cls.capacity;
 
-    // RB-RES-004: máximo 3 reservas futuras simultáneas.
-    const futureBookings = await tx.booking.count({
-      where: {
-        memberId: member.id,
-        status: "BOOKED",
-        session: { date: { gte: new Date(new Date().toDateString()) } },
-      },
-    });
-    if (!overCapacity && futureBookings >= 3) {
-      return { ok: false as const, error: "Ya tienes 3 reservas activas: cancela alguna para reservar otra." };
+    // RB-RES-004: máximo 3 reservas activas simultáneas. Se cuentan las mismas
+    // que el socio ve en "Tus próximas reservas" —clases aún no empezadas y no
+    // anuladas por el centro— para que el aviso nunca contradiga la pantalla.
+    const upcoming = await getMemberUpcomingBookings(member.id, tx);
+    const activeBookings = upcoming.filter(countsTowardsActiveLimit).length;
+    if (!overCapacity && activeBookings >= MAX_ACTIVE_BOOKINGS) {
+      return {
+        ok: false as const,
+        error: `Ya tienes ${activeBookings} reservas activas (el máximo es ${MAX_ACTIVE_BOOKINGS}): cancela alguna en "Tus próximas reservas" para reservar otra.`,
+      };
     }
 
     const kind = sessionServiceKind(cls.classType);
@@ -382,12 +517,17 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
       }
     }
 
+    // La posición en lista de espera se numera sobre los que ya esperan, no
+    // sobre el aforo: `activeCount` no crece al añadir gente a la lista, así que
+    // contarlo con `activeCount - capacity + 1` daba la posición 1 a todos.
+    const waitlistedCount = cls.bookings.filter((b) => b.status === "WAITLISTED").length;
+
     await tx.booking.create({
       data: {
         sessionId,
         memberId: member.id,
         status: overCapacity ? "WAITLISTED" : "BOOKED",
-        waitlistPosition: overCapacity ? activeCount - cls.capacity + 1 : null,
+        waitlistPosition: overCapacity ? waitlistedCount + 1 : null,
         subscriptionId: chargeSubscriptionId,
       },
     });
@@ -403,8 +543,21 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
 }
 
 export async function cancelBookingForMember(memberId: string, bookingId: string): Promise<BookingResult> {
-  const booking = await prisma.booking.findFirst({ where: { id: bookingId, memberId } });
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, memberId },
+    include: { session: { select: { date: true, startTime: true } } },
+  });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
+
+  // Solo se cancela lo que sigue vivo. Sin este filtro, el `bookingId` que
+  // recibe la acción (y el endpoint móvil) permitía marcar como CANCELLED una
+  // reserva ya asistida y borrar así el histórico de asistencia del socio.
+  if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
+    return { ok: false, error: "Esta reserva ya no está activa." };
+  }
+  if (sessionStartsAt(booking.session.date, booking.session.startTime).getTime() <= Date.now()) {
+    return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
+  }
 
   // RB-RES-006: al cancelar una reserva que consumió bono, se devuelve la sesión
   // al mismo bono. La lista de espera nunca descontó, así que no se reembolsa.

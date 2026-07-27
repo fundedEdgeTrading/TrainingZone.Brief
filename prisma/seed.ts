@@ -2180,8 +2180,63 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     await prisma.classSession.update({ where: { id: f.id }, data: { trainerId: f.trainerId } });
   }
 
+  // ---------- Reservas futuras: cuadrar con las reglas de reserva ----------
+  // Las reservas se generan recorriendo las franjas preferidas de cada socio a
+  // lo largo de TODO el horizonte sembrado (60 días), pero el socio solo puede
+  // reservar a 7 días vista (RB-RES-002) y con un máximo de 3 reservas activas
+  // (RB-RES-004). Sin este ajuste el socio demo arrancaba con ~10 reservas
+  // futuras: en su portal solo veía la que caía dentro de los 7 días y, al
+  // intentar reservar otra, la app le respondía que ya tenía 3 activas.
+  // Además se enlaza cada reserva viva con el bono del que salió, para que
+  // cancelarla devuelva la sesión al saldo (RB-RES-006).
+  const bookingWindowEnd = addDays(TODAY, 7);
+  // Desde la BD, no desde los arrays en memoria: los clientes de EP de la demo
+  // y sus bonos se crean aparte, y también tienen reservas futuras.
+  const orgMembers = await prisma.member.findMany({ where: { orgId }, select: { id: true } });
+  const orgActiveSubs = await prisma.subscription.findMany({
+    where: { status: SubscriptionStatus.ACTIVE, member: { orgId } },
+    select: { id: true, memberId: true, sessionsRemaining: true },
+    orderBy: { startDate: "desc" },
+  });
+  const activeSubByMember = new Map(orgActiveSubs.map((s) => [s.memberId, s]));
+  let prunedFutureBookings = 0;
+  for (const { id: memberId } of orgMembers) {
+    const live = await prisma.booking.findMany({
+      where: {
+        memberId,
+        status: { in: [BookingStatus.BOOKED, BookingStatus.WAITLISTED] },
+        session: { date: { gte: TODAY }, status: "SCHEDULED" },
+      },
+      select: { id: true, session: { select: { date: true, startTime: true, classType: true } } },
+      orderBy: { session: { date: "asc" } },
+    });
+
+    const keep: string[] = [];
+    const drop: string[] = [];
+    for (const b of live) {
+      const outOfWindow = b.session.date > bookingWindowEnd;
+      if (outOfWindow || keep.length >= 3) drop.push(b.id);
+      else keep.push(b.id);
+    }
+    if (drop.length) {
+      await prisma.booking.deleteMany({ where: { id: { in: drop } } });
+      prunedFutureBookings += drop.length;
+    }
+
+    // Solo los bonos por sesiones descuentan saldo; la cuota mensual/ilimitada no.
+    const sub = activeSubByMember.get(memberId);
+    if (sub?.sessionsRemaining != null && keep.length) {
+      const groupBookingIds = live
+        .filter((b) => keep.includes(b.id) && b.session.classType !== "Personal Training")
+        .map((b) => b.id);
+      if (groupBookingIds.length) {
+        await prisma.booking.updateMany({ where: { id: { in: groupBookingIds } }, data: { subscriptionId: sub.id } });
+      }
+    }
+  }
+
   console.log(
-    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas · ${fixes.length} solapes corregidos`
+    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas (${prunedFutureBookings} futuras podadas fuera de ventana/tope) · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas · ${fixes.length} solapes corregidos`
   );
 }
 

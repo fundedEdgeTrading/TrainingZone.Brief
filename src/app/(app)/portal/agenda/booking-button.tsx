@@ -11,18 +11,22 @@ export default function BookingButton({
   myBookingStatus,
   full,
   canCancelFreely,
+  variant = "card",
 }: {
   sessionId: string;
   myBookingId: string | null;
   myBookingStatus: string | null;
   full: boolean;
   canCancelFreely: boolean;
+  /** "card": ocupa el ancho de la tarjeta. "row": botón compacto de una lista. */
+  variant?: "card" | "row";
 }) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
-  const baseClass =
-    "flex-1 min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97]";
+  const baseClass = `${
+    variant === "row" ? "shrink-0" : "flex-1"
+  } min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97]`;
 
   const handleCancel = (id: string) => {
     startTransition(async () => {
