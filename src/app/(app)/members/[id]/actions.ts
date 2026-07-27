@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { createHealthRecord, resolveHealthRecord } from "@/lib/health-access";
-import { canManageMembers } from "@/lib/rbac";
+import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
 import { generateInvitationToken, invitationExpiry, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
-import { Prisma, type HealthRecordType, type HealthSeverity } from "@prisma/client";
+import { Prisma, type HealthRecordType, type HealthSeverity, type Sex } from "@prisma/client";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -88,27 +88,184 @@ export async function addMemberNote(formData: FormData): Promise<MemberActionRes
   return { ok: true };
 }
 
-// Datos de contacto (pestaña "Datos"). Los consentimientos NO se editan aquí
-// — los firma el propio socio en su onboarding.
-export async function updateMemberContact(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
-  const memberId = String(formData.get("memberId") ?? "");
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  const phone = String(formData.get("phone") ?? "").trim() || null;
-  const address = String(formData.get("address") ?? "").trim() || null;
-  const birthRaw = String(formData.get("birthDate") ?? "").trim();
-  const emergencyContact = String(formData.get("emergencyContact") ?? "").trim() || null;
-  if (!memberId || !email) return { ok: false, error: "El email es obligatorio." };
+// Ficha del socio (pestaña "Datos"): identidad, dirección postal y contacto.
+// Los consentimientos NO se editan aquí — los firma el propio socio en su
+// onboarding. El estado (ACTIVE/FROZEN/...) tampoco: lo derivan las
+// suscripciones (lib/subscription-jobs.ts, billing/subscription-actions.ts).
+const SEXES: Sex[] = ["FEMALE", "MALE", "OTHER"];
+const POSTAL_CODE_RE = /^\d{5}$/; // CP español, 5 dígitos (mismo criterio que RB-LEAD-010)
 
-  const member = await prisma.member.findFirst({ where: { id: memberId, orgId: session.user.orgId }, select: { id: true } });
+export async function updateMemberData(formData: FormData): Promise<MemberActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const text = (key: string) => String(formData.get(key) ?? "").trim();
+  const optional = (key: string) => text(key) || null;
+
+  const memberId = text("memberId");
+  const firstName = text("firstName");
+  const lastName = text("lastName");
+  const email = text("email").toLowerCase();
+  const birthRaw = text("birthDate");
+  const sexRaw = text("sex");
+  const postalCode = optional("postalCode");
+  const centerId = text("centerId");
+
+  if (!memberId || !firstName || !lastName || !email) {
+    return { ok: false, error: "Completa el nombre, los apellidos y el email." };
+  }
+  if (postalCode && !POSTAL_CODE_RE.test(postalCode)) {
+    return { ok: false, error: "El código postal debe tener 5 dígitos." };
+  }
+  const birthDate = birthRaw ? new Date(birthRaw) : null;
+  if (birthDate && Number.isNaN(birthDate.getTime())) {
+    return { ok: false, error: "La fecha de nacimiento no es válida." };
+  }
+  if (sexRaw && !SEXES.includes(sexRaw as Sex)) return { ok: false, error: "El sexo indicado no es válido." };
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId: session.user.orgId },
+    select: { id: true, primaryCenterId: true },
+  });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+
+  // El email identifica al socio dentro de la organización (y es su login en el
+  // portal): no puede chocar con el de otro socio del mismo tenant.
+  const dup = await prisma.member.findFirst({
+    where: { orgId: session.user.orgId, email, id: { not: memberId } },
+    select: { id: true },
+  });
+  if (dup) return { ok: false, error: "Ya existe otro socio con ese email." };
+
+  let primaryCenterId = member.primaryCenterId;
+  if (centerId && centerId !== member.primaryCenterId) {
+    const center = await prisma.center.findFirst({
+      where: { id: centerId, orgId: session.user.orgId },
+      select: { id: true },
+    });
+    if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+    primaryCenterId = center.id;
+  }
 
   await prisma.member.update({
     where: { id: memberId },
-    data: { email, phone, address, emergencyContact, birthDate: birthRaw ? new Date(birthRaw) : null },
+    data: {
+      firstName,
+      lastName,
+      email,
+      phone: optional("phone"),
+      birthDate,
+      sex: sexRaw ? (sexRaw as Sex) : null,
+      occupation: optional("occupation"),
+      address: optional("address"),
+      addressLine2: optional("addressLine2"),
+      postalCode,
+      city: optional("city"),
+      province: optional("province"),
+      country: optional("country"),
+      emergencyContact: optional("emergencyContact"),
+      primaryCenterId,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      action: "MEMBER_UPDATED",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+    },
   });
 
   revalidatePath(`/members/${memberId}`);
+  revalidatePath("/members");
+  return { ok: true };
+}
+
+// Baja definitiva del socio (C4 — derecho de supresión del RGPD). Reglas:
+//  · solo dirección (canDeleteMembers);
+//  · nunca con una suscripción viva (ACTIVE o FROZEN, que es una activa en
+//    pausa): primero hay que cancelarla desde "Contratación";
+//  · borra en cascada manual todo lo que cuelga del socio — el esquema no
+//    declara onDelete, así que el orden importa (hijos antes que padres);
+//  · el AuditLog no tiene FK a Member: se conserva como registro append-only
+//    (ADR-008) y se le añade la entrada MEMBER_DELETED.
+export async function deleteMember(memberId: string): Promise<MemberActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  if (!canDeleteMembers(session.user.role)) return { ok: false, error: "No tienes permiso para eliminar socios." };
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId: session.user.orgId },
+    select: {
+      id: true,
+      userId: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN"] } }, select: { id: true } },
+    },
+  });
+  if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (member.subscriptions.length > 0) {
+    return {
+      ok: false,
+      error: "Este socio tiene una suscripción activa. Cancélala desde «Contratación» antes de eliminarlo.",
+    };
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.sessionDebrief.deleteMany({ where: { booking: { memberId } } });
+      await tx.booking.deleteMany({ where: { memberId } });
+      await tx.payment.deleteMany({ where: { memberId } });
+      await tx.chatMessage.deleteMany({ where: { conversation: { memberId } } });
+      await tx.conversation.deleteMany({ where: { memberId } });
+      await tx.announcementView.deleteMany({ where: { memberId } });
+      await tx.trainerRating.deleteMany({ where: { memberId } });
+      await tx.selfAssessment.deleteMany({ where: { memberId } });
+      await tx.workoutProgram.deleteMany({ where: { memberId } });
+      await tx.personalizedOffer.deleteMany({ where: { memberId } });
+      await tx.retentionAlert.deleteMany({ where: { memberId } });
+      await tx.healthRecord.deleteMany({ where: { memberId } });
+      await tx.clientFeedback.deleteMany({ where: { memberId } });
+      await tx.trainerDebrief.deleteMany({ where: { memberId } });
+      await tx.clientGoal.deleteMany({ where: { memberId } });
+      await tx.memberNote.deleteMany({ where: { memberId } });
+      await tx.memberProgressEntry.deleteMany({ where: { memberId } });
+      await tx.subscription.deleteMany({ where: { memberId } });
+      await tx.invitation.deleteMany({ where: { memberId } });
+      // El lead de origen sobrevive al socio: solo se suelta el enlace (@unique).
+      await tx.lead.updateMany({ where: { convertedMemberId: memberId }, data: { convertedMemberId: null } });
+      await tx.member.delete({ where: { id: memberId } });
+
+      // Cuenta del portal del socio: se borra con él para que no quede un login
+      // huérfano. Su rastro en el log de auditoría se conserva anonimizado.
+      if (member.userId) {
+        await tx.notification.deleteMany({ where: { recipientUserId: member.userId } });
+        await tx.chatMessage.updateMany({ where: { senderUserId: member.userId }, data: { senderUserId: null } });
+        await tx.invitation.deleteMany({ where: { userId: member.userId } });
+        await tx.auditLog.updateMany({ where: { actorUserId: member.userId }, data: { actorUserId: null } });
+        await tx.user.delete({ where: { id: member.userId } });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          orgId: session.user.orgId,
+          actorUserId: session.user.id,
+          action: "MEMBER_DELETED",
+          entityType: "Member",
+          entityId: memberId,
+          memberId,
+          metadata: { name: `${member.firstName} ${member.lastName}`.trim(), email: member.email },
+        },
+      });
+    });
+  } catch (error) {
+    console.error("deleteMember", error);
+    return { ok: false, error: "No se ha podido eliminar el socio. Revisa que no tenga operaciones en curso." };
+  }
+
+  revalidatePath("/members");
   return { ok: true };
 }
 
