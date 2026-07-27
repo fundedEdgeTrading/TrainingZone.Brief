@@ -113,3 +113,231 @@ export type NotificationsResponse = { notifications: NotificationItem[] };
 
 export type LoginResponse = { accessToken: string; refreshToken: string; user: MeResponse };
 export type RefreshResponse = { accessToken: string; refreshToken: string };
+
+// ---------- Mi evolución (socio) ----------
+
+export type ProgressEntry = {
+  id: string;
+  date: string;
+  measuredAt: string | null;
+  source: string;
+  weightKg: number | null;
+  bodyFatPct: number | null;
+  muscleMassKg: number | null;
+  waistCm: number | null;
+  photoFrontUrl: string | null;
+  photoSideUrl: string | null;
+  photoBackUrl: string | null;
+};
+
+export type CompositionTile = { label: string; value: string | null; status?: string | null };
+
+export type EvolutionResponse = {
+  consentHealth: boolean;
+  consentImages: boolean;
+  progressEntries: ProgressEntry[];
+  compositionTiles: CompositionTile[];
+  measuredAt: string | null;
+};
+
+// ---------- Panel del entrenador ----------
+
+export type TrainerAgendaSession = {
+  id: string;
+  startTime: string;
+  endTime: string;
+  durationMin: number;
+  title: string;
+  status: "past" | "current" | "upcoming";
+  meta: string;
+  chipLabel: string;
+  chipTone: "good" | "warning" | "critical" | "gold" | "neutral";
+  soloMemberId: string | null;
+};
+
+export type TrainerEpClient = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  note: string | null;
+  planNames: string;
+  attendedCount: number;
+  adherencePct: number;
+  nextLabel: string;
+  light: "GREEN" | "AMBER" | "RED" | null;
+};
+
+export type TrainerPendingItem = {
+  sessionId: string;
+  occurrenceDate: string;
+  label: string;
+  relative: string;
+  title: string;
+  detail: string;
+};
+
+export type TrainerAptitudeAlert = {
+  memberId: string;
+  name: string;
+  light: "AMBER" | "RED";
+  zone: string | null;
+  description: string;
+  adaptation: string | null;
+  meta: string;
+};
+
+export type TrainerPanelResponse = {
+  epHours: string;
+  groupHours: string;
+  monthDelta: string;
+  epClients: TrainerEpClient[];
+  epClientsNewThisMonth: number;
+  adherenceAvg: number;
+  orgAdherencePct: number;
+  todaySessions: TrainerAgendaSession[];
+  completedCount: number;
+  agendaDay: string;
+  agendaIsToday: boolean;
+  agendaSessions: TrainerAgendaSession[];
+  pendingDebriefs: TrainerPendingItem[];
+  pendingBriefs: TrainerPendingItem[];
+  aptitudeAlerts: TrainerAptitudeAlert[];
+  epSlotsPublished: number;
+  epSlotsReserved: number;
+  centerName: string | null;
+};
+
+// ---------- Session Brief ----------
+
+export type BriefListItem = {
+  id: string;
+  occurrenceDate: string;
+  isToday: boolean;
+  dayLabel: string;
+  startTime: string;
+  name: string;
+  centerName: string;
+  trainerName: string | null;
+  bookingsCount: number;
+};
+
+export type BriefListResponse = { sessions: BriefListItem[] };
+
+export type BriefRosterEntry = {
+  bookingId: string;
+  member: { id: string; firstName: string; lastName: string; state: string };
+  isNew: boolean;
+  conditions: { zone: string | null; description: string; type: string }[];
+  matchedRules: { injuryZone: string; blockArea: string; light: string; adaptation: string | null }[];
+  light: "RED" | "AMBER" | "GREEN" | null;
+  debrief: { feeling: "GREEN" | "AMBER" | "RED" } | null;
+};
+
+export type BriefDetailResponse = {
+  session: { id: string; name: string; startTime: string; centerName: string; trainerName: string | null; occurrenceDate: string };
+  canSeeHealth: boolean;
+  roster: BriefRosterEntry[];
+};
+
+// ---------- Agenda operativa (entrenador/dirección) ----------
+
+export type StaffSessionBooking = { id: string; status: BookingStatus; member: { id: string; firstName: string; lastName: string } };
+
+export type StaffSession = {
+  id: string;
+  name: string;
+  classType: string;
+  startTime: string;
+  endTime: string;
+  capacity: number;
+  isTrial: boolean;
+  recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
+  selfBookable: boolean;
+  trainerId: string | null;
+  trainerName: string | null;
+  bookings: StaffSessionBooking[];
+};
+
+export type StaffAgendaResponse = {
+  date: string;
+  centers: { id: string; name: string }[];
+  centerId: string | null;
+  canEdit: boolean;
+  trainers: { id: string; name: string }[];
+  members: { id: string; firstName: string; lastName: string }[];
+  sessions: StaffSession[];
+};
+
+export type SaveStaffSessionInput = {
+  centerId: string;
+  trainerId: string;
+  title: string;
+  type: "personal" | "reduced";
+  date: string;
+  startTime: string;
+  endTime: string;
+  memberId: string | null;
+  isTrial: boolean;
+  recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
+  recUntil: string | null;
+};
+
+// ---------- Panel de control / anuncios / organización (dirección) ----------
+
+export type DashboardKpis = {
+  activeMembers: number;
+  delinquent: number;
+  frozen: number;
+  openAlerts: number;
+  monthRevenueCents: number;
+  sessionsThisMonth: number;
+};
+
+export type DashboardResponse = {
+  kpis: DashboardKpis;
+  memberStateBreakdown: { state: string; count: number }[];
+  occupancyByCenter: { center: string; occupancyPct: number; sessions: number }[];
+  noShowRatePct: number;
+};
+
+export type AnnouncementCategory = "NEWS" | "EVENT" | "PROMO" | "ALERT";
+export type AnnouncementAudience = "ALL" | "MEMBERS";
+
+export type AnnouncementItem = {
+  id: string;
+  title: string;
+  body: string | null;
+  imageUrl: string | null;
+  category: AnnouncementCategory;
+  audience: AnnouncementAudience;
+  tags: string[];
+  pinned: boolean;
+  active: boolean;
+  startsAt: string | null;
+  endsAt: string | null;
+  centerName: string;
+  createdByName: string | null;
+  viewsCount: number;
+  createdAt: string;
+};
+
+export type AnnouncementsResponse = { centers: { id: string; name: string }[]; announcements: AnnouncementItem[] };
+
+export type SaveAnnouncementInput = {
+  title: string;
+  body: string | null;
+  imageUrl: string | null;
+  category: AnnouncementCategory;
+  audience: AnnouncementAudience;
+  centerId: string | null;
+  pinned: boolean;
+  tags: string[];
+  startsAt: string | null;
+  endsAt: string | null;
+};
+
+export type OrganizationResponse = {
+  organization: { id: string; name: string; logoUrl: string | null } | null;
+  centers: { id: string; name: string; timezone: string; membersCount: number; staffCount: number }[];
+  staff: { id: string; name: string; email: string; role: Role; roleLabel: string; centerNames: string[]; invitationPending: boolean }[];
+};

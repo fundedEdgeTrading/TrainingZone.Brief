@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { apiRequest, clearTokens, getStoredTokens, storeTokens, ApiError } from "@/api/client";
-import type { LoginResponse, MeResponse } from "@/api/types";
+import type { LoginResponse, MeResponse, Role } from "@/api/types";
+
+const SUPPORTED_ROLES: Role[] = ["MEMBER", "TRAINER", "OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"];
 
 type AuthState =
   | { status: "loading" }
@@ -45,10 +47,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         skipAuth: true,
       });
 
-      // Esta primera versión solo implementa el portal del socio (F2); el
-      // subconjunto de staff queda para F3.
-      if (data.user.role !== "MEMBER") {
-        return { ok: false, error: "Esta versión de la app solo está disponible para socios." };
+      // F3: socio, entrenador y dirección/admin ya tienen su propio subconjunto
+      // de la app (ver tabs/_layout.tsx). Recepción y RRHH quedan para más adelante.
+      if (!SUPPORTED_ROLES.includes(data.user.role)) {
+        return { ok: false, error: "Tu rol todavía no tiene una versión de la app móvil." };
       }
 
       await storeTokens(data);
