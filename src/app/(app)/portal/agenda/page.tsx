@@ -1,9 +1,17 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
-import { getMemberForUser, getBookableSessions, getPendingSessionFeedback } from "@/lib/portal-queries";
+import {
+  getMemberForUser,
+  getBookableSessions,
+  getPendingSessionFeedback,
+  getMemberUpcomingBookings,
+  MAX_ACTIVE_BOOKINGS,
+  BOOKING_WINDOW_DAYS,
+} from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
 import { getOnlineWorkouts } from "@/lib/online-queries";
 import SessionCard from "./session-card";
+import UpcomingBookings from "./upcoming-bookings";
 import { PostSessionFeedbackPrompts } from "./post-session-feedback";
 import { OnlineWorkoutLibrary } from "./online-library";
 
@@ -16,12 +24,16 @@ export default async function PortalAgendaPage() {
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
   const balances = getSessionBalances(
-    member.subscriptions.map((s) => ({ status: s.status, sessionsRemaining: s.sessionsRemaining, plan: { type: s.plan.type } }))
+    member.subscriptions.map((s) => ({
+      status: s.status,
+      sessionsRemaining: s.sessionsRemaining,
+      plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
+    }))
   );
   const hasOnline = serviceKinds.includes("ONLINE");
   const hasPresencial = serviceKinds.includes("GROUP") || serviceKinds.includes("EP");
 
-  const [sessions, pendingFeedback, onlineWorkouts] = await Promise.all([
+  const [sessions, pendingFeedback, onlineWorkouts, upcomingBookings] = await Promise.all([
     getBookableSessions(session.user.orgId, member.primaryCenterId, member.id, {
       trainerId: member.trainerId,
       hasGroupService: serviceKinds.includes("GROUP"),
@@ -29,6 +41,7 @@ export default async function PortalAgendaPage() {
     }),
     getPendingSessionFeedback(member.id),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
+    getMemberUpcomingBookings(member.id),
   ]);
 
   // Saldo agotado en alguno de sus servicios: se avisa para renovar (RB-RES-006).
@@ -49,7 +62,7 @@ export default async function PortalAgendaPage() {
         <p className="text-sm text-brand-text-2 mt-1.5 font-medium">
           {hasOnline && !hasPresencial
             ? "Entrena cuando quieras con tu biblioteca de sesiones preparadas."
-            : "Hasta 7 días vista · máximo 3 reservas activas a la vez."}
+            : `Hasta ${BOOKING_WINDOW_DAYS} días vista · máximo ${MAX_ACTIVE_BOOKINGS} reservas activas a la vez.`}
         </p>
       </div>
 
@@ -58,38 +71,56 @@ export default async function PortalAgendaPage() {
           {balances.map((b) => (
             <div
               key={b.serviceKind}
-              className="flex items-center justify-between bg-brand-card border border-brand-border rounded-2xl px-5 py-4"
+              className="bg-brand-card border border-brand-border rounded-2xl px-5 py-4"
             >
-              <div className="flex items-center gap-3">
-                {b.serviceKind === "GROUP" ? (
-                  <span className="inline-flex items-center shrink-0">
-                    <span className="w-3.5 h-3.5 rounded-full bg-[#4b5a22]" />
-                    <span className="w-3.5 h-3.5 rounded-full bg-[#7d8a54] -ml-[5px] border-2 border-white" />
-                    <span className="w-3.5 h-3.5 rounded-full bg-[#aab488] -ml-[5px] border-2 border-white" />
-                  </span>
-                ) : (
-                  <span className="w-4 h-4 rounded-full bg-brand-ink shrink-0" />
-                )}
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">
-                    {SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {b.serviceKind === "GROUP" ? (
+                    <span className="inline-flex items-center shrink-0">
+                      <span className="w-3.5 h-3.5 rounded-full bg-[#4b5a22]" />
+                      <span className="w-3.5 h-3.5 rounded-full bg-[#7d8a54] -ml-[5px] border-2 border-white" />
+                      <span className="w-3.5 h-3.5 rounded-full bg-[#aab488] -ml-[5px] border-2 border-white" />
+                    </span>
+                  ) : (
+                    <span className="w-4 h-4 rounded-full bg-brand-ink shrink-0" />
+                  )}
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">
+                      {SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}
+                    </div>
+                    <div className="text-sm text-brand-muted mt-0.5">Sesiones disponibles en tu bono</div>
                   </div>
-                  <div className="text-sm text-brand-muted mt-0.5">Sesiones disponibles en tu bono</div>
+                </div>
+                <div className="text-right">
+                  {b.unlimited ? (
+                    <span className="font-display font-extrabold text-3xl leading-none tabular-nums text-good">∞</span>
+                  ) : (
+                    <span
+                      className={`font-display font-extrabold text-3xl leading-none tabular-nums ${
+                        (b.remaining ?? 0) <= 0 ? "text-critical" : (b.remaining ?? 0) <= 2 ? "text-warning" : "text-brand-text"
+                      }`}
+                    >
+                      {b.remaining ?? 0}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="text-right">
-                {b.unlimited ? (
-                  <span className="font-display font-extrabold text-3xl leading-none tabular-nums text-good">∞</span>
-                ) : (
-                  <span
-                    className={`font-display font-extrabold text-3xl leading-none tabular-nums ${
-                      (b.remaining ?? 0) <= 0 ? "text-critical" : (b.remaining ?? 0) <= 2 ? "text-warning" : "text-brand-text"
-                    }`}
-                  >
-                    {b.remaining ?? 0}
-                  </span>
-                )}
-              </div>
+
+              {/* Consumo del bono contratado: el saldo restante ya se veía, pero
+                  no cuántas sesiones llevaba gastadas ni sobre qué total. */}
+              {b.used != null && b.total != null && (
+                <div className="mt-3.5">
+                  <div className="h-1.5 rounded-full bg-tz-sand overflow-hidden">
+                    <div
+                      className="h-full bg-good rounded-full origin-left [animation:tzGrow_.7s_ease-out_both]"
+                      style={{ width: `${Math.min(100, Math.round((b.used / b.total) * 100))}%` }}
+                    />
+                  </div>
+                  <div className="text-xs font-semibold text-brand-muted mt-1.5 tabular-nums">
+                    {b.used} {b.used === 1 ? "sesión gastada" : "sesiones gastadas"} de {b.total} del bono
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -109,6 +140,8 @@ export default async function PortalAgendaPage() {
           </div>
         </div>
       )}
+
+      <UpcomingBookings bookings={upcomingBookings} />
 
       {hasOnline && <OnlineWorkoutLibrary workouts={onlineWorkouts} />}
 

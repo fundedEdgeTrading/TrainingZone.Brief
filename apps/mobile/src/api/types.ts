@@ -49,7 +49,31 @@ export type BookableSession = {
 
 export type ServiceKind = "GROUP" | "EP" | "ONLINE";
 
-export type SessionBalance = { serviceKind: ServiceKind; remaining: number | null; unlimited: boolean };
+export type SessionBalance = {
+  serviceKind: ServiceKind;
+  remaining: number | null;
+  unlimited: boolean;
+  /** Sesiones ya gastadas del bono contratado (null si el bono es ilimitado). */
+  used: number | null;
+  total: number | null;
+};
+
+/** Reserva viva del socio, también fuera de la ventana de 7 días de `sessions`. */
+export type UpcomingBooking = {
+  bookingId: string;
+  status: "BOOKED" | "WAITLISTED";
+  waitlistPosition: number | null;
+  sessionId: string;
+  sessionName: string;
+  classType: string;
+  startsAt: string;
+  startTime: string;
+  endTime: string;
+  centerName: string;
+  trainerName: string | null;
+  sessionCancelled: boolean;
+  canCancelFreely: boolean;
+};
 
 export type PendingFeedback = {
   bookingId: string;
@@ -64,6 +88,8 @@ export type AgendaResponse = {
   sessions: BookableSession[];
   balances: SessionBalance[];
   pendingFeedback: PendingFeedback[];
+  upcomingBookings: UpcomingBooking[];
+  activeBookings: { count: number; max: number };
 };
 
 export type BookSessionResponse = { waitlisted: boolean };

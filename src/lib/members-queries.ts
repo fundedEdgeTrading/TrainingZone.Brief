@@ -98,25 +98,50 @@ export function planServiceKind(planType: string): ServiceKind | undefined {
 // RB-RES-006: saldo de sesiones que le queda al socio por tipo de servicio, a
 // partir de sus bonos activos. Un bono con `sessionsRemaining` null = ilimitado
 // (cuota mensual / online). Se agregan varios bonos del mismo servicio.
-export type SessionBalance = { serviceKind: ServiceKind; remaining: number | null; unlimited: boolean };
+//
+// Además del saldo se expone lo ya gastado del bono contratado: `used` sale de
+// `sessionsIncluded - sessionsRemaining` del propio bono (no del histórico de
+// asistencias, que incluye bonos anteriores y sesiones agendadas a mano por el
+// entrenador) para que "gastadas + disponibles" cuadre siempre con el total
+// contratado que ve el socio.
+export type SessionBalance = {
+  serviceKind: ServiceKind;
+  remaining: number | null;
+  unlimited: boolean;
+  used: number | null;
+  total: number | null;
+};
 
 export function getSessionBalances(
-  subscriptions: { status: string; sessionsRemaining: number | null; plan: { type: string } }[]
+  subscriptions: {
+    status: string;
+    sessionsRemaining: number | null;
+    plan: { type: string; sessionsIncluded?: number | null };
+  }[]
 ): SessionBalance[] {
-  const byKind = new Map<ServiceKind, { remaining: number; unlimited: boolean }>();
+  const byKind = new Map<ServiceKind, { remaining: number; unlimited: boolean; used: number; total: number }>();
   for (const s of subscriptions) {
     if (s.status !== "ACTIVE") continue;
     const kind = PLAN_TYPE_TO_SERVICE[s.plan.type];
     if (!kind) continue;
-    const acc = byKind.get(kind) ?? { remaining: 0, unlimited: false };
+    const acc = byKind.get(kind) ?? { remaining: 0, unlimited: false, used: 0, total: 0 };
     if (s.sessionsRemaining == null) acc.unlimited = true;
-    else acc.remaining += s.sessionsRemaining;
+    else {
+      acc.remaining += s.sessionsRemaining;
+      const included = s.plan.sessionsIncluded ?? null;
+      if (included != null) {
+        acc.total += included;
+        acc.used += Math.max(0, included - s.sessionsRemaining);
+      }
+    }
     byKind.set(kind, acc);
   }
   return [...byKind.entries()].map(([serviceKind, v]) => ({
     serviceKind,
     remaining: v.unlimited ? null : v.remaining,
     unlimited: v.unlimited,
+    used: v.unlimited || v.total === 0 ? null : v.used,
+    total: v.unlimited || v.total === 0 ? null : v.total,
   }));
 }
 

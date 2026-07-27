@@ -70,6 +70,50 @@ export default function AgendaScreen() {
               <Text style={[styles.balanceValue, { color: b.unlimited ? theme.good : (b.remaining ?? 0) <= 0 ? theme.critical : theme.text }]}>
                 {b.unlimited ? "∞" : (b.remaining ?? 0)}
               </Text>
+              {b.used != null && b.total != null ? (
+                <Text style={[styles.balanceHint, { color: theme.textMuted }]}>
+                  {b.used} gastadas de {b.total}
+                </Text>
+              ) : null}
+            </Card>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Todas las reservas vivas, también las de fuera de los próximos 7 días:
+          son las que cuentan para el tope de reservas activas. */}
+      {data && data.upcomingBookings.length > 0 ? (
+        <View style={{ gap: 10 }}>
+          <View style={styles.upcomingHeader}>
+            <Text style={[styles.dayLabel, { color: theme.text }]}>Tus próximas reservas</Text>
+            <Badge
+              label={`${data.activeBookings.count} de ${data.activeBookings.max} activas`}
+              tone={data.activeBookings.count >= data.activeBookings.max ? "critical" : "neutral"}
+            />
+          </View>
+          {data.upcomingBookings.map((b) => (
+            <Card key={b.bookingId}>
+              <View style={styles.sessionHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sessionName, { color: theme.text }]}>{b.sessionName}</Text>
+                  <Text style={[styles.sessionMeta, { color: theme.textMuted }]}>
+                    {formatDayLabel(b.startsAt)} · {b.startTime} · {b.centerName}
+                  </Text>
+                </View>
+                {b.sessionCancelled ? <Badge label="Anulada" tone="critical" /> : null}
+                {b.status === "WAITLISTED" ? <Badge label="En espera" tone="neutral" /> : null}
+              </View>
+              <View style={styles.sessionFooter}>
+                <Text style={[styles.capacity, { color: theme.textMuted }]}>
+                  {b.trainerName ?? "Sin entrenador asignado"}
+                </Text>
+                <Button
+                  title="Cancelar"
+                  variant="secondary"
+                  onPress={() => handleCancel(b.bookingId)}
+                  loading={cancelMutation.isPending}
+                />
+              </View>
             </Card>
           ))}
         </View>
@@ -158,6 +202,8 @@ const styles = StyleSheet.create({
   balanceCard: { flex: 1, alignItems: "center", padding: 14 },
   balanceLabel: { fontFamily: "Poppins_500Medium", fontSize: 10, textAlign: "center" },
   balanceValue: { fontFamily: "Poppins_700Bold", fontSize: 22, marginTop: 4 },
+  balanceHint: { fontFamily: "Poppins_400Regular", fontSize: 10, marginTop: 2, textAlign: "center" },
+  upcomingHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
   dayLabel: { fontFamily: "Poppins_700Bold", fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 },
   sessionHeader: { flexDirection: "row", justifyContent: "space-between", gap: 10 },
   sessionName: { fontFamily: "Poppins_600SemiBold", fontSize: 15 },
