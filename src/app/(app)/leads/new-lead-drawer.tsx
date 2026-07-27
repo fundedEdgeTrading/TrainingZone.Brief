@@ -25,12 +25,10 @@ export function NewLeadDrawer({
   centers,
   channels,
   plans,
-  trainers,
 }: {
   centers: { id: string; name: string }[];
   channels: { id: string; label: string }[];
   plans: { id: string; name: string }[];
-  trainers: { id: string; name: string }[];
 }) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("seguimiento");
@@ -178,16 +176,6 @@ export function NewLeadDrawer({
                       {plans.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
-                  <Field label="Entrenador">
-                    <Select name="trainerId" defaultValue="">
-                      <option value="">— Sin asignar —</option>
-                      {trainers.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
                         </option>
                       ))}
                     </Select>

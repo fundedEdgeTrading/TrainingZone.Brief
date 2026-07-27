@@ -87,7 +87,7 @@ export type CreateLeadInput = {
   healthNote?: string | null; // RB-LEAD-001: "ninguna" también es una respuesta válida
   actor?: { userId: string; role: Role } | null; // null = autocompletado por el propio lead (formulario público)
   // Rediseño Leads: alta presencial con cierre inmediato ("Cerrado directamente").
-  directClose?: { planId?: string | null; trainerId?: string | null } | null;
+  directClose?: { planId?: string | null } | null;
 };
 
 const POSTAL_CODE_RE = /^\d{5}$/; // RB-LEAD-010: CP español, 5 dígitos
@@ -135,7 +135,6 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
     if (!input.email?.trim()) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };
     const converted = await initiateLeadConversion(input.orgId, lead.id, {
       planId: input.directClose.planId ?? null,
-      trainerId: input.directClose.trainerId ?? null,
       closeType: "DIRECTO",
     });
     if (!converted.ok) return converted;
@@ -197,7 +196,7 @@ export async function addLeadNote(orgId: string, leadId: string, authorUserId: s
 export async function initiateLeadConversion(
   orgId: string,
   leadId: string,
-  opts: { planId?: string | null; trainerId?: string | null; closeType?: LeadCloseType }
+  opts: { planId?: string | null; closeType?: LeadCloseType }
 ) {
   const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId } });
   if (!lead) return { ok: false as const, error: "Lead no encontrado." };
@@ -222,7 +221,6 @@ export async function initiateLeadConversion(
       sex: lead.sex, // RB-LEAD-007: se hereda al Member, sin recapturar (BI-2/RB-BI-005)
       channel: lead.channel,
       originLeadId: lead.id,
-      trainerId: opts.trainerId ?? null,
     });
 
     await tx.lead.update({

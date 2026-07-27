@@ -126,11 +126,9 @@ const SUBMIT_LABEL: Record<LeadCloseType, string> = {
 export function ConvertLeadForm({
   leadId,
   plans,
-  trainers,
 }: {
   leadId: string;
   plans: { id: string; name: string }[];
-  trainers: { id: string; name: string }[];
 }) {
   const [closeType, setCloseType] = useState<LeadCloseType>("EMBUDO");
 
@@ -162,16 +160,6 @@ export function ConvertLeadForm({
             {plans.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Entrenador responsable (EP/online)">
-          <Select name="trainerId" defaultValue="">
-            <option value="">— Sin asignar —</option>
-            {trainers.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
               </option>
             ))}
           </Select>

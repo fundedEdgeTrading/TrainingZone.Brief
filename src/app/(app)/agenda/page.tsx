@@ -40,7 +40,7 @@ export default async function AgendaPage({
   const [trainers, members] = centerId
     ? await Promise.all([
         listAssignableStaff(session.user.orgId, ["TRAINER"]),
-        listActiveMembersForSelect(session.user.orgId, { trainerId: session.user.role === "TRAINER" ? session.user.id : undefined }),
+        listActiveMembersForSelect(session.user.orgId),
       ])
     : [[], []];
 

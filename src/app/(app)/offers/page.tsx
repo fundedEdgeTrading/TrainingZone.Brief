@@ -30,11 +30,10 @@ export default async function OffersPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
   const canApprove = canApproveOffers(session.user.role);
   const canPropose = canProposeOffers(session.user.role);
-  const isTrainer = session.user.role === "TRAINER";
 
   const [offers, members] = await Promise.all([
-    listOffers(session.user.orgId, { trainerUserId: isTrainer ? session.user.id : undefined }),
-    listActiveMembersForSelect(session.user.orgId, { trainerId: isTrainer ? session.user.id : undefined }),
+    listOffers(session.user.orgId),
+    listActiveMembersForSelect(session.user.orgId),
   ]);
 
   return (

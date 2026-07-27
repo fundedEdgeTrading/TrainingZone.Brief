@@ -11,7 +11,6 @@ import {
   getLeadChannelDistribution,
   getLeadNoCloseReasonDistribution,
 } from "@/lib/leads-queries";
-import { listAssignableStaff } from "@/lib/org-queries";
 import { listActivePlansForOrg } from "@/lib/members-queries";
 import { KpiCard } from "@/components/kpi-card";
 import { FilterBar } from "@/components/ui/filter-bar";
@@ -47,7 +46,7 @@ export default async function LeadsPage({
   const canCreate = canManageLeads(session.user.role);
   const closeTypeFilter = (params.closeType || "") as LeadCloseType | "";
 
-  const [leads, channels, , centers, closeRate, closeBreakdown, withoutOwner, channelDist, reasonDist, plans, staff] = await Promise.all([
+  const [leads, channels, , centers, closeRate, closeBreakdown, withoutOwner, channelDist, reasonDist, plans] = await Promise.all([
     listLeads(session.user.orgId, { q: params.q, centerId: params.centerId }),
     listLeadChannels(session.user.orgId),
     listNoCloseReasons(session.user.orgId),
@@ -58,7 +57,6 @@ export default async function LeadsPage({
     getLeadChannelDistribution(session.user.orgId),
     getLeadNoCloseReasonDistribution(session.user.orgId),
     listActivePlansForOrg(session.user.orgId),
-    listAssignableStaff(session.user.orgId, ["TRAINER"]),
   ]);
 
   const byStatus: Record<string, typeof leads> = {};
@@ -76,7 +74,7 @@ export default async function LeadsPage({
       <PageHeader
         kicker="Embudo comercial"
         description={`${leads.length} leads en el embudo comercial · arrastra las tarjetas entre columnas`}
-        actions={canCreate ? <NewLeadDrawer centers={centers} channels={channels} plans={plans} trainers={staff} /> : undefined}
+        actions={canCreate ? <NewLeadDrawer centers={centers} channels={channels} plans={plans} /> : undefined}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">

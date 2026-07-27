@@ -44,7 +44,6 @@ export default async function PortalAgendaPage() {
       member.primaryCenterId,
       member.id,
       {
-        trainerId: member.trainerId,
         hasGroupService: serviceKinds.includes("GROUP"),
         hasEpService: serviceKinds.includes("EP"),
       },

@@ -44,7 +44,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     listAssignableStaff(session.user.orgId, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]),
     listActivePlansForOrg(session.user.orgId),
   ]);
-  const trainers = staff.filter((s) => s.role === "TRAINER");
 
   const archived = leadIsArchived(lead.status);
   const age = Math.round((new Date().getTime() - lead.contactedAt.getTime()) / (24 * 60 * 60 * 1000));
@@ -171,7 +170,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           ) : (
             !archived && (
               <Card title="Cerrar venta">
-                <ConvertLeadForm leadId={lead.id} plans={plans} trainers={trainers} />
+                <ConvertLeadForm leadId={lead.id} plans={plans} />
               </Card>
             )
           )}

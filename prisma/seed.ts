@@ -671,9 +671,11 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
   await prisma.subscription.createMany({ data: subscriptions });
 
-  // F9/RB-PERFIL-002 (decisión §11.4): EP SIEMPRE tiene entrenador individual
-  // asignado explícitamente; "solo grupos" se queda sin trainerId. El entrenador
-  // es el de su franja 1:1, para que ficha y agenda cuenten lo mismo.
+  // F9/RB-PERFIL-002: ya no hay entrenador responsable fijo del socio
+  // (Member.trainerId no existe). Para que la demo sea coherente seguimos
+  // calculando aquí, solo en memoria, "con qué entrenador entrena habitualmente
+  // cada socio de EP" — se usa para poblar sus sesiones concretas
+  // (ClassSession.trainerId) y feedback de ejemplo, nunca se persiste en Member.
   const trainerAssignments: { memberId: string; trainerId: string }[] = [];
   for (const sub of subscriptions) {
     if (sub.status !== SubscriptionStatus.ACTIVE || !epPlanIds.has(sub.planId)) continue;
@@ -682,9 +684,6 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     if (!centerTrainers?.length) continue;
     const slotTrainerId = member.preferredTemplates[0]?.trainerId ?? null;
     trainerAssignments.push({ memberId: member.id, trainerId: slotTrainerId ?? pick(centerTrainers).id });
-  }
-  for (const t of trainerAssignments) {
-    await prisma.member.update({ where: { id: t.memberId }, data: { trainerId: t.trainerId } });
   }
 
   // ---------- Sesiones (agenda) ----------
@@ -1290,7 +1289,6 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             birthDate: faker.date.birthdate({ min: 20, max: 60, mode: "age" }),
             state: MemberState.ACTIVE,
             joinedAt: spec.joinedAt,
-            trainerId: daniTrainer.id,
             notes: spec.note ?? null,
             consentContract: true,
             consentHealth: true,
@@ -1739,7 +1737,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   if (cfg.demoMember && demoMemberId && demoMemberUserId) {
     const demoCenterId = centerIdByKey.get(cfg.demoMember.centerKey)!;
     const demoTrainer = trainersByCenter[demoCenterId]?.[0];
-    await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id, heightCm: 170 } });
+    await prisma.member.update({ where: { id: demoMemberId }, data: { heightCm: 170 } });
 
     // FB-2: un par de sesiones recientes ya asistidas y sin valorar, para que "Mi
     // plan" del socio demo muestre valoraciones pendientes (slider F16) nada más entrar.

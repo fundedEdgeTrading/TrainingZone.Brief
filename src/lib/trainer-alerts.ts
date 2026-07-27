@@ -16,11 +16,14 @@ export async function runFewSessionsScheduledRule(orgId: string): Promise<number
     where: {
       orgId,
       state: "ACTIVE",
-      trainerId: { not: null },
       subscriptions: { some: { status: "ACTIVE", plan: { type: "PERSONAL_TRAINING" } } },
     },
-    select: { id: true, firstName: true, lastName: true, trainerId: true },
+    select: { id: true, firstName: true, lastName: true },
   });
+
+  // Ya no hay un entrenador fijo del socio al que avisar: la alerta va siempre
+  // a dirección del centro (OWNER/CENTER_DIRECTOR de la organización).
+  const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } });
 
   let created = 0;
   for (const member of epClients) {
@@ -35,15 +38,17 @@ export async function runFewSessionsScheduledRule(orgId: string): Promise<number
     const coversLessThanTwoWeeks = !lastDate || lastDate.getTime() - now.getTime() < TWO_WEEKS_MS;
 
     if (count <= FEW_SESSIONS_THRESHOLD || coversLessThanTwoWeeks) {
-      await createNotificationOnce({
-        orgId,
-        recipientUserId: member.trainerId!,
-        kind: "TASK",
-        title: `${member.firstName} ${member.lastName}: pocas sesiones programadas`,
-        body: `Le quedan ${count} sesión(es) de EP en el calendario (RB-RRHH-006). Programa más entrenamientos.`,
-        entityType: "Member",
-        entityId: member.id,
-      });
+      for (const director of directors) {
+        await createNotificationOnce({
+          orgId,
+          recipientUserId: director.id,
+          kind: "TASK",
+          title: `${member.firstName} ${member.lastName}: pocas sesiones programadas`,
+          body: `Le quedan ${count} sesión(es) de EP en el calendario (RB-RRHH-006). Programa más entrenamientos.`,
+          entityType: "Member",
+          entityId: member.id,
+        });
+      }
       created++;
     }
   }
@@ -58,15 +63,16 @@ export async function runFewSessionsScheduledRule(orgId: string): Promise<number
 export async function runLowPackBalanceRule(orgId: string): Promise<number> {
   const lowPacks = await prisma.subscription.findMany({
     where: { status: "ACTIVE", sessionsRemaining: { lte: 2, gt: 0 }, member: { orgId, state: "ACTIVE" } },
-    include: { member: { select: { id: true, firstName: true, lastName: true, trainerId: true } }, plan: { select: { name: true } } },
+    include: { member: { select: { id: true, firstName: true, lastName: true } }, plan: { select: { name: true } } },
   });
 
+  // Ya no hay un entrenador fijo del socio al que avisar: la alerta va siempre
+  // a dirección del centro (OWNER/CENTER_DIRECTOR de la organización).
   const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } });
 
   let created = 0;
   for (const sub of lowPacks) {
-    const recipients = sub.member.trainerId ? [sub.member.trainerId] : directors.map((d) => d.id);
-    for (const recipientUserId of recipients) {
+    for (const recipientUserId of directors.map((d) => d.id)) {
       await createNotificationOnce({
         orgId,
         recipientUserId,

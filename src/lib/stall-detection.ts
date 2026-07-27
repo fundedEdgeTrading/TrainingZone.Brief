@@ -95,9 +95,11 @@ export function isStalled(signals: StallSignals): boolean {
 export async function runStallDetectionRule(orgId: string): Promise<number> {
   const members = await prisma.member.findMany({
     where: { orgId, state: "ACTIVE" },
-    select: { id: true, firstName: true, lastName: true, trainerId: true },
+    select: { id: true, firstName: true, lastName: true },
   });
 
+  // Ya no hay un entrenador fijo del socio al que avisar: la alerta va siempre
+  // a dirección del centro (OWNER/CENTER_DIRECTOR de la organización).
   const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } });
 
   let created = 0;
@@ -105,8 +107,7 @@ export async function runStallDetectionRule(orgId: string): Promise<number> {
     const signals = await getStallSignals(member.id);
     if (!isStalled(signals)) continue;
 
-    const recipients = member.trainerId ? [member.trainerId] : directors.map((d) => d.id);
-    for (const recipientUserId of recipients) {
+    for (const recipientUserId of directors.map((d) => d.id)) {
       await createNotificationOnce({
         orgId,
         recipientUserId,

@@ -6,6 +6,7 @@ import {
   getPendingSessionFeedback,
   getMemberRatingSummary,
   getMemberPlanAdherence,
+  getLastEpTrainerName,
 } from "@/lib/portal-queries";
 import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { resolveTimezone } from "@/lib/timezone";
@@ -43,18 +44,18 @@ export default async function PortalPlanPage() {
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
   const today = zonedToday(timezone);
 
-  const [goals, programs, pending, ratings, adherence] = await Promise.all([
+  const [goals, programs, pending, ratings, adherence, trainerName] = await Promise.all([
     getMemberGoals(member.id),
     listWorkoutPrograms(session.user.orgId, member.id),
     getPendingSessionFeedback(member.id, timezone),
     getMemberRatingSummary(member.id),
     getMemberPlanAdherence(member.id, timezone),
+    getLastEpTrainerName(member.id),
   ]);
 
   const hasPendingProgram = programs.some((p) => p.status === "DRAFT" || p.status === "PENDING_TRAINER");
   const activeSub = member.subscriptions[0];
   const activeGoals = goals.filter((g) => !g.achievedAt);
-  const trainerName = member.trainer?.name ?? null;
   const planTitle = activeGoals.slice(0, 2).map((g) => g.label).join(" · ") || "Tu programa de entrenamiento";
 
   const pendingItems = pending.map((p) => {

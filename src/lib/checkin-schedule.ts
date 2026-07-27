@@ -70,9 +70,20 @@ export async function runPeriodicCheckinRule(orgId: string): Promise<number> {
       created++;
     }
 
-    if (member.trainerId) {
+    // Ya no hay un entrenador fijo del socio (Member.trainerId): el rating se
+    // programa contra el entrenador que le dio la última sesión de EP asistida.
+    // Si el socio no tiene ninguna sesión de EP reciente, no hay a quién
+    // valorar todavía y se salta.
+    const lastEpBooking = await prisma.booking.findFirst({
+      where: { memberId: member.id, status: "ATTENDED", session: { classType: "Personal Training" } },
+      orderBy: { session: { date: "desc" } },
+      select: { session: { select: { trainerId: true } } },
+    });
+    const lastEpTrainerId = lastEpBooking?.session.trainerId ?? null;
+
+    if (lastEpTrainerId) {
       const lastRating = await prisma.trainerRating.findFirst({
-        where: { memberId: member.id, trainerUserId: member.trainerId },
+        where: { memberId: member.id, trainerUserId: lastEpTrainerId },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
       });

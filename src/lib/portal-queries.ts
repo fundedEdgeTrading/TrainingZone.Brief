@@ -33,7 +33,6 @@ export async function getMemberForUser(userId: string) {
     include: {
       primaryCenter: true,
       subscriptions: { where: { status: "ACTIVE" }, include: { plan: true }, orderBy: { startDate: "desc" } },
-      trainer: { select: { name: true } },
     },
   });
 }
@@ -106,6 +105,22 @@ export async function getMemberRatingSummary(memberId: string) {
     selfAvg,
     selfCount: selfScores.length,
   };
+}
+
+// Ya no hay "el entrenador del socio" (Member.trainerId): para mostrar un
+// nombre de referencia en el portal usamos el entrenador de su última sesión
+// de EP (asistida o próxima), que es quien lo entrenó/entrenará de verdad.
+export async function getLastEpTrainerName(memberId: string): Promise<string | null> {
+  const booking = await prisma.booking.findFirst({
+    where: {
+      memberId,
+      status: { in: ["ATTENDED", "BOOKED"] },
+      session: { classType: "Personal Training" },
+    },
+    orderBy: { session: { date: "desc" } },
+    select: { session: { select: { trainer: { select: { name: true } } } } },
+  });
+  return booking?.session.trainer?.name ?? null;
 }
 
 // Adherencia del hero de "Mi plan": de las sesiones que el socio reservó y ya
@@ -263,16 +278,18 @@ export function sessionStartsAt(date: Date, startTime: string, timeZone: string)
 
 /**
  * RB-AGENDA-001: visibilidad segmentada. El socio de grupos ve las clases de
- * grupo (siempre reservables por el cliente, con aforo). El socio de EP solo
- * ve las franjas de SU entrenador marcadas como autorreservables
- * (`selfBookable`, RB-AGENDA-002) — el resto de huecos de EP los gestiona el
- * entrenador a mano y no aparecen aquí.
+ * grupo (siempre reservables por el cliente, con aforo). El socio de EP ve
+ * CUALQUIER franja de EP marcada como autorreservable (`selfBookable`,
+ * RB-AGENDA-002), sea cual sea el entrenador que la imparte — ya no hay "el
+ * entrenador del socio", el socio puede entrenar con distintos entrenadores
+ * según la sesión. El resto de huecos de EP los gestiona el entrenador a
+ * mano y no aparecen aquí.
  */
 export async function getBookableSessions(
   orgId: string,
   centerId: string,
   memberId: string,
-  memberContext: { trainerId: string | null; hasGroupService: boolean; hasEpService: boolean },
+  memberContext: { hasGroupService: boolean; hasEpService: boolean },
   timeZone: string
 ) {
   const now = new Date();
@@ -293,8 +310,8 @@ export async function getBookableSessions(
       date: { gte: fromDay, lt: toDay },
       OR: [
         ...(memberContext.hasGroupService ? [{ classType: { not: "Personal Training" } }] : []),
-        ...(memberContext.hasEpService && memberContext.trainerId
-          ? [{ classType: "Personal Training", selfBookable: true, trainerId: memberContext.trainerId }]
+        ...(memberContext.hasEpService
+          ? [{ classType: "Personal Training", selfBookable: true }]
           : []),
       ],
     },
@@ -448,7 +465,6 @@ export type BookingResult =
 type MemberForBooking = {
   id: string;
   primaryCenterId: string;
-  trainerId: string | null;
   subscriptions: { id: string; status: string; sessionsRemaining: number | null; plan: { type: string } }[];
 };
 
@@ -491,9 +507,10 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     if (startsAt.getTime() - now.getTime() > BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000) {
       return { ok: false as const, error: `Solo puedes reservar con ${BOOKING_WINDOW_DAYS} días de antelación.` };
     }
-    // RB-AGENDA-001/002: de EP, el socio solo autorreserva las franjas que su
-    // propio entrenador ha marcado como autorreservables.
-    if (sessionServiceKind(cls.classType) === "EP" && (!cls.selfBookable || cls.trainerId !== member.trainerId)) {
+    // RB-AGENDA-001/002: de EP, el socio autorreserva cualquier franja marcada
+    // como autorreservable, sin importar qué entrenador la imparte — ya no hay
+    // "el entrenador del socio" (puede entrenar con distintos entrenadores).
+    if (sessionServiceKind(cls.classType) === "EP" && !cls.selfBookable) {
       return { ok: false as const, error: "Esta franja de entrenamiento personal la gestiona tu entrenador." };
     }
 

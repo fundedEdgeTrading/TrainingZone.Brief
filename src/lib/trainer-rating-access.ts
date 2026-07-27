@@ -34,21 +34,33 @@ export async function getTrainerRatingSummary(orgId: string, actorRole: Role) {
 
 export type TrainerRatingWriteResult = { ok: true } | { ok: false; error: string };
 
-/** El cliente valora a SU entrenador asignado (nunca a otro). */
+/**
+ * El cliente valora al entrenador que realmente le dio su última sesión de EP
+ * completada (ATTENDED). Ya no hay "el entrenador asignado" del socio
+ * (Member.trainerId) — puede entrenar con distintos entrenadores según la
+ * sesión, así que la valoración se ancla a la sesión concreta más reciente.
+ */
 export async function submitTrainerRating(
   orgId: string,
   memberUserId: string,
   input: { score?: number; strengths?: string; improvements?: string }
 ): Promise<TrainerRatingWriteResult> {
-  const member = await prisma.member.findFirst({ where: { orgId, userId: memberUserId }, select: { id: true, trainerId: true } });
+  const member = await prisma.member.findFirst({ where: { orgId, userId: memberUserId }, select: { id: true } });
   if (!member) return { ok: false, error: "Socio no encontrado." };
-  if (!member.trainerId) return { ok: false, error: "No tienes un entrenador asignado." };
+
+  const lastEpBooking = await prisma.booking.findFirst({
+    where: { memberId: member.id, status: "ATTENDED", session: { orgId, classType: "Personal Training" } },
+    orderBy: { session: { date: "desc" } },
+    select: { session: { select: { trainerId: true } } },
+  });
+  const trainerUserId = lastEpBooking?.session.trainerId ?? null;
+  if (!trainerUserId) return { ok: false, error: "Todavía no tienes ninguna sesión de entrenamiento personal completada para valorar." };
 
   await prisma.trainerRating.create({
     data: {
       orgId,
       memberId: member.id,
-      trainerUserId: member.trainerId,
+      trainerUserId,
       score: input.score,
       strengths: input.strengths?.trim() || null,
       improvements: input.improvements?.trim() || null,

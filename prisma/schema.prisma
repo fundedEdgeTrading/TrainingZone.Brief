@@ -163,7 +163,6 @@ model User {
 
   leadsOwned            Lead[]              @relation("LeadOwner")
   leadNotesAuthored     LeadNote[]          @relation("LeadNoteAuthor")
-  assignedMembers       Member[]            @relation("AssignedMemberTrainer")
   directedSessions      ClassSession[]      @relation("DirectedSessions")
   workoutProgramsConfirmed WorkoutProgram[] @relation("WorkoutConfirmedBy")
   mobileRefreshTokens   MobileRefreshToken[]
@@ -293,15 +292,15 @@ model Member {
   notes              String?
   createdAt          DateTime    @default(now())
 
-  // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen,
-  // entrenador responsable explícito (EP y online; null = responsable Training Zone).
+  // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen.
+  // Ya no hay entrenador responsable fijo: el socio puede hacer EP con distintos
+  // entrenadores según la sesión (ver ClassSession.trainerId/SessionTemplate.trainerId).
   postalCode     String?
   occupation     String?
   hasChildren    Boolean? // BI demográfico (RB-BI-003), heredado del lead si se respondió
   channel        String?
   heightCm       Int? // composición corporal: base para IMC/rangos de referencia (docs/COMPOSICION_CORPORAL_*)
   originLeadId   String? @unique
-  trainerId      String?
   stripeCustomerId String? @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
 
   // --- Importación de socios desde export externo (F-IMPORT / RB-IMPORT) ---
@@ -329,7 +328,6 @@ model Member {
   organization    Organization           @relation(fields: [orgId], references: [id])
   primaryCenter   Center                 @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
   user            User?                  @relation("MemberUser", fields: [userId], references: [id])
-  trainer         User?                  @relation("AssignedMemberTrainer", fields: [trainerId], references: [id])
   originLead      Lead?                  @relation("MemberOriginLead", fields: [originLeadId], references: [id])
   subscriptions   Subscription[]
   bookings        Booking[]
@@ -354,11 +352,10 @@ model Member {
   @@index([orgId])
   @@index([primaryCenterId])
   @@index([state])
-  @@index([trainerId])
 }
 
 // Fotos y métricas de evolución física (Ficha Socio). Visibles solo para el
-// socio y su entrenador asignado (mismo ámbito que health-access).
+// socio y el equipo del centro (mismo ámbito que health-access).
 model MemberProgressEntry {
   id            String   @id @default(cuid())
   memberId      String
