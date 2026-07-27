@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData } from "@/lib/rbac";
-import { startOfWeekMonday, formatDateParam, zonedNow } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam, zonedNow, zonedTimeToInstant } from "@/lib/date-utils";
 import { expandOccurrences, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import type { AptitudeLight, Role } from "@prisma/client";
 
@@ -55,6 +55,10 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   // La hora del servidor no sirve: corre en UTC y "sesión en curso" u "hoy"
   // deben leerse en la hora del navegador del entrenador (ver `zonedNow`).
   const now = zonedNow(timezone);
+  // `now` es reloj de pared (no un instante real): para las cuentas atrás en
+  // vivo hace falta el instante absoluto, que sí es comparable con `Date.now()`
+  // del navegador. Ver la cabecera de `date-utils`.
+  const nowInstant = Date.now();
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
 
@@ -283,7 +287,7 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   // cualquier fila de una serie recurrente vigente, sin comprobar el día de la
   // semana); sin proyectar con `expandOccurrences` antes de mapear, la agenda
   // mostraba también series que ese día en concreto no tienen ocurrencia.
-  function buildSessionItem(s: (typeof todaySessionsRaw)[number], dayIsToday: boolean) {
+  function buildSessionItem(s: (typeof todaySessionsRaw)[number], date: Date, dayIsToday: boolean) {
     const startMin = timeToMinutes(s.startTime);
     const endMin = timeToMinutes(s.endTime);
     const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -341,10 +345,18 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       }
     }
 
+    // Instantes absolutos de la ocurrencia: son los que consume la cuenta atrás
+    // del cliente, que corre con el reloj del navegador. `startMin`/`endMin` son
+    // reloj de pared del centro y no sirven para restarle `Date.now()`.
+    const startsAt = zonedTimeToInstant(date, s.startTime, timezone);
+    const endsAt = zonedTimeToInstant(date, s.endTime, timezone);
+
     return {
       id: s.id,
       startTime: s.startTime,
       endTime: s.endTime,
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
       durationMin: endMin - startMin,
       title: isPersonal && soloMember ? `${s.classType} · ${soloMember}` : s.classType,
       classType: s.classType,
@@ -355,22 +367,39 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       progressPct: status === "current" ? Math.round(Math.min(100, Math.max(0, ((nowMin - startMin) / (endMin - startMin)) * 100))) : 0,
       minutesRemaining: status === "current" ? Math.max(0, endMin - nowMin) : null,
       minutesUntil: status === "upcoming" && dayIsToday ? Math.max(0, startMin - nowMin) : null,
+      // Semilla en segundos para el primer render de la cuenta atrás (evita el
+      // desajuste de hidratación: el servidor y el cliente pintan lo mismo y el
+      // navegador toma el relevo en el primer tick).
+      secondsRemaining: status === "current" ? Math.max(0, Math.ceil((endsAt.getTime() - nowInstant) / 1000)) : null,
+      secondsUntil: status === "upcoming" ? Math.max(0, Math.ceil((startsAt.getTime() - nowInstant) / 1000)) : null,
       soloMember,
       soloMemberId: isPersonal ? active[0]?.member.id ?? null : null,
     };
   }
 
-  const todaySessions = expandOccurrences(todaySessionsRaw, today, tomorrow).map(({ session }) => buildSessionItem(session, true));
+  const todaySessions = expandOccurrences(todaySessionsRaw, today, tomorrow).map(({ session, date }) => buildSessionItem(session, date, true));
   // Reutiliza `todaySessions` cuando se navega al día de hoy: mismo cálculo,
   // sin proyectar dos veces.
   const agendaSessions = agendaIsToday
     ? todaySessions
-    : expandOccurrences(agendaDaySessionsRaw, selectedDay, addDays(selectedDay, 1)).map(({ session }) => buildSessionItem(session, false));
+    : expandOccurrences(agendaDaySessionsRaw, selectedDay, addDays(selectedDay, 1)).map(({ session, date }) => buildSessionItem(session, date, false));
 
   const currentSession = todaySessions.find((s) => s.status === "current") ?? null;
   const nextSession = currentSession ? null : todaySessions.find((s) => s.status === "upcoming") ?? null;
   const completedCount = todaySessions.filter((s) => s.status === "past").length;
   const nextInMinutes = currentSession ? 0 : nextSession?.minutesUntil ?? null;
+
+  // Progreso del día del entrenador: minutos ya trabajados sobre los minutos
+  // que tiene agendados hoy. La sesión en curso cuenta la parte transcurrida.
+  // El anillo del spotlight mostraba solo el avance de la sesión en curso, así
+  // que en cuanto no había ninguna (el caso normal) no se veía porcentaje.
+  const todayMinutesTotal = todaySessions.reduce((sum, s) => sum + s.durationMin, 0);
+  const todayMinutesWorked = todaySessions.reduce((sum, s) => {
+    if (s.status === "past") return sum + s.durationMin;
+    if (s.status === "current") return sum + Math.max(0, s.durationMin - (s.minutesRemaining ?? 0));
+    return sum;
+  }, 0);
+  const todayProgressPct = todayMinutesTotal ? Math.round((todayMinutesWorked / todayMinutesTotal) * 100) : 0;
 
   // ---------- Pendientes: debriefs, briefs, aptitud ----------
   // `expandOccurrences` ordena ascendente; en Pendientes interesa lo más reciente arriba.
@@ -467,6 +496,9 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     nextSession,
     completedCount,
     nextInMinutes,
+    todayMinutesTotal,
+    todayMinutesWorked,
+    todayProgressPct,
     agendaDay: selectedDay,
     agendaIsToday,
     agendaSessions,

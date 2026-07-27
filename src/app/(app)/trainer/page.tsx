@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PendingPanel } from "./pending-panel";
+import { SessionCountdown } from "./session-countdown";
 
 function greetingForHour(hour: number) {
   if (hour < 14) return "Buenos días";
@@ -74,8 +75,10 @@ export default async function TrainerPanelPage({
 
   const spotlightKind = data.currentSession ? "current" : data.nextSession ? "next" : "empty";
   const spotlight = data.currentSession ?? data.nextSession ?? null;
-  const progressPct = data.currentSession?.progressPct ?? 0;
-  const dashOffset = spotlightKind === "current" ? Math.round(176 * (1 - progressPct / 100)) : 176;
+  // El anillo mide el día completo (minutos trabajados sobre minutos agendados
+  // hoy), no solo la sesión en curso: así hay porcentaje también cuando la
+  // próxima sesión aún no ha empezado, que es el caso habitual.
+  const dashOffset = Math.round(176 * (1 - data.todayProgressPct / 100));
 
   const agendaSessionCount = data.agendaSessions.length;
   const agendaRangeLabel = agendaSessionCount
@@ -118,7 +121,12 @@ export default async function TrainerPanelPage({
               "tienes una sesión en curso"
             ) : data.nextSession ? (
               <>
-                tu próxima es en <span className="font-bold text-brand-text">{data.nextSession.minutesUntil} minutos</span>
+                tu próxima es en{" "}
+                <SessionCountdown
+                  targetIso={data.nextSession.startsAt}
+                  initialSeconds={data.nextSession.secondsUntil ?? 0}
+                  className="font-bold text-brand-text"
+                />
               </>
             ) : (
               "no quedan sesiones hoy"
@@ -276,24 +284,36 @@ export default async function TrainerPanelPage({
                   }}
                 />
                 <div className="relative flex gap-6 items-center flex-wrap">
-                  <svg width="78" height="78" viewBox="0 0 78 78" className="-rotate-90 shrink-0">
-                    <circle cx="39" cy="39" r="28" fill="none" stroke="rgba(244,240,232,.16)" strokeWidth="5" />
-                    <circle
-                      cx="39"
-                      cy="39"
-                      r="28"
-                      fill="none"
-                      stroke="#C8AB72"
-                      strokeWidth="5"
-                      strokeLinecap="round"
-                      strokeDasharray={176}
-                      strokeDashoffset={dashOffset}
-                      style={{ animation: "tzDash 1.4s .6s both" }}
-                    />
-                    <text x="39" y="39" textAnchor="middle" dominantBaseline="central" fill="#F4F0E8" fontSize="15" fontWeight="800" transform="rotate(90 39 39)">
-                      {spotlightKind === "current" ? `${progressPct}%` : `${spotlight?.minutesUntil}m`}
-                    </text>
-                  </svg>
+                  <div className="flex flex-col items-center gap-1.5 shrink-0">
+                    <svg
+                      width="78"
+                      height="78"
+                      viewBox="0 0 78 78"
+                      className="-rotate-90"
+                      role="img"
+                      aria-label={`${data.todayProgressPct}% de los minutos de hoy trabajados`}
+                    >
+                      <circle cx="39" cy="39" r="28" fill="none" stroke="rgba(244,240,232,.16)" strokeWidth="5" />
+                      <circle
+                        cx="39"
+                        cy="39"
+                        r="28"
+                        fill="none"
+                        stroke="#C8AB72"
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                        strokeDasharray={176}
+                        strokeDashoffset={dashOffset}
+                        style={{ animation: "tzDash 1.4s .6s both" }}
+                      />
+                      <text x="39" y="39" textAnchor="middle" dominantBaseline="central" fill="#F4F0E8" fontSize="15" fontWeight="800" transform="rotate(90 39 39)">
+                        {data.todayProgressPct}%
+                      </text>
+                    </svg>
+                    <span className="text-[10px] font-bold tabular-nums tracking-[.04em]" style={{ color: "#A8A296" }}>
+                      {data.todayMinutesWorked}/{data.todayMinutesTotal} min
+                    </span>
+                  </div>
 
                   <div className="flex-1 min-w-[260px]">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -305,9 +325,16 @@ export default async function TrainerPanelPage({
                         </span>
                         {spotlightKind === "current" ? "En curso" : "Próxima"}
                       </span>
-                      <span className="text-xs" style={{ color: "#A8A296" }}>
-                        {spotlightKind === "current" ? `quedan ${spotlight?.minutesRemaining} min` : `en ${spotlight?.minutesUntil} min`}
-                      </span>
+                      {spotlight && (
+                        <span className="inline-flex items-center gap-1 text-xs" style={{ color: "#A8A296" }}>
+                          {spotlightKind === "current" ? "quedan" : "empieza en"}
+                          <SessionCountdown
+                            targetIso={spotlightKind === "current" ? spotlight.endsAt : spotlight.startsAt}
+                            initialSeconds={(spotlightKind === "current" ? spotlight.secondsRemaining : spotlight.secondsUntil) ?? 0}
+                            className="font-bold"
+                          />
+                        </span>
+                      )}
                     </div>
                     <div className="font-display font-extrabold text-[22px] tracking-[-.015em] mt-2" style={{ color: "#F4F0E8" }}>
                       {spotlight?.startTime}–{spotlight?.endTime} · {spotlight?.title}
