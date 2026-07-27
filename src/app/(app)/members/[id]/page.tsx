@@ -14,20 +14,14 @@ import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/l
 import { canDeleteMembers, canManageOrg } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
-import {
-  AddHealthRecordForm,
-  ResolveHealthButton,
-  AddNoteForm,
-  MemberDataForm,
-  DeleteMemberButton,
-  ResendWelcomeButton,
-} from "./member-forms";
+import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
+import { MemberDataPanel } from "./member-data-panel";
 import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
 import { BodyCompositionChart } from "./composition-chart";
 import { CompositionSummary } from "./composition-summary";
 import { buildCompositionView } from "@/lib/composition-view";
-import { ClientGoalsPanel, GoalTemplateForm, TrainerAssignSelect } from "./member-profile-forms";
+import { ClientGoalsPanel, GoalTemplateForm } from "./member-profile-forms";
 import {
   FreezeSubscriptionForm,
   ResumeSubscriptionButton,
@@ -146,13 +140,6 @@ export default async function MemberDetailPage({
         </div>
         <div className="flex items-center gap-3">
           {!member.userId && <ResendWelcomeButton memberId={member.id} />}
-          {canDelete && (
-            <DeleteMemberButton
-              memberId={member.id}
-              memberName={`${member.firstName} ${member.lastName}`}
-              activeSubscriptionPlan={manageableSubscription?.plan.name ?? null}
-            />
-          )}
           <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
         </div>
       </div>
@@ -164,36 +151,40 @@ export default async function MemberDetailPage({
               key: "datos",
               label: "Datos",
               content: (
-                <div className="space-y-6">
-                  <MemberDataForm
-                    centers={centers}
-                    member={{
-                      id: member.id,
-                      firstName: member.firstName,
-                      lastName: member.lastName,
-                      email: member.email,
-                      phone: member.phone,
-                      address: member.address,
-                      addressLine2: member.addressLine2,
-                      postalCode: member.postalCode,
-                      city: member.city,
-                      province: member.province,
-                      country: member.country,
-                      birthDate: member.birthDate ? member.birthDate.toISOString().slice(0, 10) : null,
-                      sex: member.sex,
-                      occupation: member.occupation,
-                      emergencyContact: member.emergencyContact,
-                      primaryCenterId: member.primaryCenterId,
-                      consentContractAt: member.consentContractAt ? member.consentContractAt.toISOString() : null,
-                      consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
-                      consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
-                      consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
-                    }}
-                  />
-                  <div className="max-w-md">
-                    <TrainerAssignSelect memberId={member.id} trainerId={member.trainerId} trainers={trainers} />
-                  </div>
-                </div>
+                <MemberDataPanel
+                  centers={centers}
+                  trainers={trainers}
+                  trainerId={member.trainerId}
+                  stats={{ attended: stats.attended, noShow: stats.noShow }}
+                  activeSubscriptionPlan={manageableSubscription?.plan.name ?? null}
+                  canDelete={canDelete}
+                  member={{
+                    id: member.id,
+                    firstName: member.firstName,
+                    lastName: member.lastName,
+                    email: member.email,
+                    phone: member.phone,
+                    address: member.address,
+                    addressLine2: member.addressLine2,
+                    postalCode: member.postalCode,
+                    city: member.city,
+                    province: member.province,
+                    country: member.country,
+                    birthDate: member.birthDate ? member.birthDate.toISOString().slice(0, 10) : null,
+                    sex: member.sex,
+                    occupation: member.occupation,
+                    emergencyContact: member.emergencyContact,
+                    primaryCenterId: member.primaryCenterId,
+                    primaryCenterName: member.primaryCenter.name,
+                    primaryCenterAddress: member.primaryCenter.address,
+                    joinedAt: member.joinedAt.toISOString(),
+                    state: member.state,
+                    consentContractAt: member.consentContractAt ? member.consentContractAt.toISOString() : null,
+                    consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
+                    consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
+                    consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                  }}
+                />
               ),
             },
             {
