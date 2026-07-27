@@ -4,6 +4,8 @@ import { listMyTimeClockEntries, listAllTimeClockEntries, crossCheckHours } from
 import { listStaffProposals } from "@/lib/staff-proposals";
 import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
 import { getCheckinConfigs } from "@/lib/checkin-schedule";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
+import { zonedToday } from "@/lib/date-utils";
 import { Card } from "@/components/kpi-card";
 import { PageHeader } from "@/components/ui/page-header";
 import { TimeClockWidget, ProposalForm, ProposalReviewList, CheckinConfigForm } from "./rrhh-client";
@@ -17,12 +19,16 @@ export default async function RrhhPage() {
   const isReviewer = canReviewStaffProposals(session.user.role);
   const isDirection = canManageOrg(session.user.role) || session.user.role === "CENTER_DIRECTOR";
 
+  // El fichaje de "hoy" es el del día del trabajador, no el del servidor (UTC).
+  const timezone = await resolveTimezoneForCenter(session.user.centerId);
+  const today = zonedToday(timezone).toDateString();
+
   const myEntries = await listMyTimeClockEntries(session.user.orgId, session.user.id, 14);
-  const todayEntry = myEntries.find((e) => e.workDate.toDateString() === new Date().toDateString()) ?? null;
+  const todayEntry = myEntries.find((e) => e.workDate.toDateString() === today) ?? null;
 
   const [proposals, crossCheck, ratingSummary, checkinConfigs] = await Promise.all([
     isReviewer ? listStaffProposals(session.user.orgId) : Promise.resolve([]),
-    isReviewer ? crossCheckHours(session.user.orgId) : Promise.resolve([]),
+    isReviewer ? crossCheckHours(session.user.orgId, timezone) : Promise.resolve([]),
     canViewTrainerRatings(session.user.role) ? getTrainerRatingSummary(session.user.orgId, session.user.role) : Promise.resolve(null),
     isDirection ? getCheckinConfigs(session.user.orgId) : Promise.resolve([]),
   ]);

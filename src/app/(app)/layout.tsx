@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole } from "@/lib/rbac";
 import { listNotificationsForUser } from "@/lib/notifications";
 import { getPendingSessionFeedbackCountForUser } from "@/lib/portal-queries";
+import { resolveTimezone } from "@/lib/timezone";
+import { TimezoneSync } from "@/components/timezone-sync";
 import Sidebar from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
@@ -16,16 +18,20 @@ export default async function AppLayout({
   const session = await requireSession();
   const { role, centerId, name, email } = session.user;
 
-  const [org, center, notifications, pendingPlanCount] = await Promise.all([
+  // El centro se resuelve antes que el resto: de él sale la zona horaria con la
+  // que se calculan todas las horas de pared de la app (ver `resolveTimezone`).
+  const center = centerId
+    ? await prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true, timezone: true } })
+    : null;
+  const timezone = await resolveTimezone(center?.timezone);
+
+  const [org, notifications, pendingPlanCount] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
       select: { name: true, logoUrl: true, platformStatus: true },
     }),
-    centerId
-      ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true } })
-      : Promise.resolve(null),
     listNotificationsForUser(session.user.orgId, session.user.id),
-    role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id) : Promise.resolve(0),
+    role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id, timezone) : Promise.resolve(0),
   ]);
 
   // RB-PLAT-001: el acceso a la app se gatea por platformStatus. PLATFORM_ADMIN
@@ -57,6 +63,7 @@ export default async function AppLayout({
 
   return (
     <MobileNavProvider>
+      <TimezoneSync current={timezone} />
       <div className="flex min-h-screen bg-brand-bg">
         <Sidebar
           nav={nav}

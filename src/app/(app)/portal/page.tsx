@@ -8,6 +8,7 @@ import {
   getMemberMonthlyActivity,
 } from "@/lib/portal-queries";
 import { getAnnouncementsForMember, registerAnnouncementViews } from "@/lib/announcements-queries";
+import { resolveTimezone } from "@/lib/timezone";
 import { KpiCard, Card } from "@/components/kpi-card";
 import ActivityChart from "./activity-chart";
 import { AnnouncementsBanner } from "./announcements-banner";
@@ -19,10 +20,13 @@ export default async function PortalHomePage() {
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
 
+  // "Este mes" / "este año" se cuentan sobre el calendario del centro, no el del servidor.
+  const timezone = await resolveTimezone(member.primaryCenter.timezone);
+
   const [progress, adaptations, activity, announcements] = await Promise.all([
-    getMemberProgress(member.id),
+    getMemberProgress(member.id, timezone),
     getMemberHealthTransparency(member.id, session.user.orgId),
-    getMemberMonthlyActivity(member.id),
+    getMemberMonthlyActivity(member.id, timezone),
     getAnnouncementsForMember({
       id: member.id,
       orgId: member.orgId,

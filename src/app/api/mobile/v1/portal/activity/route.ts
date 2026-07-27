@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getMemberProgress, getMemberMonthlyActivity, getMemberHealthTransparency } from "@/lib/portal-queries";
+import { resolveTimezone } from "@/lib/timezone";
 import { requireMember } from "../../_lib/require-member";
 import { apiOk } from "../../_lib/response";
 
@@ -9,9 +10,11 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const { claims, member } = auth;
 
+  const timezone = await resolveTimezone(member.primaryCenter.timezone);
+
   const [progress, monthlyActivity, healthTransparency] = await Promise.all([
-    getMemberProgress(member.id),
-    getMemberMonthlyActivity(member.id),
+    getMemberProgress(member.id, timezone),
+    getMemberMonthlyActivity(member.id, timezone),
     getMemberHealthTransparency(member.id, claims.orgId),
   ]);
 

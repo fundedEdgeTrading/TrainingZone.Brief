@@ -1,16 +1,15 @@
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getTrainerPanelData, formatHoursEs } from "@/lib/trainer-panel-queries";
-import { formatDateParam, parseDateParam, zonedNow, DEFAULT_TIMEZONE } from "@/lib/date-utils";
+import { formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
+import { resolveTimezone } from "@/lib/timezone";
 import { addDays } from "@/app/(app)/agenda/agenda-utils";
 import { KpiCard, Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PendingPanel } from "./pending-panel";
-import { TimezoneSync } from "./timezone-sync";
 
 function greetingForHour(hour: number) {
   if (hour < 14) return "Buenos días";
@@ -27,7 +26,7 @@ function agendaCardTitle(selectedDay: Date, today: Date) {
   const diffDays = Math.round((selectedDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
   if (diffDays === 0) return "Agenda de hoy";
   if (diffDays === 1) return "Agenda de mañana";
-  const label = selectedDay.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+  const label = selectedDay.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   return `Agenda · ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
@@ -40,18 +39,16 @@ export default async function TrainerPanelPage({
   searchParams: Promise<{ day?: string }>;
 }) {
   const session = await requireRole(["TRAINER"]);
-  const [params, cookieStore, center] = await Promise.all([
+  const [params, center] = await Promise.all([
     searchParams,
-    cookies(),
     session.user.centerId
       ? prisma.center.findUnique({ where: { id: session.user.centerId }, select: { name: true, timezone: true } })
       : Promise.resolve(null),
   ]);
 
-  // Prioridad: zona detectada en el navegador (cookie de `TimezoneSync`) >
-  // zona del centro > España por defecto. "Sesión en curso" se calcula con
-  // la hora del entrenador, no la del servidor (que corre en UTC).
-  const timezone = cookieStore.get("tz")?.value || center?.timezone || DEFAULT_TIMEZONE;
+  // "Sesión en curso" y "faltan X minutos" se calculan con la hora del
+  // entrenador, no la del servidor (que corre en UTC). Ver `resolveTimezone`.
+  const timezone = await resolveTimezone(center?.timezone);
 
   const now = zonedNow(timezone);
   const today = new Date(now);
@@ -64,7 +61,7 @@ export default async function TrainerPanelPage({
   const data = await getTrainerPanelData(session.user.orgId, session.user.id, session.user.role, timezone, selectedDay);
 
   const firstName = session.user.name?.split(" ")[0] ?? "Entrenador";
-  const dateLabel = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+  const dateLabel = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   const kicker = `${dateLabel.charAt(0).toUpperCase()}${dateLabel.slice(1)}${center?.name ? ` · ${center.name}` : ""}`;
 
   const sessionCount = data.todaySessions.length;
@@ -90,7 +87,6 @@ export default async function TrainerPanelPage({
 
   return (
     <div className="tz-page">
-      <TimezoneSync current={timezone} />
       <div className="flex items-end justify-between gap-6 flex-wrap mb-6">
         <div>
           <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-2 tz-fade-up" style={{ animationDelay: ".05s" }}>

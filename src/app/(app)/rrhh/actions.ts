@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { canManageOrg } from "@/lib/rbac";
 import { clockIn, clockOut, signEntry } from "@/lib/timeclock-queries";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { submitStaffProposal, markProposalReviewed } from "@/lib/staff-proposals";
 import { updateCheckinConfig } from "@/lib/checkin-schedule";
 import type { ServiceKind } from "@prisma/client";
@@ -13,7 +14,8 @@ export type RrhhActionResult = { ok: true } | { ok: false; error: string };
 export async function clockInAction(): Promise<RrhhActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
   if (!session.user.centerId) return { ok: false, error: "Tu usuario no tiene centro base asignado." };
-  const result = await clockIn(session.user.orgId, session.user.id, session.user.centerId);
+  const timezone = await resolveTimezoneForCenter(session.user.centerId);
+  const result = await clockIn(session.user.orgId, session.user.id, session.user.centerId, timezone);
   if (!result.ok) return result;
   revalidatePath("/rrhh");
   return { ok: true };
@@ -21,7 +23,7 @@ export async function clockInAction(): Promise<RrhhActionResult> {
 
 export async function clockOutAction(): Promise<RrhhActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
-  const result = await clockOut(session.user.orgId, session.user.id);
+  const result = await clockOut(session.user.orgId, session.user.id, await resolveTimezoneForCenter(session.user.centerId));
   if (!result.ok) return result;
   revalidatePath("/rrhh");
   return { ok: true };

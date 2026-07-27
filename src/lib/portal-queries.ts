@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { zonedNow, zonedToday, zonedTimeToInstant } from "@/lib/date-utils";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
 // de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
@@ -39,8 +40,11 @@ export async function getMemberForUser(userId: string) {
 
 // FB-2/RB-FB-102: sesiones recientes marcadas ATTENDED sin feedback del cliente todavía
 // (SelfAssessment kind="post-sesion" con bookingId en structured, ver submitPostSessionFeedback).
-export async function getPendingSessionFeedback(memberId: string) {
-  const since = new Date(Date.now() - 48 * 60 * 60 * 1000);
+export async function getPendingSessionFeedback(memberId: string, timeZone: string) {
+  // `session.date` es un día suelto a medianoche local, no un instante: la
+  // ventana de 48h se mide sobre el calendario del centro, no sobre UTC.
+  const since = zonedNow(timeZone);
+  since.setHours(since.getHours() - 48);
   const attended = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED", session: { date: { gte: since } } },
     select: {
@@ -72,10 +76,10 @@ export async function getPendingSessionFeedback(memberId: string) {
     }));
 }
 
-export async function getPendingSessionFeedbackCountForUser(userId: string) {
+export async function getPendingSessionFeedbackCountForUser(userId: string, timeZone: string) {
   const member = await prisma.member.findFirst({ where: { userId }, select: { id: true } });
   if (!member) return 0;
-  return (await getPendingSessionFeedback(member.id)).length;
+  return (await getPendingSessionFeedback(member.id, timeZone)).length;
 }
 
 // Medias mostradas en "Mi plan": valoración al entrenador (TrainerRating.score,
@@ -106,10 +110,12 @@ export async function getMemberRatingSummary(memberId: string) {
 
 // Adherencia del hero de "Mi plan": de las sesiones que el socio reservó y ya
 // tuvieron lugar en las últimas 4 semanas (asistidas + no-shows), cuántas asistió.
-export async function getMemberPlanAdherence(memberId: string) {
-  const since = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
-  const weekStart = new Date();
-  weekStart.setHours(0, 0, 0, 0);
+export async function getMemberPlanAdherence(memberId: string, timeZone: string) {
+  // Todo se compara contra `session.date`, que es un día suelto a medianoche
+  // local: el "hoy" de referencia tiene que ser el del centro, no el del servidor.
+  const since = zonedToday(timeZone);
+  since.setDate(since.getDate() - 28);
+  const weekStart = zonedToday(timeZone);
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); // lunes de esta semana
 
   const bookings = await prisma.booking.findMany({
@@ -149,7 +155,7 @@ export async function getMemberPlanAdherence(memberId: string) {
   return { pct, attended, committed, avgPerWeek, weekAttended, weekCommitted, streakWeeks };
 }
 
-export async function getMemberProgress(memberId: string) {
+export async function getMemberProgress(memberId: string, timeZone: string) {
   const bookings = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED" },
     select: { session: { select: { date: true } } },
@@ -157,7 +163,7 @@ export async function getMemberProgress(memberId: string) {
   });
   const dates = bookings.map((b) => b.session.date);
 
-  const now = new Date();
+  const now = zonedNow(timeZone);
   const yearStart = new Date(now.getFullYear(), 0, 1);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -188,8 +194,8 @@ export async function getMemberProgress(memberId: string) {
   };
 }
 
-export async function getMemberMonthlyActivity(memberId: string, months = 6) {
-  const now = new Date();
+export async function getMemberMonthlyActivity(memberId: string, timeZone: string, months = 6) {
+  const now = zonedNow(timeZone);
   const since = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
 
   const bookings = await prisma.booking.findMany({
@@ -238,22 +244,21 @@ export const MAX_ACTIVE_BOOKINGS = 3; // RB-RES-004
 
 /**
  * Instante real de comienzo de una sesión: `ClassSession.date` guarda el día a
- * medianoche y la hora vive aparte en `startTime` ("HH:MM"). Todas las reglas
- * de reserva (antelación mínima, ventana de 7 días, "reserva activa") se miden
- * contra este instante, no contra el día suelto — si no, una clase de esta
- * mañana seguiría contando como reserva futura durante todo el día.
+ * medianoche y la hora vive aparte en `startTime` ("HH:MM"), que es reloj de
+ * pared del centro. Todas las reglas de reserva (antelación mínima, ventana de
+ * 7 días, "reserva activa") se miden contra este instante, no contra el día
+ * suelto — si no, una clase de esta mañana seguiría contando como reserva
+ * futura durante todo el día.
+ *
+ * `setHours` a secas daba la hora del servidor (UTC en producción): una clase
+ * de las 09:00 en Madrid salía como las 09:00 UTC, dos horas más tarde de lo
+ * real, y todas las cuentas atrás del socio ("faltan X minutos", ventana de
+ * cancelación, antelación mínima) iban desplazadas. Con `zonedTimeToInstant`
+ * el resultado es un instante absoluto, comparable con `Date.now()` y
+ * serializable a la app móvil sin volver a desplazarse.
  */
-export function sessionStartsAt(date: Date, startTime: string) {
-  const [h, m] = startTime.split(":").map(Number);
-  const startsAt = new Date(date);
-  startsAt.setHours(h, m, 0, 0);
-  return startsAt;
-}
-
-function startOfToday() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
+export function sessionStartsAt(date: Date, startTime: string, timeZone: string) {
+  return zonedTimeToInstant(date, startTime, timeZone);
 }
 
 /**
@@ -267,17 +272,25 @@ export async function getBookableSessions(
   orgId: string,
   centerId: string,
   memberId: string,
-  memberContext: { trainerId: string | null; hasGroupService: boolean; hasEpService: boolean } = { trainerId: null, hasGroupService: true, hasEpService: false }
+  memberContext: { trainerId: string | null; hasGroupService: boolean; hasEpService: boolean },
+  timeZone: string
 ) {
   const now = new Date();
-  const windowEnd = new Date(now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const windowEndMs = now.getTime() + BOOKING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+  // El filtro de BD trabaja con días sueltos (medianoche local) y se pasa un
+  // día por arriba a propósito: la poda fina la hace el filtro por instante de
+  // abajo, que es el que conoce la hora real de cada clase.
+  const fromDay = zonedToday(timeZone);
+  const toDay = new Date(fromDay);
+  toDay.setDate(toDay.getDate() + BOOKING_WINDOW_DAYS + 1);
 
   const sessions = await prisma.classSession.findMany({
     where: {
       orgId,
       centerId,
       status: "SCHEDULED",
-      date: { gte: new Date(now.toDateString()), lt: windowEnd },
+      date: { gte: fromDay, lt: toDay },
       OR: [
         ...(memberContext.hasGroupService ? [{ classType: { not: "Personal Training" } }] : []),
         ...(memberContext.hasEpService && memberContext.trainerId
@@ -294,7 +307,7 @@ export async function getBookableSessions(
 
   return sessions
     .map((s) => {
-      const startsAt = sessionStartsAt(s.date, s.startTime);
+      const startsAt = sessionStartsAt(s.date, s.startTime, timeZone);
       const activeBookings = s.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW");
       const myBooking = s.bookings.find((b) => b.memberId === memberId && (b.status === "BOOKED" || b.status === "WAITLISTED"));
       return {
@@ -309,14 +322,16 @@ export async function getBookableSessions(
         trainerName: s.trainer?.name ?? null,
         startsAt,
         canBook: startsAt.getTime() - now.getTime() >= MIN_LEAD_MINUTES * 60 * 1000,
+        canCancelFreely: canCancelWithoutPenalty(startsAt),
         myBookingId: myBooking?.id ?? null,
         myBookingStatus: myBooking?.status ?? null,
       };
     })
     .filter((s) => s.canBook || s.myBookingId)
-    .filter((s) => s.startsAt <= windowEnd);
+    .filter((s) => s.startsAt.getTime() <= windowEndMs);
 }
 
+/** `startsAt` es un instante real (ver `sessionStartsAt`), así que basta con `Date.now()`. */
 export function canCancelWithoutPenalty(startsAt: Date) {
   return startsAt.getTime() - Date.now() >= CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
 }
@@ -329,6 +344,10 @@ export type UpcomingBooking = {
   sessionName: string;
   classType: string;
   startsAt: Date;
+  /** Día de la clase en la zona del centro, ya formateado: `startsAt` es un instante
+   *  y el servidor corre en UTC, así que formatearlo allí cambiaba de día en las
+   *  clases de primera hora. */
+  dayLabel: string;
   startTime: string;
   endTime: string;
   centerName: string;
@@ -337,6 +356,15 @@ export type UpcomingBooking = {
   sessionCancelled: boolean;
   canCancelFreely: boolean;
 };
+
+/**
+ * Etiqueta de día a partir del día suelto de la sesión (medianoche local), no
+ * del instante: así no depende de la zona en que se renderice.
+ */
+function formatDayLabel(day: Date) {
+  const label = day.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
 
 /**
  * Todas las reservas vivas del socio para clases que aún no han empezado, sin
@@ -353,13 +381,14 @@ export type UpcomingBooking = {
  */
 export async function getMemberUpcomingBookings(
   memberId: string,
+  timeZone: string,
   db: Pick<typeof prisma, "booking"> = prisma
 ): Promise<UpcomingBooking[]> {
   const bookings = await db.booking.findMany({
     where: {
       memberId,
       status: { in: ["BOOKED", "WAITLISTED"] },
-      session: { date: { gte: startOfToday() } },
+      session: { date: { gte: zonedToday(timeZone) } },
     },
     select: {
       id: true,
@@ -390,7 +419,8 @@ export async function getMemberUpcomingBookings(
       sessionId: b.session.id,
       sessionName: b.session.name,
       classType: b.session.classType,
-      startsAt: sessionStartsAt(b.session.date, b.session.startTime),
+      startsAt: sessionStartsAt(b.session.date, b.session.startTime, timeZone),
+      dayLabel: formatDayLabel(b.session.date),
       startTime: b.session.startTime,
       endTime: b.session.endTime,
       centerName: b.session.center.name,
@@ -434,7 +464,7 @@ const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GR
  * en `getBookableSessions` dejaba la puerta abierta a reservar por id una clase
  * de otro centro, ya empezada o fuera de la ventana de 7 días.
  */
-export async function bookSessionForMember(member: MemberForBooking, sessionId: string): Promise<BookingResult> {
+export async function bookSessionForMember(member: MemberForBooking, sessionId: string, timeZone: string): Promise<BookingResult> {
   return prisma.$transaction(async (tx) => {
     // Bloquea la fila de la sesión para serializar reservas concurrentes: sin
     // este lock, dos peticiones simultáneas pueden leer el mismo aforo libre y
@@ -453,7 +483,7 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     }
 
     const now = new Date();
-    const startsAt = sessionStartsAt(cls.date, cls.startTime);
+    const startsAt = sessionStartsAt(cls.date, cls.startTime, timeZone);
     // RB-RES-001: antelación mínima. RB-RES-002: ventana de 7 días vista.
     if (startsAt.getTime() - now.getTime() < MIN_LEAD_MINUTES * 60 * 1000) {
       return { ok: false as const, error: `Esta clase empieza en menos de ${MIN_LEAD_MINUTES} minutos: ya no admite reservas.` };
@@ -478,7 +508,7 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     // RB-RES-004: máximo 3 reservas activas simultáneas. Se cuentan las mismas
     // que el socio ve en "Tus próximas reservas" —clases aún no empezadas y no
     // anuladas por el centro— para que el aviso nunca contradiga la pantalla.
-    const upcoming = await getMemberUpcomingBookings(member.id, tx);
+    const upcoming = await getMemberUpcomingBookings(member.id, timeZone, tx);
     const activeBookings = upcoming.filter(countsTowardsActiveLimit).length;
     if (!overCapacity && activeBookings >= MAX_ACTIVE_BOOKINGS) {
       return {
@@ -542,7 +572,7 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
   });
 }
 
-export async function cancelBookingForMember(memberId: string, bookingId: string): Promise<BookingResult> {
+export async function cancelBookingForMember(memberId: string, bookingId: string, timeZone: string): Promise<BookingResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, memberId },
     include: { session: { select: { date: true, startTime: true } } },
@@ -555,7 +585,7 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  if (sessionStartsAt(booking.session.date, booking.session.startTime).getTime() <= Date.now()) {
+  if (sessionStartsAt(booking.session.date, booking.session.startTime, timeZone).getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }
 

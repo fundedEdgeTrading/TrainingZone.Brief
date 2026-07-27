@@ -97,7 +97,7 @@ export default function AgendaScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.sessionName, { color: theme.text }]}>{b.sessionName}</Text>
                   <Text style={[styles.sessionMeta, { color: theme.textMuted }]}>
-                    {formatDayLabel(b.startsAt)} · {b.startTime} · {b.centerName}
+                    {b.dayLabel} · {b.startTime} · {b.centerName}
                   </Text>
                 </View>
                 {b.sessionCancelled ? <Badge label="Anulada" tone="critical" /> : null}
