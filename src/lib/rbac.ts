@@ -127,6 +127,13 @@ export function canManageMembers(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "RECEPTION";
 }
 
+// Baja definitiva de un socio (C4 — derecho de supresión): EXCLUSIVO de
+// dirección. Recepción puede dar de alta y editar, pero no borrar el histórico
+// de un socio, que arrastra reservas, cobros y datos de salud.
+export function canDeleteMembers(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR";
+}
+
 // Importación masiva de socios desde CSV (RB-IMPORT): EXCLUSIVO de dirección
 // (dirección de la organización y dirección de centro) — recepción queda fuera,
 // a diferencia del alta individual.

@@ -1,9 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { addHealthRecord, resolveHealthRecordAction, addMemberNote, updateMemberContact, resendMemberWelcome } from "./actions";
+import { useRouter } from "next/navigation";
+import {
+  addHealthRecord,
+  resolveHealthRecordAction,
+  addMemberNote,
+  updateMemberData,
+  deleteMember,
+  resendMemberWelcome,
+} from "./actions";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 
 // Mismas clases que el control de field.tsx, para los <textarea> multilínea.
@@ -128,21 +137,37 @@ function fmtDate(d: string | null) {
     : "No";
 }
 
-export function ContactForm({
+const SECTION_TITLE = "font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-3.5";
+
+export type MemberDataFormValues = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string | null;
+  address: string | null;
+  addressLine2: string | null;
+  postalCode: string | null;
+  city: string | null;
+  province: string | null;
+  country: string | null;
+  birthDate: string | null;
+  sex: string | null;
+  occupation: string | null;
+  emergencyContact: string | null;
+  primaryCenterId: string;
+  consentContractAt: string | null;
+  consentHealthAt: string | null;
+  consentImagesAt: string | null;
+  consentMarketingAt: string | null;
+};
+
+export function MemberDataForm({
   member,
+  centers,
 }: {
-  member: {
-    id: string;
-    email: string;
-    phone: string | null;
-    address: string | null;
-    birthDate: string | null;
-    emergencyContact: string | null;
-    consentContractAt: string | null;
-    consentHealthAt: string | null;
-    consentImagesAt: string | null;
-    consentMarketingAt: string | null;
-  };
+  member: MemberDataFormValues;
+  centers: { id: string; name: string }[];
 }) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
@@ -151,17 +176,48 @@ export function ContactForm({
     <form
       action={(fd) =>
         startTransition(async () => {
-          const result = await updateMemberContact(fd);
-          if (result.ok) toast.success("Datos de contacto guardados.");
+          const result = await updateMemberData(fd);
+          if (result.ok) toast.success("Datos del socio guardados.");
           else toast.error(result.error);
         })
       }
-      className="max-w-xl"
+      className="max-w-3xl"
     >
       <input type="hidden" name="memberId" value={member.id} />
-      <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-3.5">
-        Datos de contacto
+      <div className={SECTION_TITLE}>Datos personales</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <Field label="Nombre">
+          <Input name="firstName" defaultValue={member.firstName} required />
+        </Field>
+        <Field label="Apellidos">
+          <Input name="lastName" defaultValue={member.lastName} required />
+        </Field>
+        <Field label="Fecha de nacimiento">
+          <Input name="birthDate" type="date" defaultValue={member.birthDate ?? ""} />
+        </Field>
+        <Field label="Sexo">
+          <Select name="sex" defaultValue={member.sex ?? ""}>
+            <option value="">Sin especificar</option>
+            <option value="FEMALE">Mujer</option>
+            <option value="MALE">Hombre</option>
+            <option value="OTHER">Otro</option>
+          </Select>
+        </Field>
+        <Field label="Ocupación">
+          <Input name="occupation" defaultValue={member.occupation ?? ""} />
+        </Field>
+        <Field label="Centro principal">
+          <Select name="centerId" defaultValue={member.primaryCenterId}>
+            {centers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
       </div>
+
+      <div className={`${SECTION_TITLE} mt-6`}>Contacto</div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
         <Field label="Email">
           <Input name="email" type="email" defaultValue={member.email} required />
@@ -169,17 +225,34 @@ export function ContactForm({
         <Field label="Teléfono">
           <Input name="phone" defaultValue={member.phone ?? ""} />
         </Field>
-        <Field label="Dirección" className="sm:col-span-2">
-          <Input name="address" defaultValue={member.address ?? ""} />
-        </Field>
-        <Field label="Fecha de nacimiento">
-          <Input name="birthDate" type="date" defaultValue={member.birthDate ?? ""} />
-        </Field>
-        <Field label="Contacto de emergencia">
+        <Field label="Contacto de emergencia" className="sm:col-span-2">
           <Input name="emergencyContact" defaultValue={member.emergencyContact ?? ""} />
         </Field>
       </div>
-      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm mt-5 max-w-lg">
+
+      <div className={`${SECTION_TITLE} mt-6`}>Dirección</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <Field label="Dirección" className="sm:col-span-2">
+          <Input name="address" defaultValue={member.address ?? ""} />
+        </Field>
+        <Field label="Dirección (línea 2)" className="sm:col-span-2">
+          <Input name="addressLine2" defaultValue={member.addressLine2 ?? ""} />
+        </Field>
+        {/* El CP alimenta el mapa de calor del panel (RB-BI): 5 dígitos. */}
+        <Field label="Código postal" hint="5 dígitos">
+          <Input name="postalCode" defaultValue={member.postalCode ?? ""} inputMode="numeric" pattern="\d{5}" maxLength={5} placeholder="50001" />
+        </Field>
+        <Field label="Ciudad">
+          <Input name="city" defaultValue={member.city ?? ""} />
+        </Field>
+        <Field label="Provincia">
+          <Input name="province" defaultValue={member.province ?? ""} />
+        </Field>
+        <Field label="País">
+          <Input name="country" defaultValue={member.country ?? ""} />
+        </Field>
+      </div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm mt-6 max-w-lg">
         <dt className="text-muted">Consentimiento contrato</dt>
         <dd className="text-tz-black">{fmtDate(member.consentContractAt)}</dd>
         <dt className="text-muted">Consentimiento datos de salud</dt>
@@ -220,6 +293,67 @@ export function ResendWelcomeButton({ memberId }: { memberId: string }) {
       {pending && <ButtonSpinner />}
       {pending ? "Enviando..." : "Reenviar bienvenida"}
     </Button>
+  );
+}
+
+// Baja definitiva del socio: siempre con confirmación previa. Si tiene una
+// suscripción viva el modal explica por qué no se puede borrar y no ofrece
+// confirmar (el servidor vuelve a comprobarlo en deleteMember).
+export function DeleteMemberButton({
+  memberId,
+  memberName,
+  activeSubscriptionPlan,
+}: {
+  memberId: string;
+  memberName: string;
+  activeSubscriptionPlan: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const router = useRouter();
+  const toast = useToast();
+
+  const blockedReason = activeSubscriptionPlan
+    ? `No se puede eliminar: el socio tiene la suscripción «${activeSubscriptionPlan}» en vigor. Cancélala desde la pestaña «Contratación» y vuelve a intentarlo.`
+    : null;
+
+  function handleConfirm() {
+    startTransition(async () => {
+      const result = await deleteMember(memberId);
+      if (result.ok) {
+        toast.success("Socio eliminado.");
+        setOpen(false);
+        router.replace("/members");
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
+  return (
+    <>
+      <Button type="button" variant="danger" size="sm" onClick={() => setOpen(true)}>
+        Eliminar socio
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onCancel={() => setOpen(false)}
+        onConfirm={handleConfirm}
+        pending={pending}
+        blockedReason={blockedReason}
+        kicker="Eliminar socio"
+        title={`¿Eliminar a ${memberName}?`}
+        description={
+          <>
+            Se borrarán de forma permanente su ficha, reservas, cobros, evolución, bitácora, datos de salud y su acceso
+            al portal. Esta acción no se puede deshacer.
+          </>
+        }
+        confirmLabel="Sí, eliminar"
+        pendingLabel="Eliminando..."
+      />
+    </>
   );
 }
 
