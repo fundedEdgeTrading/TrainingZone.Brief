@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { formatDateParam } from "@/lib/date-utils";
+import { formatDateParam, zonedToday } from "@/lib/date-utils";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { expandOccurrences, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -9,8 +10,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 export default async function BriefIndexPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // "Hoy" es el del centro: con la hora del servidor (UTC) el índice de briefs
+  // saltaba de día dos horas antes de medianoche en España.
+  const today = zonedToday(await resolveTimezoneForCenter(session.user.centerId));
   const endRange = new Date(today);
   endRange.setDate(endRange.getDate() + 3);
 

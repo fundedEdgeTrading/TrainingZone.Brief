@@ -7,6 +7,7 @@ import {
   MAX_ACTIVE_BOOKINGS,
 } from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
+import { resolveTimezone } from "@/lib/timezone";
 import { requireMember } from "../../_lib/require-member";
 import { apiOk } from "../../_lib/response";
 
@@ -25,14 +26,25 @@ export async function GET(req: NextRequest) {
     }))
   );
 
+  // La app nativa no manda cookie de zona: la referencia es la del centro del
+  // socio, que es donde se dan las clases. `startsAt` viaja como instante real,
+  // así que el móvil lo puede formatear en la zona del dispositivo sin desfase.
+  const timezone = await resolveTimezone(member.primaryCenter.timezone);
+
   const [sessions, pendingFeedback, upcomingBookings] = await Promise.all([
-    getBookableSessions(claims.orgId, member.primaryCenterId, member.id, {
-      trainerId: member.trainerId,
-      hasGroupService: serviceKinds.includes("GROUP"),
-      hasEpService: serviceKinds.includes("EP"),
-    }),
-    getPendingSessionFeedback(member.id),
-    getMemberUpcomingBookings(member.id),
+    getBookableSessions(
+      claims.orgId,
+      member.primaryCenterId,
+      member.id,
+      {
+        trainerId: member.trainerId,
+        hasGroupService: serviceKinds.includes("GROUP"),
+        hasEpService: serviceKinds.includes("EP"),
+      },
+      timezone
+    ),
+    getPendingSessionFeedback(member.id, timezone),
+    getMemberUpcomingBookings(member.id, timezone),
   ]);
 
   return apiOk({

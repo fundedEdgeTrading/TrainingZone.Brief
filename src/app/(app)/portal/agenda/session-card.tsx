@@ -1,5 +1,4 @@
 import { sessionServiceKind } from "@/lib/members-queries";
-import { canCancelWithoutPenalty } from "@/lib/portal-queries";
 import BookingButton from "./booking-button";
 
 type BookableSession = {
@@ -11,6 +10,8 @@ type BookableSession = {
   bookedCount: number;
   trainerName: string | null;
   startsAt: Date;
+  /** Lo calcula `getBookableSessions`, que es quien conoce la zona del centro. */
+  canCancelFreely: boolean;
   myBookingId: string | null;
   myBookingStatus: string | null;
 };
@@ -85,7 +86,7 @@ export default function SessionCard({ session: s }: { session: BookableSession }
           myBookingId={s.myBookingId}
           myBookingStatus={s.myBookingStatus}
           full={full}
-          canCancelFreely={canCancelWithoutPenalty(s.startsAt)}
+          canCancelFreely={s.canCancelFreely}
         />
       </div>
     </div>

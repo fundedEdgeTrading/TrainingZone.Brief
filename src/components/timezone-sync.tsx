@@ -6,10 +6,13 @@ import { useRouter } from "next/navigation";
 const COOKIE_NAME = "tz";
 
 /**
- * El panel calcula "sesión en curso / próxima" con la hora del navegador del
- * entrenador, no la del servidor. Si la zona detectada difiere de la que ya
- * conoce el servidor (cookie ausente o desfasada), la guarda y refresca para
- * que el siguiente render use la hora correcta.
+ * La app calcula "sesión en curso", "faltan X minutos" o el día de hoy con la
+ * hora del usuario, no la del servidor (que corre en UTC). Este componente
+ * guarda la zona detectada por el navegador en una cookie y refresca para que
+ * el siguiente render del servidor use la hora correcta.
+ *
+ * Va en el layout de la app —no en una sola página— porque el desfase afecta
+ * igual al panel del entrenador, al portal del socio, a la agenda y al fichaje.
  */
 export function TimezoneSync({ current }: { current: string }) {
   const router = useRouter();

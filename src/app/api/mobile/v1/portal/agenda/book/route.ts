@@ -3,6 +3,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { bookSessionForMember } from "@/lib/portal-queries";
+import { resolveTimezone } from "@/lib/timezone";
 import { requireMember } from "../../../_lib/require-member";
 import { apiOk, apiError } from "../../../_lib/response";
 
@@ -15,7 +16,8 @@ export async function POST(req: NextRequest) {
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return apiError("sessionId es obligatorio.", 400);
 
-  const result = await bookSessionForMember(auth.member, parsed.data.sessionId);
+  const timezone = await resolveTimezone(auth.member.primaryCenter.timezone);
+  const result = await bookSessionForMember(auth.member, parsed.data.sessionId, timezone);
   if (!result.ok) return apiError(result.error, result.needsTopUp ? 409 : 400);
 
   revalidatePath("/portal/agenda");

@@ -67,6 +67,8 @@ export type UpcomingBooking = {
   sessionName: string;
   classType: string;
   startsAt: string;
+  /** Día de la clase en la zona del centro, ya formateado por el backend. */
+  dayLabel: string;
   startTime: string;
   endTime: string;
   centerName: string;

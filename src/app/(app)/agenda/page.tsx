@@ -3,7 +3,8 @@ import { getCentersForUser, getWeekSessions } from "@/lib/agenda-queries";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots } from "@/lib/rbac";
-import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { instanceForWeek, type WeekOccurrence } from "./agenda-utils";
 import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
@@ -24,7 +25,11 @@ export default async function AgendaPage({
   const dayParam = Number(params.day);
   const initialDayIndex = Number.isInteger(dayParam) && dayParam >= 0 && dayParam <= 6 ? dayParam : null;
 
-  const refDate = params.week ? parseDateParam(params.week) : new Date();
+  // Sin `?week`, la agenda abre en la semana en curso *del centro*: con la hora
+  // del servidor (UTC) un domingo por la noche en España abría la semana anterior.
+  const refDate = params.week
+    ? parseDateParam(params.week)
+    : zonedNow(await resolveTimezoneForCenter(centerId));
   const weekStart = startOfWeekMonday(refDate);
   const weekEnd = new Date(weekStart);
   weekEnd.setDate(weekEnd.getDate() + 7);

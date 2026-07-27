@@ -8,6 +8,8 @@ import {
   getMemberPlanAdherence,
 } from "@/lib/portal-queries";
 import { listWorkoutPrograms } from "@/lib/workout-programs";
+import { resolveTimezone } from "@/lib/timezone";
+import { zonedToday } from "@/lib/date-utils";
 import { Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { RequestWorkoutButton } from "./plan-client";
@@ -21,9 +23,9 @@ function initials(name: string) {
 
 // "Ayer · 21 jul" / "Hoy · 22 jul" / "Mar · 23 jul" — coherente con las fechas
 // formateadas server-side del resto del portal (evita desajustes de hidratación).
-function relativeDayLabel(date: Date) {
+function relativeDayLabel(date: Date, today: Date) {
   const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const diffDays = Math.round((startOf(new Date()) - startOf(date)) / 86_400_000);
+  const diffDays = Math.round((startOf(today) - startOf(date)) / 86_400_000);
   const dayMonth = date.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
   if (diffDays === 0) return `Hoy · ${dayMonth}`;
   if (diffDays === 1) return `Ayer · ${dayMonth}`;
@@ -36,12 +38,17 @@ export default async function PortalPlanPage() {
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
 
+  // "Hoy"/"Ayer" y la adherencia se miden con el calendario del centro: el
+  // servidor corre en UTC y a primera/última hora del día no coinciden.
+  const timezone = await resolveTimezone(member.primaryCenter.timezone);
+  const today = zonedToday(timezone);
+
   const [goals, programs, pending, ratings, adherence] = await Promise.all([
     getMemberGoals(member.id),
     listWorkoutPrograms(session.user.orgId, member.id),
-    getPendingSessionFeedback(member.id),
+    getPendingSessionFeedback(member.id, timezone),
     getMemberRatingSummary(member.id),
-    getMemberPlanAdherence(member.id),
+    getMemberPlanAdherence(member.id, timezone),
   ]);
 
   const hasPendingProgram = programs.some((p) => p.status === "DRAFT" || p.status === "PENDING_TRAINER");
@@ -51,7 +58,7 @@ export default async function PortalPlanPage() {
   const planTitle = activeGoals.slice(0, 2).map((g) => g.label).join(" · ") || "Tu programa de entrenamiento";
 
   const pendingItems = pending.map((p) => {
-    const dateLabel = relativeDayLabel(p.sessionDate);
+    const dateLabel = relativeDayLabel(p.sessionDate, today);
     return {
       bookingId: p.bookingId,
       sessionName: p.sessionName,

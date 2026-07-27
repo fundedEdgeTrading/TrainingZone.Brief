@@ -25,28 +25,107 @@ export function parseDateParam(s: string) {
 export const DEFAULT_TIMEZONE = "Europe/Madrid";
 
 /**
- * "Ahora" expresado como reloj de pared en `timeZone`, codificado como si esos
- * campos fuesen UTC. El servidor corre en UTC, así que el resto del código de
- * negocio (getHours, setHours(0,0,0,0), addDays...) lee getters locales que
- * en producción equivalen a getters UTC: con este valor, esos getters
- * devuelven la hora del navegador del cliente en vez de la hora real del
- * servidor.
+ * Dos tipos de fecha conviven en la app y NO se pueden mezclar:
+ *
+ * 1. **Días sueltos** (`ClassSession.date`, `TimeClockEntry.workDate`,
+ *    `recUntil`...). Se guardan a medianoche con componentes locales del
+ *    servidor (ver `parseDateParam`) y la hora del día vive aparte, en campos
+ *    "HH:MM" que son reloj de pared del centro. Para compararlos con "ahora"
+ *    hace falta un "ahora" en la misma codificación: `zonedNow` / `zonedToday`.
+ *
+ * 2. **Instantes reales** (`createdAt`, `publishAt`, el momento en que empieza
+ *    de verdad una clase). Aquí `Date.now()` es lo correcto; para pasar de
+ *    día + "HH:MM" del centro a instante real está `zonedTimeToInstant`.
+ *
+ * El fallo que esto corrige: el servidor corre en UTC, así que un `new Date()`
+ * comparado contra una hora de pared española iba dos horas por detrás (una en
+ * invierno) y todos los "quedan X minutos" salían desplazados.
+ */
+function zonedParts(timeZone: string, instant: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    // `hour12: false` devuelve 24 (no 0) para la medianoche en algunas versiones de ICU.
+    hour: get("hour") % 24,
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
+
+/**
+ * "Ahora" como reloj de pared de `timeZone`, codificado con componentes
+ * *locales del servidor* — exactamente igual que `parseDateParam` y que los
+ * `setHours` que usa el resto del código de negocio. Así `getHours()`,
+ * `setHours(0,0,0,0)`, `toLocaleDateString()` y las comparaciones contra
+ * `ClassSession.date` devuelven la hora del centro tanto si el servidor corre
+ * en UTC (producción) como si corre en cualquier otra zona (desarrollo local).
+ *
+ * No es un instante real: no lo compares con `createdAt` ni con `Date.now()`.
  */
 export function zonedNow(timeZone: string): Date {
   try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).formatToParts(new Date());
-    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
-    return new Date(Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second")));
+    const p = zonedParts(timeZone, new Date());
+    return new Date(p.year, p.month - 1, p.day, p.hour, p.minute, p.second, 0);
   } catch {
     return new Date();
+  }
+}
+
+/** Medianoche del día en curso en `timeZone`, en la misma codificación que `zonedNow`. */
+export function zonedToday(timeZone: string): Date {
+  const now = zonedNow(timeZone);
+  now.setHours(0, 0, 0, 0);
+  return now;
+}
+
+/** Minutos transcurridos del día en `timeZone` (0–1439), para comparar contra "HH:MM". */
+export function zonedMinutesOfDay(timeZone: string): number {
+  const now = zonedNow(timeZone);
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+/** Desfase de `timeZone` respecto a UTC en ese instante, en ms (positivo al este). */
+function zoneOffsetMs(timeZone: string, instant: Date): number {
+  const p = zonedParts(timeZone, instant);
+  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  // Los desfases son siempre minutos enteros: redondear evita arrastrar los
+  // milisegundos que `formatToParts` descarta.
+  return Math.round((asUtc - instant.getTime()) / 60_000) * 60_000;
+}
+
+/**
+ * Instante real en el que ocurre un reloj de pared del centro: el día `day`
+ * (fecha suelta, medianoche local) a las `hhmm` de `timeZone`.
+ *
+ * Es lo que hay que usar para cualquier cuenta atrás ("faltan X minutos",
+ * ventana de cancelación, antelación mínima) porque el resultado ya es un
+ * instante absoluto: comparado con `Date.now()` sale bien mire desde donde
+ * mire quien lo consulta.
+ *
+ * Doble pasada para los cambios de hora: la primera estimación usa el desfase
+ * vigente en el instante equivocado, la segunda lo corrige.
+ */
+export function zonedTimeToInstant(day: Date, hhmm: string, timeZone: string): Date {
+  const [hour, minute] = hhmm.split(":").map(Number);
+  const wallAsUtc = Date.UTC(day.getFullYear(), day.getMonth(), day.getDate(), hour, minute, 0, 0);
+  try {
+    const firstPass = wallAsUtc - zoneOffsetMs(timeZone, new Date(wallAsUtc));
+    return new Date(wallAsUtc - zoneOffsetMs(timeZone, new Date(firstPass)));
+  } catch {
+    const fallback = new Date(day);
+    fallback.setHours(hour, minute, 0, 0);
+    return fallback;
   }
 }

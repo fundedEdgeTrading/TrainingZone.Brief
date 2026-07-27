@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getWeeklyDebriefReport, getWeeklyClientFeedback } from "@/lib/brief-queries";
 import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
-import { startOfWeekMonday, formatDateParam, parseDateParam } from "@/lib/date-utils";
+import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/kpi-card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,7 +19,9 @@ export default async function DebriefsSemanalesPage({
   const orgId = session.user.orgId;
   const params = await searchParams;
 
-  const weekStart = params.week ? parseDateParam(params.week) : startOfWeekMonday(new Date());
+  const weekStart = params.week
+    ? parseDateParam(params.week)
+    : startOfWeekMonday(zonedNow(await resolveTimezoneForCenter(session.user.centerId)));
   const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
   const prevWeek = new Date(weekStart.getTime() - 7 * 24 * 60 * 60 * 1000);
   const nextWeek = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);

@@ -8,11 +8,6 @@ import BookingButton from "./booking-button";
  * entrenador. Es la contrapartida visible del tope de RB-RES-004 — antes el
  * socio podía tener 3 reservas contadas y ver solo una en pantalla.
  */
-function dayLabel(startsAt: Date) {
-  const label = startsAt.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
-  return label.charAt(0).toUpperCase() + label.slice(1);
-}
-
 export default function UpcomingBookings({ bookings }: { bookings: UpcomingBooking[] }) {
   if (bookings.length === 0) return null;
 
@@ -73,7 +68,7 @@ export default function UpcomingBookings({ bookings }: { bookings: UpcomingBooki
                     )}
                   </div>
                   <div className="text-[13px] text-brand-muted mt-0.5">
-                    {dayLabel(b.startsAt)} · {b.startTime}
+                    {b.dayLabel} · {b.startTime}
                     {b.trainerName ? ` · ${b.trainerName}` : ""} · {b.centerName}
                   </div>
                 </div>

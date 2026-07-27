@@ -10,6 +10,7 @@ import {
 } from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
 import { getOnlineWorkouts } from "@/lib/online-queries";
+import { resolveTimezone } from "@/lib/timezone";
 import SessionCard from "./session-card";
 import UpcomingBookings from "./upcoming-bookings";
 import { PostSessionFeedbackPrompts } from "./post-session-feedback";
@@ -33,15 +34,25 @@ export default async function PortalAgendaPage() {
   const hasOnline = serviceKinds.includes("ONLINE");
   const hasPresencial = serviceKinds.includes("GROUP") || serviceKinds.includes("EP");
 
+  // Las horas de las clases son reloj de pared del centro del socio: las
+  // cuentas atrás y la ventana de cancelación se miden con esa zona.
+  const timezone = await resolveTimezone(member.primaryCenter.timezone);
+
   const [sessions, pendingFeedback, onlineWorkouts, upcomingBookings] = await Promise.all([
-    getBookableSessions(session.user.orgId, member.primaryCenterId, member.id, {
-      trainerId: member.trainerId,
-      hasGroupService: serviceKinds.includes("GROUP"),
-      hasEpService: serviceKinds.includes("EP"),
-    }),
-    getPendingSessionFeedback(member.id),
+    getBookableSessions(
+      session.user.orgId,
+      member.primaryCenterId,
+      member.id,
+      {
+        trainerId: member.trainerId,
+        hasGroupService: serviceKinds.includes("GROUP"),
+        hasEpService: serviceKinds.includes("EP"),
+      },
+      timezone
+    ),
+    getPendingSessionFeedback(member.id, timezone),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
-    getMemberUpcomingBookings(member.id),
+    getMemberUpcomingBookings(member.id, timezone),
   ]);
 
   // Saldo agotado en alguno de sus servicios: se avisa para renovar (RB-RES-006).

@@ -1,32 +1,34 @@
 import { prisma } from "@/lib/prisma";
+import { zonedNow, zonedToday } from "@/lib/date-utils";
 
-function todayAtMidnight() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-function nowHHmm() {
-  const d = new Date();
+/**
+ * `workDate` es un día suelto y `clockIn`/`clockOut` son "HH:MM" de reloj de
+ * pared: los tres se leen de la hora del trabajador, no de la del servidor. Con
+ * `new Date()` a secas, quien fichaba a las 08:21 en España veía "06:21" en su
+ * jornada (y a primera hora de la mañana el fichaje caía en el día anterior).
+ */
+function nowHHmm(timeZone: string) {
+  const d = zonedNow(timeZone);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 export type TimeClockResult = { ok: true } | { ok: false; error: string };
 
 // RB-RRHH-001: entrada/salida/firma por jornada.
-export async function clockIn(orgId: string, userId: string, centerId: string): Promise<TimeClockResult> {
-  const workDate = todayAtMidnight();
+export async function clockIn(orgId: string, userId: string, centerId: string, timeZone: string): Promise<TimeClockResult> {
+  const workDate = zonedToday(timeZone);
   const existing = await prisma.timeClockEntry.findFirst({ where: { orgId, userId, workDate } });
   if (existing) return { ok: false, error: "Ya has fichado la entrada hoy." };
-  await prisma.timeClockEntry.create({ data: { orgId, userId, centerId, workDate, clockIn: nowHHmm() } });
+  await prisma.timeClockEntry.create({ data: { orgId, userId, centerId, workDate, clockIn: nowHHmm(timeZone) } });
   return { ok: true };
 }
 
-export async function clockOut(orgId: string, userId: string): Promise<TimeClockResult> {
-  const workDate = todayAtMidnight();
+export async function clockOut(orgId: string, userId: string, timeZone: string): Promise<TimeClockResult> {
+  const workDate = zonedToday(timeZone);
   const entry = await prisma.timeClockEntry.findFirst({ where: { orgId, userId, workDate } });
   if (!entry) return { ok: false, error: "Todavía no has fichado la entrada hoy." };
   if (entry.clockOut) return { ok: false, error: "Ya has fichado la salida hoy." };
-  await prisma.timeClockEntry.update({ where: { id: entry.id }, data: { clockOut: nowHHmm() } });
+  await prisma.timeClockEntry.update({ where: { id: entry.id }, data: { clockOut: nowHHmm(timeZone) } });
   return { ok: true };
 }
 
@@ -60,10 +62,10 @@ function timeToMinutes(t: string) {
  * RB-RRHH-002: comparativa (no bloqueante) entre horas fichadas y sesiones
  * dirigidas ese mismo día — herramienta de verificación para dirección.
  */
-export async function crossCheckHours(orgId: string, days = 14) {
-  const since = new Date();
+export async function crossCheckHours(orgId: string, timeZone: string, days = 14) {
+  // `workDate` y `ClassSession.date` son días sueltos: el corte también.
+  const since = zonedToday(timeZone);
   since.setDate(since.getDate() - days);
-  since.setHours(0, 0, 0, 0);
 
   const [entries, sessions] = await Promise.all([
     prisma.timeClockEntry.findMany({
