@@ -5,6 +5,7 @@ import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 import { formatShortDate } from "@/utils/format";
 
 export default function NotificationsScreen() {
@@ -14,10 +15,10 @@ export default function NotificationsScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>BANDEJA</Text>
         <Text style={[styles.title, { color: theme.text }]}>Avisos</Text>
-      </View>
+      </FadeInUp>
 
       {isLoading ? (
         <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />

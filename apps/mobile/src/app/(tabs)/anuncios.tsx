@@ -8,6 +8,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 import type { AnnouncementCategory, AnnouncementItem } from "@/api/types";
 
 const CATEGORIES: AnnouncementCategory[] = ["NEWS", "EVENT", "PROMO", "ALERT"];
@@ -43,10 +44,10 @@ export default function AnnouncementsScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>ADMINISTRACIÓN</Text>
         <Text style={[styles.title, { color: theme.text }]}>Anuncios</Text>
-      </View>
+      </FadeInUp>
 
       {feedback ? (
         <Card style={{ paddingVertical: 10 }}>

@@ -7,6 +7,7 @@ import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 import type { BriefRosterEntry } from "@/api/types";
 
 const LIGHT_LABEL: Record<string, { label: string; tone: "critical" | "warning" | "good" }> = {
@@ -34,12 +35,12 @@ export default function BriefDetailScreen() {
         <EmptyState title="No se pudo cargar la sesión" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <View>
+          <FadeInUp>
             <Text style={[styles.title, { color: theme.text }]}>{data.session.name}</Text>
             <Text style={[styles.subtitle, { color: theme.textMuted }]}>
               {data.session.startTime} · {data.session.centerName} · {data.session.trainerName ?? "Sin entrenador"}
             </Text>
-          </View>
+          </FadeInUp>
 
           {!data.canSeeHealth && (
             <Card style={{ backgroundColor: theme.warningBg, borderColor: theme.warningBg }}>

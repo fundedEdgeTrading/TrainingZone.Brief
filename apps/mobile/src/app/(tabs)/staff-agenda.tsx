@@ -8,6 +8,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 import { formatDayLabel } from "@/utils/format";
 import type { StaffSession } from "@/api/types";
 
@@ -43,10 +44,10 @@ export default function StaffAgendaScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>AGENDA</Text>
         <Text style={[styles.title, { color: theme.text }]}>{dayLabel}</Text>
-      </View>
+      </FadeInUp>
 
       <View style={styles.dayNav}>
         <Button title="‹ Anterior" variant="secondary" onPress={() => setDate((d) => addDaysToIso(d, -1))} />

@@ -146,12 +146,17 @@ export type TrainerAgendaSession = {
   id: string;
   startTime: string;
   endTime: string;
+  startsAt: string;
+  endsAt: string;
   durationMin: number;
   title: string;
   status: "past" | "current" | "upcoming";
   meta: string;
   chipLabel: string;
   chipTone: "good" | "warning" | "critical" | "gold" | "neutral";
+  secondsRemaining: number | null;
+  secondsUntil: number | null;
+  soloMember: string | null;
   soloMemberId: string | null;
 };
 
@@ -195,6 +200,9 @@ export type TrainerPanelResponse = {
   adherenceAvg: number;
   orgAdherencePct: number;
   todaySessions: TrainerAgendaSession[];
+  currentSession: TrainerAgendaSession | null;
+  nextSession: TrainerAgendaSession | null;
+  todayProgressPct: number;
   completedCount: number;
   agendaDay: string;
   agendaIsToday: boolean;

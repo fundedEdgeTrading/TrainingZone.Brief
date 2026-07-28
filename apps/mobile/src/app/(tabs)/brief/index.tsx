@@ -6,6 +6,7 @@ import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 
 export default function BriefListScreen() {
   const theme = useTheme();
@@ -13,13 +14,13 @@ export default function BriefListScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>SESSION BRIEF</Text>
         <Text style={[styles.title, { color: theme.text }]}>Próximas sesiones</Text>
         <Text style={[styles.subtitle, { color: theme.textMuted }]}>
           Elige una sesión para tu repaso de 90 segundos antes de abrir la puerta.
         </Text>
-      </View>
+      </FadeInUp>
 
       {isLoading ? (
         <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />

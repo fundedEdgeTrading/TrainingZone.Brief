@@ -7,6 +7,7 @@ import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 import { formatDayLabel } from "@/utils/format";
 import type { BookableSession } from "@/api/types";
 
@@ -51,10 +52,10 @@ export default function AgendaScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>RESERVAR CLASE</Text>
         <Text style={[styles.title, { color: theme.text }]}>Próximos 7 días</Text>
-      </View>
+      </FadeInUp>
 
       {feedback ? (
         <Card style={{ paddingVertical: 10 }}>
@@ -63,7 +64,7 @@ export default function AgendaScreen() {
       ) : null}
 
       {data && data.balances.length > 0 ? (
-        <View style={styles.balanceRow}>
+        <FadeInUp delay={60} style={styles.balanceRow}>
           {data.balances.map((b) => (
             <Card key={b.serviceKind} style={styles.balanceCard}>
               <Text style={[styles.balanceLabel, { color: theme.textMuted }]}>{SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}</Text>
@@ -77,7 +78,7 @@ export default function AgendaScreen() {
               ) : null}
             </Card>
           ))}
-        </View>
+        </FadeInUp>
       ) : null}
 
       {/* Todas las reservas vivas, también las de fuera de los próximos 7 días:

@@ -4,6 +4,7 @@ import { useTheme } from "@/theme/theme";
 import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 
 const STATE_LABEL: Record<string, string> = { ACTIVE: "Activos", DELINQUENT: "Morosos", FROZEN: "Congelados", CANCELLED: "Baja" };
 
@@ -17,10 +18,10 @@ export default function DashboardScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>VISTA GENERAL</Text>
         <Text style={[styles.title, { color: theme.text }]}>Panel de control</Text>
-      </View>
+      </FadeInUp>
 
       {isLoading ? (
         <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />
@@ -28,14 +29,14 @@ export default function DashboardScreen() {
         <EmptyState title="No se pudo cargar el panel" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <View style={styles.kpiRow}>
+          <FadeInUp delay={60} style={styles.kpiRow}>
             <Kpi label="Socios activos" value={`${data.kpis.activeMembers}`} />
             <Kpi label="Morosos" value={`${data.kpis.delinquent}`} tone={data.kpis.delinquent > 0 ? "critical" : undefined} />
             <Kpi label="Congelados" value={`${data.kpis.frozen}`} />
             <Kpi label="Alertas abiertas" value={`${data.kpis.openAlerts}`} tone={data.kpis.openAlerts > 0 ? "warning" : undefined} />
-            <Kpi label="Ingresos del mes" value={formatEuros(data.kpis.monthRevenueCents)} />
+            <Kpi label="Ingresos del mes" value={formatEuros(data.kpis.monthRevenueCents)} tone="gold" />
             <Kpi label="Sesiones del mes" value={`${data.kpis.sessionsThisMonth}`} />
-          </View>
+          </FadeInUp>
 
           <Card>
             <Text style={[styles.cardTitle, { color: theme.text }]}>Estado de socios</Text>
@@ -67,9 +68,9 @@ export default function DashboardScreen() {
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: "warning" | "critical" }) {
+function Kpi({ label, value, tone }: { label: string; value: string; tone?: "warning" | "critical" | "gold" }) {
   const theme = useTheme();
-  const color = tone === "critical" ? theme.critical : tone === "warning" ? theme.warning : theme.text;
+  const color = tone === "critical" ? theme.critical : tone === "warning" ? theme.warning : tone === "gold" ? theme.gold : theme.text;
   return (
     <Card style={styles.kpiCard}>
       <Text style={[styles.kpiValue, { color }]}>{value}</Text>

@@ -5,6 +5,8 @@ import { useTheme } from "@/theme/theme";
 import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
+import { HeroCard } from "@/components/HeroCard";
 
 const LIGHT_COLOR: Record<string, "critical" | "warning" | "good"> = { RED: "critical", AMBER: "warning", GREEN: "good" };
 
@@ -16,10 +18,10 @@ export default function ActivityScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>MI ACTIVIDAD</Text>
         <Text style={[styles.title, { color: theme.text }]}>Hola, {firstName}</Text>
-      </View>
+      </FadeInUp>
 
       {isLoading ? (
         <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />
@@ -27,48 +29,54 @@ export default function ActivityScreen() {
         <EmptyState title="No se pudo cargar tu actividad" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <View style={styles.kpiRow}>
+          <FadeInUp delay={60} style={styles.kpiRow}>
             <Kpi label="Este mes" value={data.progress.totalThisMonth} />
             <Kpi label="Este año" value={data.progress.totalThisYear} />
             <Kpi label="Histórico" value={data.progress.totalAllTime} />
-          </View>
+          </FadeInUp>
 
-          <Card>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>Últimos 6 meses</Text>
-            <View style={styles.chartRow}>
-              {data.monthlyActivity.map((m) => (
-                <MonthBar key={m.label} label={m.label} count={m.count} />
-              ))}
-            </View>
-          </Card>
+          <FadeInUp delay={110}>
+            <Card>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Últimos 6 meses</Text>
+              <View style={styles.chartRow}>
+                {data.monthlyActivity.map((m) => (
+                  <MonthBar key={m.label} label={m.label} count={m.count} />
+                ))}
+              </View>
+            </Card>
+          </FadeInUp>
 
           {data.plan && (
-            <Card style={{ backgroundColor: theme.ink, borderColor: theme.ink }}>
-              <Text style={[styles.planLabel, { color: theme.textMuted }]}>TU PLAN</Text>
-              <Text style={[styles.planName, { color: theme.inkText }]}>{data.plan.planName}</Text>
-            </Card>
+            <FadeInUp delay={160}>
+              <HeroCard>
+                <Text style={styles.planLabel}>TU PLAN</Text>
+                <Text style={styles.planName}>{data.plan.planName}</Text>
+              </HeroCard>
+            </FadeInUp>
           )}
 
-          <Card>
-            <Text style={[styles.cardTitle, { color: theme.text }]}>Lo que adapta tu entrenador</Text>
-            {data.healthTransparency.length === 0 ? (
-              <Text style={{ color: theme.textMuted, fontFamily: "Poppins_400Regular", fontSize: 13 }}>
-                No tienes ninguna condición de salud activa registrada ahora mismo.
-              </Text>
-            ) : (
-              data.healthTransparency.map((a, i) => (
-                <View key={i} style={styles.adaptationRow}>
-                  <View style={[styles.dot, { backgroundColor: theme[LIGHT_COLOR[a.light]] }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.adaptationTitle, { color: theme.text }]}>{a.blockArea}</Text>
-                    {a.adaptation ? (
-                      <Text style={[styles.adaptationText, { color: theme.textMuted }]}>{a.adaptation}</Text>
-                    ) : null}
+          <FadeInUp delay={200}>
+            <Card>
+              <Text style={[styles.cardTitle, { color: theme.text }]}>Lo que adapta tu entrenador</Text>
+              {data.healthTransparency.length === 0 ? (
+                <Text style={{ color: theme.textMuted, fontFamily: "Poppins_400Regular", fontSize: 13 }}>
+                  No tienes ninguna condición de salud activa registrada ahora mismo.
+                </Text>
+              ) : (
+                data.healthTransparency.map((a, i) => (
+                  <View key={i} style={styles.adaptationRow}>
+                    <View style={[styles.dot, { backgroundColor: theme[LIGHT_COLOR[a.light]] }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.adaptationTitle, { color: theme.text }]}>{a.blockArea}</Text>
+                      {a.adaptation ? (
+                        <Text style={[styles.adaptationText, { color: theme.textMuted }]}>{a.adaptation}</Text>
+                      ) : null}
+                    </View>
                   </View>
-                </View>
-              ))
-            )}
-          </Card>
+                ))
+              )}
+            </Card>
+          </FadeInUp>
         </>
       )}
     </ScreenContainer>
@@ -114,8 +122,8 @@ const styles = StyleSheet.create({
   monthBar: { width: 18, borderRadius: 6 },
   monthLabel: { fontFamily: "Poppins_500Medium", fontSize: 10, textTransform: "uppercase" },
   monthCount: { fontFamily: "Poppins_600SemiBold", fontSize: 12 },
-  planLabel: { fontFamily: "Poppins_700Bold", fontSize: 10, letterSpacing: 1 },
-  planName: { fontFamily: "Poppins_700Bold", fontSize: 18, marginTop: 2 },
+  planLabel: { fontFamily: "Poppins_700Bold", fontSize: 10, letterSpacing: 1, color: "#A8A296" },
+  planName: { fontFamily: "Poppins_700Bold", fontSize: 18, marginTop: 2, color: "#F4F0E8" },
   adaptationRow: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   dot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
   adaptationTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 13 },

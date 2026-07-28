@@ -4,6 +4,7 @@ import { useTheme } from "@/theme/theme";
 import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 import { formatShortDate } from "@/utils/format";
 
 const STATUS_COLOR: Record<string, "good" | "warning" | "critical"> = { OK: "good", WATCH: "warning", ALERT: "critical" };
@@ -14,10 +15,10 @@ export default function EvolutionScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>MI CUENTA</Text>
         <Text style={[styles.title, { color: theme.text }]}>Mi evolución</Text>
-      </View>
+      </FadeInUp>
 
       {isLoading ? (
         <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />
