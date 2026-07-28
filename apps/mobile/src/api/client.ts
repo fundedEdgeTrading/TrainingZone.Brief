@@ -66,7 +66,7 @@ async function refreshAccessToken(): Promise<string | null> {
   return json.data.accessToken;
 }
 
-type RequestOptions = { method?: "GET" | "POST"; body?: unknown; skipAuth?: boolean };
+type RequestOptions = { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; skipAuth?: boolean };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (accessTokenCache === undefined) {
