@@ -15,11 +15,26 @@ export function isMailerConfigured() {
   return Boolean(process.env.BREVO_API_KEY);
 }
 
-export async function sendMail({ to, subject, html }: { to: string; subject: string; html: string }) {
+export type MailOptions = {
+  to: string;
+  subject: string;
+  html: string;
+  /**
+   * RB-MARCA-001: nombre visible del remitente. El socio de un gimnasio no ha
+   * comprado Apta, ha comprado su gimnasio: sus correos deben verse como de su
+   * centro. La dirección de envío sigue siendo la nuestra (es la que tiene
+   * SPF/DKIM configurados); lo que cambia es el nombre y el Reply-To.
+   */
+  fromName?: string;
+  replyTo?: string;
+};
+
+export async function sendMail({ to, subject, html, fromName, replyTo }: MailOptions) {
   const apiKey = process.env.BREVO_API_KEY;
 
   if (!apiKey) {
-    console.log(`[mailer] Brevo no configurado — simulando envío → ${to} · ${subject}`);
+    const from = fromName ? ` de «${fromName}»` : "";
+    console.log(`[mailer] Brevo no configurado — simulando envío${from} → ${to} · ${subject}`);
     if (process.env.NODE_ENV !== "production") {
       console.log(html);
     }
@@ -35,8 +50,12 @@ export async function sendMail({ to, subject, html }: { to: string; subject: str
         "api-key": apiKey,
       },
       body: JSON.stringify({
-        sender: { email: process.env.BREVO_FROM_EMAIL || process.env.SMTP_FROM },
+        sender: {
+          email: process.env.BREVO_FROM_EMAIL || process.env.SMTP_FROM,
+          ...(fromName ? { name: fromName } : {}),
+        },
         to: [{ email: to }],
+        ...(replyTo ? { replyTo: { email: replyTo } } : {}),
         subject,
         htmlContent: html,
       }),

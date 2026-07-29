@@ -140,6 +140,7 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
   // Email de invitación no bloqueante: el staff ya está guardado, un SMTP lento no debe colgar el alta.
   void sendMail({
     to: email,
+    fromName: org?.name ?? "Training Zone",
     subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}! Tu acceso te espera`,
     html: renderStaffInviteEmail({
       staffFirstName: name.split(/\s+/)[0] ?? name,

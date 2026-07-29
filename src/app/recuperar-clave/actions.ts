@@ -40,6 +40,8 @@ export async function requestPasswordReset(email: string): Promise<RequestResetR
     try {
       await sendMail({
         to: identity.email,
+        // La recuperación va con la marca de su organización: es donde entra.
+        fromName: brandName,
         subject: `Restablecer tu contraseña — ${brandName}`,
         html: renderPasswordResetEmail({
           recipientFirstName: membership?.name.split(" ")[0] ?? "",

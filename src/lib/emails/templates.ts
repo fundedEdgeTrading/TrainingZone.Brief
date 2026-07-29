@@ -75,7 +75,7 @@ export function renderMemberWelcomeEmail(opts: {
     noteHtml: `Este enlace es personal y caduca en <b style="color:${TEXT2}">7 días</b>. Si no has solicitado esta cuenta, puedes ignorar este email — no se activará nada sin tu confirmación.`,
     signOff: `Nos vemos en el centro,<br><b>El equipo de ${opts.orgName}</b>`,
     footerLine1: `${opts.orgName} · Recibes este email porque tu centro ha creado tu cuenta de socio.`,
-    footerLine2: `Política de privacidad · Contacto`,
+    footerLine2: `Política de privacidad · Contacto · Con tecnología de Apta`,
   });
 }
 
@@ -122,7 +122,7 @@ export function renderStaffInviteEmail(opts: {
     noteHtml: `Este enlace es personal y caduca en <b style="color:${TEXT2}">7 días</b>. Si no esperabas esta invitación, puedes ignorar este email.`,
     signOff: `Bienvenida/o,<br><b>El equipo de ${opts.orgName}</b>`,
     footerLine1: `${opts.orgName} · Recibes este email porque se ha creado tu cuenta de personal.`,
-    footerLine2: `Todo acceso queda auditado.`,
+    footerLine2: `Todo acceso queda auditado. · Con tecnología de Apta`,
   });
 }
 

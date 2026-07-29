@@ -426,6 +426,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
   // Email de bienvenida no bloqueante: la invitación ya está guardada, un SMTP lento no debe colgar la acción.
   void sendMail({
     to: member.email,
+    fromName: org?.name ?? "Training Zone",
     subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}, ${member.firstName}! 🎉 Tu acceso te espera`,
     html: renderMemberWelcomeEmail({
       memberFirstName: member.firstName,

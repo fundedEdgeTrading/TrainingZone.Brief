@@ -159,6 +159,8 @@ export async function provisionOrganizationFromCheckout(
   try {
     await sendMail({
       to: email,
+      // RB-MARCA-001: email de plataforma — aquí el cliente es el director, va con marca Apta.
+      fromName: "Apta",
       subject: `Tu plataforma está lista — ${orgName}`,
       html: renderOwnerActivationEmail({
         orgName,
@@ -223,6 +225,7 @@ export async function resendOwnerActivation(
   const plan = getPlatformPlan(org.platformPlan);
   await sendMail({
     to: refreshed.email,
+    fromName: "Apta",
     subject: `Tu plataforma está lista — ${org.name}`,
     html: renderOwnerActivationEmail({
       orgName: org.name,

@@ -36,6 +36,7 @@ export async function resendVerificationEmailAction(): Promise<ResendResult> {
   try {
     await sendMail({
       to: user.email,
+      fromName: "Apta",
       subject: `Confirma tu email — ${org?.name ?? "Apta"}`,
       html: renderVerifyEmail({
         directorFirstName: user.name,
