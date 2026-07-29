@@ -270,7 +270,16 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   const orgId = id();
   await prisma.organization.create({
     // RB-PLAT-007: las orgs de demo nacen ACTIVE para no chocar con el muro de pago (A.3).
-    data: { id: orgId, name: cfg.name, slug: cfg.slug, logoUrl: cfg.logoUrl, platformStatus: "ACTIVE" },
+    // RB-PLAT-007 + plan Élite: la demo nace con el producto completo para poder
+    // enseñarlo entero (con un tier inferior, el menú ocultaría los módulos gateados).
+    data: {
+      id: orgId,
+      name: cfg.name,
+      slug: cfg.slug,
+      logoUrl: cfg.logoUrl,
+      platformStatus: "ACTIVE",
+      platformPlan: "elite_ano",
+    },
   });
 
   // ---------- Centros ----------

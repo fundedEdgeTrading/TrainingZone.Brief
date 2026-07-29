@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
@@ -9,6 +10,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function BriefIndexPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
+  // se saltaría el filtro del menú.
+  await requireFeature("salud_aptitud");
 
   // "Hoy" es el del centro: con la hora del servidor (UTC) el índice de briefs
   // saltaba de día dos horas antes de medianoche en España.

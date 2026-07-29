@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
@@ -14,6 +15,9 @@ const ACTION_LABEL: Record<string, string> = {
 
 export default async function AuditPage() {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
+  // se saltaría el filtro del menú.
+  await requireFeature("exportaciones");
 
   const logs = await prisma.auditLog.findMany({
     where: { orgId: session.user.orgId },

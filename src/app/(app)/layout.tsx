@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole } from "@/lib/rbac";
+import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole, filterNavByFeatures } from "@/lib/rbac";
+import { featuresForOrg, isPlatformOperational } from "@/lib/entitlements";
 import { listNotificationsForUser } from "@/lib/notifications";
 import { membershipsFor } from "@/lib/identity";
 import { getPendingSessionFeedbackCountForUser } from "@/lib/portal-queries";
@@ -26,7 +27,7 @@ export default async function AppLayout({
     : null;
   const timezone = await resolveTimezone(center?.timezone);
 
-  const [org, notifications, pendingPlanCount, memberships] = await Promise.all([
+  const [org, notifications, pendingPlanCount, memberships, features] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
       select: { name: true, logoUrl: true, platformStatus: true },
@@ -34,18 +35,21 @@ export default async function AppLayout({
     listNotificationsForUser(session.user.orgId, session.user.id),
     role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id, timezone) : Promise.resolve(0),
     membershipsFor(session.user.identityId),
+    featuresForOrg(session.user.orgId),
   ]);
 
   // RB-PLAT-001: el acceso a la app se gatea por platformStatus. PLATFORM_ADMIN
   // (soporte de Apta) queda exento para poder gestionar cualquier org.
-  if (role !== "PLATFORM_ADMIN" && org && org.platformStatus !== "ACTIVE" && org.platformStatus !== "TRIALING") {
+  if (role !== "PLATFORM_ADMIN" && org && !isPlatformOperational(org.platformStatus)) {
     redirect(role === "MEMBER" ? "/servicio-no-disponible" : "/activar");
   }
 
   // Badge de "pendientes" en Mi plan (F16/valoración de sesiones): solo el socio.
-  const nav = NAV_BY_ROLE[role].map((item) =>
+  const roleNav = NAV_BY_ROLE[role].map((item) =>
     item.href === "/portal/plan" && pendingPlanCount > 0 ? { ...item, badge: pendingPlanCount } : item
   );
+  // RB-PLAN-003: lo que el plan no incluye no se enseña. El soporte de Apta lo ve todo.
+  const nav = role === "PLATFORM_ADMIN" ? roleNav : filterNavByFeatures(roleNav, features);
 
   // NavBar: logo del centro, si no el de la organización, si no el de Apta (null).
   const logoUrl = center?.logoUrl ?? org?.logoUrl ?? null;

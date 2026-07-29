@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
@@ -10,6 +11,9 @@ const LIGHT_LABEL: Record<string, string> = { RED: "Evitar", AMBER: "Adaptar", G
 
 export default async function AptitudeRulesPage() {
   const session = await requireRole(["OWNER"]);
+  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
+  // se saltaría el filtro del menú.
+  await requireFeature("salud_aptitud");
 
   const rules = await prisma.aptitudeRule.findMany({
     where: { orgId: session.user.orgId },
