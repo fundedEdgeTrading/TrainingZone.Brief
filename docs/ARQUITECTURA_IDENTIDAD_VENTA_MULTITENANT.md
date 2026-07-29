@@ -459,15 +459,18 @@ descubrirlos con el cliente dentro (ambos catalogados en `ANALISIS_FALTAS_IMPLEM
 
 ---
 
-## 9. Decisiones que necesitan a dirección (no las cierra la arquitectura)
+## 9. Decisiones de dirección — **cerradas**
 
-| # | Decisión | Bloquea |
-|---|---|---|
-| **D-8** (abierta) | Tiers, precios y qué desbloquea cada uno; forma del *lifetime* (§3) | F-2, F-3 |
-| **D-9** | ¿Comisión sobre los cobros del gimnasio (`application_fee`) o solo licencia? | Modelo de ingresos; no bloquea código |
-| **D-10** | ¿Se ofrece prueba gratuita? (`TRIALING` ya está modelado y sin usar) | F-3 |
-| **D-11** | Multi-organización: ¿se anuncia como funcionalidad (cadenas, franquicias) o solo se soporta técnicamente? | Alcance de F-1 |
-| **D-12** | ¿Se factura desde Apta (VERI\*FACTU, aún fuera de alcance) o cada gimnasio con su herramienta? | Alcance fiscal |
+Resueltas el 2026-07-29. El detalle ejecutable vive en
+`docs/PLAN_IMPLEMENTACION_APTA_COMERCIAL.md` §1, que es a partir de aquí la fuente de verdad.
+
+| # | Decisión |
+|---|---|
+| **D-8** | Tres tiers por número de **centros** (Esencial 79 €/mes · Avanzado 149 € · Élite 279 €, con año a 10 meses) + **Fundador**, lifetime de lanzamiento limitado a 3.990 € con funcionalidad de Avanzado y **sin IA**. Los diferenciadores (salud/aptitud, retención, feedback, BI) van en Avanzado; Élite solo añade lo que tiene coste marginal real |
+| **D-9** | **Solo licencia, cero comisión.** Sin `application_fee`. Lo que el gimnasio vende a sus socios es íntegramente suyo |
+| **D-10** | **Sin prueba gratuita.** `TRIALING` queda sin uso |
+| **D-11** | Multi-organización **se soporta técnicamente pero no se anuncia**: sin UI de cadenas ni franquicias |
+| **D-12** | **Apta no factura.** Cada gimnasio con su herramienta; conectar Stripe desbloquea funcionalidad dentro de la app |
 
 ---
 
