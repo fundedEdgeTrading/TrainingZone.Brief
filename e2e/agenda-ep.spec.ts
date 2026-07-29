@@ -2,7 +2,12 @@ import { test, expect } from "@playwright/test";
 import { loginAs } from "./helpers";
 
 test.describe("F11 — Agenda EP", () => {
-  test("entrenador puede crear una franja de EP y marcarla autorreservable", async ({ page }) => {
+  // Este test apunta a un flujo que ya no existe: el botón "+ Franja EP" se
+  // retiró al unificar la creación en "Nueva sesión", y el interruptor de
+  // autorreserva vive ahora en la ficha de la sesión (ep-session-controls.tsx),
+  // que sí cubre el test siguiente. Necesita reescribirse contra la agenda
+  // rediseñada; se marca en vez de dejarlo en rojo o fingir que pasa.
+  test.fixme("entrenador puede crear una franja de EP y marcarla autorreservable", async ({ page }) => {
     await loginAs(page, "entrenador@trainingzone.es");
     await page.goto("/agenda");
 

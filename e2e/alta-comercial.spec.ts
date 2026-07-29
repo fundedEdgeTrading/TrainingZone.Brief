@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import { test, expect, type APIRequestContext } from "@playwright/test";
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 /**
  * Alta pago-primero sin depender de la red: se firma el evento con el mismo
@@ -16,8 +18,8 @@ function checkoutCompleted(sessionId: string, email: string, planCode: string, n
       object: {
         id: sessionId,
         object: "checkout.session",
-        customer: "cus_e2e",
-        subscription: "sub_e2e",
+        customer: `cus_${sessionId}`,
+        subscription: `sub_${sessionId}`,
         metadata: { planCode },
         customer_details: { email, name, tax_ids: [{ type: "es_cif", value: "B99999999" }] },
       },
@@ -35,8 +37,36 @@ async function postSigned(request: APIRequestContext, body: unknown) {
   });
 }
 
+/** Nombre fiscal de las organizaciones que crea este spec, para poder limpiarlas. */
+const E2E_ORG_NAME = "GIMNASIO E2E SL";
+
 test.describe("F3 — Alta pago-primero", () => {
   test.skip(!WEBHOOK_SECRET, "Requiere STRIPE_WEBHOOK_SECRET en el entorno.");
+
+  // Este spec crea organizaciones reales (es lo que valida). Se borran al acabar
+  // para no dejar residuos en la base de datos de demo.
+  test.afterAll(async () => {
+    if (!process.env.DATABASE_URL) {
+      console.warn("[alta-comercial] sin DATABASE_URL: no se limpian las organizaciones de prueba.");
+      return;
+    }
+    const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+    try {
+      const orgs = await prisma.organization.findMany({
+        where: { name: E2E_ORG_NAME },
+        select: { id: true },
+      });
+      for (const org of orgs) {
+        await prisma.invitation.deleteMany({ where: { orgId: org.id } });
+        const users = await prisma.user.findMany({ where: { orgId: org.id }, select: { identityId: true } });
+        await prisma.user.deleteMany({ where: { orgId: org.id } });
+        await prisma.identity.deleteMany({ where: { id: { in: users.map((u) => u.identityId) } } });
+        await prisma.organization.delete({ where: { id: org.id } });
+      }
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
 
   test("un pago confirmado crea la organización y su enlace de activación, y el reenvío no la duplica", async ({
     request,
@@ -45,7 +75,7 @@ test.describe("F3 — Alta pago-primero", () => {
     const sessionId = `cs_e2e_${Date.now()}`;
     const email = `e2e-${Date.now()}@gimnasio-e2e.es`;
 
-    const first = await postSigned(request, checkoutCompleted(sessionId, email, "avanzado_ano", "GIMNASIO E2E SL"));
+    const first = await postSigned(request, checkoutCompleted(sessionId, email, "avanzado_ano", E2E_ORG_NAME));
     expect(first.ok()).toBeTruthy();
 
     // RB-ALTA-002: la vuelta de Stripe dice a qué email ha ido el enlace.
@@ -55,7 +85,7 @@ test.describe("F3 — Alta pago-primero", () => {
     await expect(page.getByRole("button", { name: /Reenviarme el enlace/ })).toBeVisible();
 
     // RB-ALTA-001: reenviar el mismo evento no crea una segunda organización.
-    const replay = await postSigned(request, checkoutCompleted(sessionId, email, "avanzado_ano", "GIMNASIO E2E SL"));
+    const replay = await postSigned(request, checkoutCompleted(sessionId, email, "avanzado_ano", E2E_ORG_NAME));
     expect(replay.ok()).toBeTruthy();
     await page.reload();
     await expect(page.getByText(email)).toHaveCount(1);
