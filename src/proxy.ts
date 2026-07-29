@@ -9,7 +9,19 @@ import { getToken } from "next-auth/jwt";
 
 // "/lead-form" (no "/lead") a propósito: con startsWith(), "/lead" también
 // marcaría pública la sección de gestión "/leads" del staff.
-const PUBLIC_PATHS = ["/login", "/register", "/onboarding", "/lead-form", "/api/jobs", "/api/stripe"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/onboarding",
+  "/lead-form",
+  "/planes",
+  "/activar",
+  "/verificar-email",
+  "/recuperar-clave",
+  "/servicio-no-disponible",
+  "/api/jobs",
+  "/api/stripe",
+  "/api/checkout",
+];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

@@ -17,9 +17,15 @@ import { runStalePendingOrgPurgeRule } from "@/lib/platform-billing";
  * contra esta route handler, protegida por un secreto compartido.
  */
 export async function GET(req: NextRequest) {
+  // Falla cerrado: sin secreto configurado el endpoint no se atiende. Antes se
+  // abría a cualquiera (`if (secret && ...)`), que es una superficie de ataque
+  // gratuita en cuanto la variable falta en un despliegue.
   const secret = process.env.JOBS_CRON_SECRET;
+  if (!secret) {
+    return NextResponse.json({ ok: false, error: "jobs deshabilitados: falta JOBS_CRON_SECRET" }, { status: 503 });
+  }
   const provided = req.headers.get("x-cron-secret") ?? req.nextUrl.searchParams.get("secret");
-  if (secret && provided !== secret) {
+  if (provided !== secret) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
