@@ -5,6 +5,7 @@ import { getStripeClient } from "@/lib/stripe";
 import { reconcileStripeCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
 import { prisma } from "@/lib/prisma";
 import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
+import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
 
 /**
  * F12/RB-PAGO-002 + Parte A.4/C.4. Un único endpoint para los dos planos de
@@ -69,18 +70,16 @@ async function handlePlatformEvent(event: Stripe.Event) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
       const orgId = session.metadata?.orgId;
-      const planCode = session.metadata?.planCode;
-      if (!orgId) break;
 
-      const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
-      await prisma.organization.update({
-        where: { id: orgId },
-        data: {
-          platformStatus: "ACTIVE",
-          platformPlan: planCode ?? undefined,
-          platformStripeSubscriptionId: subscriptionId ?? undefined,
-        },
-      });
+      // La ausencia de `orgId` es lo que distingue un ALTA (la organización aún
+      // no existe: nace aquí) de una RENOVACIÓN o cambio de plan.
+      if (!orgId) {
+        const result = await provisionOrganizationFromCheckout(session);
+        if (!result.ok) console.error("[webhook] alta no completada:", result.error);
+        break;
+      }
+
+      await applyPlanChangeFromCheckout(orgId, session);
       break;
     }
     case "invoice.paid": {

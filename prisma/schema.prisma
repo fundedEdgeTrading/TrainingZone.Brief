@@ -45,6 +45,10 @@ model Organization {
   // Suscripción en el Stripe DE APTA (Plano 1). Distinto de StripeAccount (Plano 2, Parte C).
   platformStripeCustomerId     String? @unique
   platformStripeSubscriptionId String? @unique
+  /// Idempotencia del alta (RB-ALTA-001): la sesión de checkout que dio origen a esta
+  /// organización. Un reenvío del webhook la encuentra y no crea una segunda ni
+  /// reenvía el email de bienvenida.
+  provisioningSessionId        String? @unique
 
   stripeAccount StripeAccount?
 
@@ -216,6 +220,7 @@ model User {
 enum InvitationType {
   STAFF
   MEMBER
+  OWNER // activación del director tras el pago (alta pago-primero)
 }
 
 model Invitation {

@@ -148,3 +148,26 @@ export function renderPasswordResetEmail(opts: {
     footerLine2: `Si no lo has pedido tú, no hace falta que hagas nada.`,
   });
 }
+
+export function renderOwnerActivationEmail(opts: {
+  orgName: string;
+  planName: string;
+  aptaLogoUrl: string;
+  activationUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.aptaLogoUrl,
+    logoAlt: "Apta",
+    eyebrow: "Bienvenida/o a Apta",
+    title: `Tu plataforma<br>ya está lista.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Hemos recibido tu pago del plan <b>${opts.planName}</b> y hemos creado la plataforma de <b>${opts.orgName}</b>.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Solo queda un paso: elige tu contraseña y te llevamos directo a la puesta en marcha —tu centro, tu equipo, tus tarifas y tus socios.</p>`,
+    ctaLabel: "Crear mi contraseña →",
+    ctaUrl: opts.activationUrl,
+    noteHtml: `Este enlace es personal y caduca en <b style="color:${TEXT2}">14 días</b>. Si caduca o no te llega, puedes pedir uno nuevo desde la página de activación.`,
+    signOff: `Encantados de tenerte,<br><b>El equipo de Apta</b>`,
+    footerLine1: `Recibes este email porque has contratado Apta para ${opts.orgName}.`,
+    footerLine2: `Tu factura la emite Stripe y la tienes en tu correo de pago.`,
+  });
+}

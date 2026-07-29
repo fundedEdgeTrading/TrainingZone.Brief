@@ -99,28 +99,3 @@ export async function createPlatformCheckoutSession(orgId: string, planCode: str
   return { ok: true, url: checkoutSession.url };
 }
 
-/**
- * A.6/RB-PLAT-005: purga en duro de orgs `PENDING_PAYMENT` cuyo `platformStatusSince`
- * supera el TTL configurable. Salvaguarda D-6: el `where` exige explícitamente
- * `PENDING_PAYMENT` — nunca toca `SUSPENDED`/`CANCELLED` (esas fueron clientes de pago).
- */
-export async function runStalePendingOrgPurgeRule(): Promise<number> {
-  const ttlDays = Number(process.env.PLATFORM_PENDING_TTL_DAYS) || 30;
-  const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
-
-  const staleOrgs = await prisma.organization.findMany({
-    where: { platformStatus: "PENDING_PAYMENT", platformStatusSince: { lt: cutoff } },
-    select: { id: true },
-  });
-
-  let purged = 0;
-  for (const org of staleOrgs) {
-    await prisma.$transaction(async (tx) => {
-      await tx.user.deleteMany({ where: { orgId: org.id } });
-      await tx.center.deleteMany({ where: { orgId: org.id } });
-      await tx.organization.delete({ where: { id: org.id } });
-    });
-    purged += 1;
-  }
-  return purged;
-}

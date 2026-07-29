@@ -23,11 +23,16 @@ function invitationInvalidError(reason: "notfound" | "used" | "expired" | "type"
 }
 
 export async function completeStaffOnboarding(token: string, password: string): Promise<OnboardingResult> {
-  if (password.length < 8) return { ok: false, error: "La contraseña debe tener al menos 8 caracteres." };
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { ok: false, error: `La contraseña debe tener al menos ${MIN_PASSWORD_LENGTH} caracteres.` };
+  }
 
   const invitation = await prisma.invitation.findUnique({ where: { token } });
   if (!invitation) return { ok: false, error: invitationInvalidError("notfound")! };
-  if (invitation.type !== "STAFF") return { ok: false, error: invitationInvalidError("type")! };
+  // El director activa por el mismo camino que el personal: solo contraseña.
+  if (invitation.type !== "STAFF" && invitation.type !== "OWNER") {
+    return { ok: false, error: invitationInvalidError("type")! };
+  }
   if (invitation.usedAt) return { ok: false, error: invitationInvalidError("used")! };
   if (invitation.expiresAt < new Date()) return { ok: false, error: invitationInvalidError("expired")! };
   if (!invitation.userId) return { ok: false, error: invitationInvalidError("notfound")! };
