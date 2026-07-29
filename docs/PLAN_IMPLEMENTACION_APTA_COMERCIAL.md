@@ -943,17 +943,30 @@ socios (alta, importación CSV, ficha), panel de control, app móvil (login, age
 
 ## 6. Orden, dependencias y estado de credenciales
 
-| Fase | Depende de | ¿Necesita Stripe real? |
-|---|---|---|
-| F0 | — | No |
-| F1 | — | No |
-| F2 | F1 | No (precios en test cuando existan) |
-| F3 | F2 | **Sí** — cuenta de Apta + CLI de Stripe para webhooks |
-| F4 | F3 | No |
-| F5 | F4 | **Sí** — Connect activado + cuenta conectada de prueba |
-| F6 | F5 | Sí |
-| F7 | — (independiente) | No |
-| F8 | F3 | No |
+| Fase | Depende de | ¿Necesita Stripe real? | Estado |
+|---|---|---|---|
+| F0 | — | No | ✅ Hecha |
+| F1 | — | No | ✅ Hecha (incluye recuperación de contraseña) |
+| F2 | F1 | No (precios en test cuando existan) | ✅ Hecha |
+| F3 | F2 | Para el checkout, sí; el alta se validó con webhook firmado localmente | ✅ Hecha |
+| F4 | F3 | No | ✅ Hecha |
+| F5 | F4 | **Sí** — Connect activado + cuenta conectada de prueba | ⏳ Pendiente |
+| F6 | F5 | Sí | ⏳ Pendiente |
+| F7 | — (independiente) | No | ✅ Hecha |
+| F8 | F3 | No | ⏳ Pendiente (opcional) |
+
+**Qué queda y por qué:** F5 (cobro recurrente al socio) y F6 (autoservicio en el
+portal) son las dos únicas fases cuyo núcleo no se puede verificar sin credenciales
+reales: crean precios y suscripciones **en la cuenta conectada de cada gimnasio**, y eso
+exige la cuenta de plataforma de Apta con Connect activado. Hasta entonces el cobro al
+socio sigue funcionando como hoy (pago puntual), que es un estado coherente: nada queda
+a medio cablear.
+
+**Un desvío consciente respecto a §F2.3:** `/dashboard` **no** se gatea por
+`bi_avanzado`. Es la ruta de aterrizaje de dirección, y cerrarla dejaba a un cliente
+Esencial ante un muro de pago en cada login. El gateo del BI avanzado va dentro del
+panel, no en su puerta; por el mismo motivo `defaultRouteForRole` salta ahora las
+entradas que dependen del plan.
 
 **F0, F1, F2, F4 y F7 se construyen y prueban sin ninguna credencial.** F3, F5 y F6 necesitan la
 cuenta de Stripe de Apta con Connect activo; hasta entonces se implementan con webhooks simulados
