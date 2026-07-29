@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Field, Input } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
+import { resolveLoginTargets, type LoginTarget } from "./actions";
 
 const DEMO_USERS = [
   {
@@ -51,24 +53,95 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
   const [loading, setLoading] = useState(false);
+  // RB-ID-002: solo se rellena cuando la identidad tiene varias membresías.
+  const [targets, setTargets] = useState<LoginTarget[] | null>(null);
 
-  async function doSignIn(loginEmail: string, loginPassword: string) {
+  function reportBadCredentials() {
+    setError("Credenciales incorrectas.");
+    setShake(true);
+    setTimeout(() => setShake(false), 400);
+  }
+
+  async function doSignIn(loginEmail: string, loginPassword: string, orgId?: string) {
     setLoading(true);
     setError(null);
     const res = await signIn("demo", {
       email: loginEmail,
       password: loginPassword,
+      ...(orgId ? { orgId } : {}),
       redirect: false,
     });
     setLoading(false);
     if (res?.error) {
-      setError("Credenciales incorrectas.");
-      setShake(true);
-      setTimeout(() => setShake(false), 400);
+      reportBadCredentials();
       return;
     }
     router.push(callbackUrl);
     router.refresh();
+  }
+
+  /**
+   * Con una sola membresía —el caso de casi todo el mundo— se entra directo y
+   * no se ve ningún paso intermedio. El selector solo aparece cuando el mismo
+   * email pertenece a varias organizaciones.
+   */
+  async function startSignIn(loginEmail: string, loginPassword: string) {
+    setLoading(true);
+    setError(null);
+    const result = await resolveLoginTargets(loginEmail, loginPassword);
+    if (!result.ok) {
+      setLoading(false);
+      reportBadCredentials();
+      return;
+    }
+    if (result.targets.length === 1) {
+      await doSignIn(loginEmail, loginPassword, result.targets[0].orgId);
+      return;
+    }
+    setLoading(false);
+    setTargets(result.targets);
+  }
+
+  if (targets) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h2 className="font-display font-extrabold text-lg uppercase tracking-[-.01em] text-tz-black">
+            ¿Dónde quieres entrar?
+          </h2>
+          <p className="text-sm text-muted mt-1">Tu cuenta tiene acceso a varias organizaciones.</p>
+        </div>
+        <div className="space-y-2">
+          {targets.map((t) => (
+            <button
+              key={t.orgId}
+              type="button"
+              disabled={loading}
+              onClick={() => doSignIn(email, password, t.orgId)}
+              className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone px-3 py-2.5 transition-colors duration-150"
+            >
+              <span className="w-8 h-8 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-[11px] flex items-center justify-center shrink-0 overflow-hidden">
+                {t.orgLogoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={t.orgLogoUrl} alt="" className="w-full h-full object-contain" />
+                ) : (
+                  t.orgName.slice(0, 2).toUpperCase()
+                )}
+              </span>
+              <span className="text-sm font-medium text-tz-black">{t.orgName}</span>
+            </button>
+          ))}
+        </div>
+        {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
+        <button
+          type="button"
+          onClick={() => setTargets(null)}
+          className="text-xs text-muted underline"
+        >
+          ← Usar otra cuenta
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -103,7 +176,7 @@ export default function LoginForm() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            doSignIn(email, password);
+            startSignIn(email, password);
           }}
           className={`space-y-3 ${shake ? "tz-shake" : ""}`}
         >
@@ -130,6 +203,11 @@ export default function LoginForm() {
             {loading && <ButtonSpinner />}
             {loading ? "Entrando..." : "Iniciar sesión"}
           </Button>
+          <p className="text-center">
+            <Link href="/recuperar-clave" className="text-xs text-muted underline">
+              He olvidado mi contraseña
+            </Link>
+          </p>
         </form>
       </div>
 

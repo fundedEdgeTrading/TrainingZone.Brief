@@ -21,6 +21,11 @@ const PUBLIC_PATHS = [
   "/api/jobs",
   "/api/stripe",
   "/api/checkout",
+  // La API de la app nativa NO usa la cookie de sesión: cada route handler
+  // valida su propio token bearer con `requireApiSession`. Pasarla por el
+  // chequeo de cookie de aquí la rebotaba entera a /login — incluido su
+  // propio endpoint de login, con lo que la app no podía autenticarse nunca.
+  "/api/mobile",
 ];
 
 export async function proxy(req: NextRequest) {

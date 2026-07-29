@@ -23,11 +23,22 @@ test.describe("F10 — Notificaciones", () => {
     }
   });
 
-  test("el endpoint de jobs responde y produce notificaciones sin credenciales de sesión", async ({ request }) => {
-    const res = await request.get("/api/jobs/run");
+  // El cron no necesita sesión, pero sí el secreto compartido: el endpoint falla
+  // cerrado (503 sin JOBS_CRON_SECRET configurado, 401 si no coincide).
+  test("el endpoint de jobs responde con el secreto de cron y sin credenciales de sesión", async ({ request }) => {
+    const secret = process.env.JOBS_CRON_SECRET;
+    test.skip(!secret, "Requiere JOBS_CRON_SECRET configurado en el entorno.");
+
+    const res = await request.get("/api/jobs/run", { headers: { "x-cron-secret": secret! } });
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.summary).toBeTruthy();
+  });
+
+  test("el endpoint de jobs rechaza una petición sin el secreto de cron", async ({ request }) => {
+    const res = await request.get("/api/jobs/run");
+    expect(res.ok()).toBeFalsy();
+    expect([401, 503]).toContain(res.status());
   });
 });

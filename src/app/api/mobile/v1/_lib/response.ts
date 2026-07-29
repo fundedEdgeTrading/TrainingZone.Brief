@@ -6,6 +6,7 @@ export function apiOk<T>(data: T, status = 200) {
   return NextResponse.json({ ok: true, data }, { status });
 }
 
-export function apiError(error: string, status = 400) {
-  return NextResponse.json({ ok: false, error }, { status });
+/** `extra` para los errores que el cliente necesita poder resolver (p. ej. elegir organización en el login). */
+export function apiError(error: string, status = 400, extra?: Record<string, unknown>) {
+  return NextResponse.json({ ok: false, error, ...extra }, { status });
 }

@@ -61,7 +61,8 @@ export async function signupAction(_prev: SignupResult | null, formData: FormDat
   }
   const { name, email, password, orgName, taxId } = parsed.data;
 
-  const existingUser = await prisma.user.findUnique({
+  // Ya no es `findUnique` por email: el email dejó de ser único global (RB-ID-001).
+  const existingUser = await prisma.user.findFirst({
     where: { email },
     select: { id: true, orgId: true, organization: { select: { platformStatus: true } } },
   });
@@ -97,7 +98,7 @@ export async function signupAction(_prev: SignupResult | null, formData: FormDat
 
   // D-2: email de verificación no bloqueante — best-effort, nunca rompe el alta.
   try {
-    const token = generateVerifyEmailToken(result.owner.id);
+    const token = generateVerifyEmailToken(result.owner.identityId);
     await sendMail({
       to: email,
       subject: `Confirma tu email — ${orgName}`,

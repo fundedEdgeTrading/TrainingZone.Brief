@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole } from "@/lib/rbac";
 import { listNotificationsForUser } from "@/lib/notifications";
+import { membershipsFor } from "@/lib/identity";
 import { getPendingSessionFeedbackCountForUser } from "@/lib/portal-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import { TimezoneSync } from "@/components/timezone-sync";
@@ -25,13 +26,14 @@ export default async function AppLayout({
     : null;
   const timezone = await resolveTimezone(center?.timezone);
 
-  const [org, notifications, pendingPlanCount] = await Promise.all([
+  const [org, notifications, pendingPlanCount, memberships] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
       select: { name: true, logoUrl: true, platformStatus: true },
     }),
     listNotificationsForUser(session.user.orgId, session.user.id),
     role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id, timezone) : Promise.resolve(0),
+    membershipsFor(session.user.identityId),
   ]);
 
   // RB-PLAT-001: el acceso a la app se gatea por platformStatus. PLATFORM_ADMIN
@@ -79,6 +81,8 @@ export default async function AppLayout({
             roleLabel={ROLE_LABEL[role]}
             centerChip={showCenterChip ? "Todos los centros" : undefined}
             notifications={notifications}
+            organizations={memberships.map((m) => ({ orgId: m.orgId, orgName: m.orgName }))}
+            activeOrgId={session.user.orgId}
           />
           <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
             {children}

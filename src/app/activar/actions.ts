@@ -24,13 +24,13 @@ export async function resendVerificationEmailAction(): Promise<ResendResult> {
   const session = await requireSession();
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, emailVerifiedAt: true },
+    select: { id: true, name: true, email: true, identity: { select: { id: true, emailVerifiedAt: true } } },
   });
   if (!user) return { ok: false, error: "Usuario no encontrado." };
-  if (user.emailVerifiedAt) return { ok: true };
+  if (user.identity.emailVerifiedAt) return { ok: true };
 
   const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true } });
-  const token = generateVerifyEmailToken(user.id);
+  const token = generateVerifyEmailToken(user.identity.id);
 
   try {
     await sendMail({

@@ -38,7 +38,10 @@ export default async function ActivarPage({
       where: { id: session.user.orgId },
       select: { name: true, platformStatus: true },
     }),
-    prisma.user.findUnique({ where: { id: session.user.id }, select: { emailVerifiedAt: true } }),
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { identity: { select: { emailVerifiedAt: true } } },
+    }),
   ]);
 
   if (!org) redirect("/login");
@@ -92,7 +95,7 @@ export default async function ActivarPage({
           </p>
         )}
 
-        {isOwner && !user?.emailVerifiedAt && (
+        {isOwner && !user?.identity.emailVerifiedAt && (
           <div className="border-t border-tz-linen pt-4">
             <p className="text-sm text-muted mb-1">Tu email de facturación aún no está confirmado.</p>
             <ResendVerificationButton />

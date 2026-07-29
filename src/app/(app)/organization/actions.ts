@@ -99,8 +99,13 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
     return { ok: false, error: "No tienes permiso para crear ese rol." };
   }
 
-  const dup = await prisma.user.findUnique({ where: { email }, select: { id: true } });
-  if (dup) return { ok: false, error: "Ya existe una persona con ese email." };
+  // RB-ID-001: la comprobación es POR ORGANIZACIÓN. Que el email exista en otro
+  // gimnasio de Apta no es un conflicto: se le añadirá una membresía aquí.
+  const dup = await prisma.user.findUnique({
+    where: { orgId_email: { orgId: session.user.orgId, email } },
+    select: { id: true },
+  });
+  if (dup) return { ok: false, error: "Ya existe una persona con ese email en tu organización." };
 
   // Centro base: obligatorio y validado para roles de centro; null para RRHH/dirección global.
   let centerId: string | null = null;

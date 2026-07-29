@@ -125,3 +125,26 @@ export function renderStaffInviteEmail(opts: {
     footerLine2: `Todo acceso queda auditado.`,
   });
 }
+
+export function renderPasswordResetEmail(opts: {
+  recipientFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  resetUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Restablecer contraseña",
+    title: `¡Hola, ${opts.recipientFirstName}!<br>Recupera tu acceso.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Has pedido restablecer la contraseña de tu cuenta. Pulsa el botón para elegir una nueva.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Si no has sido tú, ignora este email: tu contraseña actual sigue siendo válida.</p>`,
+    ctaLabel: "Elegir nueva contraseña →",
+    ctaUrl: opts.resetUrl,
+    noteHtml: `Por seguridad, este enlace caduca en <b style="color:${TEXT2}">1 hora</b> y solo puede usarse para cambiar la contraseña.`,
+    signOff: `Un saludo,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque se ha solicitado restablecer tu contraseña.`,
+    footerLine2: `Si no lo has pedido tú, no hace falta que hagas nada.`,
+  });
+}
