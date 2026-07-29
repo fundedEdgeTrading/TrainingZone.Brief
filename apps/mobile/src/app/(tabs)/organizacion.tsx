@@ -5,6 +5,7 @@ import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
 
 export default function OrganizationScreen() {
   const theme = useTheme();
@@ -12,10 +13,10 @@ export default function OrganizationScreen() {
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
-      <View>
+      <FadeInUp>
         <Text style={[styles.kicker, { color: theme.textMuted }]}>ADMINISTRACIÓN</Text>
         <Text style={[styles.title, { color: theme.text }]}>{data?.organization?.name ?? "Organización"}</Text>
-      </View>
+      </FadeInUp>
 
       {isLoading ? (
         <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />

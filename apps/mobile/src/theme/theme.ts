@@ -18,6 +18,8 @@ const palette = {
   criticalBg: "#F4DDD2",
   inkSoft: "#2A2A27",
   inkBorder: "#33322C",
+  gold: "#C8AB72",
+  goldSoft: "#E3CFA2",
 };
 
 export type Theme = {
@@ -37,6 +39,15 @@ export type Theme = {
   warningBg: string;
   critical: string;
   criticalBg: string;
+  /** Acento dorado de marca (spotlight, anillos de progreso, chips destacados). */
+  gold: string;
+  goldSoft: string;
+  /** Fondo del héroe con degradado tinta→tinta suave (mismo tratamiento que .tz-card-sheen en web). */
+  heroGradient: [string, string];
+  /** Manchas "aurora" translúcidas sobre el héroe. */
+  auroraGold: string;
+  auroraLinen: string;
+  shadowColor: string;
 };
 
 const light: Theme = {
@@ -56,6 +67,12 @@ const light: Theme = {
   warningBg: palette.warningBg,
   critical: palette.critical,
   criticalBg: palette.criticalBg,
+  gold: palette.gold,
+  goldSoft: palette.goldSoft,
+  heroGradient: [palette.black, "#2A2A27"],
+  auroraGold: "rgba(200,171,114,.28)",
+  auroraLinen: "rgba(216,204,184,.22)",
+  shadowColor: "rgba(29,29,28,0.14)",
 };
 
 const dark: Theme = {
@@ -75,9 +92,15 @@ const dark: Theme = {
   warningBg: "#4A3A1A",
   critical: "#E08267",
   criticalBg: "#4A2A20",
+  gold: palette.gold,
+  goldSoft: palette.goldSoft,
+  heroGradient: ["#0F0F0E", "#242420"],
+  auroraGold: "rgba(200,171,114,.22)",
+  auroraLinen: "rgba(216,204,184,.14)",
+  shadowColor: "rgba(0,0,0,0.5)",
 };
 
-export const radii = { card: 16, control: 10, pill: 999 };
+export const radii = { card: 18, control: 12, pill: 999 };
 
 export function useTheme(): Theme {
   const scheme = useColorScheme();
