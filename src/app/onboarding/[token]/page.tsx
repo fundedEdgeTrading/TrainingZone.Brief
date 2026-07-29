@@ -2,6 +2,13 @@ import { prisma } from "@/lib/prisma";
 import { ROLE_LABEL } from "@/lib/rbac";
 import OnboardingForm from "./onboarding-form";
 
+// Sin generateStaticParams, Next.js podría cachear indefinidamente la
+// primera respuesta que reciba cada token (p. ej. si un escáner de
+// seguridad del cliente de correo visita el enlace antes que la persona).
+// El token es de un solo uso y sensible al tiempo, así que esta página
+// debe renderizarse siempre en el momento de la petición.
+export const dynamic = "force-dynamic";
+
 function InvalidLinkScreen({ message }: { message: string }) {
   return (
     <div className="min-h-dvh bg-tz-black flex items-center justify-center px-4 py-10">

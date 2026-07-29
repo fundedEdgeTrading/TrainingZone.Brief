@@ -4,7 +4,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { signIn } from "@/auth";
-import { createOwnerAccount } from "@/lib/invitations";
+import { createOwnerAccount, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderVerifyEmail } from "@/lib/emails/templates";
 import { generateVerifyEmailToken, verifyEmailUrlFor } from "@/lib/email-verification";
@@ -104,7 +104,7 @@ export async function signupAction(_prev: SignupResult | null, formData: FormDat
       html: renderVerifyEmail({
         directorFirstName: name,
         orgName,
-        orgLogoUrl: "/brand/tz-logo-white.png",
+        orgLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
         verifyUrl: verifyEmailUrlFor(token),
       }),
     });

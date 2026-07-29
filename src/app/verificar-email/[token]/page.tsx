@@ -2,6 +2,12 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { verifyEmailToken } from "@/lib/email-verification";
 
+// Sin generateStaticParams, Next.js podría cachear indefinidamente la
+// primera respuesta que reciba cada token. Esta página es sensible al
+// tiempo (el token expira) y muta estado, así que debe renderizarse
+// siempre en el momento de la petición.
+export const dynamic = "force-dynamic";
+
 /** B.2: confirma el email del director. No bloquea el login (D-2) — es solo informativo. */
 export default async function VerificarEmailPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

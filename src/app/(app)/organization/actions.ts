@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
-import { createStaffWithInvitation, onboardingUrlFor } from "@/lib/invitations";
+import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import type { Role } from "@prisma/client";
@@ -133,7 +133,7 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
     html: renderStaffInviteEmail({
       staffFirstName: name.split(/\s+/)[0] ?? name,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: org?.logoUrl || "/brand/tz-logo-white.png",
+      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       roleLabel: ROLE_LABEL[role],
       onboardingUrl: onboardingUrlFor(invitation.token),
     }),

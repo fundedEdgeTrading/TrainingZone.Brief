@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { createHealthRecord, resolveHealthRecord } from "@/lib/health-access";
 import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
-import { generateInvitationToken, invitationExpiry, onboardingUrlFor } from "@/lib/invitations";
+import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { Prisma, type HealthRecordType, type HealthSeverity, type Sex } from "@prisma/client";
@@ -430,7 +430,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
     html: renderMemberWelcomeEmail({
       memberFirstName: member.firstName,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: org?.logoUrl || "/brand/tz-logo-white.png",
+      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       centerName: member.primaryCenter.name,
       onboardingUrl: onboardingUrlFor(token),
     }),
