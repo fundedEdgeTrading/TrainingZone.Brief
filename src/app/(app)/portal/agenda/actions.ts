@@ -9,12 +9,17 @@ import { resolveTimezone } from "@/lib/timezone";
 
 export type BookingActionResult = BookingResult;
 
-export async function bookSession(sessionId: string): Promise<BookingActionResult> {
+export async function bookSession(sessionId: string, occurrenceDate?: string): Promise<BookingActionResult> {
   const session = await requireRole(["MEMBER"]);
   const member = await getMemberForUser(session.user.id);
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
-  const result = await bookSessionForMember(member, sessionId, await resolveTimezone(member.primaryCenter.timezone));
+  const result = await bookSessionForMember(
+    member,
+    sessionId,
+    await resolveTimezone(member.primaryCenter.timezone),
+    occurrenceDate
+  );
   if (!result.ok) return result;
 
   revalidatePath("/portal/agenda");

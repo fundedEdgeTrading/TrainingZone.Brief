@@ -1,7 +1,6 @@
 import type { NextRequest } from "next/server";
 import { getSessionBrief } from "@/lib/brief-queries";
-import { parseDateParam, formatDateParam } from "@/lib/date-utils";
-import { occursOn } from "@/lib/session-occurrences";
+import { formatDateParam } from "@/lib/date-utils";
 import { requireApiRole } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
 
@@ -19,13 +18,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     sessionId: id,
     actorUserId: claims.sub,
     actorRole: claims.role,
+    d: req.nextUrl.searchParams.get("d"),
   });
   if (!brief) return apiError("No se ha encontrado esa sesión.", 404);
 
-  const { session: cls, roster, canSeeHealth } = brief;
-
-  const dParam = req.nextUrl.searchParams.get("d");
-  const occurrenceDate = dParam && occursOn(cls, parseDateParam(dParam)) ? parseDateParam(dParam) : cls.date;
+  const { session: cls, roster, canSeeHealth, occurrenceDate } = brief;
 
   const sorted = [...roster].sort(
     (a, b) => (a.light ? LIGHT_ORDER[a.light] : 3) - (b.light ? LIGHT_ORDER[b.light] : 3)

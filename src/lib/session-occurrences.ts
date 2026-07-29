@@ -1,4 +1,5 @@
 import { addDays, instanceForWeek, weekdayIdx } from "@/app/(app)/agenda/agenda-utils";
+import { parseDateParam } from "@/lib/date-utils";
 
 /**
  * Fuente única de verdad para "¿qué sesiones son mías y qué días ocurren?".
@@ -79,6 +80,27 @@ export function occurrencesInRange(session: RecurringSession, from: Date, to: Da
 /** ¿Ocurre `session` exactamente el día `day` (medianoche local)? */
 export function occursOn(session: RecurringSession, day: Date): boolean {
   return occurrencesInRange(session, day, addDays(day, 1)).length > 0;
+}
+
+/** Igualdad de "día suelto": `Booking.occurrenceDate` y `ClassSession.date` son medianoche local. */
+export function isSameDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/**
+ * Día concreto que se está mirando de una sesión. Llega en `?d=` desde la
+ * agenda, el índice de briefs o el panel; solo se acepta si la serie ocurre de
+ * verdad ese día — si no, se cae a la fecha base (la única ocurrencia de una
+ * sesión sin recurrencia).
+ */
+export function resolveOccurrenceDate(session: RecurringSession, d?: string | null): Date {
+  if (d) {
+    const day = parseDateParam(d);
+    if (occursOn(session, day)) return day;
+  }
+  const base = new Date(session.date);
+  base.setHours(0, 0, 0, 0);
+  return base;
 }
 
 /**

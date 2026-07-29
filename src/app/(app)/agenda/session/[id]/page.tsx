@@ -2,14 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { getSessionDetail } from "@/lib/agenda-queries";
-import { parseDateParam } from "@/lib/date-utils";
-import { occursOn } from "@/lib/session-occurrences";
+import { formatDateParam } from "@/lib/date-utils";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
 import CheckinButton from "./checkin-button";
+import CancelBookingButton from "./cancel-booking-button";
 import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -30,12 +30,12 @@ export default async function SessionDetailPage({
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const { id } = await params;
   const { d } = await searchParams;
-  const cls = await getSessionDetail(session.user.orgId, id);
-  if (!cls) notFound();
-
   // `cls.date` es la fecha base de la serie recurrente; el día concreto que se
-  // está mirando viene en `?d=` y solo se acepta si existe esa ocurrencia.
-  const occurrenceDate = d && occursOn(cls, parseDateParam(d)) ? parseDateParam(d) : cls.date;
+  // está mirando viene en `?d=` y solo se acepta si existe esa ocurrencia. El
+  // roster que devuelve `getSessionDetail` es ya el de ese día.
+  const cls = await getSessionDetail(session.user.orgId, id, d);
+  if (!cls) notFound();
+  const { occurrenceDate } = cls;
 
   // Ámbito de centro: el staff no organizacional solo abre sesiones de centros
   // a los que está imputado (su centro base o vía CenterMembership).
@@ -82,7 +82,7 @@ export default async function SessionDetailPage({
             <div className="text-xs text-faint">plazas ocupadas</div>
             {canOpenDebrief && (
               <Link
-                href={`/brief/${cls.id}`}
+                href={`/brief/${cls.id}?d=${formatDateParam(occurrenceDate)}`}
                 className="inline-flex items-center mt-2 text-xs font-semibold rounded-control bg-tz-black text-white px-3.5 py-2 transition-colors duration-150 hover:bg-brand-ink-soft"
               >
                 Abrir Session Brief →
@@ -100,6 +100,7 @@ export default async function SessionDetailPage({
           <Th>Estado del socio</Th>
           <Th>Estado reserva</Th>
           <Th>Check-in</Th>
+          <Th>Acciones</Th>
         </THead>
         <tbody>
           {booked.map((b) => (
@@ -115,6 +116,15 @@ export default async function SessionDetailPage({
               <Td className="text-text-2">{STATUS_LABEL[b.status]}</Td>
               <Td>
                 <CheckinButton bookingId={b.id} sessionId={cls.id} checkedIn={b.status === "ATTENDED"} />
+              </Td>
+              <Td>
+                {b.status === "BOOKED" && (
+                  <CancelBookingButton
+                    bookingId={b.id}
+                    sessionId={cls.id}
+                    memberName={`${b.member.firstName} ${b.member.lastName}`}
+                  />
+                )}
               </Td>
             </TRow>
           ))}

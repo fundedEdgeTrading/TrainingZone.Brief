@@ -2,7 +2,7 @@
 
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { canManageEpSlots } from "@/lib/rbac";
-import { saveSession, deleteSession, rescheduleSession } from "@/lib/agenda-queries";
+import { saveSession, deleteSession, rescheduleSession, cancelSessionBooking } from "@/lib/agenda-queries";
 import { parseDateParam } from "@/lib/date-utils";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
@@ -24,6 +24,11 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   const startTime = String(formData.get("startTime") ?? "");
   let endTime = String(formData.get("endTime") ?? "");
   const memberId = String(formData.get("memberId") ?? "") || null;
+  const capacityRaw = Number(formData.get("capacity"));
+  const capacity = Number.isFinite(capacityRaw) && capacityRaw > 0 ? capacityRaw : null;
+  // RB-AGENDA-002: sin este flag la franja de EP nace cerrada y el socio nunca
+  // llega a verla en el portal — el diálogo lo manda siempre marcado por defecto.
+  const selfBookable = formData.get("selfBookable") === "on";
   const isTrial = formData.get("isTrial") === "on";
   const recurrenceRaw = String(formData.get("recurrence") ?? "NONE");
   const recurrence = recurrenceRaw === "WEEKLY" || recurrenceRaw === "WEEKDAYS" ? recurrenceRaw : "NONE";
@@ -51,6 +56,8 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     startTime,
     endTime,
     memberId,
+    capacity,
+    selfBookable,
     isTrial,
     recurrence,
     recUntil: recurrence !== "NONE" && recUntilRaw ? parseDateParam(recUntilRaw) : null,
@@ -74,6 +81,21 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   if (!result.ok) return result;
 
   revalidateSessionViews();
+  return { ok: true };
+}
+
+/**
+ * Cancela una reserva concreta desde el roster de la sesión. Antes esto se
+ * hacía implícitamente al guardar la sesión (vaciando el campo "Socio"), lo que
+ * arrastraba consigo las reservas del resto de socios; ahora es explícito y
+ * devuelve el bono, igual que si cancelara el propio socio.
+ */
+export async function cancelSessionBookingAction(bookingId: string, sessionId: string): Promise<SessionActionResult> {
+  const session = await requireRole([...ALLOWED_ROLES, "RECEPTION"]);
+  const result = await cancelSessionBooking(session.user.orgId, bookingId);
+  if (!result.ok) return result;
+
+  revalidateSessionViews(sessionId);
   return { ok: true };
 }
 

@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
-import { expandOccurrences, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { expandOccurrences, isSameDay, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -28,7 +28,10 @@ export default async function BriefIndexPage() {
     include: {
       center: true,
       trainer: { select: { name: true } },
-      bookings: { where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } }, select: { id: true } },
+      bookings: {
+        where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+        select: { id: true, occurrenceDate: true },
+      },
     },
     orderBy: { date: "asc" },
   });
@@ -49,6 +52,9 @@ export default async function BriefIndexPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {sessions.map(({ session: s, date }, i) => {
             const isToday = date.getTime() === today.getTime();
+            // Las reservas cuelgan de la fila de la serie: el contador es el de
+            // ESTE día, no el de todas las ocurrencias juntas.
+            const dayBookings = s.bookings.filter((b) => isSameDay(b.occurrenceDate, date));
             return (
               <Link
                 key={`${s.id}-${formatDateParam(date)}`}
@@ -62,7 +68,7 @@ export default async function BriefIndexPage() {
                 </div>
                 <div className="font-semibold text-tz-black mt-1 group-hover:underline">{s.name}</div>
                 <div className="text-sm text-muted">{s.center.name} · {s.trainer?.name ?? "Sin entrenador"}</div>
-                <div className="text-sm text-faint mt-2 tz-nums">{s.bookings.length} reservas</div>
+                <div className="text-sm text-faint mt-2 tz-nums">{dayBookings.length} reservas</div>
               </Link>
             );
           })}

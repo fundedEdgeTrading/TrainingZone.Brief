@@ -18,6 +18,7 @@ import {
   fmtHHMM,
   snap,
   layoutDay,
+  DEFAULT_GROUP_CAPACITY,
   type WeekOccurrence,
 } from "./agenda-utils";
 import { moveSessionAction } from "./session-actions";
@@ -214,6 +215,10 @@ export default function AgendaView({
       trainerId: trainers[0]?.id ?? "",
       memberId: null,
       memberQuery: "",
+      capacity: DEFAULT_GROUP_CAPACITY,
+      // Una franja nueva nace abierta al socio: es lo que espera el entrenador
+      // al crearla desde la agenda (RB-AGENDA-001/002).
+      selfBookable: true,
       isTrial: false,
       recurrence: "NONE",
       recEnd: "forever",
@@ -234,12 +239,16 @@ export default function AgendaView({
       endHHMM: fmtHHMM(ev.endMin),
       type: ev.type,
       trainerId: ev.trainerId,
-      memberId: ev.bookedMemberId,
+      // Solo el EP arrastra "su" socio al diálogo: en un grupo reducido el
+      // roster son varias personas y este campo no lo representa.
+      memberId: ev.type === "personal" ? ev.bookedMemberId : null,
       memberQuery: "",
+      capacity: ev.capacity,
+      selfBookable: ev.selfBookable,
       isTrial: ev.isTrial,
-      recurrence: ev.isRecurring ? "WEEKLY" : "NONE",
-      recEnd: "forever",
-      recUntil: formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
+      recurrence: ev.recurrence,
+      recEnd: ev.recUntilISO ? "until" : "forever",
+      recUntil: ev.recUntilISO ?? formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
     });
   }
 

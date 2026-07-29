@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, zonedNow, zonedTimeToInstant } from "@/lib/date-utils";
-import { expandOccurrences, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { expandOccurrences, isSameDay, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import type { AptitudeLight, Role } from "@prisma/client";
 
 const ADHERENCE_PERIOD_DAYS = 90;
@@ -96,7 +96,8 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const epMemberIdsRaw = await prisma.booking.findMany({
     where: {
       status: { in: ["BOOKED", "ATTENDED", "WAITLISTED"] },
-      session: { orgId, trainerId: trainerUserId, classType: "Personal Training", date: { gte: since90 } },
+      occurrenceDate: { gte: since90 },
+      session: { orgId, trainerId: trainerUserId, classType: "Personal Training" },
     },
     select: { memberId: true },
     distinct: ["memberId"],
@@ -138,7 +139,12 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
       include: {
         bookings: {
           where: { status: { not: "CANCELLED" } },
-          include: { member: { select: { id: true, firstName: true, lastName: true } }, debrief: { select: { rpe: true } } },
+          select: {
+              status: true,
+              occurrenceDate: true,
+              member: { select: { id: true, firstName: true, lastName: true } },
+              debrief: { select: { rpe: true } },
+            },
         },
       },
       orderBy: { startTime: "asc" },
@@ -148,19 +154,19 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     // hoy avisando de un pendiente que la lista de Pendientes no mostraba.
     prisma.classSession.findMany({
       where: { orgId, status: "SCHEDULED", ...sessionsInRangeWhere(sevenDaysAgo, tomorrow), ...ownSessionFilter },
-      include: { bookings: { where: { status: { not: "CANCELLED" } }, select: { status: true, debrief: { select: { id: true } } } } },
+      include: { bookings: { where: { status: { not: "CANCELLED" } }, select: { status: true, occurrenceDate: true, debrief: { select: { id: true } } } } },
       orderBy: [{ date: "desc" }, { startTime: "desc" }],
     }),
     prisma.classSession.findMany({
       where: { orgId, trainerId: trainerUserId, classType: "Personal Training", selfBookable: true, status: "SCHEDULED", ...sessionsInRangeWhere(weekStart, weekEnd) },
-      include: { bookings: { where: { status: { not: "CANCELLED" } }, select: { id: true } } },
+      include: { bookings: { where: { status: { not: "CANCELLED" } }, select: { id: true, occurrenceDate: true } } },
     }),
     prisma.auditLog.findMany({
       where: { orgId, action: "SESSION_BRIEF_OPENED", entityType: "ClassSession", createdAt: { gte: today } },
       select: { entityId: true },
     }),
     prisma.booking.findMany({
-      where: { status: { in: ["ATTENDED", "NO_SHOW"] }, session: { orgId, date: { gte: since90 } }, member: { orgId, state: "ACTIVE" } },
+      where: { status: { in: ["ATTENDED", "NO_SHOW"] }, occurrenceDate: { gte: since90 }, session: { orgId }, member: { orgId, state: "ACTIVE" } },
       select: { status: true },
     }),
   ]);
@@ -174,7 +180,12 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
         include: {
           bookings: {
             where: { status: { not: "CANCELLED" } },
-            include: { member: { select: { id: true, firstName: true, lastName: true } }, debrief: { select: { rpe: true } } },
+            select: {
+              status: true,
+              occurrenceDate: true,
+              member: { select: { id: true, firstName: true, lastName: true } },
+              debrief: { select: { rpe: true } },
+            },
           },
         },
         orderBy: { startTime: "asc" },
@@ -256,16 +267,18 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   // ---------- Clientes de EP (tabla + KPI) ----------
   const nextBookingByMember = new Map<string, { date: Date; startTime: string }>();
   const futureBookings = await prisma.booking.findMany({
-    where: { memberId: { in: memberIds }, status: "BOOKED", session: { orgId, date: { gte: today }, status: "SCHEDULED" } },
-    include: { session: { select: { date: true, startTime: true } } },
-    orderBy: { session: { date: "asc" } },
+    where: { memberId: { in: memberIds }, status: "BOOKED", occurrenceDate: { gte: today }, session: { orgId, status: "SCHEDULED" } },
+    select: { memberId: true, occurrenceDate: true, session: { select: { startTime: true } } },
+    orderBy: { occurrenceDate: "asc" },
   });
   for (const b of futureBookings) {
-    if (!nextBookingByMember.has(b.memberId)) nextBookingByMember.set(b.memberId, b.session);
+    if (!nextBookingByMember.has(b.memberId)) {
+      nextBookingByMember.set(b.memberId, { date: b.occurrenceDate, startTime: b.session.startTime });
+    }
   }
 
   const since90Bookings = await prisma.booking.findMany({
-    where: { memberId: { in: memberIds }, status: { in: ["ATTENDED", "NO_SHOW"] }, session: { date: { gte: since90 } } },
+    where: { memberId: { in: memberIds }, status: { in: ["ATTENDED", "NO_SHOW"] }, occurrenceDate: { gte: since90 } },
     select: { memberId: true, status: true },
   });
   const adherenceByMember = new Map<string, number>();
@@ -312,7 +325,9 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
         : nowMin >= startMin
           ? "current"
           : "upcoming";
-    const active = s.bookings.filter((b) => b.status !== "CANCELLED");
+    // Las reservas cuelgan de la fila de la serie: en una sesión recurrente hay
+    // que quedarse solo con las del día que se está pintando.
+    const active = s.bookings.filter((b) => isSameDay(b.occurrenceDate, date));
     const attended = active.filter((b) => b.status === "ATTENDED");
     const noShow = active.filter((b) => b.status === "NO_SHOW");
     const booked = active.filter((b) => b.status === "BOOKED");
@@ -420,7 +435,7 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const pendingDebriefs = expandOccurrences(pastWeekSessionsRaw, sevenDaysAgo, tomorrow)
     .reverse()
     .map(({ session: s, date }) => {
-      const active = s.bookings;
+      const active = s.bookings.filter((b) => isSameDay(b.occurrenceDate, date));
       const attended = active.filter((b) => b.status === "ATTENDED");
       if (!attended.length || attended.every((b) => b.debrief)) return null;
       const endedAt = new Date(date);
@@ -478,12 +493,14 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const slotsByDay = Array.from({ length: 7 }, (_, i) => {
     const day = addDays(weekStart, i);
     const isToday = day.getTime() === today.getTime();
-    const daySessions = epSlotSessionsRaw.filter((s) => occursOn(s, day));
+    const daySessions = epSlotSessionsRaw
+      .filter((s) => occursOn(s, day))
+      .map((s) => s.bookings.filter((b) => isSameDay(b.occurrenceDate, day)).length);
     return {
       dayLabel: WEEKDAY_LABELS[i],
       isToday,
-      reservedCount: daySessions.filter((s) => s.bookings.length > 0).length,
-      freeCount: daySessions.filter((s) => s.bookings.length === 0).length,
+      reservedCount: daySessions.filter((count) => count > 0).length,
+      freeCount: daySessions.filter((count) => count === 0).length,
     };
   });
   const slotsMax = Math.max(1, ...slotsByDay.map((d) => d.reservedCount + d.freeCount));

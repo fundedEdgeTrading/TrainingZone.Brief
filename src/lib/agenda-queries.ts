@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { canManageOrg } from "@/lib/rbac";
+import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
+import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
 import type { Role } from "@prisma/client";
 
 /**
@@ -54,7 +56,7 @@ export async function getWeekSessions(orgId: string, centerId: string, weekStart
     },
     include: {
       trainer: { select: { name: true } },
-      bookings: { select: { id: true, status: true, memberId: true } },
+      bookings: { select: { id: true, status: true, memberId: true, occurrenceDate: true } },
     },
     orderBy: { date: "asc" },
   });
@@ -71,6 +73,9 @@ export type SaveSessionInput = {
   startTime: string;
   endTime: string;
   memberId: string | null;
+  capacity?: number | null;
+  /** RB-AGENDA-002: la franja queda abierta a que el socio la reserve desde el portal. */
+  selfBookable: boolean;
   isTrial: boolean;
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recUntil: Date | null;
@@ -78,8 +83,11 @@ export type SaveSessionInput = {
 
 /** Crea o actualiza una sesión de la agenda (rediseño estilo Google Calendar). */
 export async function saveSession(orgId: string, input: SaveSessionInput) {
-  const classType = input.type === "personal" ? "Personal Training" : "Grupo reducido";
-  const capacity = input.type === "personal" ? 1 : 6;
+  const isPersonal = input.type === "personal";
+  const classType = isPersonal ? "Personal Training" : "Grupo reducido";
+  const capacity = isPersonal
+    ? 1
+    : Math.min(MAX_GROUP_CAPACITY, Math.max(1, Math.round(input.capacity || DEFAULT_GROUP_CAPACITY)));
   const data = {
     centerId: input.centerId,
     trainerId: input.trainerId,
@@ -89,6 +97,10 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
     date: input.date,
     startTime: input.startTime,
     endTime: input.endTime,
+    // Solo el EP distingue entre franja abierta al socio y franja que gestiona
+    // el entrenador: los grupos reducidos son siempre reservables por el
+    // cliente (RB-AGENDA-001), así que el flag no les aplica.
+    selfBookable: isPersonal ? input.selfBookable : false,
     isTrial: input.isTrial,
     recurrence: input.recurrence,
     recUntil: input.recUntil,
@@ -97,31 +109,67 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   let session;
   if (input.id) {
     session = await prisma.classSession.update({ where: { id: input.id, orgId }, data });
-
-    // No borramos bookings: una reserva con SessionDebrief no se puede eliminar
-    // (FK RESTRICT). Si el socio cambia, cancelamos las reservas antiguas en
-    // vez de borrarlas y creamos una nueva si hace falta.
-    const existingBookings = await prisma.booking.findMany({
-      where: { sessionId: session.id, status: { not: "CANCELLED" } },
-      select: { id: true, memberId: true },
-    });
-    for (const b of existingBookings) {
-      if (b.memberId !== input.memberId) {
-        await prisma.booking.update({ where: { id: b.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
-      }
-    }
-    const alreadyBooked = existingBookings.some((b) => b.memberId === input.memberId);
-    if (input.memberId && !alreadyBooked) {
-      await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
-    }
   } else {
     session = await prisma.classSession.create({ data: { ...data, orgId } });
-    if (input.memberId) {
-      await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
+  }
+
+  // El campo "Socio" del diálogo es la reserva MANUAL de una franja de EP en
+  // nombre de un cliente que no usa la app; nunca es el roster de la sesión.
+  //
+  // Antes se sincronizaba el roster entero con ese único socio: como en un
+  // grupo reducido el campo va vacío, volver a guardar la sesión (cambiar la
+  // hora, el título, el entrenador…) cancelaba TODAS las reservas que habían
+  // hecho los socios, sin devolverles el bono, y el entrenador se encontraba el
+  // brief vacío. Ahora solo se añade la reserva que falta, y no se toca ninguna
+  // que no haya creado este mismo campo.
+  if (isPersonal && input.memberId) {
+    const alreadyBooked = await prisma.booking.findFirst({
+      where: {
+        sessionId: session.id,
+        memberId: input.memberId,
+        occurrenceDate: input.date,
+        status: { notIn: ["CANCELLED"] },
+      },
+      select: { id: true },
+    });
+    if (!alreadyBooked) {
+      await prisma.booking.create({
+        data: { sessionId: session.id, occurrenceDate: input.date, memberId: input.memberId, status: "BOOKED" },
+      });
     }
   }
 
   return session;
+}
+
+/**
+ * Cancela la reserva que el entrenador había agendado a mano en una franja de
+ * EP (el reverso de dejar vacío el campo "Socio" del diálogo). Se hace desde
+ * una acción explícita y no al guardar, para no volver a barrer reservas que el
+ * socio hizo por su cuenta. Devuelve el bono, igual que si cancelara el socio.
+ */
+export async function cancelSessionBooking(orgId: string, bookingId: string) {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, session: { orgId }, status: { in: ["BOOKED", "WAITLISTED"] } },
+    select: { id: true, status: true, subscriptionId: true },
+  });
+  if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
+    });
+    // RB-RES-006: la lista de espera nunca descontó bono, así que no se devuelve.
+    if (booking.status === "BOOKED" && booking.subscriptionId) {
+      await tx.subscription.update({
+        where: { id: booking.subscriptionId },
+        data: { sessionsRemaining: { increment: 1 } },
+      });
+    }
+  });
+
+  return { ok: true as const };
 }
 
 export async function deleteSession(orgId: string, sessionId: string) {
@@ -137,9 +185,24 @@ export async function deleteSession(orgId: string, sessionId: string) {
 
 /** Arrastrar y soltar: reprograma día/hora conservando la duración original. */
 export async function rescheduleSession(orgId: string, sessionId: string, date: Date, startTime: string, endTime: string) {
-  const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId }, select: { id: true } });
+  const session = await prisma.classSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: { id: true, date: true, recurrence: true },
+  });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };
-  await prisma.classSession.update({ where: { id: sessionId }, data: { date, startTime, endTime } });
+
+  await prisma.$transaction(async (tx) => {
+    await tx.classSession.update({ where: { id: sessionId }, data: { date, startTime, endTime } });
+    // Mover una sesión suelta se lleva consigo a quien ya la había reservado:
+    // si no, la reserva se quedaba apuntando al día viejo y desaparecía del
+    // roster de la sesión y de "tus próximas reservas".
+    if (session.recurrence === "NONE") {
+      await tx.booking.updateMany({
+        where: { sessionId, occurrenceDate: session.date },
+        data: { occurrenceDate: date },
+      });
+    }
+  });
   return { ok: true as const };
 }
 
@@ -176,7 +239,9 @@ export async function createEpSlot(
   });
 
   if (input.memberId) {
-    await prisma.booking.create({ data: { sessionId: session.id, memberId: input.memberId, status: "BOOKED" } });
+    await prisma.booking.create({
+      data: { sessionId: session.id, occurrenceDate: input.date, memberId: input.memberId, status: "BOOKED" },
+    });
   }
 
   return session;
@@ -197,8 +262,14 @@ export async function setSessionSelfBookable(orgId: string, sessionId: string, s
   return { ok: true as const };
 }
 
-export async function getSessionDetail(orgId: string, sessionId: string) {
-  return prisma.classSession.findFirst({
+/**
+ * Detalle de una sesión con el roster del día que se está mirando (`d`,
+ * "YYYY-MM-DD"): en una serie recurrente todas las ocurrencias comparten fila,
+ * así que sin acotar por `occurrenceDate` el entrenador veía en el martes a
+ * quien había reservado el martes siguiente.
+ */
+export async function getSessionDetail(orgId: string, sessionId: string, d?: string | null) {
+  const session = await prisma.classSession.findFirst({
     where: { id: sessionId, orgId },
     include: {
       center: true,
@@ -210,4 +281,12 @@ export async function getSessionDetail(orgId: string, sessionId: string) {
       },
     },
   });
+  if (!session) return null;
+
+  const occurrenceDate = resolveOccurrenceDate(session, d);
+  return {
+    ...session,
+    occurrenceDate,
+    bookings: session.bookings.filter((b) => isSameDay(b.occurrenceDate, occurrenceDate)),
+  };
 }

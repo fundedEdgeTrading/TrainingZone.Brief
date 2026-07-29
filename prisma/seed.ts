@@ -757,6 +757,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   type BookingRow = {
     id: string;
     sessionId: string;
+    occurrenceDate: Date;
     memberId: string;
     status: BookingStatus;
     waitlistPosition: number | null;
@@ -806,6 +807,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         bookings.push({
           id: id(),
           sessionId: s.id,
+          occurrenceDate: s.date,
           memberId: m.id,
           status,
           waitlistPosition: status === "WAITLISTED" ? count - s.capacity + 1 : null,
@@ -1177,7 +1179,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         const attendees = daniCenterActiveMemberIds.slice(i * 5, i * 5 + randInt(4, 8));
         if (attendees.length) {
           await prisma.booking.createMany({
-            data: attendees.map((memberId) => ({ id: id(), sessionId: fillSessionId, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) })),
+            data: attendees.map((memberId) => ({ id: id(), sessionId: fillSessionId, occurrenceDate: TODAY, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) })),
           });
         }
       }
@@ -1430,6 +1432,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             data: {
               id: bookingId,
               sessionId,
+              occurrenceDate: sessionDate,
               memberId,
               status: isNoShow ? BookingStatus.NO_SHOW : BookingStatus.ATTENDED,
               bookedAt: addDays(sessionDate, -2),
@@ -1472,7 +1475,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             },
           });
           await prisma.booking.create({
-            data: { id: id(), sessionId: futureSessionId, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) },
+            data: { id: id(), sessionId: futureSessionId, occurrenceDate: futureDate, memberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -1) },
           });
         }
       }
@@ -1534,7 +1537,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           },
         });
         await prisma.booking.create({
-          data: { id: id(), sessionId: reservedSessionId, memberId: bookMemberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -3) },
+          data: { id: id(), sessionId: reservedSessionId, occurrenceDate: addDays(epWeekStart, reservedSlots[i].weekday - 1), memberId: bookMemberId, status: BookingStatus.BOOKED, bookedAt: addDays(TODAY, -3) },
         });
       }
     }
@@ -1835,6 +1838,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         data: {
           id: id(),
           sessionId: pendingSessionId,
+          occurrenceDate: sessionDate,
           memberId: demoMemberId,
           status: "ATTENDED",
           bookedAt: addDays(sessionDate, -2),

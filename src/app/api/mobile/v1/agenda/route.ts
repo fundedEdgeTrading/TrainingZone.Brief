@@ -6,7 +6,7 @@ import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
-import { expandOccurrences, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { expandOccurrences, isSameDay, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk } from "../_lib/response";
 
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
             trainer: { select: { id: true, name: true } },
             bookings: {
               where: { status: { not: "CANCELLED" } },
-              select: { id: true, status: true, member: { select: { id: true, firstName: true, lastName: true } } },
+              select: { id: true, status: true, occurrenceDate: true, member: { select: { id: true, firstName: true, lastName: true } } },
             },
           },
           orderBy: { startTime: "asc" },
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
       ])
     : [[], [], []];
 
-  const sessions = expandOccurrences(rows, day, dayEnd).map(({ session: s }) => ({
+  const sessions = expandOccurrences(rows, day, dayEnd).map(({ session: s, date }) => ({
     id: s.id,
     name: s.name,
     classType: s.classType,
@@ -61,7 +61,10 @@ export async function GET(req: NextRequest) {
     selfBookable: s.selfBookable,
     trainerId: s.trainerId,
     trainerName: s.trainer?.name ?? null,
-    bookings: s.bookings.map((b) => ({ id: b.id, status: b.status, member: b.member })),
+    // Roster del día pedido: una serie recurrente comparte fila entre ocurrencias.
+    bookings: s.bookings
+      .filter((b) => isSameDay(b.occurrenceDate, date))
+      .map((b) => ({ id: b.id, status: b.status, member: b.member })),
   }));
 
   return apiOk({

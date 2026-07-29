@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
-import { zonedNow, zonedToday, zonedTimeToInstant } from "@/lib/date-utils";
+import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam } from "@/lib/date-utils";
+import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
 // de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
@@ -45,12 +46,13 @@ export async function getPendingSessionFeedback(memberId: string, timeZone: stri
   const since = zonedNow(timeZone);
   since.setHours(since.getHours() - 48);
   const attended = await prisma.booking.findMany({
-    where: { memberId, status: "ATTENDED", session: { date: { gte: since } } },
+    where: { memberId, status: "ATTENDED", occurrenceDate: { gte: since } },
     select: {
       id: true,
-      session: { select: { name: true, date: true, startTime: true, classType: true, trainer: { select: { name: true } } } },
+      occurrenceDate: true,
+      session: { select: { name: true, startTime: true, classType: true, trainer: { select: { name: true } } } },
     },
-    orderBy: { session: { date: "desc" } },
+    orderBy: { occurrenceDate: "desc" },
     take: 5,
   });
   if (attended.length === 0) return [];
@@ -68,7 +70,7 @@ export async function getPendingSessionFeedback(memberId: string, timeZone: stri
     .map((b) => ({
       bookingId: b.id,
       sessionName: b.session.name,
-      sessionDate: b.session.date,
+      sessionDate: b.occurrenceDate,
       time: b.session.startTime,
       focus: b.session.classType,
       trainerName: b.session.trainer?.name ?? null,
@@ -117,7 +119,7 @@ export async function getLastEpTrainerName(memberId: string): Promise<string | n
       status: { in: ["ATTENDED", "BOOKED"] },
       session: { classType: "Personal Training" },
     },
-    orderBy: { session: { date: "desc" } },
+    orderBy: { occurrenceDate: "desc" },
     select: { session: { select: { trainer: { select: { name: true } } } } },
   });
   return booking?.session.trainer?.name ?? null;
@@ -134,8 +136,8 @@ export async function getMemberPlanAdherence(memberId: string, timeZone: string)
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); // lunes de esta semana
 
   const bookings = await prisma.booking.findMany({
-    where: { memberId, status: { in: ["ATTENDED", "NO_SHOW"] }, session: { date: { gte: since } } },
-    select: { status: true, session: { select: { date: true } } },
+    where: { memberId, status: { in: ["ATTENDED", "NO_SHOW"] }, occurrenceDate: { gte: since } },
+    select: { status: true, occurrenceDate: true },
   });
 
   const committed = bookings.length;
@@ -143,18 +145,18 @@ export async function getMemberPlanAdherence(memberId: string, timeZone: string)
   const pct = committed > 0 ? Math.round((attended / committed) * 100) : null;
   const avgPerWeek = Math.round(committed / 4);
 
-  const weekBookings = bookings.filter((b) => b.session.date >= weekStart);
+  const weekBookings = bookings.filter((b) => b.occurrenceDate >= weekStart);
   const weekCommitted = weekBookings.length;
   const weekAttended = weekBookings.filter((b) => b.status === "ATTENDED").length;
 
   // Racha: semanas consecutivas (terminando en la actual) con al menos una sesión asistida.
   const attendedBookings = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED" },
-    select: { session: { select: { date: true } } },
+    select: { occurrenceDate: true },
   });
   const attendedWeeks = new Set(
-    attendedBookings.map(({ session }) => {
-      const d = new Date(session.date);
+    attendedBookings.map(({ occurrenceDate }) => {
+      const d = new Date(occurrenceDate);
       d.setHours(0, 0, 0, 0);
       d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
       return d.getTime();
@@ -173,10 +175,10 @@ export async function getMemberPlanAdherence(memberId: string, timeZone: string)
 export async function getMemberProgress(memberId: string, timeZone: string) {
   const bookings = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED" },
-    select: { session: { select: { date: true } } },
-    orderBy: { session: { date: "asc" } },
+    select: { occurrenceDate: true },
+    orderBy: { occurrenceDate: "asc" },
   });
-  const dates = bookings.map((b) => b.session.date);
+  const dates = bookings.map((b) => b.occurrenceDate);
 
   const now = zonedNow(timeZone);
   const yearStart = new Date(now.getFullYear(), 0, 1);
@@ -214,13 +216,13 @@ export async function getMemberMonthlyActivity(memberId: string, timeZone: strin
   const since = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
 
   const bookings = await prisma.booking.findMany({
-    where: { memberId, status: "ATTENDED", session: { date: { gte: since } } },
-    select: { session: { select: { date: true } } },
+    where: { memberId, status: "ATTENDED", occurrenceDate: { gte: since } },
+    select: { occurrenceDate: true },
   });
 
   const counts = new Map<string, number>();
   for (const b of bookings) {
-    const d = b.session.date;
+    const d = b.occurrenceDate;
     const key = `${d.getFullYear()}-${d.getMonth()}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -284,6 +286,12 @@ export function sessionStartsAt(date: Date, startTime: string, timeZone: string)
  * entrenador del socio", el socio puede entrenar con distintos entrenadores
  * según la sesión. El resto de huecos de EP los gestiona el entrenador a
  * mano y no aparecen aquí.
+ *
+ * Las series recurrentes se proyectan igual que en la agenda del entrenador
+ * (`expandOccurrences`): antes se filtraba `date` directamente en BD, así que
+ * una sesión "cada semana" solo se podía reservar la semana de su fecha base y
+ * desaparecía del portal a partir de la siguiente, aunque el entrenador la
+ * siguiera viendo en su agenda.
  */
 export async function getBookableSessions(
   orgId: string,
@@ -302,36 +310,45 @@ export async function getBookableSessions(
   const toDay = new Date(fromDay);
   toDay.setDate(toDay.getDate() + BOOKING_WINDOW_DAYS + 1);
 
+  const serviceFilter = [
+    ...(memberContext.hasGroupService ? [{ classType: { not: "Personal Training" } }] : []),
+    ...(memberContext.hasEpService ? [{ classType: "Personal Training", selfBookable: true }] : []),
+  ];
+  if (serviceFilter.length === 0) return [];
+
   const sessions = await prisma.classSession.findMany({
     where: {
       orgId,
       centerId,
       status: "SCHEDULED",
-      date: { gte: fromDay, lt: toDay },
-      OR: [
-        ...(memberContext.hasGroupService ? [{ classType: { not: "Personal Training" } }] : []),
-        ...(memberContext.hasEpService
-          ? [{ classType: "Personal Training", selfBookable: true }]
-          : []),
-      ],
+      AND: [sessionsInRangeWhere(fromDay, toDay), { OR: serviceFilter }],
     },
     include: {
       trainer: { select: { name: true } },
-      bookings: { select: { id: true, memberId: true, status: true } },
+      bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
     },
     orderBy: { date: "asc" },
   });
 
-  return sessions
-    .map((s) => {
-      const startsAt = sessionStartsAt(s.date, s.startTime, timeZone);
-      const activeBookings = s.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW");
-      const myBooking = s.bookings.find((b) => b.memberId === memberId && (b.status === "BOOKED" || b.status === "WAITLISTED"));
+  return expandOccurrences(sessions, fromDay, toDay)
+    .map(({ session: s, date }) => {
+      const startsAt = sessionStartsAt(date, s.startTime, timeZone);
+      const dayBookings = s.bookings.filter((b) => sameDay(b.occurrenceDate, date));
+      const activeBookings = dayBookings.filter(
+        (b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW"
+      );
+      const myBooking = dayBookings.find(
+        (b) => b.memberId === memberId && (b.status === "BOOKED" || b.status === "WAITLISTED")
+      );
       return {
+        // Una serie recurrente comparte `id` entre ocurrencias: la clave de
+        // React y la reserva necesitan además el día concreto.
         id: s.id,
+        occurrenceDate: formatDateParam(date),
+        key: `${s.id}:${formatDateParam(date)}`,
         name: s.name,
         classType: s.classType,
-        date: s.date,
+        date,
         startTime: s.startTime,
         endTime: s.endTime,
         capacity: s.capacity,
@@ -348,6 +365,11 @@ export async function getBookableSessions(
     .filter((s) => s.startsAt.getTime() <= windowEndMs);
 }
 
+/** Igualdad de "día suelto" (medianoche local), la codificación de `ClassSession.date`. */
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
 /** `startsAt` es un instante real (ver `sessionStartsAt`), así que basta con `Date.now()`. */
 export function canCancelWithoutPenalty(startsAt: Date) {
   return startsAt.getTime() - Date.now() >= CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
@@ -358,6 +380,8 @@ export type UpcomingBooking = {
   status: "BOOKED" | "WAITLISTED";
   waitlistPosition: number | null;
   sessionId: string;
+  /** Día concreto de la serie ("YYYY-MM-DD"): el id de sesión no lo distingue. */
+  occurrenceDate: string;
   sessionName: string;
   classType: string;
   startsAt: Date;
@@ -405,18 +429,18 @@ export async function getMemberUpcomingBookings(
     where: {
       memberId,
       status: { in: ["BOOKED", "WAITLISTED"] },
-      session: { date: { gte: zonedToday(timeZone) } },
+      occurrenceDate: { gte: zonedToday(timeZone) },
     },
     select: {
       id: true,
       status: true,
       waitlistPosition: true,
+      occurrenceDate: true,
       session: {
         select: {
           id: true,
           name: true,
           classType: true,
-          date: true,
           startTime: true,
           endTime: true,
           status: true,
@@ -434,10 +458,11 @@ export async function getMemberUpcomingBookings(
       status: b.status as "BOOKED" | "WAITLISTED",
       waitlistPosition: b.waitlistPosition,
       sessionId: b.session.id,
+      occurrenceDate: formatDateParam(b.occurrenceDate),
       sessionName: b.session.name,
       classType: b.session.classType,
-      startsAt: sessionStartsAt(b.session.date, b.session.startTime, timeZone),
-      dayLabel: formatDayLabel(b.session.date),
+      startsAt: sessionStartsAt(b.occurrenceDate, b.session.startTime, timeZone),
+      dayLabel: formatDayLabel(b.occurrenceDate),
       startTime: b.session.startTime,
       endTime: b.session.endTime,
       centerName: b.session.center.name,
@@ -480,7 +505,13 @@ const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GR
  * en `getBookableSessions` dejaba la puerta abierta a reservar por id una clase
  * de otro centro, ya empezada o fuera de la ventana de 7 días.
  */
-export async function bookSessionForMember(member: MemberForBooking, sessionId: string, timeZone: string): Promise<BookingResult> {
+export async function bookSessionForMember(
+  member: MemberForBooking,
+  sessionId: string,
+  timeZone: string,
+  /** Día concreto de la serie que se reserva ("YYYY-MM-DD"); por defecto, la fecha base. */
+  occurrenceDateParam?: string | null
+): Promise<BookingResult> {
   return prisma.$transaction(async (tx) => {
     // Bloquea la fila de la sesión para serializar reservas concurrentes: sin
     // este lock, dos peticiones simultáneas pueden leer el mismo aforo libre y
@@ -489,7 +520,7 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
 
     const cls = await tx.classSession.findUnique({
       where: { id: sessionId },
-      include: { bookings: { select: { status: true } } },
+      include: { bookings: { select: { status: true, occurrenceDate: true } } },
     });
     if (!cls || cls.status !== "SCHEDULED") {
       return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
@@ -498,8 +529,16 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
       return { ok: false as const, error: "Esta clase es de otro centro." };
     }
 
+    // El cliente manda un día suelto; solo se acepta si la serie ocurre de
+    // verdad ese día (si no, se podría "reservar" un martes una clase de los
+    // jueves y aparecer en un roster inexistente).
+    const occurrenceDate = occurrenceDateParam ? parseDateParam(occurrenceDateParam) : cls.date;
+    if (!occursOn(cls, occurrenceDate)) {
+      return { ok: false as const, error: "Esta clase no se imparte ese día." };
+    }
+
     const now = new Date();
-    const startsAt = sessionStartsAt(cls.date, cls.startTime, timeZone);
+    const startsAt = sessionStartsAt(occurrenceDate, cls.startTime, timeZone);
     // RB-RES-001: antelación mínima. RB-RES-002: ventana de 7 días vista.
     if (startsAt.getTime() - now.getTime() < MIN_LEAD_MINUTES * 60 * 1000) {
       return { ok: false as const, error: `Esta clase empieza en menos de ${MIN_LEAD_MINUTES} minutos: ya no admite reservas.` };
@@ -515,11 +554,15 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     }
 
     const existing = await tx.booking.findFirst({
-      where: { sessionId, memberId: member.id, status: { in: ["BOOKED", "WAITLISTED"] } },
+      where: { sessionId, memberId: member.id, occurrenceDate, status: { in: ["BOOKED", "WAITLISTED"] } },
     });
     if (existing) return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
 
-    const activeCount = cls.bookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
+    // Aforo del DÍA reservado, no de la serie entera: sin acotar por ocurrencia
+    // un grupo semanal se daba por lleno en cuanto se acumulaban reservas de
+    // semanas distintas.
+    const dayBookings = cls.bookings.filter((b) => sameDay(b.occurrenceDate, occurrenceDate));
+    const activeCount = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
     const overCapacity = activeCount >= cls.capacity;
 
     // RB-RES-004: máximo 3 reservas activas simultáneas. Se cuentan las mismas
@@ -567,11 +610,12 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
     // La posición en lista de espera se numera sobre los que ya esperan, no
     // sobre el aforo: `activeCount` no crece al añadir gente a la lista, así que
     // contarlo con `activeCount - capacity + 1` daba la posición 1 a todos.
-    const waitlistedCount = cls.bookings.filter((b) => b.status === "WAITLISTED").length;
+    const waitlistedCount = dayBookings.filter((b) => b.status === "WAITLISTED").length;
 
     await tx.booking.create({
       data: {
         sessionId,
+        occurrenceDate,
         memberId: member.id,
         status: overCapacity ? "WAITLISTED" : "BOOKED",
         waitlistPosition: overCapacity ? waitlistedCount + 1 : null,
@@ -592,7 +636,7 @@ export async function bookSessionForMember(member: MemberForBooking, sessionId: 
 export async function cancelBookingForMember(memberId: string, bookingId: string, timeZone: string): Promise<BookingResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, memberId },
-    include: { session: { select: { date: true, startTime: true } } },
+    include: { session: { select: { startTime: true } } },
   });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
 
@@ -602,7 +646,7 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  if (sessionStartsAt(booking.session.date, booking.session.startTime, timeZone).getTime() <= Date.now()) {
+  if (sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone).getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }
 
