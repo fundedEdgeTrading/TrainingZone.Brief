@@ -22,7 +22,7 @@ export type WorkoutWriteResult = { ok: true; programId: string } | { ok: false; 
 
 /** RB-IA-003: el cliente (o el entrenador) solicita una rutina; la IA la genera en DRAFT. */
 export async function requestWorkoutProgram(orgId: string, memberId: string): Promise<WorkoutWriteResult> {
-  const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { id: true, trainerId: true } });
+  const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { id: true } });
   if (!member) return { ok: false, error: "Socio no encontrado." };
 
   const goals = await prisma.clientGoal.findMany({ where: { memberId, isTemplate: false }, select: { label: true } });
@@ -30,13 +30,16 @@ export async function requestWorkoutProgram(orgId: string, memberId: string): Pr
     data: { orgId, memberId, createdByAI: true, status: "DRAFT", payload: buildMockRoutine(goals.map((g) => g.label)) },
   });
 
-  if (member.trainerId) {
+  // Ya no hay un entrenador fijo del socio al que avisar: la notificación va
+  // siempre a dirección del centro (OWNER/CENTER_DIRECTOR de la organización).
+  const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } });
+  for (const director of directors) {
     await createNotificationOnce({
       orgId,
-      recipientUserId: member.trainerId,
+      recipientUserId: director.id,
       kind: "TASK",
       title: "Rutina de IA pendiente de confirmar",
-      body: "Un cliente tiene una rutina generada por IA esperando tu revisión antes de activarse (RB-IA-001/003).",
+      body: "Un cliente tiene una rutina generada por IA esperando revisión antes de activarse (RB-IA-001/003).",
       entityType: "Member",
       entityId: memberId,
     });

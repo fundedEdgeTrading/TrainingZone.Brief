@@ -10,7 +10,6 @@ import { useToast } from "@/components/ui/toast";
 import { MEMBER_STATE_COLOR, MEMBER_STATE_LABEL } from "@/lib/chart-colors";
 import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
 import { deleteMember, updateMemberData } from "./actions";
-import { TrainerAssignSelect } from "./member-profile-forms";
 
 export type MemberDataPanelValues = {
   id: string;
@@ -127,16 +126,12 @@ function Tile({ label, children }: { label: string; children: React.ReactNode })
 export function MemberDataPanel({
   member,
   centers,
-  trainers,
-  trainerId,
   stats,
   activeSubscriptionPlan,
   canDelete,
 }: {
   member: MemberDataPanelValues;
   centers: { id: string; name: string }[];
-  trainers: { id: string; name: string }[];
-  trainerId: string | null;
   stats: { attended: number; noShow: number };
   activeSubscriptionPlan: string | null;
   canDelete: boolean;
@@ -333,14 +328,6 @@ export function MemberDataPanel({
               </div>
             </Tile>
           </div>
-
-          {/* ---- Entrenador responsable ---- */}
-          <section
-            className={`${CARD} px-5 py-[18px]`}
-            style={{ animation: "tzRowIn .4s var(--ease-out-soft) .12s both" }}
-          >
-            <TrainerAssignSelect memberId={member.id} trainerId={trainerId} trainers={trainers} />
-          </section>
 
           {/* ---- Zona de riesgo (solo dirección) ---- */}
           {canDelete && (

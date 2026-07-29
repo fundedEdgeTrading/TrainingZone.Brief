@@ -33,9 +33,9 @@ export async function listMembers(
   });
 }
 
-export async function listActiveMembersForSelect(orgId: string, opts: { trainerId?: string } = {}) {
+export async function listActiveMembersForSelect(orgId: string) {
   return prisma.member.findMany({
-    where: { orgId, state: "ACTIVE", trainerId: opts.trainerId || undefined },
+    where: { orgId, state: "ACTIVE" },
     orderBy: { lastName: "asc" },
     select: { id: true, firstName: true, lastName: true },
   });
@@ -46,7 +46,6 @@ export async function getMemberDetail(orgId: string, memberId: string) {
     where: { id: memberId, orgId },
     include: {
       primaryCenter: true,
-      trainer: { select: { id: true, name: true } },
       subscriptions: { include: { plan: true }, orderBy: { startDate: "desc" } },
       payments: { orderBy: { date: "desc" }, take: 24 },
       bookings: {
@@ -168,13 +167,6 @@ export async function markClientGoalAchieved(orgId: string, goalId: string) {
   const goal = await prisma.clientGoal.findFirst({ where: { id: goalId, orgId }, select: { id: true } });
   if (!goal) return { ok: false as const, error: "Objetivo no encontrado." };
   await prisma.clientGoal.update({ where: { id: goalId }, data: { achievedAt: new Date() } });
-  return { ok: true as const };
-}
-
-export async function setMemberTrainer(orgId: string, memberId: string, trainerId: string | null) {
-  const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { id: true } });
-  if (!member) return { ok: false as const, error: "Socio no encontrado." };
-  await prisma.member.update({ where: { id: memberId }, data: { trainerId } });
   return { ok: true as const };
 }
 

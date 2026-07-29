@@ -108,7 +108,6 @@ export async function createMemberWithInvitation(
     sex?: Sex | null; // BI-2/RB-BI-005: heredado del lead de origen si se respondió
     channel?: string | null;
     originLeadId?: string | null;
-    trainerId?: string | null;
   }
 ) {
   const member = await tx.member.create({
@@ -127,7 +126,6 @@ export async function createMemberWithInvitation(
       sex: params.sex ?? null,
       channel: params.channel ?? null,
       originLeadId: params.originLeadId ?? null,
-      trainerId: params.trainerId ?? null,
     },
   });
 

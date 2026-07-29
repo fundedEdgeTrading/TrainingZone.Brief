@@ -2,11 +2,10 @@ import { prisma } from "@/lib/prisma";
 import type { OfferStatus } from "@prisma/client";
 import { createNotificationOnce } from "@/lib/notifications";
 
-export async function listOffers(orgId: string, opts: { trainerUserId?: string } = {}) {
+export async function listOffers(orgId: string) {
   return prisma.personalizedOffer.findMany({
     where: {
       orgId,
-      member: opts.trainerUserId ? { trainerId: opts.trainerUserId } : undefined,
     },
     include: {
       member: { select: { id: true, firstName: true, lastName: true } },
@@ -24,8 +23,12 @@ export async function generateOfferSuggestions(orgId: string): Promise<number> {
   const since8Weeks = new Date(Date.now() - 56 * 24 * 60 * 60 * 1000);
   const candidates = await prisma.member.findMany({
     where: { orgId, state: "ACTIVE", joinedAt: { lte: since8Weeks } },
-    select: { id: true, firstName: true, lastName: true, trainerId: true, joinedAt: true },
+    select: { id: true, firstName: true, lastName: true, joinedAt: true },
   });
+
+  // Las ofertas ya no se asocian a un entrenador fijo del socio: la notificación
+  // de una nueva sugerencia va a dirección del centro.
+  const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } });
 
   let created = 0;
   for (const member of candidates) {
@@ -50,10 +53,10 @@ export async function generateOfferSuggestions(orgId: string): Promise<number> {
         status: "SUGERIDA",
       },
     });
-    if (member.trainerId) {
+    for (const director of directors) {
       await createNotificationOnce({
         orgId,
-        recipientUserId: member.trainerId,
+        recipientUserId: director.id,
         kind: "TASK",
         title: `Oferta sugerida para ${member.firstName} ${member.lastName}`,
         body: "El motor de ofertas detectó una oportunidad de upsell. Revísala en Ofertas.",

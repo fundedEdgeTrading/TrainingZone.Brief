@@ -82,7 +82,6 @@ async function listCandidateMembers(orgId: string, opts: { q?: string; centerId?
     },
     include: {
       primaryCenter: { select: { id: true, name: true } },
-      trainer: { select: { id: true, name: true } },
       subscriptions: { orderBy: { createdAt: "desc" }, take: 1, include: { plan: { select: { name: true } } } },
       clientFeedback: { orderBy: { submittedAt: "desc" }, take: 1 },
       trainerDebriefs: {
@@ -121,7 +120,7 @@ function toRow(m: Awaited<ReturnType<typeof listCandidateMembers>>[number]): Mem
     firstName: m.firstName,
     lastName: m.lastName,
     planName: m.subscriptions[0]?.plan.name ?? null,
-    trainerName: m.trainer?.name ?? debrief.trainer.name,
+    trainerName: debrief.trainer.name,
     centerId: m.primaryCenter.id,
     centerName: m.primaryCenter.name,
     client,
@@ -216,7 +215,6 @@ export async function getMemberFeedbackDetail(orgId: string, memberId: string): 
     where: { id: memberId, orgId },
     include: {
       primaryCenter: { select: { id: true, name: true } },
-      trainer: { select: { id: true, name: true } },
       subscriptions: { orderBy: { createdAt: "desc" }, take: 1, include: { plan: { select: { name: true } } } },
       clientFeedback: { orderBy: { submittedAt: "desc" }, take: 1 },
       trainerDebriefs: {

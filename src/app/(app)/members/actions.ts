@@ -11,7 +11,6 @@ import {
   assignClientGoal,
   markClientGoalAchieved,
   addClientGoalTemplate,
-  setMemberTrainer,
 } from "@/lib/members-queries";
 
 export type MembersActionResult = { ok: true } | { ok: false; error: string };
@@ -103,13 +102,5 @@ export async function addClientGoalTemplateAction(formData: FormData): Promise<M
   const result = await addClientGoalTemplate(session.user.orgId, String(formData.get("label") ?? ""));
   if (!result.ok) return result;
   revalidatePath("/members");
-  return { ok: true };
-}
-
-export async function setMemberTrainerAction(memberId: string, trainerId: string): Promise<MembersActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
-  const result = await setMemberTrainer(session.user.orgId, memberId, trainerId || null);
-  if (!result.ok) return result;
-  revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }

@@ -89,6 +89,20 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const ownSessionFilter = ownSessionsWhere(trainerUserId);
   const tomorrow = addDays(today, 1);
 
+  // "Mis socios de EP": ya no hay Member.trainerId fijo, así que el criterio
+  // pasa a ser conductual — socios con al menos una reserva (pasada o futura,
+  // ventana de adherencia de 90 días hacia atrás / sin límite hacia delante)
+  // en una sesión de EP impartida por este entrenador.
+  const epMemberIdsRaw = await prisma.booking.findMany({
+    where: {
+      status: { in: ["BOOKED", "ATTENDED", "WAITLISTED"] },
+      session: { orgId, trainerId: trainerUserId, classType: "Personal Training", date: { gte: since90 } },
+    },
+    select: { memberId: true },
+    distinct: ["memberId"],
+  });
+  const epMemberIds = epMemberIdsRaw.map((b) => b.memberId);
+
   const [
     epClientsRaw,
     monthSessions,
@@ -101,7 +115,7 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     orgAdherenceBookings,
   ] = await Promise.all([
     prisma.member.findMany({
-      where: { orgId, trainerId: trainerUserId, state: "ACTIVE" },
+      where: { orgId, id: { in: epMemberIds }, state: "ACTIVE" },
       include: {
         subscriptions: { where: { status: "ACTIVE" }, include: { plan: { select: { name: true } } } },
         bookings: { where: { status: "ATTENDED" }, select: { id: true } },

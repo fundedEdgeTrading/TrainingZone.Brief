@@ -45,7 +45,7 @@ export async function createLeadAction(formData: FormData): Promise<LeadWriteRes
     actor: { userId: session.user.id, role: session.user.role },
     directClose:
       mode === "directo"
-        ? { planId: String(formData.get("planId") ?? "") || null, trainerId: String(formData.get("trainerId") ?? "") || null }
+        ? { planId: String(formData.get("planId") ?? "") || null }
         : null,
   });
   if (result.ok) revalidatePath("/leads");
@@ -103,9 +103,8 @@ export async function convertLeadAction(formData: FormData): Promise<LeadActionR
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const leadId = String(formData.get("leadId") ?? "");
   const planId = String(formData.get("planId") ?? "") || null;
-  const trainerId = String(formData.get("trainerId") ?? "") || null;
   const closeType = (String(formData.get("closeType") ?? "EMBUDO") || "EMBUDO") as "EMBUDO" | "DIRECTO" | "ONLINE";
-  const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, trainerId, closeType });
+  const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, closeType });
   if (!result.ok) return result;
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/members");

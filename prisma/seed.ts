@@ -671,9 +671,11 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
   await prisma.subscription.createMany({ data: subscriptions });
 
-  // F9/RB-PERFIL-002 (decisión §11.4): EP SIEMPRE tiene entrenador individual
-  // asignado explícitamente; "solo grupos" se queda sin trainerId. El entrenador
-  // es el de su franja 1:1, para que ficha y agenda cuenten lo mismo.
+  // F9/RB-PERFIL-002: ya no hay entrenador responsable fijo del socio
+  // (Member.trainerId no existe). Para que la demo sea coherente seguimos
+  // calculando aquí, solo en memoria, "con qué entrenador entrena habitualmente
+  // cada socio de EP" — se usa para poblar sus sesiones concretas
+  // (ClassSession.trainerId) y feedback de ejemplo, nunca se persiste en Member.
   const trainerAssignments: { memberId: string; trainerId: string }[] = [];
   for (const sub of subscriptions) {
     if (sub.status !== SubscriptionStatus.ACTIVE || !epPlanIds.has(sub.planId)) continue;
@@ -682,9 +684,6 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     if (!centerTrainers?.length) continue;
     const slotTrainerId = member.preferredTemplates[0]?.trainerId ?? null;
     trainerAssignments.push({ memberId: member.id, trainerId: slotTrainerId ?? pick(centerTrainers).id });
-  }
-  for (const t of trainerAssignments) {
-    await prisma.member.update({ where: { id: t.memberId }, data: { trainerId: t.trainerId } });
   }
 
   // ---------- Sesiones (agenda) ----------
@@ -1200,6 +1199,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         health?: { zone: string; desc: string; severity: HealthSeverity };
         note?: string;
         futureBooking: boolean;
+        // Con esto el socio firma consentimiento de imágenes y se le genera una
+        // serie de evolución (mediciones + fotos), para tener siempre un socio de
+        // EP con ficha de datos completa (no depende del azar del bloque general).
+        withProgress?: boolean;
       };
       const epClientSpecs: EpClientSpec[] = [
         {
@@ -1273,6 +1276,21 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           debriefEvery: 3,
           futureBooking: true,
         },
+        {
+          firstName: "Marina",
+          lastName: "Prats",
+          emailLocal: "marina.prats.demo",
+          weekday: 6,
+          hour: 11,
+          planKey: "ep8",
+          joinedAt: addDays(TODAY, -(10 * 7 + randInt(3, 10))),
+          weeksBack: 10,
+          noShowEvery: 7,
+          debriefEvery: 4,
+          note: "Socia de EP con ficha completa: fotos y mediciones de evolución.",
+          futureBooking: true,
+          withProgress: true,
+        },
       ];
 
       for (const spec of epClientSpecs) {
@@ -1290,14 +1308,14 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             birthDate: faker.date.birthdate({ min: 20, max: 60, mode: "age" }),
             state: MemberState.ACTIVE,
             joinedAt: spec.joinedAt,
-            trainerId: daniTrainer.id,
             notes: spec.note ?? null,
             consentContract: true,
             consentHealth: true,
-            consentImages: false,
+            consentImages: !!spec.withProgress,
             consentMarketing: true,
             consentContractAt: spec.joinedAt,
             consentHealthAt: spec.joinedAt,
+            consentImagesAt: spec.withProgress ? spec.joinedAt : null,
             consentMarketingAt: spec.joinedAt,
             postalCode: weightedPick(MEMBER_POSTAL_CODES),
             occupation: pick(OCCUPATIONS),
@@ -1316,6 +1334,50 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             sessionsRemaining: plan.sessionsIncluded ? Math.max(3, Math.round(plan.sessionsIncluded * 0.5)) : null,
           },
         });
+
+        if (spec.withProgress) {
+          const daysSinceJoin = Math.floor((TODAY.getTime() - spec.joinedAt.getTime()) / DAY);
+          const takes = randInt(4, 7);
+          const span = Math.min(daysSinceJoin, 150);
+          let weightKg = 60 + Math.random() * 32;
+          let bodyFatPct = 20 + Math.random() * 15;
+          let waistCm = 72 + Math.random() * 24;
+          const stepW = (0.4 + Math.random() * 0.7) * (Math.random() < 0.82 ? 1 : -1);
+          const progressRows: Prisma.MemberProgressEntryCreateManyInput[] = [];
+          for (let k = 0; k < takes; k++) {
+            const days = -Math.round(span - (span / (takes - 1)) * k);
+            const measuredAt = addDays(TODAY, days);
+            const isTanita = k === takes - 1 || k === 0;
+            progressRows.push({
+              id: id(),
+              memberId,
+              date: measuredAt,
+              measuredAt: isTanita ? measuredAt : null,
+              weightKg: Number(weightKg.toFixed(1)),
+              bodyFatPct: Number(bodyFatPct.toFixed(1)),
+              waistCm: Math.round(waistCm),
+              muscleMassKg: Number((weightKg * (1 - bodyFatPct / 100) * 0.52).toFixed(1)),
+              boneMassKg: Number((weightKg * 0.038).toFixed(1)),
+              bodyWaterPct: Number((72 - bodyFatPct * 0.6).toFixed(1)),
+              ...(isTanita
+                ? {
+                    visceralFatRating: clamp(Math.round(bodyFatPct / 4), 1, 15),
+                    bmrKcal: Math.round(370 + 21.6 * weightKg * (1 - bodyFatPct / 100)),
+                    metabolicAge: clamp(Math.round(22 + bodyFatPct * 0.6), 18, 70),
+                    bmi: Number((weightKg / 1.72 ** 2).toFixed(1)),
+                    source: "TANITA" as const,
+                  }
+                : { source: "MANUAL" as const }),
+              photoFrontUrl: bodySilhouetteSvg({ view: "front", weightKg, bodyFatPct, waistCm }),
+              photoSideUrl: bodySilhouetteSvg({ view: "side", weightKg, bodyFatPct, waistCm }),
+              photoBackUrl: bodySilhouetteSvg({ view: "front", weightKg, bodyFatPct, waistCm }),
+            });
+            weightKg -= stepW;
+            bodyFatPct -= stepW * 0.6;
+            waistCm -= stepW * 0.5;
+          }
+          await prisma.memberProgressEntry.createMany({ data: progressRows });
+        }
 
         if (spec.health) {
           await prisma.healthRecord.create({
@@ -1739,7 +1801,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   if (cfg.demoMember && demoMemberId && demoMemberUserId) {
     const demoCenterId = centerIdByKey.get(cfg.demoMember.centerKey)!;
     const demoTrainer = trainersByCenter[demoCenterId]?.[0];
-    await prisma.member.update({ where: { id: demoMemberId }, data: { trainerId: demoTrainer?.id, heightCm: 170 } });
+    await prisma.member.update({ where: { id: demoMemberId }, data: { heightCm: 170 } });
 
     // FB-2: un par de sesiones recientes ya asistidas y sin valorar, para que "Mi
     // plan" del socio demo muestre valoraciones pendientes (slider F16) nada más entrar.

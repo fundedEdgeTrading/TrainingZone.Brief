@@ -8,7 +8,6 @@ import {
   listCentersForOrg,
   listClientGoalTemplates,
 } from "@/lib/members-queries";
-import { listAssignableStaff } from "@/lib/org-queries";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
 import { canDeleteMembers, canManageOrg } from "@/lib/rbac";
@@ -78,7 +77,7 @@ export default async function MemberDetailPage({
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const [stats, healthRecords, notes, trainers, goalTemplates, centers] = await Promise.all([
+  const [stats, healthRecords, notes, goalTemplates, centers] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -87,7 +86,6 @@ export default async function MemberDetailPage({
       actorRole: session.user.role,
     }),
     getMemberNotes(session.user.orgId, member.id),
-    listAssignableStaff(session.user.orgId, ["TRAINER"]),
     listClientGoalTemplates(session.user.orgId),
     listCentersForOrg(session.user.orgId),
   ]);
@@ -132,9 +130,6 @@ export default async function MemberDetailPage({
                   {SERVICE_KIND_LABEL[k]}
                 </Badge>
               ))}
-              <span className="text-xs text-brand-muted-2">
-                {member.trainer ? `Entrenador: ${member.trainer.name}` : "Responsable: Training Zone"}
-              </span>
             </div>
           </div>
         </div>
@@ -153,8 +148,6 @@ export default async function MemberDetailPage({
               content: (
                 <MemberDataPanel
                   centers={centers}
-                  trainers={trainers}
-                  trainerId={member.trainerId}
                   stats={{ attended: stats.attended, noShow: stats.noShow }}
                   activeSubscriptionPlan={manageableSubscription?.plan.name ?? null}
                   canDelete={canDelete}
@@ -490,7 +483,7 @@ export default async function MemberDetailPage({
                       />
                     ) : (
                       <p className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
-                        Solo el entrenador asignado y dirección pueden ver este chat.
+                        Solo el entrenador que ha impartido sesiones recientes a este socio y dirección pueden ver este chat.
                       </p>
                     )}
                   </div>
@@ -503,8 +496,8 @@ export default async function MemberDetailPage({
               content: healthRecords === null ? (
                 <div className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
                   Acceso restringido: tu rol no tiene permiso para ver datos de salud
-                  de este socio (Art. 9 RGPD — acceso limitado a entrenador
-                  asignado y dirección). Ver <span className="italic">Auditoría</span> para el registro de accesos.
+                  de este socio (Art. 9 RGPD — acceso limitado al equipo del centro
+                  y dirección). Ver <span className="italic">Auditoría</span> para el registro de accesos.
                 </div>
               ) : (
                 <div className="space-y-4">

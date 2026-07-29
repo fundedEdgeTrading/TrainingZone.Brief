@@ -63,9 +63,11 @@ export async function submitSessionRatingAction(bookingId: string, input: Sessio
     },
   });
 
-  if (ctx.member.trainerId) {
-    await submitTrainerRating(ctx.session.user.orgId, ctx.session.user.id, { score: trainerScore });
-  }
+  // submitTrainerRating ya no depende de un Member.trainerId fijo: resuelve
+  // por sí solo el entrenador de la última sesión de EP asistida. Si el socio
+  // no es de EP (p.ej. solo grupos) simplemente no hay a quién valorar y
+  // devuelve error, que aquí no bloquea el resto de la valoración de sesión.
+  await submitTrainerRating(ctx.session.user.orgId, ctx.session.user.id, { score: trainerScore });
 
   revalidatePath("/portal/plan");
   revalidatePath("/portal/agenda");

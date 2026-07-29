@@ -1,12 +1,31 @@
 import { prisma } from "@/lib/prisma";
 import type { Role } from "@prisma/client";
 
-/** RB-CHAT-001: visibilidad — entrenador asignado + dirección ven el chat completo; el resto, no. */
+const CHAT_RECENT_WINDOW_DAYS = 90;
+
+/**
+ * RB-CHAT-001: visibilidad — dirección/recepción del centro ven el chat
+ * completo. Un entrenador lo ve si ha impartido o dirigido alguna sesión de
+ * ese socio (vía Booking) en la ventana reciente: ya no hay "el entrenador
+ * asignado" fijo, el acceso se deriva de quién lo ha entrenado de verdad.
+ */
 export async function canAccessMemberChat(orgId: string, memberId: string, actorUserId: string, actorRole: Role) {
-  if (actorRole === "OWNER" || actorRole === "CENTER_DIRECTOR") return true;
+  if (actorRole === "OWNER" || actorRole === "CENTER_DIRECTOR" || actorRole === "RECEPTION") return true;
   if (actorRole !== "TRAINER") return false;
-  const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { trainerId: true } });
-  return member?.trainerId === actorUserId;
+
+  const since = new Date(Date.now() - CHAT_RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const recentBooking = await prisma.booking.findFirst({
+    where: {
+      memberId,
+      session: {
+        orgId,
+        date: { gte: since },
+        OR: [{ trainerId: actorUserId }, { directedByUserId: actorUserId }],
+      },
+    },
+    select: { id: true },
+  });
+  return !!recentBooking;
 }
 
 export async function getOrCreateConversation(orgId: string, memberId: string) {

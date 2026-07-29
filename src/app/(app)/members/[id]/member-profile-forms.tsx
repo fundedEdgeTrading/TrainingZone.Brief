@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import {
   assignClientGoalAction,
   markClientGoalAchievedAction,
   addClientGoalTemplateAction,
-  setMemberTrainerAction,
 } from "../actions";
 
 type Goal = { id: string; label: string; achievedAt: Date | null; createdAt: Date };
@@ -110,47 +109,5 @@ export function GoalTemplateForm() {
         Añadir al catálogo
       </Button>
     </form>
-  );
-}
-
-export function TrainerAssignSelect({
-  memberId,
-  trainerId,
-  trainers,
-}: {
-  memberId: string;
-  trainerId: string | null;
-  trainers: { id: string; name: string }[];
-}) {
-  const [pending, startTransition] = useTransition();
-  const toast = useToast();
-  const [value, setValue] = useState(trainerId ?? "");
-
-  return (
-    <Field label="Entrenador responsable (EP/online)" hint="Cliente de solo grupos → responsable Training Zone (sin asignar)">
-      <div className="flex gap-2">
-        <Select value={value} onChange={(e) => setValue(e.target.value)} className="flex-1">
-          <option value="">— Training Zone (sin asignar) —</option>
-          {trainers.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </Select>
-        <Button
-          size="sm"
-          disabled={pending}
-          onClick={() =>
-            startTransition(async () => {
-              const result = await setMemberTrainerAction(memberId, value);
-              if (result.ok) toast.success("Entrenador actualizado");
-              else toast.error(result.error);
-            })
-          }
-        >
-          Guardar
-        </Button>
-      </div>
-    </Field>
   );
 }
