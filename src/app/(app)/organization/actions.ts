@@ -126,7 +126,8 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
   }
 
   const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
-  await sendMail({
+  // Email de invitación no bloqueante: el staff ya está guardado, un SMTP lento no debe colgar el alta.
+  void sendMail({
     to: email,
     subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}! Tu acceso te espera`,
     html: renderStaffInviteEmail({

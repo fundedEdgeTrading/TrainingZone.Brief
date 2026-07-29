@@ -59,7 +59,8 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   }
 
   const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
-  await sendMail({
+  // Email de bienvenida no bloqueante: el socio ya está guardado, un SMTP lento no debe colgar el alta.
+  void sendMail({
     to: email,
     subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}, ${firstName}! 🎉 Tu acceso te espera`,
     html: renderMemberWelcomeEmail({

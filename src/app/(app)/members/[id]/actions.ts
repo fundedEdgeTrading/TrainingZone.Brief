@@ -423,7 +423,8 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
   });
 
   const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
-  await sendMail({
+  // Email de bienvenida no bloqueante: la invitación ya está guardada, un SMTP lento no debe colgar la acción.
+  void sendMail({
     to: member.email,
     subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}, ${member.firstName}! 🎉 Tu acceso te espera`,
     html: renderMemberWelcomeEmail({
