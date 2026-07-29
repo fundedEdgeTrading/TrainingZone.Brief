@@ -68,6 +68,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/anuncios", label: "Anuncios", section: "Administración" },
     { href: "/rrhh", label: "RRHH", section: "Administración" },
     { href: "/organization", label: "Organización", section: "Administración" },
+    { href: "/puesta-en-marcha", label: "Puesta en marcha", section: "Administración" },
     { href: "/audit", label: "Auditoría", section: "Administración" },
   ],
   CENTER_DIRECTOR: [

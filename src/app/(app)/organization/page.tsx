@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
 import { ActionForm } from "@/components/ui/action-form";
 import { buildConnectOAuthUrl, isStripeConnectConfigured } from "@/lib/stripe-connect";
+import { prisma } from "@/lib/prisma";
+import { ProductsSection } from "./products-section";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
@@ -31,10 +33,14 @@ export default async function OrganizationPage({
   const canOrg = canManageOrg(session.user.role);
   const params = await searchParams;
 
-  const [org, centers, staff] = await Promise.all([
+  const [org, centers, staff, plans] = await Promise.all([
     getOrganization(session.user.orgId),
     getCentersWithCounts(session.user.orgId),
     getStaffWithMemberships(session.user.orgId),
+    prisma.membershipPlan.findMany({
+      where: { orgId: session.user.orgId },
+      orderBy: [{ active: "desc" }, { name: "asc" }],
+    }),
   ]);
 
   const createRoles: Role[] = [
@@ -130,6 +136,9 @@ export default async function OrganizationPage({
           </div>
         </section>
       )}
+
+      {/* ---------- Productos (lo que el gimnasio vende) ---------- */}
+      {canOrg && <ProductsSection plans={plans} />}
 
       {/* ---------- Centros ---------- */}
       <section className="space-y-3">

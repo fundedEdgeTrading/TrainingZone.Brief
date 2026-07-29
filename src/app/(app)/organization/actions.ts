@@ -7,7 +7,8 @@ import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
 import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
-import type { Role } from "@prisma/client";
+import { canAddCenter } from "@/lib/entitlements";
+import type { PlanType, Role } from "@prisma/client";
 
 const STAFF_ROLES: Role[] = [
   "OWNER",
@@ -60,6 +61,11 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
     select: { id: true },
   });
   if (existing) return { ok: false, error: "Ya existe un centro con ese slug." };
+
+  // RB-PLAN-002: el número de centros es lo que se paga. Se comprueba aquí, con
+  // un mensaje que indica la salida concreta en vez de un "no puedes".
+  const allowed = await canAddCenter(session.user.orgId);
+  if (!allowed.ok) return { ok: false, error: allowed.error };
 
   await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, logoUrl } });
   revalidatePath("/organization");
@@ -192,6 +198,100 @@ export async function removeCenterMembership(id: string): Promise<OrgActionResul
   });
   if (!membership) return { ok: false, error: "No se ha encontrado esa imputación." };
   await prisma.centerMembership.delete({ where: { id } });
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
+// ---------- Productos (lo que el gimnasio vende a sus socios) ----------
+// Sin esto un gimnasio real no puede dar de alta sus cuotas ni sus bonos: los
+// planes solo existían si los creaba el seed.
+
+const PLAN_TYPES: PlanType[] = ["MONTHLY", "SESSION_PACK", "DROP_IN", "PERSONAL_TRAINING", "DUO", "ONLINE"];
+
+/** Tipos que consumen sesiones de un bono: para ellos las sesiones incluidas son obligatorias. */
+const PACK_TYPES: PlanType[] = ["SESSION_PACK", "PERSONAL_TRAINING", "DUO"];
+
+function parsePlanForm(formData: FormData) {
+  const name = String(formData.get("name") ?? "").trim();
+  const type = String(formData.get("type") ?? "") as PlanType;
+  const priceEuros = String(formData.get("priceEuros") ?? "").trim().replace(",", ".");
+  const sessionsRaw = String(formData.get("sessionsIncluded") ?? "").trim();
+  const validityRaw = String(formData.get("validityDays") ?? "").trim();
+
+  if (!name) return { ok: false as const, error: "Indica el nombre del producto." };
+  if (!PLAN_TYPES.includes(type)) return { ok: false as const, error: "Tipo de producto no válido." };
+
+  const price = Number(priceEuros);
+  if (!Number.isFinite(price) || price <= 0) return { ok: false as const, error: "El precio debe ser mayor que 0." };
+  // Céntimos: se redondea al entero para no arrastrar errores de coma flotante.
+  const priceCents = Math.round(price * 100);
+
+  const sessionsIncluded = sessionsRaw ? Number(sessionsRaw) : null;
+  if (sessionsIncluded !== null && (!Number.isInteger(sessionsIncluded) || sessionsIncluded <= 0)) {
+    return { ok: false as const, error: "Las sesiones incluidas deben ser un número entero mayor que 0." };
+  }
+  if (PACK_TYPES.includes(type) && sessionsIncluded === null) {
+    return { ok: false as const, error: "Un bono necesita indicar cuántas sesiones incluye." };
+  }
+
+  const validityDays = validityRaw ? Number(validityRaw) : null;
+  if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
+    return { ok: false as const, error: "La validez en días debe ser un número entero mayor que 0." };
+  }
+
+  return { ok: true as const, data: { name, type, priceCents, sessionsIncluded, validityDays } };
+}
+
+export async function createMembershipPlan(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
+  const parsed = parsePlanForm(formData);
+  if (!parsed.ok) return parsed;
+
+  const dup = await prisma.membershipPlan.findFirst({
+    where: { orgId: session.user.orgId, name: parsed.data.name, active: true },
+    select: { id: true },
+  });
+  if (dup) return { ok: false, error: "Ya tienes un producto activo con ese nombre." };
+
+  await prisma.membershipPlan.create({ data: { orgId: session.user.orgId, ...parsed.data } });
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
+export async function updateMembershipPlan(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
+  const planId = String(formData.get("planId") ?? "");
+  const parsed = parsePlanForm(formData);
+  if (!parsed.ok) return parsed;
+
+  const plan = await prisma.membershipPlan.findFirst({
+    where: { id: planId, orgId: session.user.orgId },
+    select: { id: true },
+  });
+  if (!plan) return { ok: false, error: "Producto no encontrado." };
+
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: parsed.data });
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
+/**
+ * Archivar, nunca borrar (RB-VENTA-002): un producto tiene suscripciones y pagos
+ * colgando, y borrarlo dejaría el histórico de cobros sin referencia. Archivado
+ * desaparece de los selectores de venta y sigue visible en el histórico.
+ */
+export async function setMembershipPlanActive(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
+  const planId = String(formData.get("planId") ?? "");
+  const active = String(formData.get("active") ?? "") === "true";
+
+  const plan = await prisma.membershipPlan.findFirst({
+    where: { id: planId, orgId: session.user.orgId },
+    select: { id: true },
+  });
+  if (!plan) return { ok: false, error: "Producto no encontrado." };
+
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { active } });
   revalidatePath("/organization");
   return { ok: true };
 }
