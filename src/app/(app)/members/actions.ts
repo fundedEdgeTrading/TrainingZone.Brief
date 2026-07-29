@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import { canManageMembers, canManageOrg } from "@/lib/rbac";
-import { createMemberWithInvitation, onboardingUrlFor } from "@/lib/invitations";
+import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import {
@@ -66,7 +66,7 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
     html: renderMemberWelcomeEmail({
       memberFirstName: firstName,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: org?.logoUrl || "/brand/tz-logo-white.png",
+      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       centerName: center.name,
       onboardingUrl: onboardingUrlFor(invitation.token),
     }),

@@ -6,6 +6,7 @@ import { createPlatformCheckoutSession } from "@/lib/platform-billing";
 import { sendMail } from "@/lib/mailer";
 import { renderVerifyEmail } from "@/lib/emails/templates";
 import { generateVerifyEmailToken, verifyEmailUrlFor } from "@/lib/email-verification";
+import { absoluteUrl } from "@/lib/invitations";
 
 export type CheckoutActionResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -38,7 +39,7 @@ export async function resendVerificationEmailAction(): Promise<ResendResult> {
       html: renderVerifyEmail({
         directorFirstName: user.name,
         orgName: org?.name ?? "Apta",
-        orgLogoUrl: "/brand/tz-logo-white.png",
+        orgLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
         verifyUrl: verifyEmailUrlFor(token),
       }),
     });
