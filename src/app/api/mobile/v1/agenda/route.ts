@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
           orderBy: { startTime: "asc" },
         }),
         listAssignableStaff(claims.orgId, ["TRAINER"]),
-        listActiveMembersForSelect(claims.orgId, { trainerId: claims.role === "TRAINER" ? claims.sub : undefined }),
+        listActiveMembersForSelect(claims.orgId),
       ])
     : [[], [], []];
 
