@@ -659,6 +659,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     id: string;
     memberId: string;
     planId: string;
+    centerId: string;
     startDate: Date;
     endDate: Date | null;
     status: SubscriptionStatus;
@@ -687,6 +688,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       id: id(),
       memberId: m.id,
       planId: plan.id,
+      // Hereda el centro del socio: hasta este bono es el único centro posible
+      // (mismo backfill que hace la migración para los datos preexistentes).
+      centerId: m.centerId,
       startDate: m.joinedAt,
       endDate: m.cancelledAt,
       status,
@@ -694,6 +698,30 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       sessionsRemaining,
     });
   }
+
+  // RB-AGENDA-003 (escenario del encargo): el socio demo (Marta, bono de 12
+  // grupos en La Jota) tiene ADEMÁS un bono de EP en el OTRO centro —
+  // exactamente el caso "EP en A + grupos en B" que debe poder reservar en
+  // ambos centros. Se añade al mismo array que su bono de grupos, no lo
+  // sustituye.
+  if (cfg.demoMember && demoMemberId) {
+    const otherCenterKey = centersData.find((c) => c.key !== cfg.demoMember!.centerKey)?.key;
+    const otherCenterId = otherCenterKey ? centerIdByKey.get(otherCenterKey) : undefined;
+    if (otherCenterId) {
+      subscriptions.push({
+        id: id(),
+        memberId: demoMemberId,
+        planId: ep4.id,
+        centerId: otherCenterId,
+        startDate: addDays(TODAY, -14),
+        endDate: null,
+        status: SubscriptionStatus.ACTIVE,
+        priceCents: ep4.priceCents,
+        sessionsRemaining: 4,
+      });
+    }
+  }
+
   await prisma.subscription.createMany({ data: subscriptions });
 
   // F9/RB-PERFIL-002: ya no hay entrenador responsable fijo del socio
@@ -1354,6 +1382,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             id: id(),
             memberId,
             planId: plan.id,
+            centerId: daniCenterId,
             startDate: spec.joinedAt,
             endDate: null,
             status: SubscriptionStatus.ACTIVE,
@@ -2454,7 +2483,7 @@ async function main() {
   console.log("    laura.gimeno@trainingzone.es              Entrenadora");
   console.log("    marcos.iglesias@trainingzone.es           Entrenador");
   console.log("    recepcion.lajota@trainingzone.es          Recepción");
-  console.log("    socio@trainingzone.es                     Socio (Marta García López · bono 12 grupos)");
+  console.log("    socio@trainingzone.es                     Socio (Marta García López · bono 12 grupos en La Jota + bono 4 EP en Puerta del Carmen)");
   console.log("  Puerta del Carmen");
   console.log("    direccion.puertacarmen@trainingzone.es    Dirección de centro");
   console.log("    elena.vidal@trainingzone.es               Entrenadora");

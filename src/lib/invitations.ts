@@ -133,6 +133,9 @@ export async function createMemberWithInvitation(
         data: {
           memberId: member.id,
           planId: plan.id,
+          // El bono nace en el centro de alta del socio (RB-AGENDA-003): un
+          // segundo bono en otro centro se añade después, fuera de esta alta.
+          centerId: params.primaryCenterId,
           startDate: new Date(),
           priceCents: plan.priceCents,
           status: "ACTIVE",

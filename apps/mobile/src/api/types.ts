@@ -41,6 +41,8 @@ export type BookableSession = {
   capacity: number;
   bookedCount: number;
   trainerName: string | null;
+  /** Un socio puede tener bonos de varios centros: la lista puede mezclarlos. */
+  centerName: string;
   startsAt: string;
   canBook: boolean;
   myBookingId: string | null;

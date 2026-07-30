@@ -6,7 +6,7 @@ import {
   countsTowardsActiveLimit,
   MAX_ACTIVE_BOOKINGS,
 } from "@/lib/portal-queries";
-import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
+import { getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import { requireMember } from "../../_lib/require-member";
 import { apiOk } from "../../_lib/response";
@@ -17,7 +17,6 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const { claims, member } = auth;
 
-  const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
   const balances = getSessionBalances(
     member.subscriptions.map((s) => ({
       status: s.status,
@@ -32,16 +31,7 @@ export async function GET(req: NextRequest) {
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
   const [sessions, pendingFeedback, upcomingBookings] = await Promise.all([
-    getBookableSessions(
-      claims.orgId,
-      member.primaryCenterId,
-      member.id,
-      {
-        hasGroupService: serviceKinds.includes("GROUP"),
-        hasEpService: serviceKinds.includes("EP"),
-      },
-      timezone
-    ),
+    getBookableSessions(claims.orgId, member.id, activeBookingSubscriptions(member.subscriptions), timezone),
     getPendingSessionFeedback(member.id, timezone),
     getMemberUpcomingBookings(member.id, timezone),
   ]);

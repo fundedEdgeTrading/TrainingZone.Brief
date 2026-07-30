@@ -94,6 +94,20 @@ export function planServiceKind(planType: string): ServiceKind | undefined {
   return PLAN_TYPE_TO_SERVICE[planType];
 }
 
+// RB-AGENDA-003: bonos ACTIVE reducidos a (centro, modalidad) para el motor de
+// reserva — un socio puede tener varios bonos a la vez, de distinta modalidad
+// y distinto centro (getBookableSessions/bookSessionForMember en
+// portal-queries.ts). Se ignoran los bonos ONLINE (biblioteca de vídeo, sin
+// agenda presencial que reservar).
+export function activeBookingSubscriptions(
+  subscriptions: { status: string; centerId: string; plan: { type: string } }[]
+): { centerId: string; kind: "EP" | "GROUP" }[] {
+  return subscriptions
+    .filter((s) => s.status === "ACTIVE")
+    .map((s) => ({ centerId: s.centerId, kind: planServiceKind(s.plan.type) }))
+    .filter((s): s is { centerId: string; kind: "EP" | "GROUP" } => s.kind === "EP" || s.kind === "GROUP");
+}
+
 // RB-RES-006: saldo de sesiones que le queda al socio por tipo de servicio, a
 // partir de sus bonos activos. Un bono con `sessionsRemaining` null = ilimitado
 // (cuota mensual / online). Se agregan varios bonos del mismo servicio.

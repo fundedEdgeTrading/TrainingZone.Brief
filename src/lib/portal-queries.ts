@@ -287,6 +287,11 @@ export function sessionStartsAt(date: Date, startTime: string, timeZone: string)
  * según la sesión. El resto de huecos de EP los gestiona el entrenador a
  * mano y no aparecen aquí.
  *
+ * RB-AGENDA-003: el centro ya no es un parámetro fijo (el del socio) sino que
+ * lo decide cada bono ACTIVE por separado — un socio puede tener un bono de EP
+ * en un centro y otro de grupos en otro centro de la misma organización, y ve
+ * las clases de cada modalidad en el centro de su bono correspondiente.
+ *
  * Las series recurrentes se proyectan igual que en la agenda del entrenador
  * (`expandOccurrences`): antes se filtraba `date` directamente en BD, así que
  * una sesión "cada semana" solo se podía reservar la semana de su fecha base y
@@ -295,9 +300,8 @@ export function sessionStartsAt(date: Date, startTime: string, timeZone: string)
  */
 export async function getBookableSessions(
   orgId: string,
-  centerId: string,
   memberId: string,
-  memberContext: { hasGroupService: boolean; hasEpService: boolean },
+  activeSubscriptions: { centerId: string; kind: "EP" | "GROUP" }[],
   timeZone: string
 ) {
   const now = new Date();
@@ -310,20 +314,25 @@ export async function getBookableSessions(
   const toDay = new Date(fromDay);
   toDay.setDate(toDay.getDate() + BOOKING_WINDOW_DAYS + 1);
 
-  const serviceFilter = [
-    ...(memberContext.hasGroupService ? [{ classType: { not: "Personal Training" } }] : []),
-    ...(memberContext.hasEpService ? [{ classType: "Personal Training", selfBookable: true }] : []),
-  ];
-  if (serviceFilter.length === 0) return [];
+  // Una condición OR por cada (centro, modalidad) de bono activo, no un único
+  // filtro de centro: dos bonos del mismo tipo en el mismo centro producirían
+  // una condición repetida, pero Prisma la tolera sin problema.
+  const uniqueSubs = new Map(activeSubscriptions.map((s) => [`${s.centerId}:${s.kind}`, s]));
+  const orFilters = [...uniqueSubs.values()].map(({ centerId, kind }) =>
+    kind === "EP"
+      ? { centerId, classType: "Personal Training", selfBookable: true }
+      : { centerId, classType: { not: "Personal Training" } }
+  );
+  if (orFilters.length === 0) return [];
 
   const sessions = await prisma.classSession.findMany({
     where: {
       orgId,
-      centerId,
       status: "SCHEDULED",
-      AND: [sessionsInRangeWhere(fromDay, toDay), { OR: serviceFilter }],
+      AND: [sessionsInRangeWhere(fromDay, toDay), { OR: orFilters }],
     },
     include: {
+      center: { select: { name: true } },
       trainer: { select: { name: true } },
       bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
     },
@@ -354,6 +363,9 @@ export async function getBookableSessions(
         capacity: s.capacity,
         bookedCount: activeBookings.length,
         trainerName: s.trainer?.name ?? null,
+        // Una lista de reserva puede mezclar sesiones de varios centros de la
+        // organización (RB-AGENDA-003): la tarjeta necesita indicar cuál.
+        centerName: s.center.name,
         startsAt,
         canBook: startsAt.getTime() - now.getTime() >= MIN_LEAD_MINUTES * 60 * 1000,
         canCancelFreely: canCancelWithoutPenalty(startsAt),
@@ -490,7 +502,13 @@ export type BookingResult =
 type MemberForBooking = {
   id: string;
   primaryCenterId: string;
-  subscriptions: { id: string; status: string; sessionsRemaining: number | null; plan: { type: string } }[];
+  subscriptions: {
+    id: string;
+    status: string;
+    centerId: string;
+    sessionsRemaining: number | null;
+    plan: { type: string };
+  }[];
 };
 
 const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GROUP: "grupos reducidos" };
@@ -524,9 +542,6 @@ export async function bookSessionForMember(
     });
     if (!cls || cls.status !== "SCHEDULED") {
       return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
-    }
-    if (cls.centerId !== member.primaryCenterId) {
-      return { ok: false as const, error: "Esta clase es de otro centro." };
     }
 
     // El cliente manda un día suelto; solo se acepta si la serie ocurre de
@@ -581,8 +596,11 @@ export async function bookSessionForMember(
     let chargeSubscriptionId: string | null = null;
 
     if (!overCapacity) {
+      // RB-AGENDA-003: exige también el centro de la clase — un bono de EP en
+      // otro centro de la organización no cubre esta sesión, igual que uno de
+      // otra modalidad. El mensaje de error es el mismo para ambos casos.
       const matching = member.subscriptions.filter(
-        (s) => s.status === "ACTIVE" && planServiceKind(s.plan.type) === kind
+        (s) => s.status === "ACTIVE" && s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
       );
       if (matching.length === 0) {
         return {

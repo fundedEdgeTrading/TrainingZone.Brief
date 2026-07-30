@@ -8,7 +8,7 @@ import {
   MAX_ACTIVE_BOOKINGS,
   BOOKING_WINDOW_DAYS,
 } from "@/lib/portal-queries";
-import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
+import { getMemberServiceKinds, getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
 import { getOnlineWorkouts } from "@/lib/online-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import SessionCard from "./session-card";
@@ -39,16 +39,7 @@ export default async function PortalAgendaPage() {
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
   const [sessions, pendingFeedback, onlineWorkouts, upcomingBookings] = await Promise.all([
-    getBookableSessions(
-      session.user.orgId,
-      member.primaryCenterId,
-      member.id,
-      {
-        hasGroupService: serviceKinds.includes("GROUP"),
-        hasEpService: serviceKinds.includes("EP"),
-      },
-      timezone
-    ),
+    getBookableSessions(session.user.orgId, member.id, activeBookingSubscriptions(member.subscriptions), timezone),
     getPendingSessionFeedback(member.id, timezone),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
     getMemberUpcomingBookings(member.id, timezone),

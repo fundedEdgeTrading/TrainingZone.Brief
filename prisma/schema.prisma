@@ -103,6 +103,7 @@ model Center {
   leads            Lead[]
   timeClockEntries TimeClockEntry[]
   announcements    Announcement[]
+  subscriptions    Subscription[]
 
   @@unique([orgId, slug])
   @@index([orgId])
@@ -532,12 +533,20 @@ model Subscription {
   pauseUntil DateTime? // null + status=FROZEN = congelación indefinida
   cancelAt   DateTime? // fecha futura en la que el job de F10 pasa a CANCELLED
 
+  // RB-AGENDA-003: el bono, no `Member.primaryCenterId`, decide dónde puede
+  // reservar el socio. Un socio puede tener varios bonos ACTIVE a la vez si son
+  // de distinta modalidad (EP/grupos), y pueden ser de centros distintos de la
+  // misma organización.
+  centerId String
+
   member   Member         @relation(fields: [memberId], references: [id])
   plan     MembershipPlan @relation(fields: [planId], references: [id])
+  center   Center         @relation(fields: [centerId], references: [id])
   payments Payment[]
   bookings Booking[]
 
   @@index([memberId])
+  @@index([centerId])
 }
 
 // ---------- Feedback (cliente vs. debrief del entrenador) ----------
