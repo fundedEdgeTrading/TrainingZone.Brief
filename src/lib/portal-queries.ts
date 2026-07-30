@@ -595,19 +595,25 @@ export async function bookSessionForMember(
     const kind = sessionServiceKind(cls.classType);
     let chargeSubscriptionId: string | null = null;
 
+    // RB-AGENDA-003: exige también el centro de la clase — un bono de EP en
+    // otro centro de la organización no cubre esta sesión, igual que uno de
+    // otra modalidad. El mensaje de error es el mismo para ambos casos. Esta
+    // comprobación corre siempre, también en lista de espera: es la única
+    // frontera que impide reservar por `sessionId` una clase de otra
+    // organización o sin bono aplicable (antes de RB-AGENDA-003 la cubría el
+    // `cls.centerId !== member.primaryCenterId` de más arriba, que sí corría
+    // incondicionalmente).
+    const matching = member.subscriptions.filter(
+      (s) => s.status === "ACTIVE" && s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
+    );
+    if (matching.length === 0) {
+      return {
+        ok: false as const,
+        error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.`,
+      };
+    }
+
     if (!overCapacity) {
-      // RB-AGENDA-003: exige también el centro de la clase — un bono de EP en
-      // otro centro de la organización no cubre esta sesión, igual que uno de
-      // otra modalidad. El mensaje de error es el mismo para ambos casos.
-      const matching = member.subscriptions.filter(
-        (s) => s.status === "ACTIVE" && s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
-      );
-      if (matching.length === 0) {
-        return {
-          ok: false as const,
-          error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.`,
-        };
-      }
       // Bono ilimitado (sessionsRemaining null): no descuenta saldo.
       const unlimited = matching.find((s) => s.sessionsRemaining == null);
       if (!unlimited) {
