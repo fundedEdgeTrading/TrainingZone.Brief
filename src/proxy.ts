@@ -18,6 +18,7 @@ const PUBLIC_PATHS = [
   "/activar",
   "/verificar-email",
   "/recuperar-clave",
+  "/gestionar-suscripcion",
   "/servicio-no-disponible",
   "/api/jobs",
   "/api/stripe",

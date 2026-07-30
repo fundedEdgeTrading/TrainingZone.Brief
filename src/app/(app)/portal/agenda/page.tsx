@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import {
   getMemberForUser,
@@ -136,7 +137,10 @@ export default async function PortalAgendaPage() {
               {depleted.map((d) => (SERVICE_LABEL[d.serviceKind] ?? d.serviceKind).toLowerCase()).join(" y ")}.
             </div>
             <p className="text-[13px] text-brand-text-2 mt-0.5">
-              Renueva tu bono en recepción para seguir reservando tus sesiones.
+              Renueva tu bono para seguir reservando tus sesiones.{" "}
+              <Link href="/portal/comprar" className="font-semibold underline underline-offset-2 hover:text-critical">
+                Comprar o renovar →
+              </Link>
             </p>
           </div>
         </div>

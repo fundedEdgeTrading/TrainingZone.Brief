@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { getPublicMembershipContext } from "@/lib/public-membership-queries";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
+import MemberBillingLinkForm from "./member-billing-link-form";
 
 export const metadata: Metadata = { title: "Hazte socio · Training Zone" };
 
@@ -121,6 +122,16 @@ export default async function PublicMembershipPage({
             </div>
           </form>
         )}
+
+        <div className="mt-8 pt-6 border-t border-brand-border">
+          <h2 className="font-display font-bold text-sm uppercase tracking-[.03em] text-brand-text">
+            ¿Ya eres socio?
+          </h2>
+          <p className="text-xs text-brand-muted mt-1 mb-3">
+            Gestiona tu suscripción — cambia tu método de pago o cancela tu cuota sin contraseña.
+          </p>
+          <MemberBillingLinkForm orgSlug={orgSlug} centerSlug={centerSlug} />
+        </div>
       </div>
     </div>
   );

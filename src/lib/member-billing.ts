@@ -125,10 +125,12 @@ export async function createMemberCheckout(params: {
 
   const recurring = isRecurring(plan.type);
   // "landing" (checkout público anónimo, sin sesión) no tiene ni /billing ni
-  // /portal/plan a los que volver: aterriza en una confirmación pública
+  // /portal/comprar a los que volver: aterriza en una confirmación pública
   // genérica, igual que el checkout anónimo de organizaciones vuelve a
-  // /activar en vez de a un panel (platform-billing.ts).
-  const returnPath = origin === "portal" ? "/portal/plan" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
+  // /activar en vez de a un panel (platform-billing.ts). "portal" (F6) vuelve
+  // a /portal/comprar, no a /portal/plan — ese es "Mi plan de entrenamiento"
+  // (objetivos/programas), sin relación con facturación.
+  const returnPath = origin === "portal" ? "/portal/comprar" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
 
   const checkoutSession = await stripe.checkout.sessions.create(
     {

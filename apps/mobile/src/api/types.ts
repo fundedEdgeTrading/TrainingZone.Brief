@@ -99,6 +99,12 @@ export type AgendaResponse = {
 export type BookSessionResponse = { waitlisted: boolean };
 export type CancelBookingResponse = { cancelled: boolean };
 
+// ---------- Autoservicio de facturación (F6) ----------
+// La app abre `url` en el navegador externo del dispositivo, nunca en un
+// WebView incrustado (Stripe Checkout/Billing Portal no están pensados para eso).
+export type BillingCheckoutResponse = { url: string };
+export type BillingPortalResponse = { url: string };
+
 export type NotificationItem = {
   id: string;
   kind: string;
