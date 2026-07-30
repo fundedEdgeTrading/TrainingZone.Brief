@@ -46,7 +46,7 @@ export async function getMemberDetail(orgId: string, memberId: string) {
     where: { id: memberId, orgId },
     include: {
       primaryCenter: true,
-      subscriptions: { include: { plan: true }, orderBy: { startDate: "desc" } },
+      subscriptions: { include: { plan: true, center: true }, orderBy: { startDate: "desc" } },
       payments: { orderBy: { date: "desc" }, take: 24 },
       bookings: {
         orderBy: { bookedAt: "desc" },

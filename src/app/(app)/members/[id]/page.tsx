@@ -6,6 +6,7 @@ import {
   getMemberNotes,
   getMemberServiceKinds,
   listCentersForOrg,
+  listActivePlansForOrg,
   listClientGoalTemplates,
 } from "@/lib/members-queries";
 import { getHealthRecordsForMember } from "@/lib/health-access";
@@ -28,6 +29,7 @@ import {
   CancelScheduledCancellationButton,
   UpdateSubscriptionPriceForm,
   AddOneOffProductForm,
+  AddSubscriptionForm,
 } from "./subscription-forms";
 import { canManageBilling } from "@/lib/rbac";
 import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
@@ -66,6 +68,10 @@ function initials(first: string, last: string) {
   return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase();
 }
 
+function sessionsLabel(sessionsRemaining: number | null) {
+  return sessionsRemaining == null ? "Ilimitadas" : `${sessionsRemaining}`;
+}
+
 export default async function MemberDetailPage({
   params,
 }: {
@@ -77,7 +83,7 @@ export default async function MemberDetailPage({
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const [stats, healthRecords, notes, goalTemplates, centers] = await Promise.all([
+  const [stats, healthRecords, notes, goalTemplates, centers, plans] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -88,10 +94,20 @@ export default async function MemberDetailPage({
     getMemberNotes(session.user.orgId, member.id),
     listClientGoalTemplates(session.user.orgId),
     listCentersForOrg(session.user.orgId),
+    listActivePlansForOrg(session.user.orgId),
   ]);
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
-  const manageableSubscription = member.subscriptions.find((s) => s.status === "ACTIVE" || s.status === "FROZEN");
+  // RB-AGENDA-003: un socio puede tener varios bonos ACTIVE/FROZEN a la vez
+  // (EP y grupos, en centros distintos) — la pestaña "Contratación" gestiona
+  // cada uno por separado, no solo el primero.
+  const manageableSubscriptions = member.subscriptions.filter((s) => s.status === "ACTIVE" || s.status === "FROZEN");
+  const activeSubscriptionSummary =
+    manageableSubscriptions.length === 0
+      ? null
+      : manageableSubscriptions.length === 1
+        ? manageableSubscriptions[0].plan.name
+        : `${manageableSubscriptions.length} bonos activos`;
   const canManageSub = canManageBilling(session.user.role);
   const canDelete = canDeleteMembers(session.user.role);
 
@@ -149,7 +165,7 @@ export default async function MemberDetailPage({
                 <MemberDataPanel
                   centers={centers}
                   stats={{ attended: stats.attended, noShow: stats.noShow }}
-                  activeSubscriptionPlan={manageableSubscription?.plan.name ?? null}
+                  activeSubscriptionPlan={activeSubscriptionSummary}
                   canDelete={canDelete}
                   member={{
                     id: member.id,
@@ -286,6 +302,7 @@ export default async function MemberDetailPage({
                         <thead className="text-xs text-faint text-left">
                           <tr>
                             <th className="pb-2">Plan</th>
+                            <th className="pb-2">Centro</th>
                             <th className="pb-2">Inicio</th>
                             <th className="pb-2">Fin</th>
                             <th className="pb-2">Estado</th>
@@ -298,6 +315,7 @@ export default async function MemberDetailPage({
                           {member.subscriptions.map((s) => (
                             <tr key={s.id} className="border-t border-tz-sand">
                               <td className="py-2">{s.plan.name}</td>
+                              <td className="py-2 text-text-2">{s.center.name}</td>
                               <td className="py-2">{s.startDate.toLocaleDateString("es-ES")}</td>
                               <td className="py-2">{s.endDate ? s.endDate.toLocaleDateString("es-ES") : "—"}</td>
                               <td className="py-2">{s.status}</td>
@@ -313,25 +331,42 @@ export default async function MemberDetailPage({
                     </div>
                   </div>
 
-                  {canManageSub && manageableSubscription && (
-                    <div className="border border-tz-linen rounded-lg p-4 space-y-5 bg-tz-bone/40">
-                      <h4 className="text-xs font-semibold text-muted uppercase">
-                        Gestión de suscripción · {manageableSubscription.plan.name}
-                      </h4>
+                  {canManageSub && (
+                    <div className="space-y-4">
+                      {manageableSubscriptions.map((s) => (
+                        <div key={s.id} className="border border-tz-linen rounded-lg p-4 space-y-5 bg-tz-bone/40">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <h4 className="text-xs font-semibold text-muted uppercase">
+                              Gestión de bono · {s.plan.name}
+                            </h4>
+                            <div className="flex items-center gap-2">
+                              <Badge tone="neutral" dot={false}>
+                                {s.center.name}
+                              </Badge>
+                              <span className="text-xs text-brand-muted tz-nums">{sessionsLabel(s.sessionsRemaining)} sesiones</span>
+                            </div>
+                          </div>
 
-                      {manageableSubscription.status === "ACTIVE" ? (
-                        <FreezeSubscriptionForm subscriptionId={manageableSubscription.id} />
-                      ) : (
-                        <ResumeSubscriptionButton subscriptionId={manageableSubscription.id} memberId={member.id} />
-                      )}
+                          {s.status === "ACTIVE" ? (
+                            <FreezeSubscriptionForm subscriptionId={s.id} />
+                          ) : (
+                            <ResumeSubscriptionButton subscriptionId={s.id} memberId={member.id} />
+                          )}
 
-                      <UpdateSubscriptionPriceForm subscriptionId={manageableSubscription.id} />
+                          <UpdateSubscriptionPriceForm subscriptionId={s.id} />
 
-                      {manageableSubscription.cancelAt ? (
-                        <CancelScheduledCancellationButton subscriptionId={manageableSubscription.id} memberId={member.id} />
-                      ) : (
-                        <ScheduleCancellationForm subscriptionId={manageableSubscription.id} />
-                      )}
+                          {s.cancelAt ? (
+                            <CancelScheduledCancellationButton subscriptionId={s.id} memberId={member.id} />
+                          ) : (
+                            <ScheduleCancellationForm subscriptionId={s.id} />
+                          )}
+                        </div>
+                      ))}
+
+                      <div className="border border-tz-linen rounded-lg p-4 space-y-3 bg-tz-bone/40">
+                        <p className="text-xs font-semibold text-muted uppercase">Añadir bono</p>
+                        <AddSubscriptionForm memberId={member.id} plans={plans} centers={centers} />
+                      </div>
 
                       <div className="pt-1 border-t border-tz-sand">
                         <p className="text-xs text-brand-muted mb-2">Venta puntual (RB-PAGO-005)</p>

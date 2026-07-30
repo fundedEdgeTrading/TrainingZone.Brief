@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
@@ -15,6 +16,12 @@ import {
 
 export type MembersActionResult = { ok: true } | { ok: false; error: string };
 
+// Cada fila del bloque "Bonos" del alta manda un par (plan, centro) como
+// entradas paralelas `bonoPlanId`/`bonoCenterId` — mismo idioma que el
+// `formData.getAll("paymentId")` ya usado en subscription-actions.ts para
+// listas, en vez de inventar una notación `bono[0][planId]`.
+const bonoSchema = z.object({ planId: z.string().min(1), centerId: z.string().min(1) });
+
 export async function createMember(formData: FormData): Promise<MembersActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   if (!canManageMembers(session.user.role)) return { ok: false, error: "No tienes permiso para dar de alta socios." };
@@ -25,12 +32,18 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   const phone = String(formData.get("phone") ?? "").trim() || null;
   const birthRaw = String(formData.get("birthDate") ?? "").trim();
   const centerId = String(formData.get("centerId") ?? "");
-  const planId = String(formData.get("planId") ?? "") || null;
   const photoUrl = String(formData.get("photoUrl") ?? "").trim() || null;
 
   if (!firstName || !lastName || !email || !centerId) {
     return { ok: false, error: "Completa el nombre, apellidos, email y centro." };
   }
+
+  const bonoPlanIds = formData.getAll("bonoPlanId").map(String);
+  const bonoCenterIds = formData.getAll("bonoCenterId").map(String);
+  const bonosParsed = z
+    .array(bonoSchema)
+    .safeParse(bonoPlanIds.map((planId, i) => ({ planId, centerId: bonoCenterIds[i] ?? "" })));
+  if (!bonosParsed.success) return { ok: false, error: "Cada bono necesita un plan y un centro." };
 
   const center = await prisma.center.findFirst({ where: { id: centerId, orgId: session.user.orgId }, select: { id: true, name: true } });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
@@ -49,7 +62,7 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
       email,
       phone,
       birthDate,
-      planId,
+      bonos: bonosParsed.data,
     })
   );
 
