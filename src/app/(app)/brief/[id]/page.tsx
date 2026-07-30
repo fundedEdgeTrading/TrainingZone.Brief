@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getSessionBrief } from "@/lib/brief-queries";
-import { parseDateParam } from "@/lib/date-utils";
-import { occursOn } from "@/lib/session-occurrences";
+import { formatDateParam } from "@/lib/date-utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import BriefCard from "./brief-card";
@@ -26,15 +25,14 @@ export default async function SessionBriefPage({
     sessionId: id,
     actorUserId: session.user.id,
     actorRole: session.user.role,
+    d,
   });
   if (!brief) notFound();
 
-  const { session: cls, roster, canSeeHealth } = brief;
-
   // `cls.date` es la fecha base de la serie. Para una sesión recurrente, el día
   // que el entrenador está mirando llega en `?d=` desde el índice o el panel;
-  // solo lo aceptamos si de verdad hay una ocurrencia ese día.
-  const occurrenceDate = d && occursOn(cls, parseDateParam(d)) ? parseDateParam(d) : cls.date;
+  // `getSessionBrief` ya lo valida y acota el roster a esa ocurrencia.
+  const { session: cls, roster, canSeeHealth, occurrenceDate } = brief;
 
   // Primero quienes necesitan atención (evitar > adaptar > resto), luego alfabético.
   const sorted = [...roster].sort(
@@ -51,7 +49,10 @@ export default async function SessionBriefPage({
     <div className="tz-page space-y-4">
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div className="space-y-1.5">
-          <Link href={`/agenda/session/${cls.id}`} className="text-sm text-tz-black hover:underline">
+          <Link
+            href={`/agenda/session/${cls.id}?d=${formatDateParam(occurrenceDate)}`}
+            className="text-sm text-tz-black hover:underline"
+          >
             ← Volver al detalle de sesión
           </Link>
           <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
@@ -109,7 +110,13 @@ export default async function SessionBriefPage({
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
           {sorted.map((entry, i) => (
-            <BriefCard key={entry.bookingId} entry={entry} sessionId={cls.id} canSeeHealth={canSeeHealth} delay={i < 6 ? i * 0.05 : 0} />
+            <BriefCard
+              key={entry.bookingId}
+              entry={entry}
+              sessionId={cls.id}
+              canSeeHealth={canSeeHealth}
+              delay={i < 6 ? i * 0.05 : 0}
+            />
           ))}
         </div>
       )}

@@ -75,6 +75,7 @@ export default function UpcomingBookings({ bookings }: { bookings: UpcomingBooki
               </div>
               <BookingButton
                 sessionId={b.sessionId}
+                occurrenceDate={b.occurrenceDate}
                 myBookingId={b.bookingId}
                 myBookingStatus={b.status}
                 full={false}

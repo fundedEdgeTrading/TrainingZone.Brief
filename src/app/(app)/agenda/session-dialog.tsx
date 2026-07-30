@@ -24,6 +24,10 @@ export type DialogState = {
   trainerId: string;
   memberId: string | null;
   memberQuery: string;
+  /** Plazas del grupo reducido (el EP es siempre 1 a 1). */
+  capacity: number;
+  /** RB-AGENDA-002: la franja de EP queda abierta a que el socio la reserve. */
+  selfBookable: boolean;
   isTrial: boolean;
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recEnd: "forever" | "until";
@@ -98,6 +102,8 @@ export default function SessionDialog({
     fd.set("startTime", dlg.startHHMM);
     fd.set("endTime", dlg.endHHMM);
     if (dlg.memberId) fd.set("memberId", dlg.memberId);
+    fd.set("capacity", String(dlg.capacity));
+    if (dlg.type === "personal" && dlg.selfBookable) fd.set("selfBookable", "on");
     if (dlg.isTrial) fd.set("isTrial", "on");
     fd.set("recurrence", dlg.recurrence);
     if (dlg.recurrence !== "NONE" && dlg.recEnd === "until") fd.set("recUntil", dlg.recUntil);
@@ -238,6 +244,47 @@ export default function SessionDialog({
               )}
             </div>
 
+            {dlg.type === "reduced" ? (
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Plazas</div>
+                <input
+                  type="number"
+                  name="capacity"
+                  min={1}
+                  max={30}
+                  aria-label="Plazas del grupo"
+                  value={dlg.capacity}
+                  onChange={(e) => patch({ capacity: Number(e.target.value) || 1 })}
+                  className={`w-[110px] ${inputCls}`}
+                />
+                <p className="text-xs text-muted mt-1.5">
+                  Aforo del grupo. Al llenarse, los socios entran en lista de espera.
+                </p>
+              </div>
+            ) : (
+              /* RB-AGENDA-001/002: sin esto la franja de EP nacía cerrada y el
+                 socio no la veía nunca en su portal. */
+              <label
+                onClick={() => patch({ selfBookable: !dlg.selfBookable })}
+                className="flex items-start gap-2.5 cursor-pointer select-none"
+              >
+                <input type="checkbox" checked={dlg.selfBookable} readOnly className="sr-only" aria-label="Reservable por el socio desde su portal" />
+                <span
+                  aria-hidden
+                  className="w-[18px] h-[18px] rounded-[5px] shrink-0 flex items-center justify-center text-white text-xs mt-0.5"
+                  style={{ border: `2px solid ${dlg.selfBookable ? "var(--color-tz-black)" : "var(--color-muted)"}`, background: dlg.selfBookable ? "var(--color-tz-black)" : "transparent" }}
+                >
+                  {dlg.selfBookable ? "✓" : ""}
+                </span>
+                <span className="text-sm text-brand-text">
+                  Reservable por el socio desde su portal{" "}
+                  <span className="text-muted text-xs">
+                    · si lo desmarcas, la franja solo la agendas tú
+                  </span>
+                </span>
+              </label>
+            )}
+
             <label onClick={() => patch({ isTrial: !dlg.isTrial })} className="flex items-center gap-2.5 cursor-pointer select-none">
               <span
                 className="w-[18px] h-[18px] rounded-[5px] shrink-0 flex items-center justify-center text-white text-xs"
@@ -258,8 +305,13 @@ export default function SessionDialog({
                   const sel = dlg.trainerId === t.id;
                   return (
                     <TrainerTooltip key={t.id} name={t.name} color={color} className="shrink-0">
+                      {/* El círculo solo se identificaba por color y tooltip al
+                          pasar el ratón: sin nombre accesible no había forma de
+                          elegir entrenador con teclado o lector de pantalla. */}
                       <button
                         onClick={() => patch({ trainerId: t.id })}
+                        aria-label={`Entrenador ${t.name}`}
+                        aria-pressed={sel}
                         className="w-7 h-7 rounded-full text-white text-sm shrink-0"
                         style={{ background: color, boxShadow: sel ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : "none" }}
                       >
@@ -303,8 +355,10 @@ export default function SessionDialog({
           </div>
 
           {dlg.mode === "edit" && dlg.id && (isDirection || dlg.trainerId === currentUserId) && (
+            /* Con `?d=` para que el brief sea el de ESTE día de la serie y no
+               el de la ocurrencia base. */
             <Link
-              href={`/brief/${dlg.id}`}
+              href={`/brief/${dlg.id}?d=${dlg.dateISO}`}
               className="mt-5 flex items-center justify-center gap-2 w-full h-[42px] rounded-control border border-brand-border bg-white text-sm font-semibold text-brand-text hover:bg-tz-bone hover:border-brand-border-hover transition-colors"
             >
               Ver debrief de la sesión →

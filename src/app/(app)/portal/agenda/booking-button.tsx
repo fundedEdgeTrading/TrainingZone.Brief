@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/toast";
 
 export default function BookingButton({
   sessionId,
+  occurrenceDate,
   myBookingId,
   myBookingStatus,
   full,
@@ -14,6 +15,8 @@ export default function BookingButton({
   variant = "card",
 }: {
   sessionId: string;
+  /** Día concreto de la serie ("YYYY-MM-DD"): una sesión recurrente comparte id entre ocurrencias. */
+  occurrenceDate: string;
   myBookingId: string | null;
   myBookingStatus: string | null;
   full: boolean;
@@ -41,7 +44,7 @@ export default function BookingButton({
 
   const handleBook = () => {
     startTransition(async () => {
-      const result = await bookSession(sessionId);
+      const result = await bookSession(sessionId, occurrenceDate);
       if (result.ok) {
         toast.success(result.waitlisted ? "Te has unido a la lista de espera." : "¡Reserva confirmada!");
       } else {

@@ -649,6 +649,16 @@ model Booking {
   checkedInAt      DateTime?
   cancelledAt      DateTime?
 
+  // Día concreto al que corresponde la reserva (medianoche local, misma
+  // codificación que `ClassSession.date`). Una serie recurrente es UNA fila de
+  // ClassSession y sus ocurrencias se derivan en lectura, así que sin este
+  // campo todas las reservas de la serie colgaban del mismo `sessionId` y se
+  // mezclaban: quien reservaba el martes que viene aparecía en el brief de hoy,
+  // el aforo se contaba sumando semanas distintas y "mis próximas reservas"
+  // usaba la fecha base de la serie. En una sesión sin recurrencia coincide
+  // siempre con `session.date`.
+  occurrenceDate DateTime
+
   // Bono del que se descontó la sesión al reservar (RB-RES-006): al cancelar se
   // devuelve el saldo a esta misma suscripción. Null cuando la reserva no
   // consumió bono (cuota ilimitada/online, o entró en lista de espera).
@@ -660,7 +670,9 @@ model Booking {
   debrief      SessionDebrief?
 
   @@index([sessionId])
+  @@index([sessionId, occurrenceDate])
   @@index([memberId])
+  @@index([memberId, occurrenceDate])
   @@index([status])
   @@index([subscriptionId])
 }
