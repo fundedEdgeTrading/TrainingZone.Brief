@@ -149,6 +149,29 @@ export function renderPasswordResetEmail(opts: {
   });
 }
 
+export function renderMemberBillingLinkEmail(opts: {
+  recipientFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  portalRequestUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Gestionar tu suscripción",
+    title: `¡Hola, ${opts.recipientFirstName}!<br>Gestiona tu cuota.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Has pedido un enlace para gestionar tu suscripción en <b>${opts.brandName}</b>. Pulsa el botón para cambiar tu método de pago o cancelar tu cuota, sin necesidad de contraseña.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Si no has sido tú, ignora este email: no se hará ningún cambio.</p>`,
+    ctaLabel: "Gestionar mi suscripción →",
+    ctaUrl: opts.portalRequestUrl,
+    noteHtml: `Por seguridad, este enlace caduca en <b style="color:${TEXT2}">30 minutos</b>.`,
+    signOff: `Un saludo,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque se ha solicitado gestionar tu suscripción.`,
+    footerLine2: `Si no lo has pedido tú, no hace falta que hagas nada.`,
+  });
+}
+
 export function renderOwnerActivationEmail(opts: {
   orgName: string;
   planName: string;

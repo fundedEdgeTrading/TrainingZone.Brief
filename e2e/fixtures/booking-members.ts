@@ -35,7 +35,14 @@ export async function createBookingMember({
   const email = `socio.e2e.${tag}@example.com`;
 
   const { member, invitation } = await prisma.$transaction((tx) =>
-    createMemberWithInvitation(tx, { orgId, primaryCenterId: centerId, firstName, lastName, email, planId: plan.id })
+    createMemberWithInvitation(tx, {
+      orgId,
+      primaryCenterId: centerId,
+      firstName,
+      lastName,
+      email,
+      bonos: [{ planId: plan.id, centerId }],
+    })
   );
 
   const result = await completeMemberOnboarding(invitation.token, {

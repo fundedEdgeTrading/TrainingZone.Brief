@@ -87,6 +87,38 @@ export async function createStaffWithInvitation(
   return { user, invitation };
 }
 
+// RB-AGENDA-003: un socio puede darse de alta con varios bonos a la vez
+// (p.ej. EP en un centro + grupos en otro). Centraliza el cálculo de
+// priceCents/sessionsRemaining a partir del plan para no duplicarlo entre el
+// alta (aquí, uno por entrada de `bonos`) y el alta "en solitario" de un bono
+// posterior (members/[id]/actions.ts::addSubscription, cálculo trivial que no
+// justifica compartir módulo).
+async function createBonoSubscription(
+  tx: Tx,
+  params: { orgId: string; memberId: string; planId: string; centerId: string }
+) {
+  // Defensa en profundidad (RB-AGENDA-003): el formulario ya restringe las
+  // opciones a planes/centros de la propia organización, pero no nos fiamos
+  // solo del cliente.
+  const [plan, center] = await Promise.all([
+    tx.membershipPlan.findFirst({ where: { id: params.planId, orgId: params.orgId } }),
+    tx.center.findFirst({ where: { id: params.centerId, orgId: params.orgId }, select: { id: true } }),
+  ]);
+  if (!plan || !center) return null;
+
+  return tx.subscription.create({
+    data: {
+      memberId: params.memberId,
+      planId: plan.id,
+      centerId: center.id,
+      startDate: new Date(),
+      priceCents: plan.priceCents,
+      status: "ACTIVE",
+      sessionsRemaining: plan.sessionsIncluded ?? null,
+    },
+  });
+}
+
 export async function createMemberWithInvitation(
   tx: Tx,
   params: {
@@ -97,7 +129,10 @@ export async function createMemberWithInvitation(
     email: string;
     phone?: string | null;
     birthDate?: Date | null;
-    planId?: string | null;
+    // Cero o más bonos, cada uno con su propio centro (RB-AGENDA-003): un
+    // socio puede darse de alta sin bono todavía, con uno, o con varios de
+    // distinta modalidad/centro.
+    bonos: { planId: string; centerId: string }[];
     // F9 (RB-PERFIL): perfil extendido heredado del lead de origen (F8), si aplica.
     postalCode?: string | null;
     occupation?: string | null;
@@ -126,20 +161,21 @@ export async function createMemberWithInvitation(
     },
   });
 
-  if (params.planId) {
-    const plan = await tx.membershipPlan.findFirst({ where: { id: params.planId, orgId: params.orgId } });
-    if (plan) {
-      await tx.subscription.create({
-        data: {
-          memberId: member.id,
-          planId: plan.id,
-          startDate: new Date(),
-          priceCents: plan.priceCents,
-          status: "ACTIVE",
-          sessionsRemaining: plan.sessionsIncluded ?? null,
-        },
-      });
-    }
+  // Se devuelven en el mismo orden que `params.bonos` (uno puede venir `null`
+  // si el plan/centro no existían — defensa en profundidad de
+  // `createBonoSubscription`) para que el caller pueda enlazar cada bono con
+  // lo que lo originó, p.ej. el checkout público de la landing necesita el id
+  // del bono recién creado para engancharle el `stripeSubscriptionId`.
+  const subscriptions = [];
+  for (const bono of params.bonos) {
+    subscriptions.push(
+      await createBonoSubscription(tx, {
+        orgId: params.orgId,
+        memberId: member.id,
+        planId: bono.planId,
+        centerId: bono.centerId,
+      })
+    );
   }
 
   const invitation = await tx.invitation.create({
@@ -152,5 +188,5 @@ export async function createMemberWithInvitation(
       expiresAt: invitationExpiry(),
     },
   });
-  return { member, invitation };
+  return { member, invitation, subscriptions };
 }

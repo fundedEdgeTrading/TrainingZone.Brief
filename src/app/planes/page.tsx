@@ -8,6 +8,11 @@ import {
   type PlatformFeature,
   type PlatformPlan,
 } from "@/lib/platform-plans";
+import Hero from "./hero";
+import HowItWorks from "./how-it-works";
+import Testimonials from "./testimonials";
+import Faq from "./faq";
+import FinalCta from "./final-cta";
 
 // Los precios se resuelven del entorno en cada petición: no se cachea la página
 // con un catálogo que puede cambiar sin desplegar.
@@ -53,9 +58,13 @@ export default async function PlanesPage({
         </Link>
       </header>
 
+      <Hero />
+
       <main className="px-4 pb-16 sm:px-8">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center max-w-2xl mx-auto mb-8">
+          <HowItWorks />
+
+          <div id="planes" className="text-center max-w-2xl mx-auto mb-8">
             <h1 className="font-display font-extrabold text-3xl sm:text-4xl uppercase tracking-[-.01em] text-tz-black">
               Elige tu plan
             </h1>
@@ -97,6 +106,12 @@ export default async function PlanesPage({
           )}
 
           <ComparisonTable />
+
+          <Testimonials />
+
+          <Faq />
+
+          <FinalCta />
 
           <p className="text-center text-xs text-faint mt-10 max-w-2xl mx-auto">
             Los precios no incluyen IVA. El cobro a tus socios lo gestionas con tu propia cuenta de

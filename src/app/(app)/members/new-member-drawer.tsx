@@ -8,6 +8,11 @@ import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { createMember } from "./actions";
 
+// Fila del bloque "Bonos": solo necesitamos una key estable para React, el
+// plan/centro elegidos viven en el DOM (selects no controlados) y se leen del
+// FormData al enviar — mismo estilo no controlado que el resto del drawer.
+type BonoRow = { key: string };
+
 export function NewMemberDrawer({
   centers,
   plans,
@@ -17,8 +22,19 @@ export function NewMemberDrawer({
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [bonoRows, setBonoRows] = useState<BonoRow[]>([]);
+  const bonoCounter = useRef(0);
   const formRef = useRef<HTMLFormElement>(null);
   const toast = useToast();
+
+  function addBonoRow() {
+    bonoCounter.current += 1;
+    setBonoRows((rows) => [...rows, { key: `bono-${bonoCounter.current}` }]);
+  }
+
+  function removeBonoRow(key: string) {
+    setBonoRows((rows) => rows.filter((r) => r.key !== key));
+  }
 
   return (
     <>
@@ -32,6 +48,7 @@ export function NewMemberDrawer({
               if (result.ok) {
                 setOpen(false);
                 formRef.current?.reset();
+                setBonoRows([]);
                 toast.success({ title: "Socio creado", description: `Email de bienvenida enviado a ${fd.get("email")}.` });
               } else {
                 toast.error(result.error);
@@ -75,17 +92,55 @@ export function NewMemberDrawer({
                 ))}
               </Select>
             </Field>
-            <Field label="Plan">
-              <Select name="planId" defaultValue="">
-                <option value="">— Sin plan —</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
           </div>
+
+          <div className="border border-tz-sand rounded-[14px] bg-tz-bone/40 p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">Bonos</div>
+                <p className="text-xs text-muted mt-0.5">Opcional: puede darse de alta sin bono y añadírselo después.</p>
+              </div>
+              <Button type="button" variant="secondary" size="sm" onClick={addBonoRow}>
+                + Añadir bono
+              </Button>
+            </div>
+            {bonoRows.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {bonoRows.map((row) => (
+                  <div key={row.key} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2.5 items-end">
+                    <Field label="Plan">
+                      <Select name="bonoPlanId" required defaultValue="">
+                        <option value="" disabled>
+                          Seleccionar...
+                        </option>
+                        {plans.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Field label="Centro del bono">
+                      <Select name="bonoCenterId" required defaultValue="">
+                        <option value="" disabled>
+                          Seleccionar...
+                        </option>
+                        {centers.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => removeBonoRow(row.key)}>
+                      Quitar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="bg-tz-bone border border-brand-border rounded-xl px-4 py-3.5 text-[13px] text-text-2 flex gap-2.5 items-start">
             <span className="w-2 h-2 rounded-full bg-apta-gold shrink-0 mt-[5px]" />
             Los consentimientos (salud Art. 9 RGPD, contrato, imágenes y marketing) los firmará el propio socio en

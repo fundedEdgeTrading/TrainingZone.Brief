@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import {
   getMemberForUser,
@@ -8,7 +9,7 @@ import {
   MAX_ACTIVE_BOOKINGS,
   BOOKING_WINDOW_DAYS,
 } from "@/lib/portal-queries";
-import { getMemberServiceKinds, getSessionBalances } from "@/lib/members-queries";
+import { getMemberServiceKinds, getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
 import { getOnlineWorkouts } from "@/lib/online-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import SessionCard from "./session-card";
@@ -39,16 +40,7 @@ export default async function PortalAgendaPage() {
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
   const [sessions, pendingFeedback, onlineWorkouts, upcomingBookings] = await Promise.all([
-    getBookableSessions(
-      session.user.orgId,
-      member.primaryCenterId,
-      member.id,
-      {
-        hasGroupService: serviceKinds.includes("GROUP"),
-        hasEpService: serviceKinds.includes("EP"),
-      },
-      timezone
-    ),
+    getBookableSessions(session.user.orgId, member.id, activeBookingSubscriptions(member.subscriptions), timezone),
     getPendingSessionFeedback(member.id, timezone),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
     getMemberUpcomingBookings(member.id, timezone),
@@ -145,7 +137,10 @@ export default async function PortalAgendaPage() {
               {depleted.map((d) => (SERVICE_LABEL[d.serviceKind] ?? d.serviceKind).toLowerCase()).join(" y ")}.
             </div>
             <p className="text-[13px] text-brand-text-2 mt-0.5">
-              Renueva tu bono en recepción para seguir reservando tus sesiones.
+              Renueva tu bono para seguir reservando tus sesiones.{" "}
+              <Link href="/portal/comprar" className="font-semibold underline underline-offset-2 hover:text-critical">
+                Comprar o renovar →
+              </Link>
             </p>
           </div>
         </div>

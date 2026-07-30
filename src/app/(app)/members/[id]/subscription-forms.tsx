@@ -9,7 +9,8 @@ import {
   updateSubscriptionPrice,
   addOneOffProduct,
 } from "@/app/(app)/billing/subscription-actions";
-import { Field, Input } from "@/components/ui/field";
+import { addSubscription } from "./actions";
+import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
@@ -186,6 +187,69 @@ export function UpdateSubscriptionPriceForm({ subscriptionId }: { subscriptionId
         <Button type="submit" variant="secondary" size="sm" disabled={pending}>
           {pending && <ButtonSpinner />}
           Actualizar precio
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** RB-AGENDA-003: añade un bono más a un socio que ya tiene ficha. */
+export function AddSubscriptionForm({
+  memberId,
+  plans,
+  centers,
+}: {
+  memberId: string;
+  plans: { id: string; name: string }[];
+  centers: { id: string; name: string }[];
+}) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [pending, startTransition] = useTransition();
+  const toast = useToast();
+
+  return (
+    <form
+      ref={formRef}
+      action={(fd) =>
+        startTransition(async () => {
+          const result = await addSubscription(fd);
+          if (result.ok) {
+            toast.success("Bono añadido.");
+            formRef.current?.reset();
+          } else toast.error(result.error);
+        })
+      }
+      className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end"
+    >
+      <input type="hidden" name="memberId" value={memberId} />
+      <Field label="Plan">
+        <Select name="planId" required defaultValue="">
+          <option value="" disabled>
+            Seleccionar...
+          </option>
+          {plans.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Centro">
+        <Select name="centerId" required defaultValue="">
+          <option value="" disabled>
+            Seleccionar...
+          </option>
+          {centers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="flex justify-end">
+        <Button type="submit" variant="secondary" size="sm" disabled={pending}>
+          {pending && <ButtonSpinner />}
+          Añadir bono
         </Button>
       </div>
     </form>

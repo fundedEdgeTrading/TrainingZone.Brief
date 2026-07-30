@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
@@ -179,6 +180,72 @@ export async function updateMemberData(formData: FormData): Promise<MemberAction
 
   revalidatePath(`/members/${memberId}`);
   revalidatePath("/members");
+  return { ok: true };
+}
+
+// RB-AGENDA-003: añade un bono más a un socio que ya tiene ficha (EP y
+// grupos pueden convivir, en centros distintos de la misma organización). El
+// cálculo de priceCents/sessionsRemaining es el mismo de un renglón en el
+// alta (createBonoSubscription en lib/invitations.ts) pero son dos líneas
+// triviales — no se ha extraído a un módulo compartido para no crear una
+// abstracción de una sola llamada.
+const addSubscriptionSchema = z.object({
+  memberId: z.string().min(1),
+  planId: z.string().min(1),
+  centerId: z.string().min(1),
+});
+
+export async function addSubscription(formData: FormData): Promise<MemberActionResult> {
+  // Mismo conjunto de roles que el resto de acciones de suscripción de esta
+  // página (billing/subscription-actions.ts::ALLOWED_ROLES).
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
+
+  const parsed = addSubscriptionSchema.safeParse({
+    memberId: String(formData.get("memberId") ?? ""),
+    planId: String(formData.get("planId") ?? ""),
+    centerId: String(formData.get("centerId") ?? ""),
+  });
+  if (!parsed.success) return { ok: false, error: "Selecciona un plan y un centro." };
+
+  const member = await prisma.member.findFirst({
+    where: { id: parsed.data.memberId, orgId: session.user.orgId },
+    select: { id: true },
+  });
+  if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+
+  const [plan, center] = await Promise.all([
+    prisma.membershipPlan.findFirst({ where: { id: parsed.data.planId, orgId: session.user.orgId } }),
+    prisma.center.findFirst({ where: { id: parsed.data.centerId, orgId: session.user.orgId }, select: { id: true } }),
+  ]);
+  if (!plan) return { ok: false, error: "No se ha encontrado ese plan." };
+  if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+
+  const subscription = await prisma.subscription.create({
+    data: {
+      memberId: member.id,
+      planId: plan.id,
+      centerId: center.id,
+      startDate: new Date(),
+      priceCents: plan.priceCents,
+      status: "ACTIVE",
+      sessionsRemaining: plan.sessionsIncluded ?? null,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      action: "SUBSCRIPTION_ADDED",
+      entityType: "Subscription",
+      entityId: subscription.id,
+      memberId: member.id,
+      metadata: { planId: plan.id, centerId: center.id, priceCents: plan.priceCents },
+    },
+  });
+
+  revalidatePath("/billing");
+  revalidatePath(`/members/${member.id}`);
   return { ok: true };
 }
 

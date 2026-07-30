@@ -10,6 +10,8 @@ type BookableSession = {
   capacity: number;
   bookedCount: number;
   trainerName: string | null;
+  /** RB-AGENDA-003: la lista puede mezclar sesiones de varios centros de la organización. */
+  centerName: string;
   startsAt: Date;
   /** Lo calcula `getBookableSessions`, que es quien conoce la zona del centro. */
   canCancelFreely: boolean;
@@ -60,7 +62,9 @@ export default function SessionCard({ session: s }: { session: BookableSession }
       </div>
 
       <div className="text-base font-bold text-brand-text mt-3">{s.name}</div>
-      <div className="text-[13px] text-brand-muted mt-[3px]">{s.trainerName ?? "Sin entrenador"}</div>
+      <div className="text-[13px] text-brand-muted mt-[3px]">
+        {s.trainerName ?? "Sin entrenador"} · {s.centerName}
+      </div>
 
       {isGroup ? (
         <div className="mt-3.5">

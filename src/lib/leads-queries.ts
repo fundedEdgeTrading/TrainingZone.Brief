@@ -214,7 +214,9 @@ export async function initiateLeadConversion(
       lastName: lead.lastName,
       email: lead.email!,
       phone: lead.phone,
-      planId: opts.planId ?? null,
+      // El bono del cierre de lead, si lo hay, nace en el mismo centro del lead
+      // (RB-LEAD-005): el flujo de conversión no ofrece elegir otro centro.
+      bonos: opts.planId ? [{ planId: opts.planId, centerId: lead.centerId }] : [],
       postalCode: lead.postalCode,
       occupation: lead.occupation,
       hasChildren: lead.hasChildren,
