@@ -22,17 +22,17 @@ export default async function VerificarEmailPage({ params }: { params: Promise<{
     );
   }
 
-  const user = await prisma.user.update({
-    where: { id: result.userId },
+  const identity = await prisma.identity.update({
+    where: { id: result.identityId },
     data: { emailVerifiedAt: new Date() },
     select: { email: true },
   }).catch(() => null);
 
-  if (!user) {
+  if (!identity) {
     return <Wrapper title="No hemos podido confirmar tu email" body="La cuenta asociada a este enlace ya no existe." />;
   }
 
-  return <Wrapper title="Email confirmado" body={`${user.email} ha quedado confirmado como tu canal de facturación.`} />;
+  return <Wrapper title="Email confirmado" body={`${identity.email} ha quedado confirmado como tu canal de facturación.`} />;
 }
 
 function Wrapper({ title, body }: { title: string; body: string }) {

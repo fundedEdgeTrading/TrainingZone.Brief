@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import bcrypt from "bcryptjs";
 import { Prisma, type Role, type Sex } from "@prisma/client";
+import { ensureIdentity } from "@/lib/identity";
 
 type Tx = Prisma.TransactionClient;
 
@@ -31,12 +31,6 @@ export function absoluteUrl(path: string) {
   return `${appBaseUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
-// Contraseña aleatoria e inutilizable: la cuenta queda "creada pero
-// bloqueada" hasta que la persona complete el onboarding con su enlace.
-async function unusablePasswordHash() {
-  return bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10);
-}
-
 /**
  * Alta pragmática del director (D-3/RB-PLAT-002): a diferencia de
  * `createStaffWithInvitation`, crea el OWNER con una contraseña REAL (ya
@@ -47,16 +41,18 @@ export async function createOwnerAccount(
   tx: Tx,
   params: { orgId: string; name: string; email: string; passwordHash: string }
 ) {
+  const identity = await ensureIdentity(tx, { email: params.email, passwordHash: params.passwordHash });
+  if (!identity.passwordSetAt) {
+    await tx.identity.update({ where: { id: identity.id }, data: { passwordSetAt: new Date() } });
+  }
   return tx.user.create({
     data: {
+      identityId: identity.id,
       orgId: params.orgId,
       centerId: null,
       name: params.name,
-      email: params.email,
-      passwordHash: params.passwordHash,
+      email: identity.email,
       role: "OWNER",
-      authProvider: "demo",
-      emailVerifiedAt: null,
     },
   });
 }
@@ -65,16 +61,17 @@ export async function createStaffWithInvitation(
   tx: Tx,
   params: { orgId: string; name: string; email: string; role: Role; centerId: string | null }
 ) {
-  const passwordHash = await unusablePasswordHash();
+  // RB-ID-003: si el email ya está en Apta (otra organización, u otra membresía
+  // aquí mismo) se reutiliza su credencial en vez de fallar por email duplicado.
+  const identity = await ensureIdentity(tx, { email: params.email });
   const user = await tx.user.create({
     data: {
+      identityId: identity.id,
       orgId: params.orgId,
       centerId: params.centerId,
       name: params.name,
-      email: params.email,
-      passwordHash,
+      email: identity.email,
       role: params.role,
-      authProvider: "demo",
     },
   });
   const invitation = await tx.invitation.create({

@@ -75,7 +75,7 @@ export function renderMemberWelcomeEmail(opts: {
     noteHtml: `Este enlace es personal y caduca en <b style="color:${TEXT2}">7 días</b>. Si no has solicitado esta cuenta, puedes ignorar este email — no se activará nada sin tu confirmación.`,
     signOff: `Nos vemos en el centro,<br><b>El equipo de ${opts.orgName}</b>`,
     footerLine1: `${opts.orgName} · Recibes este email porque tu centro ha creado tu cuenta de socio.`,
-    footerLine2: `Política de privacidad · Contacto`,
+    footerLine2: `Política de privacidad · Contacto · Con tecnología de Apta`,
   });
 }
 
@@ -122,6 +122,52 @@ export function renderStaffInviteEmail(opts: {
     noteHtml: `Este enlace es personal y caduca en <b style="color:${TEXT2}">7 días</b>. Si no esperabas esta invitación, puedes ignorar este email.`,
     signOff: `Bienvenida/o,<br><b>El equipo de ${opts.orgName}</b>`,
     footerLine1: `${opts.orgName} · Recibes este email porque se ha creado tu cuenta de personal.`,
-    footerLine2: `Todo acceso queda auditado.`,
+    footerLine2: `Todo acceso queda auditado. · Con tecnología de Apta`,
+  });
+}
+
+export function renderPasswordResetEmail(opts: {
+  recipientFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  resetUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Restablecer contraseña",
+    title: `¡Hola, ${opts.recipientFirstName}!<br>Recupera tu acceso.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Has pedido restablecer la contraseña de tu cuenta. Pulsa el botón para elegir una nueva.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Si no has sido tú, ignora este email: tu contraseña actual sigue siendo válida.</p>`,
+    ctaLabel: "Elegir nueva contraseña →",
+    ctaUrl: opts.resetUrl,
+    noteHtml: `Por seguridad, este enlace caduca en <b style="color:${TEXT2}">1 hora</b> y solo puede usarse para cambiar la contraseña.`,
+    signOff: `Un saludo,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque se ha solicitado restablecer tu contraseña.`,
+    footerLine2: `Si no lo has pedido tú, no hace falta que hagas nada.`,
+  });
+}
+
+export function renderOwnerActivationEmail(opts: {
+  orgName: string;
+  planName: string;
+  aptaLogoUrl: string;
+  activationUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.aptaLogoUrl,
+    logoAlt: "Apta",
+    eyebrow: "Bienvenida/o a Apta",
+    title: `Tu plataforma<br>ya está lista.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Hemos recibido tu pago del plan <b>${opts.planName}</b> y hemos creado la plataforma de <b>${opts.orgName}</b>.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Solo queda un paso: elige tu contraseña y te llevamos directo a la puesta en marcha —tu centro, tu equipo, tus tarifas y tus socios.</p>`,
+    ctaLabel: "Crear mi contraseña →",
+    ctaUrl: opts.activationUrl,
+    noteHtml: `Este enlace es personal y caduca en <b style="color:${TEXT2}">14 días</b>. Si caduca o no te llega, puedes pedir uno nuevo desde la página de activación.`,
+    signOff: `Encantados de tenerte,<br><b>El equipo de Apta</b>`,
+    footerLine1: `Recibes este email porque has contratado Apta para ${opts.orgName}.`,
+    footerLine2: `Tu factura la emite Stripe y la tienes en tu correo de pago.`,
   });
 }

@@ -12,7 +12,11 @@ test.describe("F16 — Portal del socio: IA, objetivos y chat", () => {
 
   test("el socio puede escribir en su chat con el centro", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
-    await page.goto("/portal/chat");
+    await page.goto("/portal");
+
+    // El chat dejó de tener ruta propia: es un panel flotante disponible en todo
+    // el portal (`portal/floating-chat.tsx`).
+    await page.getByRole("button", { name: "Abrir chat" }).click();
 
     const message = `Mensaje E2E ${Date.now()}`;
     await page.locator('input[name="body"]').fill(message);

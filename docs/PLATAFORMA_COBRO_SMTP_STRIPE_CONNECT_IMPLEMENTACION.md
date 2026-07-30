@@ -2,6 +2,12 @@
 
 **Documento de implementación · v1.0 · para ejecutarse paso a paso por un agente de codificación (p. ej. Claude Sonnet 5).**
 
+> ⚠️ **Parcialmente superado.** Las partes **A.2 (alta cuenta-primero), A.3 (muro `/activar`) y
+> A.6 (purga por TTL)** las sustituye `docs/PLAN_IMPLEMENTACION_APTA_COMERCIAL.md`, que invierte
+> el alta a **pago-primero**: la organización nace del webhook de Stripe, no de un formulario, y
+> ya no existen organizaciones pre-pago que purgar. El resto de este documento —los dos planos de
+> cobro (§0), el SMTP (Parte B) y Stripe Connect (Parte C)— sigue **vigente**.
+
 **Objetivo:** dejar cerrado *cómo* se construyen tres piezas que hoy no existen o están a medias:
 **(A)** el **cobro de plataforma** (Apta le cobra al director por usar el software) con su alta y ciclo de vida,
 **(B)** el **SMTP** transaccional, y **(C)** **Stripe Connect** (cada gimnasio cobra a sus socios en su

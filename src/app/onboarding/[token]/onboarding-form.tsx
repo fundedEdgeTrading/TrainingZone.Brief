@@ -9,7 +9,7 @@ import { completeMemberOnboarding, completeStaffOnboarding } from "./actions";
 
 type Props = {
   token: string;
-  type: "MEMBER" | "STAFF";
+  type: "MEMBER" | "STAFF" | "OWNER";
   firstName: string;
   email: string;
   orgName: string;
@@ -83,7 +83,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
     setPending(true);
     setError(null);
     const result =
-      type === "STAFF"
+      type === "STAFF" || type === "OWNER"
         ? await completeStaffOnboarding(token, pass1)
         : await completeMemberOnboarding(token, {
             password: pass1,
@@ -112,15 +112,16 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
   useEffect(() => {
     if (phase !== "done" || countdown === null) return;
     if (countdown <= 0) {
-      router.push("/");
+      router.push(type === "OWNER" ? "/puesta-en-marcha" : "/");
       router.refresh();
       return;
     }
     const t = setTimeout(() => setCountdown((c) => (c ?? 1) - 1), 1000);
     return () => clearTimeout(t);
-  }, [phase, countdown, router]);
+  }, [phase, countdown, router, type]);
 
-  const destinationLabel = type === "MEMBER" ? "Mi Actividad" : "el panel";
+  const destinationLabel =
+    type === "MEMBER" ? "Mi Actividad" : type === "OWNER" ? "la puesta en marcha" : "el panel";
 
   return (
     <div className="min-h-dvh bg-tz-black relative overflow-hidden flex items-center justify-center px-4 py-10">
@@ -147,7 +148,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
               onSubmit={(e) => {
                 e.preventDefault();
                 if (!passOk) return;
-                if (type === "STAFF") finish();
+                if (type !== "MEMBER") finish();
                 else setPhase("consent");
               }}
               className="tz-wiz-a"
@@ -162,7 +163,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
               </h1>
               <p className="text-sm text-muted mt-2 mb-5">
                 Tu cuenta <b className="text-text-2">{email}</b> ya está verificada
-                {type === "STAFF" ? ` en ${orgName} (${contextLabel})` : ""}. Elige una contraseña para acceder
+                {type !== "MEMBER" ? ` en ${orgName} (${contextLabel})` : ""}. Elige una contraseña para acceder
                 {type === "MEMBER" ? " a tu portal." : "."}
               </p>
               <div className="flex flex-col gap-3.5">

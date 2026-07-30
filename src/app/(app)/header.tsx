@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { getPageTitle } from "@/lib/rbac";
-import UserMenu from "./user-menu";
+import UserMenu, { type OrgOption } from "./user-menu";
 import { useMobileNav } from "./mobile-nav";
 import { NotificationBell } from "./notification-bell";
 
@@ -13,6 +13,8 @@ export default function Header({
   roleLabel,
   centerChip,
   notifications,
+  organizations,
+  activeOrgId,
 }: {
   nav: { href: string; label: string }[];
   subtitle: string;
@@ -28,6 +30,8 @@ export default function Header({
     entityId: string | null;
     createdAt: Date;
   }[];
+  organizations: OrgOption[];
+  activeOrgId: string;
 }) {
   const pathname = usePathname();
   const { setOpen } = useMobileNav();
@@ -64,7 +68,12 @@ export default function Header({
           </div>
         )}
         <NotificationBell notifications={notifications} />
-        <UserMenu name={userName} roleLabel={roleLabel} />
+        <UserMenu
+          name={userName}
+          roleLabel={roleLabel}
+          organizations={organizations}
+          activeOrgId={activeOrgId}
+        />
       </div>
     </header>
   );

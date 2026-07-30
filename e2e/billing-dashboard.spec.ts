@@ -7,7 +7,9 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
     await page.goto("/billing");
 
     await expect(page.getByRole("heading", { name: "Cobro por Stripe" })).toBeVisible();
-    await expect(page.getByText(/Stripe no está configurado en este entorno/)).toBeVisible();
+    // Degradación honesta (RB-CONNECT-002): sin cuenta conectada la UI explica
+    // qué falta y deja el cobro manual como puente, en vez de fallar.
+    await expect(page.getByText(/Conecta tu Stripe para cobrar/)).toBeVisible();
     await expect(page.getByRole("heading", { name: "Registrar cobro manual" })).toBeVisible();
   });
 
@@ -19,6 +21,7 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
     await expect(page.getByText("Ticket medio")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Nicho principal (ocupación)" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Objetivos (agregado)" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Distribución geográfica/ })).toBeVisible();
+    // El panel por provincia se sustituyó por el mapa de calor por barrio (CP completo).
+    await expect(page.getByText(/Mapa de calor/).first()).toBeVisible();
   });
 });

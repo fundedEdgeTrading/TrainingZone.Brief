@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, KpiCard } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,9 @@ export default async function FeedbackPage({
   searchParams: Promise<{ q?: string; centerId?: string; cat?: string; sort?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
+  // se saltaría el filtro del menú.
+  await requireFeature("feedback_direccion");
   const orgId = session.user.orgId;
   const params = await searchParams;
 

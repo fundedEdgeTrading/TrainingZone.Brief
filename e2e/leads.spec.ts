@@ -4,8 +4,10 @@ import { loginAs } from "./helpers";
 test.describe("F8 — Embudo de leads", () => {
   test("formulario público crea un lead visible para el staff", async ({ page }) => {
     const uniquePhone = `6${Date.now().toString().slice(-8)}`;
-    await page.goto("/lead-form/training-zone/centro");
-    await expect(page.getByText("TRAINING ZONE Centro")).toBeVisible();
+    await page.goto("/lead-form/training-zone/la-jota");
+    // El nombre concreto del centro lo pone el seed; basta con que el formulario
+    // público muestre los de la organización.
+    await expect(page.getByText(/TRAINING ZONE/).first()).toBeVisible();
 
     await page.locator('input[name="firstName"]').fill("Playwright");
     await page.locator('input[name="lastName"]').fill("Tester");
@@ -13,7 +15,10 @@ test.describe("F8 — Embudo de leads", () => {
     await page.locator('input[name="postalCode"]').fill("28010");
     await page.locator('input[name="occupation"]').fill("QA automatizado");
     await page.locator('textarea[name="goals"]').fill("Probar el flujo de leads de principio a fin");
-    await page.locator('select[name="channel"]').selectOption({ index: 1 });
+    // `Select` de este repo no es un <select> nativo: es un desplegable propio
+    // (botón + input oculto), así que se abre con click y se elige por texto.
+    await page.getByRole("button", { name: "Selecciona..." }).first().click();
+    await page.locator(".tz-select-pop button:not([disabled])").first().click();
     await page.locator('input[name="healthNote"]').fill("Ninguna");
     await page.getByRole("button", { name: "Enviar solicitud" }).click();
 
@@ -43,8 +48,11 @@ test.describe("F8 — Embudo de leads", () => {
     await expect(page.getByRole("heading", { name: /Pedro Salinas|Seguimiento/i }).first()).toBeVisible().catch(() => {});
     await expect(page.getByText("Bitácora")).toBeVisible();
 
-    await page.locator('input[name="body"]').fill("Nota de prueba desde Playwright");
+    // Texto único por ejecución: con un texto fijo, cada pasada acumulaba una nota
+    // más y la aserción acababa resolviendo a varios elementos.
+    const note = `Nota de prueba desde Playwright ${Date.now()}`;
+    await page.locator('input[name="body"]').fill(note);
     await page.getByRole("button", { name: "Añadir" }).click();
-    await expect(page.getByText("Nota de prueba desde Playwright")).toBeVisible();
+    await expect(page.getByText(note)).toBeVisible();
   });
 });

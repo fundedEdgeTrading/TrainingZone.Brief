@@ -270,7 +270,16 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   const orgId = id();
   await prisma.organization.create({
     // RB-PLAT-007: las orgs de demo nacen ACTIVE para no chocar con el muro de pago (A.3).
-    data: { id: orgId, name: cfg.name, slug: cfg.slug, logoUrl: cfg.logoUrl, platformStatus: "ACTIVE" },
+    // RB-PLAT-007 + plan Élite: la demo nace con el producto completo para poder
+    // enseñarlo entero (con un tier inferior, el menú ocultaría los módulos gateados).
+    data: {
+      id: orgId,
+      name: cfg.name,
+      slug: cfg.slug,
+      logoUrl: cfg.logoUrl,
+      platformStatus: "ACTIVE",
+      platformPlan: "elite_ano",
+    },
   });
 
   // ---------- Centros ----------
@@ -294,16 +303,25 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     id: id(),
     centerId: s.centerKey ? centerIdByKey.get(s.centerKey)! : null,
   }));
+  // La credencial (Identity) es global y la membresía (User) por organización:
+  // se siembran las dos, reutilizando el id para que la correspondencia sea obvia.
+  await prisma.identity.createMany({
+    data: staffUsers.map((u) => ({
+      id: u.id,
+      email: u.email,
+      passwordHash,
+      passwordSetAt: new Date(),
+    })),
+  });
   await prisma.user.createMany({
     data: staffUsers.map((u) => ({
       id: u.id,
+      identityId: u.id,
       orgId,
       centerId: u.centerId,
       name: u.name,
       email: u.email,
-      passwordHash,
       role: u.role,
-      authProvider: "demo",
     })),
   });
 
@@ -569,16 +587,23 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   // Usuario de login para el socio demo
   if (cfg.demoMember) {
+    await prisma.identity.create({
+      data: {
+        id: demoMemberUserId!,
+        email: cfg.demoMember.email,
+        passwordHash,
+        passwordSetAt: new Date(),
+      },
+    });
     await prisma.user.create({
       data: {
         id: demoMemberUserId!,
+        identityId: demoMemberUserId!,
         orgId,
         centerId: centerIdByKey.get(cfg.demoMember.centerKey)!,
         name: `${cfg.demoMember.firstName} ${cfg.demoMember.lastName}`,
         email: cfg.demoMember.email,
-        passwordHash,
         role: "MEMBER",
-        authProvider: "demo",
       },
     });
   }
@@ -2393,6 +2418,10 @@ async function main() {
     prisma.member.deleteMany(),
     prisma.membershipPlan.deleteMany(),
     prisma.user.deleteMany(),
+    // Identity va después de User (la FK es User.identityId, con ON DELETE CASCADE:
+    // borrar la identidad se llevaría la membresía, pero el orden explícito deja
+    // claro qué depende de qué).
+    prisma.identity.deleteMany(),
     prisma.center.deleteMany(),
     // StripeAccount referencia orgId (RESTRICT): igual que Invitation.
     prisma.stripeAccount.deleteMany(),

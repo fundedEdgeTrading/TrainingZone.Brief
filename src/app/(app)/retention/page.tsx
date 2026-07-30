@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { Card, KpiCard } from "@/components/kpi-card";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -16,6 +17,9 @@ const RISK_LABEL: Record<string, string> = { HIGH: "ALTA", MEDIUM: "MEDIA", LOW:
 
 export default async function RetentionPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
+  // se saltaría el filtro del menú.
+  await requireFeature("retencion");
 
   const alerts = await prisma.retentionAlert.findMany({
     where: { member: { orgId: session.user.orgId } },

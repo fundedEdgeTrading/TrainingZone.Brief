@@ -9,7 +9,24 @@ import { getToken } from "next-auth/jwt";
 
 // "/lead-form" (no "/lead") a propósito: con startsWith(), "/lead" también
 // marcaría pública la sección de gestión "/leads" del staff.
-const PUBLIC_PATHS = ["/login", "/register", "/onboarding", "/lead-form", "/api/jobs", "/api/stripe"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/onboarding",
+  "/lead-form",
+  "/planes",
+  "/activar",
+  "/verificar-email",
+  "/recuperar-clave",
+  "/servicio-no-disponible",
+  "/api/jobs",
+  "/api/stripe",
+  "/api/checkout",
+  // La API de la app nativa NO usa la cookie de sesión: cada route handler
+  // valida su propio token bearer con `requireApiSession`. Pasarla por el
+  // chequeo de cookie de aquí la rebotaba entera a /login — incluido su
+  // propio endpoint de login, con lo que la app no podía autenticarse nunca.
+  "/api/mobile",
+];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { listReferenceRanges } from "@/lib/reference-ranges";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
@@ -15,6 +16,9 @@ const SEX_LABEL: Record<string, string> = { M: "Hombre", F: "Mujer" };
 
 export default async function ReferenceRangesPage() {
   const session = await requireRole(["OWNER"]);
+  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
+  // se saltaría el filtro del menú.
+  await requireFeature("salud_aptitud");
   const ranges = await listReferenceRanges(session.user.orgId);
 
   return (

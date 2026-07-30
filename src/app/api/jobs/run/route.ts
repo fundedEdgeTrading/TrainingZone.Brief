@@ -7,7 +7,6 @@ import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { generateOfferSuggestions } from "@/lib/offers-queries";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
-import { runStalePendingOrgPurgeRule } from "@/lib/platform-billing";
 
 /**
  * Disparador único para todas las reglas temporales del CRM (F10/F13/F14/F15):
@@ -17,9 +16,15 @@ import { runStalePendingOrgPurgeRule } from "@/lib/platform-billing";
  * contra esta route handler, protegida por un secreto compartido.
  */
 export async function GET(req: NextRequest) {
+  // Falla cerrado: sin secreto configurado el endpoint no se atiende. Antes se
+  // abría a cualquiera (`if (secret && ...)`), que es una superficie de ataque
+  // gratuita en cuanto la variable falta en un despliegue.
   const secret = process.env.JOBS_CRON_SECRET;
+  if (!secret) {
+    return NextResponse.json({ ok: false, error: "jobs deshabilitados: falta JOBS_CRON_SECRET" }, { status: 503 });
+  }
   const provided = req.headers.get("x-cron-secret") ?? req.nextUrl.searchParams.get("secret");
-  if (secret && provided !== secret) {
+  if (provided !== secret) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
@@ -32,11 +37,8 @@ export async function GET(req: NextRequest) {
     checkins: 0,
     offerSuggestions: 0,
     scheduledCancellations: 0,
-    purgedPendingOrgs: 0,
   };
 
-  // A.6: purga de pre-clientes PENDING_PAYMENT por TTL — global, fuera del bucle por-org.
-  summary.purgedPendingOrgs += await runStalePendingOrgPurgeRule();
 
   for (const org of orgs) {
     summary.leadOwnerAlerts += await runLeadOwnerAlertRule(org.id);

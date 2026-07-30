@@ -61,12 +61,14 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
     );
   }
 
-  if (invitation.type === "STAFF" && invitation.user) {
+  // El director activa igual que el personal (solo contraseña); lo que cambia es
+  // a dónde aterriza: la puesta en marcha, no el panel.
+  if ((invitation.type === "STAFF" || invitation.type === "OWNER") && invitation.user) {
     const firstName = invitation.user.name.trim().split(/\s+/)[0] ?? invitation.user.name;
     return (
       <OnboardingForm
         token={token}
-        type="STAFF"
+        type={invitation.type}
         firstName={firstName}
         email={invitation.user.email}
         orgName={orgName}

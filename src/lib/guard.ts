@@ -3,6 +3,7 @@ import type { Role } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { defaultRouteForRole, canManageOrg } from "@/lib/rbac";
+import { isPlatformOperational } from "@/lib/entitlements";
 
 export async function requireRole(allowed: Role[]) {
   const session = await requireSession();
@@ -35,7 +36,7 @@ export async function requirePlatformActive() {
     where: { id: session.user.orgId },
     select: { platformStatus: true },
   });
-  if (org && (org.platformStatus === "ACTIVE" || org.platformStatus === "TRIALING")) return session;
+  if (org && isPlatformOperational(org.platformStatus)) return session;
 
   redirect("/activar");
 }

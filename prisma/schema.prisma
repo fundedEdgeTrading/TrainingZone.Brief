@@ -45,6 +45,10 @@ model Organization {
   // Suscripción en el Stripe DE APTA (Plano 1). Distinto de StripeAccount (Plano 2, Parte C).
   platformStripeCustomerId     String? @unique
   platformStripeSubscriptionId String? @unique
+  /// Idempotencia del alta (RB-ALTA-001): la sesión de checkout que dio origen a esta
+  /// organización. Un reenvío del webhook la encuentra y no crea una segunda ni
+  /// reenvía el email de bienvenida.
+  provisioningSessionId        String? @unique
 
   stripeAccount StripeAccount?
 
@@ -135,19 +139,42 @@ enum Role {
   HR_MANAGER // RRHH: gestiona personal e imputación a centros, sin acceso a datos de salud
 }
 
+/// Credencial de acceso, única GLOBAL (RB-ID-001). Está separada de la membresía
+/// (`User`) para que una misma persona pueda pertenecer a varias organizaciones
+/// —o ser staff y socia a la vez— sin colisionar por email: antes `User.email`
+/// era único global y el alta de un socio que ya existía en otro gimnasio
+/// reventaba con violación de unicidad.
+model Identity {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  /// null = la credencial existe pero nunca se fijó una contraseña real (se creó al
+  /// invitar, con un hash aleatorio inutilizable). Distinguirlo explícitamente evita
+  /// tener que deducirlo del hash: es lo que permite que una segunda invitación a
+  /// alguien que ya está en Apta no le vuelva a pedir contraseña (RB-ID-003).
+  passwordSetAt   DateTime?
+  emailVerifiedAt DateTime? // D-2: confirmación blanda del email (no bloquea el login)
+  authProvider    String    @default("password") // "password" | "microsoft-entra-id" | "google"
+  createdAt       DateTime  @default(now())
+
+  memberships User[]
+}
+
+/// Membresía de una identidad en una organización, con su rol y su ámbito de
+/// centro. Una identidad tiene N (normalmente 1). El aislamiento multi-tenant
+/// sigue colgando de `orgId` exactamente como antes.
 model User {
   id           String   @id @default(cuid())
+  identityId   String
   orgId        String
   centerId     String?
   name         String
-  email        String   @unique
-  passwordHash String
+  email        String // desnormalizado desde Identity: evita un join en cada listado
   role         Role
   image        String?
-  authProvider String   @default("demo") // "demo" | "microsoft-entra-id" (preparado, no activo)
-  emailVerifiedAt DateTime? // D-2: confirmación blanda del email del director (no bloquea login)
   createdAt    DateTime @default(now())
 
+  identity            Identity          @relation(fields: [identityId], references: [id], onDelete: Cascade)
   organization        Organization      @relation(fields: [orgId], references: [id])
   center               Center?           @relation(fields: [centerId], references: [id])
   trainerSessions      ClassSession[]    @relation("TrainerSessions")
@@ -177,6 +204,10 @@ model User {
   announcementsAuthored Announcement[]      @relation("AnnouncementAuthor")
   trainerDebriefsGiven  TrainerDebrief[]
 
+  // Sustituye al @unique global de email: el mismo email puede tener membresía
+  // en varias organizaciones, pero solo una dentro de cada una.
+  @@unique([orgId, email])
+  @@index([identityId])
   @@index([orgId])
 }
 
@@ -189,6 +220,7 @@ model User {
 enum InvitationType {
   STAFF
   MEMBER
+  OWNER // activación del director tras el pago (alta pago-primero)
 }
 
 model Invitation {

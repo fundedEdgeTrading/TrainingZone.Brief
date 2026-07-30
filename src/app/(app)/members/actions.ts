@@ -61,6 +61,8 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   // Email de bienvenida no bloqueante: el socio ya está guardado, un SMTP lento no debe colgar el alta.
   void sendMail({
     to: email,
+    // RB-MARCA-001: el socio no ha comprado Apta, ha comprado su gimnasio.
+    fromName: org?.name ?? "Training Zone",
     subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}, ${firstName}! 🎉 Tu acceso te espera`,
     html: renderMemberWelcomeEmail({
       memberFirstName: firstName,

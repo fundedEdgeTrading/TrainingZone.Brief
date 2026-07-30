@@ -1,4 +1,5 @@
 import type { Role } from "@prisma/client";
+import type { PlatformFeature } from "@/lib/platform-plans";
 
 /**
  * Matriz de permisos (A.2.5). Ámbito: rol x módulo.
@@ -13,7 +14,44 @@ export type NavSection =
   | "Administración"
   | "Mi cuenta";
 
-export type NavItem = { href: string; label: string; section: NavSection; badge?: number };
+export type NavItem = {
+  href: string;
+  label: string;
+  section: NavSection;
+  badge?: number;
+  /** Si está presente, el elemento solo se muestra si el plan contratado lo incluye (RB-PLAN-003). */
+  feature?: PlatformFeature;
+};
+
+/**
+ * Qué funcionalidad de plan cubre cada ruta gateada. Vive aquí, junto a la
+ * navegación, para que no se pueda añadir un módulo premium al menú y olvidar
+ * declararlo. La guarda de página (`requireFeature`) usa el mismo mapa.
+ */
+export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
+  // `/dashboard` NO se gatea: es la ruta de aterrizaje de dirección y cerrarla
+  // dejaría a un cliente Esencial mirando un muro de pago en cada login. Lo que
+  // se gatea es el BI avanzado DENTRO del panel, no la puerta.
+  "/feedback": "feedback_direccion",
+  "/retention": "retencion",
+  "/brief": "salud_aptitud",
+  "/health/aptitude-rules": "salud_aptitud",
+  "/health/reference-ranges": "salud_aptitud",
+  "/audit": "exportaciones",
+};
+
+/** Aplica el mapa anterior a una navegación ya resuelta por rol. */
+export function withFeatureFlags(items: NavItem[]): NavItem[] {
+  return items.map((item) => {
+    const feature = FEATURE_BY_ROUTE[item.href];
+    return feature ? { ...item, feature } : item;
+  });
+}
+
+/** Deja solo lo que el rol permite Y el plan incluye. */
+export function filterNavByFeatures(items: NavItem[], features: Set<PlatformFeature>): NavItem[] {
+  return withFeatureFlags(items).filter((item) => !item.feature || features.has(item.feature));
+}
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
@@ -30,6 +68,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/anuncios", label: "Anuncios", section: "Administración" },
     { href: "/rrhh", label: "RRHH", section: "Administración" },
     { href: "/organization", label: "Organización", section: "Administración" },
+    { href: "/puesta-en-marcha", label: "Puesta en marcha", section: "Administración" },
     { href: "/audit", label: "Auditoría", section: "Administración" },
   ],
   CENTER_DIRECTOR: [
@@ -194,9 +233,12 @@ export function canReviewStaffProposals(role: Role): boolean {
 }
 
 export function defaultRouteForRole(role: Role): string {
-  // Siempre la primera entrada de su propia navegación: evita redirigir a
-  // una ruta que ese rol no tiene permiso de ver (y el consiguiente bucle).
-  return NAV_BY_ROLE[role][0]?.href ?? "/login";
+  // La primera entrada de su navegación que NO dependa del plan contratado:
+  // evita redirigir a una ruta sin permiso (y su bucle) y también aterrizar a
+  // un cliente de tier bajo en un módulo que no ha comprado.
+  const items = NAV_BY_ROLE[role];
+  const alwaysAvailable = items.find((item) => !FEATURE_BY_ROUTE[item.href]);
+  return alwaysAvailable?.href ?? items[0]?.href ?? "/login";
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
