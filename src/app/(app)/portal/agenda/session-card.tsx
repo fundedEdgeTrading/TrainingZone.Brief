@@ -3,6 +3,7 @@ import BookingButton from "./booking-button";
 
 type BookableSession = {
   id: string;
+  occurrenceDate: string;
   name: string;
   classType: string;
   startTime: string;
@@ -30,7 +31,13 @@ export default function SessionCard({ session: s }: { session: BookableSession }
   const pct = isGroup ? Math.min(100, Math.round((s.bookedCount / s.capacity) * 100)) : 0;
 
   return (
-    <div className="relative overflow-hidden bg-brand-card border border-brand-border rounded-2xl p-[18px] pb-4 transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-[0_14px_30px_-16px_rgba(29,29,28,.3)] hover:border-brand-border-hover">
+    // `article` con nombre accesible: el listado de "Reservar clase" era una
+    // pila de divs sin estructura, imposible de recorrer con lector de pantalla
+    // (y de identificar una tarjeta concreta desde fuera).
+    <article
+      aria-label={`${s.name} · ${s.startTime}`}
+      className="relative overflow-hidden bg-brand-card border border-brand-border rounded-2xl p-[18px] pb-4 transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-[0_14px_30px_-16px_rgba(29,29,28,.3)] hover:border-brand-border-hover"
+    >
       <div className="flex items-start justify-between gap-2.5">
         <div className="font-display font-extrabold text-[22px] leading-none text-brand-text tracking-[-.01em]">
           {s.startTime}
@@ -83,12 +90,13 @@ export default function SessionCard({ session: s }: { session: BookableSession }
         )}
         <BookingButton
           sessionId={s.id}
+          occurrenceDate={s.occurrenceDate}
           myBookingId={s.myBookingId}
           myBookingStatus={s.myBookingStatus}
           full={full}
           canCancelFreely={s.canCancelFreely}
         />
       </div>
-    </div>
+    </article>
   );
 }

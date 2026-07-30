@@ -5,7 +5,8 @@ import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
-import { instanceForWeek, type WeekOccurrence } from "./agenda-utils";
+import { isSameDay } from "@/lib/session-occurrences";
+import { addDays, instanceForWeek, type WeekOccurrence } from "./agenda-utils";
 import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
 
@@ -49,7 +50,14 @@ export default async function AgendaPage({
     const dayIndex = instanceForWeek(s, weekStart, weekEnd);
     if (dayIndex === null) continue;
     if (!s.trainerId) continue;
-    const booking = s.bookings.find((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW");
+    // Reservas del día que se pinta: en una serie recurrente todas las
+    // ocurrencias comparten fila, y contarlas juntas inflaba el aforo.
+    const occurrenceDay = addDays(weekStart, dayIndex);
+    const active = s.bookings.filter(
+      (b) =>
+        isSameDay(b.occurrenceDate, occurrenceDay) &&
+        (b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW")
+    );
     occurrences.push({
       id: s.id,
       dayIndex,
@@ -58,9 +66,14 @@ export default async function AgendaPage({
       title: s.name,
       trainerId: s.trainerId,
       type: s.classType === "Personal Training" ? "personal" : "reduced",
+      capacity: s.capacity,
+      selfBookable: s.selfBookable,
       isTrial: s.isTrial,
       isRecurring: s.recurrence !== "NONE",
-      bookedMemberId: booking?.memberId ?? null,
+      recurrence: s.recurrence,
+      recUntilISO: s.recUntil ? formatDateParam(s.recUntil) : null,
+      bookedMemberId: active[0]?.memberId ?? null,
+      bookedCount: active.length,
       status: s.status,
     });
   }

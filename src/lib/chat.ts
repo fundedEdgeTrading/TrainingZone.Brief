@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Role } from "@prisma/client";
+import { Prisma, type Role } from "@prisma/client";
 
 const CHAT_RECENT_WINDOW_DAYS = 90;
 
@@ -28,10 +28,30 @@ export async function canAccessMemberChat(orgId: string, memberId: string, actor
   return !!recentBooking;
 }
 
+/**
+ * El hilo de chat lo abre cualquier pantalla del portal (`portal/layout.tsx`),
+ * así que un socio recién dado de alta llega con varias peticiones a la vez: la
+ * página, su prefetch y el chat flotante. Todas leían "no hay conversación" y
+ * todas intentaban crearla; la que perdía la carrera chocaba con el unique de
+ * `memberId` y tumbaba la pantalla entera con un error de servidor — el socio
+ * nuevo veía "This page couldn't load" justo al entrar por primera vez.
+ *
+ * Ni `findUnique`+`create` ni `upsert` bastan (Prisma resuelve el upsert con un
+ * SELECT y un INSERT separados, así que la carrera sigue viva): la única lectura
+ * fiable del resultado es tratar el P2002 como "ya la creó la otra petición" y
+ * volver a leerla.
+ */
 export async function getOrCreateConversation(orgId: string, memberId: string) {
   const existing = await prisma.conversation.findUnique({ where: { memberId } });
   if (existing) return existing;
-  return prisma.conversation.create({ data: { orgId, memberId } });
+  try {
+    return await prisma.conversation.create({ data: { orgId, memberId } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return prisma.conversation.findUniqueOrThrow({ where: { memberId } });
+    }
+    throw error;
+  }
 }
 
 export async function listMessages(conversationId: string) {

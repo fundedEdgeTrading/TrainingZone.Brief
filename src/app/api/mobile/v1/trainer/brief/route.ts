@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
-import { expandOccurrences, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { expandOccurrences, isSameDay, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk } from "../../_lib/response";
 
@@ -26,7 +26,10 @@ export async function GET(req: NextRequest) {
     include: {
       center: true,
       trainer: { select: { name: true } },
-      bookings: { where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } }, select: { id: true } },
+      bookings: {
+        where: { status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+        select: { id: true, occurrenceDate: true },
+      },
     },
     orderBy: { date: "asc" },
   });
@@ -43,7 +46,8 @@ export async function GET(req: NextRequest) {
       name: s.name,
       centerName: s.center.name,
       trainerName: s.trainer?.name ?? null,
-      bookingsCount: s.bookings.length,
+      // Reservas de ESE día: una serie recurrente comparte fila entre ocurrencias.
+      bookingsCount: s.bookings.filter((b) => isSameDay(b.occurrenceDate, date)).length,
     })),
   });
 }

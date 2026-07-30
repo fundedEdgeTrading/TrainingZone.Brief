@@ -59,6 +59,10 @@ export function initials(name: string) {
 
 export type SessionType = "personal" | "reduced";
 
+/** Plazas por defecto de un grupo reducido nuevo (el EP es siempre 1 a 1). */
+export const DEFAULT_GROUP_CAPACITY = 6;
+export const MAX_GROUP_CAPACITY = 30;
+
 export type WeekOccurrence = {
   id: string;
   dayIndex: number; // 0=lunes .. 6=domingo, dentro de la semana visible
@@ -67,9 +71,18 @@ export type WeekOccurrence = {
   title: string;
   trainerId: string;
   type: SessionType;
+  capacity: number;
+  selfBookable: boolean;
   isTrial: boolean;
   isRecurring: boolean;
+  // La recurrencia real de la serie, no solo "si la tiene": el diálogo de
+  // edición la reenvía tal cual al guardar, y con un booleano una serie L–V o
+  // con fecha de fin se degradaba a semanal indefinida en cuanto el entrenador
+  // tocaba cualquier otro campo.
+  recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
+  recUntilISO: string | null;
   bookedMemberId: string | null;
+  bookedCount: number;
   status: string;
 };
 

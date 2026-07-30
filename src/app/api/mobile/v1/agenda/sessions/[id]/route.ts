@@ -15,6 +15,9 @@ type UpdateSessionBody = {
   startTime?: string;
   endTime?: string;
   memberId?: string | null;
+  capacity?: number | null;
+  /** RB-AGENDA-002: franja de EP abierta a que el socio la reserve desde el portal. */
+  selfBookable?: boolean;
   isTrial?: boolean;
   recurrence?: "NONE" | "WEEKLY" | "WEEKDAYS";
   recUntil?: string | null;
@@ -42,6 +45,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     startTime: body.startTime,
     endTime: body.endTime,
     memberId: body.memberId ?? null,
+    capacity: body.capacity ?? null,
+    // Por defecto, una franja de EP nueva es autorreservable: si no, el socio
+    // no la ve en el portal y la sesión que acaba de crear el entrenador queda
+    // muerta (RB-AGENDA-001/002).
+    selfBookable: body.selfBookable ?? true,
     isTrial: Boolean(body.isTrial),
     recurrence: body.recurrence ?? "NONE",
     recUntil: body.recUntil ? parseDateParam(body.recUntil) : null,

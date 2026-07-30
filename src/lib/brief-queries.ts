@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
+import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
 import type { Role, AptitudeLight } from "@prisma/client";
 
 const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
@@ -9,13 +10,16 @@ export async function getSessionBrief({
   sessionId,
   actorUserId,
   actorRole,
+  d,
 }: {
   orgId: string;
   sessionId: string;
   actorUserId: string;
   actorRole: Role;
+  /** Día de la serie que se está briefando ("YYYY-MM-DD"); por defecto, la fecha base. */
+  d?: string | null;
 }) {
-  const session = await prisma.classSession.findFirst({
+  const row = await prisma.classSession.findFirst({
     where: { id: sessionId, orgId },
     include: {
       center: true,
@@ -30,12 +34,18 @@ export async function getSessionBrief({
       },
     },
   });
-  if (!session) return null;
+  if (!row) return null;
 
   // Solo el entrenador asignado (o quien dirigió la sesión) y dirección pueden
   // abrir el debrief individual. Devolvemos null → notFound() para no revelar
   // siquiera la existencia de la sesión a quien no le corresponde.
-  if (!canViewSessionDebrief(actorRole, actorUserId, session)) return null;
+  if (!canViewSessionDebrief(actorRole, actorUserId, row)) return null;
+
+  // Roster del día concreto: una serie recurrente es una sola fila, así que sin
+  // filtrar por ocurrencia el brief de hoy listaba también a quien reservó la
+  // semana que viene.
+  const occurrenceDate = resolveOccurrenceDate(row, d);
+  const session = { ...row, bookings: row.bookings.filter((b) => isSameDay(b.occurrenceDate, occurrenceDate)) };
 
   const canSeeHealth = canViewHealthData(actorRole);
   const memberIds = session.bookings.map((b) => b.memberId);
@@ -63,7 +73,7 @@ export async function getSessionBrief({
         action: "SESSION_BRIEF_OPENED",
         entityType: "ClassSession",
         entityId: sessionId,
-        metadata: { memberIds },
+        metadata: { memberIds, occurrenceDate: occurrenceDate.toISOString() },
       },
     });
   }
@@ -93,6 +103,7 @@ export async function getSessionBrief({
 
   return {
     session,
+    occurrenceDate,
     canSeeHealth,
     roster,
   };
@@ -119,11 +130,12 @@ export async function getWeeklyDebriefReport(orgId: string, weekStart: Date): Pr
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const debriefs = await prisma.sessionDebrief.findMany({
-    where: { booking: { session: { orgId, date: { gte: weekStart, lt: weekEnd } } } },
+    where: { booking: { occurrenceDate: { gte: weekStart, lt: weekEnd }, session: { orgId } } },
     include: {
       booking: {
         select: {
-          session: { select: { id: true, date: true, name: true, trainerId: true, trainer: { select: { name: true } } } },
+          occurrenceDate: true,
+          session: { select: { id: true, name: true, trainerId: true, trainer: { select: { name: true } } } },
         },
       },
     },
@@ -143,10 +155,13 @@ export async function getWeeklyDebriefReport(orgId: string, weekStart: Date): Pr
       byTrainer.set(trainerId, trainerEntry);
     }
 
-    let sessionEntry = trainerEntry.sessionIndex.get(cls.id);
+    // Una serie recurrente puede tener varias ocurrencias dentro de la misma
+    // semana: se agregan por sesión Y día, no solo por sesión.
+    const key = `${cls.id}:${d.booking.occurrenceDate.toISOString()}`;
+    let sessionEntry = trainerEntry.sessionIndex.get(key);
     if (!sessionEntry) {
-      sessionEntry = { sessionId: cls.id, sessionDate: cls.date, sessionName: cls.name, greenCount: 0, yellowCount: 0, redCount: 0, notes: [] };
-      trainerEntry.sessionIndex.set(cls.id, sessionEntry);
+      sessionEntry = { sessionId: cls.id, sessionDate: d.booking.occurrenceDate, sessionName: cls.name, greenCount: 0, yellowCount: 0, redCount: 0, notes: [] };
+      trainerEntry.sessionIndex.set(key, sessionEntry);
       trainerEntry.sessions.push(sessionEntry);
     }
 
