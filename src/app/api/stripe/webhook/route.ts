@@ -3,6 +3,12 @@ import type { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
 import { reconcileStripeCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
+import {
+  reconcileMemberSubscriptionUpserted,
+  reconcileMemberSubscriptionDeleted,
+  reconcileMemberInvoicePaid,
+  reconcileMemberInvoicePaymentFailed,
+} from "@/lib/member-billing";
 import { prisma } from "@/lib/prisma";
 import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
@@ -40,7 +46,13 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
-/** Parte C: eventos de la cuenta conectada de un gimnasio (cobro a socios). */
+/**
+ * Parte C: eventos de la cuenta conectada de un gimnasio (cobro a socios).
+ * F5: los eventos de Stripe Billing resuelven `orgId` desde `StripeAccount`
+ * antes de escribir nada — es la frontera de aislamiento del Plano 2. Si la
+ * cuenta conectada no está en nuestra base (cuenta huérfana, evento de test
+ * de otra org...), se descarta sin más.
+ */
 async function handleConnectEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
@@ -59,9 +71,41 @@ async function handleConnectEvent(event: Stripe.Event) {
       await refreshStripeAccountStatus(account.id);
       break;
     }
+    case "customer.subscription.created":
+    case "customer.subscription.updated": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      await reconcileMemberSubscriptionUpserted(orgId, event.data.object as Stripe.Subscription);
+      break;
+    }
+    case "customer.subscription.deleted": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      await reconcileMemberSubscriptionDeleted(orgId, event.data.object as Stripe.Subscription);
+      break;
+    }
+    case "invoice.paid": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      await reconcileMemberInvoicePaid(orgId, event.data.object as Stripe.Invoice);
+      break;
+    }
+    case "invoice.payment_failed": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      await reconcileMemberInvoicePaymentFailed(orgId, event.data.object as Stripe.Invoice);
+      break;
+    }
     default:
       break;
   }
+}
+
+/** F5: `event.account` (acct_...) → `orgId` local, o `null` si no reconocemos la cuenta. */
+async function resolveConnectOrgId(accountId: string | null | undefined): Promise<string | null> {
+  if (!accountId) return null;
+  const account = await prisma.stripeAccount.findUnique({ where: { accountId }, select: { orgId: true } });
+  return account?.orgId ?? null;
 }
 
 /** Parte A.4: eventos de la suscripción de plataforma (Apta cobra al director). RB-PLAT-004: idempotente. */

@@ -267,11 +267,21 @@ export async function updateMembershipPlan(formData: FormData): Promise<OrgActio
 
   const plan = await prisma.membershipPlan.findFirst({
     where: { id: planId, orgId: session.user.orgId },
-    select: { id: true },
+    select: { id: true, priceCents: true },
   });
   if (!plan) return { ok: false, error: "Producto no encontrado." };
 
-  await prisma.membershipPlan.update({ where: { id: plan.id }, data: parsed.data });
+  // F5/RB-VENTA-002: los precios de Stripe son inmutables — si cambia el
+  // importe, el espejo (`stripePriceId`) queda obsoleto y hay que invalidarlo
+  // para que `ensureStripePrice` cree uno nuevo en el próximo checkout. Las
+  // `Subscription` ya vivas no se ven afectadas: siguen colgando del precio
+  // de Stripe anterior, que nunca se borra.
+  const priceChanged = parsed.data.priceCents !== plan.priceCents;
+
+  await prisma.membershipPlan.update({
+    where: { id: plan.id },
+    data: { ...parsed.data, ...(priceChanged ? { stripePriceId: null } : {}) },
+  });
   revalidatePath("/organization");
   return { ok: true };
 }

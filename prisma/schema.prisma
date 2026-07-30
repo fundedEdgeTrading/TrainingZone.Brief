@@ -335,6 +335,7 @@ model Member {
   heightCm       Int? // composición corporal: base para IMC/rangos de referencia (docs/COMPOSICION_CORPORAL_*)
   originLeadId   String? @unique
   stripeCustomerId String? @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
+  stripeAccountId  String? // F5: cuenta CONECTADA del gimnasio donde vive ese cliente — si el gimnasio reconecta otra, invalida el espejo
 
   // --- Importación de socios desde export externo (F-IMPORT / RB-IMPORT) ---
   // El director puede importar un CSV de socios exportado de otra plataforma
@@ -505,6 +506,15 @@ model MembershipPlan {
   active           Boolean  @default(true)
   createdAt        DateTime @default(now())
 
+  // F5 (RB-VENTA-002): espejo del producto/precio en la cuenta CONECTADA del
+  // gimnasio. Los precios de Stripe son inmutables — cambiar el importe crea
+  // un precio nuevo y las suscripciones vivas conservan el anterior.
+  // `stripeAccountId` permite detectar que el gimnasio reconectó otra cuenta
+  // e invalidar el espejo.
+  stripeProductId String?
+  stripePriceId   String?
+  stripeAccountId String?
+
   organization  Organization   @relation(fields: [orgId], references: [id])
   subscriptions Subscription[]
 
@@ -538,6 +548,10 @@ model Subscription {
   // de distinta modalidad (EP/grupos), y pueden ser de centros distintos de la
   // misma organización.
   centerId String
+
+  // F5 (RB-VENTA-002): id de la Subscription recurrente en Stripe Billing
+  // (cuenta conectada del gimnasio). Null para bonos puntuales (no recurrentes).
+  stripeSubscriptionId String? @unique
 
   member   Member         @relation(fields: [memberId], references: [id])
   plan     MembershipPlan @relation(fields: [planId], references: [id])
@@ -750,6 +764,7 @@ model Payment {
   soldByUserId   String? // RB-RRHH-004: venta atribuida a trabajador (ranking mensual)
   stripeCheckoutSessionId String? @unique // F12: sesión de checkout que originó el cobro
   stripePaymentIntentId   String? @unique // F12: PaymentIntent confirmado por el webhook
+  stripeInvoiceId         String? @unique // F5: factura de Stripe Billing que originó el cobro recurrente (idempotencia de invoice.paid/payment_failed)
   createdAt      DateTime      @default(now())
 
   // PAGO-1 (RB-PAGO-002/003): aplazamiento local y devolución (modo registro local — D-2,
