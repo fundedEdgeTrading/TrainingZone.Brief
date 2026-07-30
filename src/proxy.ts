@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/onboarding",
   "/lead-form",
   "/planes",
+  "/hazte-socio",
   "/activar",
   "/verificar-email",
   "/recuperar-clave",
@@ -21,6 +22,7 @@ const PUBLIC_PATHS = [
   "/api/jobs",
   "/api/stripe",
   "/api/checkout",
+  "/api/hazte-socio",
   // La API de la app nativa NO usa la cookie de sesión: cada route handler
   // valida su propio token bearer con `requireApiSession`. Pasarla por el
   // chequeo de cookie de aquí la rebotaba entera a /login — incluido su

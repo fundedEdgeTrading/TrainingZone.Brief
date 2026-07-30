@@ -84,7 +84,11 @@ export async function createMemberCheckout(params: {
   memberId: string;
   planId: string;
   soldByUserId?: string;
-  origin: "staff" | "portal";
+  origin: "staff" | "portal" | "landing";
+  // Centro donde queda el bono/suscripción (RB-AGENDA-003): si se omite (los
+  // call sites de F5 no lo pasaban), cae al centro habitual del socio — así no
+  // se rompe ningún call site existente.
+  centerId?: string;
 }): Promise<MemberCheckoutResult> {
   const { orgId, memberId, planId, soldByUserId, origin } = params;
 
@@ -95,12 +99,13 @@ export async function createMemberCheckout(params: {
   const [member, plan] = await Promise.all([
     prisma.member.findFirst({
       where: { id: memberId, orgId },
-      select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true, stripeAccountId: true },
+      select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true, stripeAccountId: true, primaryCenterId: true },
     }),
     prisma.membershipPlan.findFirst({ where: { id: planId, orgId }, select: { id: true, name: true, priceCents: true, type: true } }),
   ]);
   if (!member) return { ok: false, error: "Socio no encontrado." };
   if (!plan) return { ok: false, error: "Plan no encontrado." };
+  const centerId = params.centerId ?? member.primaryCenterId;
 
   const priceResult = await ensureStripePrice(orgId, planId);
   if (!priceResult.ok) return { ok: false, error: priceResult.error };
@@ -119,7 +124,11 @@ export async function createMemberCheckout(params: {
   }
 
   const recurring = isRecurring(plan.type);
-  const returnPath = origin === "portal" ? "/portal/plan" : "/billing";
+  // "landing" (checkout público anónimo, sin sesión) no tiene ni /billing ni
+  // /portal/plan a los que volver: aterriza en una confirmación pública
+  // genérica, igual que el checkout anónimo de organizaciones vuelve a
+  // /activar en vez de a un panel (platform-billing.ts).
+  const returnPath = origin === "portal" ? "/portal/plan" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
 
   const checkoutSession = await stripe.checkout.sessions.create(
     {
@@ -129,11 +138,11 @@ export async function createMemberCheckout(params: {
       payment_method_types: recurring ? ["card", "sepa_debit"] : ["card"],
       success_url: `${appBaseUrl()}${returnPath}?checkout=success`,
       cancel_url: `${appBaseUrl()}${returnPath}?checkout=cancelled`,
-      metadata: { orgId, memberId, planId, ...(soldByUserId ? { soldByUserId } : {}) },
+      metadata: { orgId, memberId, planId, centerId, ...(soldByUserId ? { soldByUserId } : {}) },
       // Stripe copia este metadata a la Subscription resultante (no el del
       // checkout.session), que es donde lo lee el webhook al recibir
       // `customer.subscription.created` para reconstruir el contexto sin adivinar.
-      ...(recurring ? { subscription_data: { metadata: { orgId, memberId, planId } } } : {}),
+      ...(recurring ? { subscription_data: { metadata: { orgId, memberId, planId, centerId } } } : {}),
     },
     { stripeAccount: accountId }
   );
@@ -159,6 +168,75 @@ export async function createMemberCheckout(params: {
       },
     });
   }
+
+  return { ok: true, url: checkoutSession.url };
+}
+
+/**
+ * Checkout público anónimo (landing `/hazte-socio`) para un prospecto que
+ * TODAVÍA no es socio: a diferencia de `createMemberCheckout`, no hay
+ * `Member` ni cliente de Stripe que reutilizar — nace todo del webhook tras
+ * el pago (mismo patrón que el alta de organizaciones, `platform-billing.ts`).
+ * `customer_email` le basta a Stripe para crear el customer al completar; no
+ * hace falta crearlo aquí.
+ *
+ * El metadata deliberadamente NO lleva `memberId`: es la señal que usa
+ * `checkout.session.completed` en el webhook para distinguir esto de una
+ * compra de un socio existente (ver `stripe-checkout.ts`).
+ */
+export async function createProspectMemberCheckout(params: {
+  orgId: string;
+  centerId: string;
+  planId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string | null;
+}): Promise<MemberCheckoutResult> {
+  const { orgId, centerId, planId, firstName, lastName, email, phone } = params;
+
+  const resolved = await stripeForOrg(orgId);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  const { stripe, accountId } = resolved;
+
+  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId }, select: { id: true, type: true } });
+  if (!plan) return { ok: false, error: "Plan no encontrado." };
+
+  const priceResult = await ensureStripePrice(orgId, planId);
+  if (!priceResult.ok) return { ok: false, error: priceResult.error };
+
+  const recurring = isRecurring(plan.type);
+  const metadata = {
+    orgId,
+    centerId,
+    planId,
+    prospectFirstName: firstName,
+    prospectLastName: lastName,
+    prospectEmail: email,
+    prospectPhone: phone ?? "",
+  };
+
+  const checkoutSession = await stripe.checkout.sessions.create(
+    {
+      mode: recurring ? "subscription" : "payment",
+      customer_email: email,
+      line_items: [{ price: priceResult.priceId, quantity: 1 }],
+      payment_method_types: recurring ? ["card", "sepa_debit"] : ["card"],
+      success_url: `${appBaseUrl()}/hazte-socio/gracias?checkout=success`,
+      cancel_url: `${appBaseUrl()}/hazte-socio/gracias?checkout=cancelled`,
+      metadata,
+      // El Member no existe todavía cuando se crea este checkout, así que el
+      // fallback de `reconcileMemberSubscriptionUpserted` por `metadata.memberId`
+      // no puede servir aquí: se le pasa `prospectEmail` para que no confunda
+      // esto con una suscripción huérfana, y quede en no-op hasta que
+      // `checkout.session.completed` cree el Member y enganche
+      // `stripeSubscriptionId` a mano (ver `provisionMemberFromLandingCheckout`).
+      ...(recurring ? { subscription_data: { metadata: { orgId, centerId, planId, prospectEmail: email } } } : {}),
+    },
+    { stripeAccount: accountId }
+  );
+
+  if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
 
   return { ok: true, url: checkoutSession.url };
 }

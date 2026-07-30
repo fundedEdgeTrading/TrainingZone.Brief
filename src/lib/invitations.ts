@@ -161,13 +161,21 @@ export async function createMemberWithInvitation(
     },
   });
 
+  // Se devuelven en el mismo orden que `params.bonos` (uno puede venir `null`
+  // si el plan/centro no existían — defensa en profundidad de
+  // `createBonoSubscription`) para que el caller pueda enlazar cada bono con
+  // lo que lo originó, p.ej. el checkout público de la landing necesita el id
+  // del bono recién creado para engancharle el `stripeSubscriptionId`.
+  const subscriptions = [];
   for (const bono of params.bonos) {
-    await createBonoSubscription(tx, {
-      orgId: params.orgId,
-      memberId: member.id,
-      planId: bono.planId,
-      centerId: bono.centerId,
-    });
+    subscriptions.push(
+      await createBonoSubscription(tx, {
+        orgId: params.orgId,
+        memberId: member.id,
+        planId: bono.planId,
+        centerId: bono.centerId,
+      })
+    );
   }
 
   const invitation = await tx.invitation.create({
@@ -180,5 +188,5 @@ export async function createMemberWithInvitation(
       expiresAt: invitationExpiry(),
     },
   });
-  return { member, invitation };
+  return { member, invitation, subscriptions };
 }

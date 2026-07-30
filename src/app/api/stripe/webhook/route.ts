@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
-import { reconcileStripeCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
+import { reconcileConnectCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
 import {
   reconcileMemberSubscriptionUpserted,
   reconcileMemberSubscriptionDeleted,
@@ -57,8 +57,9 @@ async function handleConnectEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
-      const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
-      await reconcileStripeCheckoutCompleted(session.id, paymentIntentId);
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      await reconcileConnectCheckoutCompleted(orgId, session);
       break;
     }
     case "checkout.session.expired": {
