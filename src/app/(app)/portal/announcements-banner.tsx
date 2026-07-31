@@ -42,17 +42,26 @@ export function AnnouncementsBanner({
 
   return (
     <div
-      className="relative overflow-hidden rounded-[18px] min-h-[272px] bg-brand-ink border border-brand-border-dark tz-fade-up"
+      className="relative overflow-hidden rounded-[18px] sm:min-h-[272px] bg-brand-ink border border-brand-border-dark tz-fade-up"
       onMouseEnter={() => pauseOnHover && setPaused(true)}
       onMouseLeave={() => pauseOnHover && setPaused(false)}
     >
       <div
-        className="flex h-full transition-transform duration-[600ms] ease-[cubic-bezier(.2,.8,.2,1)]"
+        className="flex items-stretch transition-transform duration-[600ms] ease-[cubic-bezier(.2,.8,.2,1)]"
         style={{ transform: `translateX(-${current * 100}%)` }}
       >
         {announcements.map((a) => (
-          <div key={a.id} className="flex-[0_0_100%] h-full relative overflow-hidden flex flex-wrap box-border">
-            <div className="flex-1 min-w-[340px] flex flex-col justify-center gap-3.5 px-7 py-[30px] pb-[34px]">
+          <div key={a.id} className="flex-[0_0_100%] min-w-0 relative overflow-hidden flex flex-col sm:flex-row box-border">
+            {a.imageUrl && (
+              <div className="relative order-first sm:order-last w-full aspect-[16/10] sm:aspect-auto sm:flex-[0_1_41%] sm:min-w-[230px] overflow-hidden bg-brand-ink-soft">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                <div className="absolute inset-0 shadow-[inset_0_-1px_0_rgba(255,255,255,.08)] sm:shadow-[inset_1px_0_0_rgba(255,255,255,.08)]" />
+                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-brand-ink to-transparent sm:hidden" />
+                <div className="hidden sm:block absolute inset-y-0 left-0 w-[88px] bg-gradient-to-r from-brand-ink to-transparent" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0 flex flex-col justify-center gap-3 px-6 py-6 sm:gap-3.5 sm:px-7 sm:py-[30px] sm:pb-[34px]">
               <div className="flex gap-2 items-center">
                 <span
                   className={`text-[11px] font-bold uppercase tracking-[.06em] rounded-full px-2.5 py-[3px] ${
@@ -67,7 +76,7 @@ export function AnnouncementsBanner({
                   </span>
                 )}
               </div>
-              <div className="font-display font-extrabold text-[23px] leading-[1.08] text-white uppercase tracking-[-.01em] line-clamp-2 text-pretty">
+              <div className="font-display font-extrabold text-[21px] sm:text-[23px] leading-[1.08] text-white uppercase tracking-[-.01em] line-clamp-2 text-pretty">
                 {a.title}
               </div>
               {a.body && (
@@ -107,15 +116,6 @@ export function AnnouncementsBanner({
                 </div>
               )}
             </div>
-
-            {a.imageUrl && (
-              <div className="flex-[0_1_41%] min-w-[230px] min-h-[190px] relative overflow-hidden bg-brand-ink-soft">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.imageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
-                <div className="absolute inset-0 shadow-[inset_1px_0_0_rgba(255,255,255,.08)]" />
-                <div className="absolute inset-y-0 left-0 w-[88px] bg-gradient-to-r from-brand-ink to-transparent" />
-              </div>
-            )}
           </div>
         ))}
       </div>
