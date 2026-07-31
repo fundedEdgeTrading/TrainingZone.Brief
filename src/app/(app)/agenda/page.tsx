@@ -6,7 +6,7 @@ import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { isSameDay } from "@/lib/session-occurrences";
-import { addDays, instanceForWeek, type WeekOccurrence } from "./agenda-utils";
+import { addDays, instanceForWeek, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
 import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
 
@@ -24,7 +24,7 @@ export default async function AgendaPage({
   // `day` solo lo usa la vista móvil (un día por pantalla) al saltar de semana
   // con las flechas: marca con qué día debe abrirse la semana de destino.
   const dayParam = Number(params.day);
-  const initialDayIndex = Number.isInteger(dayParam) && dayParam >= 0 && dayParam <= 6 ? dayParam : null;
+  const initialDayIndex = Number.isInteger(dayParam) && dayParam >= 0 && dayParam < VISIBLE_DAYS ? dayParam : null;
 
   // Sin `?week`, la agenda abre en la semana en curso *del centro*: con la hora
   // del servidor (UTC) un domingo por la noche en España abría la semana anterior.
@@ -48,7 +48,8 @@ export default async function AgendaPage({
   const occurrences: WeekOccurrence[] = [];
   for (const s of sessions) {
     const dayIndex = instanceForWeek(s, weekStart, weekEnd);
-    if (dayIndex === null) continue;
+    // De momento la agenda no opera en domingo: se descarta esa ocurrencia.
+    if (dayIndex === null || dayIndex >= VISIBLE_DAYS) continue;
     if (!s.trainerId) continue;
     // Reservas del día que se pinta: en una serie recurrente todas las
     // ocurrencias comparten fila, y contarlas juntas inflaba el aforo.

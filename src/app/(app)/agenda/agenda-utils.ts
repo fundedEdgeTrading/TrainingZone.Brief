@@ -9,6 +9,9 @@ export const ROW_HEIGHT = 56; // px por hora
 // tarjetas crecen y se pueden tocar/arrastrar con el dedo sin apuntar.
 export const ROW_HEIGHT_MOBILE = 72;
 
+// De momento la agenda solo pinta de lunes a sábado (el domingo no se opera).
+export const VISIBLE_DAYS = 6;
+
 export const DAY_ABBR = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
 export const DAY_LETTER = ["L", "M", "X", "J", "V", "S", "D"];
 export const DAY_NAME = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
