@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/guard";
 import { requireFeature } from "@/lib/entitlements";
 import { listReferenceRanges } from "@/lib/reference-ranges";
 import { PageHeader } from "@/components/ui/page-header";
-import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
+import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import DeleteButton from "./delete-button";
 import CreateRangeForm from "./create-range-form";
 
@@ -27,36 +27,51 @@ export default async function ReferenceRangesPage() {
 
       <CreateRangeForm />
 
-      <TableShell>
-        <THead>
-          <Th>Métrica</Th>
-          <Th>Sexo</Th>
-          <Th>Edad</Th>
-          <Th>Rango</Th>
-          <Th>Editado por</Th>
-          <Th />
-        </THead>
-        <tbody>
-          {ranges.map((r) => (
-            <TRow key={r.id}>
-              <Td className="font-medium text-text-2">{METRIC_LABEL[r.metric] ?? r.metric}</Td>
-              <Td>{r.sex ? SEX_LABEL[r.sex] ?? r.sex : "Ambos"}</Td>
-              <Td className="text-muted">
-                {r.ageMin ?? "—"}–{r.ageMax ?? "—"}
-              </Td>
-              <Td className="tz-nums">
-                {r.min ?? "—"} – {r.max ?? "—"}
-              </Td>
-              <Td className="text-faint text-xs">
-                {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
-              </Td>
-              <Td>
-                <DeleteButton id={r.id} />
-              </Td>
-            </TRow>
-          ))}
-        </tbody>
-      </TableShell>
+      <DataTable columns={rangeColumns} rows={ranges.map(rangeToRow)} emptyTitle="Sin rangos" />
     </div>
   );
+}
+
+type Range = Awaited<ReturnType<typeof listReferenceRanges>>[number];
+
+const rangeColumns: DataTableColumn[] = [
+  { key: "metric", header: "Métrica", sortable: true, className: "font-medium text-text-2" },
+  { key: "sex", header: "Sexo", sortable: true },
+  { key: "age", header: "Edad", sortable: true, className: "text-muted" },
+  { key: "range", header: "Rango", sortable: true, className: "tz-nums" },
+  { key: "editedBy", header: "Editado por", sortable: true, className: "text-faint text-xs" },
+  { key: "actions", header: "" },
+];
+
+function rangeToRow(r: Range): DataTableRow {
+  return {
+    key: r.id,
+    sortValues: {
+      metric: METRIC_LABEL[r.metric] ?? r.metric,
+      sex: r.sex ? SEX_LABEL[r.sex] ?? r.sex : "Ambos",
+      age: r.ageMin ?? -1,
+      range: r.min ?? -Infinity,
+      editedBy: r.updatedAt.getTime(),
+    },
+    cells: {
+      metric: METRIC_LABEL[r.metric] ?? r.metric,
+      sex: r.sex ? SEX_LABEL[r.sex] ?? r.sex : "Ambos",
+      age: (
+        <>
+          {r.ageMin ?? "—"}–{r.ageMax ?? "—"}
+        </>
+      ),
+      range: (
+        <>
+          {r.min ?? "—"} – {r.max ?? "—"}
+        </>
+      ),
+      editedBy: (
+        <>
+          {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
+        </>
+      ),
+      actions: <DeleteButton id={r.id} />,
+    },
+  };
 }

@@ -2,8 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { requireFeature } from "@/lib/entitlements";
 import { PageHeader } from "@/components/ui/page-header";
-import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { getAuditLogPage, getDistinctAuditActions, type AuditFilters } from "@/lib/audit-queries";
 
@@ -106,72 +105,76 @@ export default async function AuditPage({
         )}
       </form>
 
-      {logs.length === 0 ? (
-        <TableShell>
-          <tbody>
-            <tr>
-              <td colSpan={5}>
-                <EmptyState title="Sin registros" description="No hay eventos de auditoría para este filtro." />
-              </td>
-            </tr>
-          </tbody>
-        </TableShell>
-      ) : (
-        <>
-          <TableShell>
-            <THead>
-              <Th>Fecha</Th>
-              <Th>Acción</Th>
-              <Th>Actor</Th>
-              <Th>Entidad</Th>
-              <Th>Socio</Th>
-            </THead>
-            <tbody>
-              {logs.map((l) => (
-                <TRow key={l.id}>
-                  <Td className="text-muted tz-nums text-xs">{l.createdAt.toLocaleString("es-ES")}</Td>
-                  <Td className="font-medium text-text-2">
-                    <Badge tone="neutral">{ACTION_LABEL[l.action] ?? l.action}</Badge>
-                  </Td>
-                  <Td className="text-text-2">
-                    {l.actor?.name ?? "—"} <span className="text-xs text-faint">({l.actor?.role})</span>
-                  </Td>
-                  <Td className="text-muted text-xs">
-                    {l.entityType} · {l.entityId.slice(0, 8)}…
-                  </Td>
-                  <Td>
-                    {l.memberId ? (
-                      <Link href={`/members/${l.memberId}`} className="text-tz-black hover:underline text-xs">
-                        ver ficha
-                      </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </Td>
-                </TRow>
-              ))}
-            </tbody>
-          </TableShell>
+      <DataTable
+        columns={auditColumns}
+        rows={logs.map(logToRow)}
+        pagination={false}
+        emptyTitle="Sin registros"
+        emptyDescription="No hay eventos de auditoría para este filtro."
+      />
 
-          <div className="flex items-center justify-between gap-3 text-[13px] text-brand-muted">
-            <span>
-              {total} evento{total === 1 ? "" : "s"} · página {page} de {totalPages}
-            </span>
-            <div className="flex items-center gap-2">
-              {page > 1 && (
-                <Link href={pageHref(page - 1)} className="font-semibold text-brand-text hover:underline">
-                  ← Anterior
-                </Link>
-              )}
-              {page < totalPages && (
-                <Link href={pageHref(page + 1)} className="font-semibold text-brand-text hover:underline">
-                  Siguiente →
-                </Link>
-              )}
-            </div>
+      {logs.length > 0 && (
+        <div className="flex items-center justify-between gap-3 text-[13px] text-brand-muted">
+          <span>
+            {total} evento{total === 1 ? "" : "s"} · página {page} de {totalPages}
+          </span>
+          <div className="flex items-center gap-2">
+            {page > 1 && (
+              <Link href={pageHref(page - 1)} className="font-semibold text-brand-text hover:underline">
+                ← Anterior
+              </Link>
+            )}
+            {page < totalPages && (
+              <Link href={pageHref(page + 1)} className="font-semibold text-brand-text hover:underline">
+                Siguiente →
+              </Link>
+            )}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
+}
+
+type AuditLog = Awaited<ReturnType<typeof getAuditLogPage>>["logs"][number];
+
+const auditColumns: DataTableColumn[] = [
+  { key: "createdAt", header: "Fecha", sortable: true, className: "text-muted tz-nums text-xs" },
+  { key: "action", header: "Acción", sortable: true, className: "font-medium text-text-2" },
+  { key: "actor", header: "Actor", sortable: true, className: "text-text-2" },
+  { key: "entity", header: "Entidad", sortable: true, className: "text-muted text-xs" },
+  { key: "member", header: "Socio" },
+];
+
+function logToRow(l: AuditLog): DataTableRow {
+  return {
+    key: l.id,
+    sortValues: {
+      createdAt: l.createdAt.getTime(),
+      action: ACTION_LABEL[l.action] ?? l.action,
+      actor: l.actor?.name ?? "",
+      entity: l.entityType,
+    },
+    cells: {
+      createdAt: l.createdAt.toLocaleString("es-ES"),
+      action: <Badge tone="neutral">{ACTION_LABEL[l.action] ?? l.action}</Badge>,
+      actor: (
+        <>
+          {l.actor?.name ?? "—"} <span className="text-xs text-faint">({l.actor?.role})</span>
+        </>
+      ),
+      entity: (
+        <>
+          {l.entityType} · {l.entityId.slice(0, 8)}…
+        </>
+      ),
+      member: l.memberId ? (
+        <Link href={`/members/${l.memberId}`} className="text-tz-black hover:underline text-xs">
+          ver ficha
+        </Link>
+      ) : (
+        "—"
+      ),
+    },
+  };
 }

@@ -6,8 +6,7 @@ import { canManageMembers, canImportMembers } from "@/lib/rbac";
 import type { MemberState } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { FilterBar } from "@/components/ui/filter-bar";
-import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
-import { EmptyState } from "@/components/ui/empty-state";
+import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { NewMemberDrawer } from "./new-member-drawer";
 import { ImportMembersDrawer } from "./import-members-drawer";
@@ -64,57 +63,61 @@ export default async function MembersPage({
         ]}
       />
 
-      {members.length === 0 ? (
-        <TableShell>
-          <tbody>
-            <tr>
-              <td colSpan={5}>
-                <EmptyState title="Sin resultados" description="No hay socios que coincidan con estos filtros." />
-              </td>
-            </tr>
-          </tbody>
-        </TableShell>
-      ) : (
-        <TableShell>
-          <THead>
-            <Th>Socio</Th>
-            <Th>Centro</Th>
-            <Th>Estado</Th>
-            <Th>Plan actual</Th>
-            <Th>Alta</Th>
-          </THead>
-          <tbody>
-            {members.map((m, i) => (
-              <TRow key={m.id} className="group" style={i < 6 ? { animation: `tzFadeUp .4s ${(i * 0.03).toFixed(2)}s both` } : undefined}>
-                <Td>
-                  <Link href={`/members/${m.id}`} className="flex items-center gap-3">
-                    {m.photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- foto subida por el usuario (data URL)
-                      <img src={m.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-                    ) : (
-                      <span className="w-9 h-9 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-xs flex items-center justify-center shrink-0">
-                        {initials(m.firstName, m.lastName)}
-                      </span>
-                    )}
-                    <span>
-                      <span className="font-semibold text-brand-text group-hover:underline">
-                        {m.firstName} {m.lastName}
-                      </span>
-                      <span className="block text-xs text-faint">{m.email}</span>
-                    </span>
-                  </Link>
-                </Td>
-                <Td className="text-brand-text-2">{m.primaryCenter.name}</Td>
-                <Td>
-                  <Badge tone={MEMBER_STATE_TONE[m.state]}>{MEMBER_STATE_LABEL[m.state]}</Badge>
-                </Td>
-                <Td className="text-brand-text-2">{m.subscriptions[0]?.plan.name ?? "—"}</Td>
-                <Td className="text-brand-muted tz-nums">{m.joinedAt.toLocaleDateString("es-ES")}</Td>
-              </TRow>
-            ))}
-          </tbody>
-        </TableShell>
-      )}
+      <DataTable
+        columns={memberColumns}
+        rows={members.map(memberToRow)}
+        emptyTitle="Sin resultados"
+        emptyDescription="No hay socios que coincidan con estos filtros."
+      />
     </div>
   );
+}
+
+type Member = Awaited<ReturnType<typeof listMembers>>[number];
+
+const memberColumns: DataTableColumn[] = [
+  { key: "name", header: "Socio", sortable: true },
+  { key: "center", header: "Centro", sortable: true, className: "text-brand-text-2" },
+  { key: "state", header: "Estado", sortable: true },
+  { key: "plan", header: "Plan actual", sortable: true, className: "text-brand-text-2" },
+  { key: "joinedAt", header: "Alta", sortable: true, className: "text-brand-muted tz-nums" },
+];
+
+function memberToRow(m: Member, i: number): DataTableRow {
+  return {
+    key: m.id,
+    className: "group",
+    style: i < 6 ? { animation: `tzFadeUp .4s ${(i * 0.03).toFixed(2)}s both` } : undefined,
+    sortValues: {
+      name: `${m.lastName} ${m.firstName}`,
+      center: m.primaryCenter.name,
+      state: MEMBER_STATE_LABEL[m.state],
+      plan: m.subscriptions[0]?.plan.name ?? "",
+      joinedAt: m.joinedAt.getTime(),
+    },
+    cells: {
+      name: (
+        <Link href={`/members/${m.id}`} className="flex items-center gap-3">
+          {m.photoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- foto subida por el usuario (data URL)
+            <img src={m.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+          ) : (
+            <span className="w-9 h-9 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-xs flex items-center justify-center shrink-0">
+              {initials(m.firstName, m.lastName)}
+            </span>
+          )}
+          <span>
+            <span className="font-semibold text-brand-text group-hover:underline">
+              {m.firstName} {m.lastName}
+            </span>
+            <span className="block text-xs text-faint">{m.email}</span>
+          </span>
+        </Link>
+      ),
+      center: m.primaryCenter.name,
+      state: <Badge tone={MEMBER_STATE_TONE[m.state]}>{MEMBER_STATE_LABEL[m.state]}</Badge>,
+      plan: m.subscriptions[0]?.plan.name ?? "—",
+      joinedAt: m.joinedAt.toLocaleDateString("es-ES"),
+    },
+  };
 }

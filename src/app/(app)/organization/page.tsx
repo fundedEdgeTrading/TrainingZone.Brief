@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
+import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
 import { buildConnectOAuthUrl, isStripeConnectConfigured } from "@/lib/stripe-connect";
 import { prisma } from "@/lib/prisma";
@@ -223,53 +223,7 @@ export default async function OrganizationPage({
           tiene acceso a esta sección.
         </div>
 
-        <TableShell>
-          <THead>
-            <Th>Persona</Th>
-            <Th>Rol base</Th>
-            <Th>Imputación a centros</Th>
-            <Th>Estado de acceso</Th>
-          </THead>
-          <tbody>
-            {staff.map((u) => {
-              const active = !u.invitation || !!u.invitation.usedAt;
-              return (
-                <TRow key={u.id}>
-                  <Td>
-                    <div className="font-medium text-brand-text">{u.name}</div>
-                    <div className="text-xs text-faint">{u.email}</div>
-                  </Td>
-                  <Td className="text-text-2">{ROLE_LABEL[u.role]}</Td>
-                  <Td>
-                    {u.centerMemberships.length === 0 ? (
-                      <span className="text-xs text-faint">Toda la organización</span>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {u.centerMemberships.map((m) => (
-                          <span
-                            key={m.id}
-                            className="inline-flex items-center gap-1.5 rounded-pill bg-tz-sand px-2.5 py-1 text-[11px] text-text-2"
-                          >
-                            <span className="font-semibold">{m.center.name}</span>
-                            <span className="text-faint">
-                              {ROLE_LABEL[m.role]}
-                              {m.allocationPct != null ? ` · ${m.allocationPct}%` : ""}
-                              {m.isPrimary ? " · base" : ""}
-                            </span>
-                            <RemoveMembershipButton id={m.id} />
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </Td>
-                  <Td>
-                    <Badge tone={active ? "good" : "warning"}>{active ? "Acceso activo" : "Invitación enviada"}</Badge>
-                  </Td>
-                </TRow>
-              );
-            })}
-          </tbody>
-        </TableShell>
+        <DataTable columns={staffColumns} rows={staff.map(staffToRow)} />
       </section>
 
       {/* ---------- Imputación ---------- */}
@@ -324,4 +278,56 @@ export default async function OrganizationPage({
       </section>
     </div>
   );
+}
+
+type Staff = Awaited<ReturnType<typeof getStaffWithMemberships>>[number];
+
+const staffColumns: DataTableColumn[] = [
+  { key: "person", header: "Persona", sortable: true },
+  { key: "role", header: "Rol base", sortable: true, className: "text-text-2" },
+  { key: "centers", header: "Imputación a centros" },
+  { key: "access", header: "Estado de acceso", sortable: true },
+];
+
+function staffToRow(u: Staff): DataTableRow {
+  const active = !u.invitation || !!u.invitation.usedAt;
+  return {
+    key: u.id,
+    sortValues: {
+      person: u.name,
+      role: ROLE_LABEL[u.role],
+      access: active ? 1 : 0,
+    },
+    cells: {
+      person: (
+        <>
+          <div className="font-medium text-brand-text">{u.name}</div>
+          <div className="text-xs text-faint">{u.email}</div>
+        </>
+      ),
+      role: ROLE_LABEL[u.role],
+      centers:
+        u.centerMemberships.length === 0 ? (
+          <span className="text-xs text-faint">Toda la organización</span>
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {u.centerMemberships.map((m) => (
+              <span
+                key={m.id}
+                className="inline-flex items-center gap-1.5 rounded-pill bg-tz-sand px-2.5 py-1 text-[11px] text-text-2"
+              >
+                <span className="font-semibold">{m.center.name}</span>
+                <span className="text-faint">
+                  {ROLE_LABEL[m.role]}
+                  {m.allocationPct != null ? ` · ${m.allocationPct}%` : ""}
+                  {m.isPrimary ? " · base" : ""}
+                </span>
+                <RemoveMembershipButton id={m.id} />
+              </span>
+            ))}
+          </div>
+        ),
+      access: <Badge tone={active ? "good" : "warning"}>{active ? "Acceso activo" : "Invitación enviada"}</Badge>,
+    },
+  };
 }

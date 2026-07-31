@@ -7,7 +7,7 @@ import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { Badge } from "@/components/ui/badge";
-import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
+import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import CheckinButton from "./checkin-button";
 import CancelBookingButton from "./cancel-booking-button";
 import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
@@ -94,63 +94,77 @@ export default async function SessionDetailPage({
 
       <div>
         <h2 className="text-sm font-semibold text-text-2 mb-2">Roster ({booked.length})</h2>
-      <TableShell>
-        <THead>
-          <Th>Socio</Th>
-          <Th>Estado del socio</Th>
-          <Th>Estado reserva</Th>
-          <Th>Check-in</Th>
-          <Th>Acciones</Th>
-        </THead>
-        <tbody>
-          {booked.map((b) => (
-            <TRow key={b.id}>
-              <Td>
-                <Link href={`/members/${b.member.id}`} className="text-tz-black hover:underline">
-                  {b.member.firstName} {b.member.lastName}
-                </Link>
-              </Td>
-              <Td>
-                <Badge tone={MEMBER_STATE_TONE[b.member.state]}>{MEMBER_STATE_LABEL[b.member.state]}</Badge>
-              </Td>
-              <Td className="text-text-2">{STATUS_LABEL[b.status]}</Td>
-              <Td>
-                <CheckinButton bookingId={b.id} sessionId={cls.id} checkedIn={b.status === "ATTENDED"} />
-              </Td>
-              <Td>
-                {b.status === "BOOKED" && (
-                  <CancelBookingButton
-                    bookingId={b.id}
-                    sessionId={cls.id}
-                    memberName={`${b.member.firstName} ${b.member.lastName}`}
-                  />
-                )}
-              </Td>
-            </TRow>
-          ))}
-        </tbody>
-      </TableShell>
+        <DataTable
+          columns={rosterColumns}
+          rows={booked.map((b) => bookingToRow(b, cls.id))}
+          emptyTitle="Sin reservas"
+          emptyDescription="Todavía no hay ningún socio apuntado a esta sesión."
+        />
       </div>
 
       {waitlisted.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-text-2 mb-2">Lista de espera ({waitlisted.length})</h2>
-          <TableShell>
-            <tbody>
-              {waitlisted.map((b) => (
-                <TRow key={b.id}>
-                  <Td>
-                    <Link href={`/members/${b.member.id}`} className="text-tz-black hover:underline">
-                      {b.member.firstName} {b.member.lastName}
-                    </Link>
-                  </Td>
-                  <Td className="text-faint text-xs">posición {b.waitlistPosition ?? "—"}</Td>
-                </TRow>
-              ))}
-            </tbody>
-          </TableShell>
+          <DataTable columns={waitlistColumns} rows={waitlisted.map(waitlistToRow)} />
         </div>
       )}
     </div>
   );
+}
+
+type Booking = NonNullable<Awaited<ReturnType<typeof getSessionDetail>>>["bookings"][number];
+
+const rosterColumns: DataTableColumn[] = [
+  { key: "member", header: "Socio", sortable: true },
+  { key: "memberState", header: "Estado del socio", sortable: true },
+  { key: "status", header: "Estado reserva", sortable: true, className: "text-text-2" },
+  { key: "checkin", header: "Check-in" },
+  { key: "actions", header: "Acciones" },
+];
+
+function bookingToRow(b: Booking, sessionId: string): DataTableRow {
+  return {
+    key: b.id,
+    sortValues: {
+      member: `${b.member.lastName} ${b.member.firstName}`,
+      memberState: MEMBER_STATE_LABEL[b.member.state],
+      status: STATUS_LABEL[b.status],
+    },
+    cells: {
+      member: (
+        <Link href={`/members/${b.member.id}`} className="text-tz-black hover:underline">
+          {b.member.firstName} {b.member.lastName}
+        </Link>
+      ),
+      memberState: <Badge tone={MEMBER_STATE_TONE[b.member.state]}>{MEMBER_STATE_LABEL[b.member.state]}</Badge>,
+      status: STATUS_LABEL[b.status],
+      checkin: <CheckinButton bookingId={b.id} sessionId={sessionId} checkedIn={b.status === "ATTENDED"} />,
+      actions: b.status === "BOOKED" && (
+        <CancelBookingButton bookingId={b.id} sessionId={sessionId} memberName={`${b.member.firstName} ${b.member.lastName}`} />
+      ),
+    },
+  };
+}
+
+const waitlistColumns: DataTableColumn[] = [
+  { key: "member", header: "Socio", sortable: true },
+  { key: "position", header: "Posición", sortable: true },
+];
+
+function waitlistToRow(b: Booking): DataTableRow {
+  return {
+    key: b.id,
+    sortValues: {
+      member: `${b.member.lastName} ${b.member.firstName}`,
+      position: b.waitlistPosition ?? Number.MAX_SAFE_INTEGER,
+    },
+    cells: {
+      member: (
+        <Link href={`/members/${b.member.id}`} className="text-tz-black hover:underline">
+          {b.member.firstName} {b.member.lastName}
+        </Link>
+      ),
+      position: <span className="text-faint text-xs">posición {b.waitlistPosition ?? "—"}</span>,
+    },
+  };
 }
