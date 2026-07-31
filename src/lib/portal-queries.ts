@@ -768,18 +768,26 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: bookingId },
+  // La cancelación solo se aplica si la reserva SIGUE activa, y la condición
+  // viaja dentro del propio UPDATE: comprobar el estado con la lectura de más
+  // arriba (fuera de la transacción) permitía que dos cancelaciones simultáneas
+  // pasaran las dos y devolvieran el bono por duplicado.
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const applied = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: ["BOOKED", "WAITLISTED"] } },
       data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
     });
+    if (applied.count === 0) return false;
+
     if (refundSubscriptionId) {
       await tx.subscription.update({
         where: { id: refundSubscriptionId },
         data: { sessionsRemaining: { increment: 1 } },
       });
     }
+    return true;
   });
+  if (!cancelled) return { ok: false, error: "Esta reserva ya no está activa." };
 
   if (booking.status === "BOOKED" && wasFull) {
     void notifySessionVacancy({

@@ -186,11 +186,16 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: booking.id },
+  // Igual que en la cancelación del socio (portal-queries.ts): la condición de
+  // "sigue activa" va dentro del UPDATE, para que dos cancelaciones simultáneas
+  // no devuelvan el bono dos veces.
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const applied = await tx.booking.updateMany({
+      where: { id: booking.id, status: { in: ["BOOKED", "WAITLISTED"] } },
       data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
     });
+    if (applied.count === 0) return false;
+
     // RB-RES-006: la lista de espera nunca descontó bono, así que no se devuelve.
     if (booking.status === "BOOKED" && booking.subscriptionId) {
       await tx.subscription.update({
@@ -198,7 +203,9 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
         data: { sessionsRemaining: { increment: 1 } },
       });
     }
+    return true;
   });
+  if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
   if (booking.status === "BOOKED" && wasFull) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
