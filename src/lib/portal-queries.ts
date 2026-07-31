@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
-import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam } from "@/lib/date-utils";
+import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
@@ -549,7 +549,6 @@ const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GR
 export async function bookSessionForMember(
   member: MemberForBooking,
   sessionId: string,
-  timeZone: string,
   /** Día concreto de la serie que se reserva ("YYYY-MM-DD"); por defecto, la fecha base. */
   occurrenceDateParam?: string | null
 ): Promise<BookingResult> {
@@ -561,7 +560,10 @@ export async function bookSessionForMember(
 
     const cls = await tx.classSession.findUnique({
       where: { id: sessionId },
-      include: { bookings: { select: { status: true, occurrenceDate: true } } },
+      include: {
+        bookings: { select: { status: true, occurrenceDate: true } },
+        center: { select: { timezone: true } },
+      },
     });
     if (!cls || cls.status !== "SCHEDULED") {
       return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
@@ -576,7 +578,14 @@ export async function bookSessionForMember(
     }
 
     const now = new Date();
-    const startsAt = sessionStartsAt(occurrenceDate, cls.startTime, timeZone);
+    // La zona horaria de referencia es SIEMPRE la del centro que imparte la
+    // clase, nunca la que llegue del cliente: `resolveTimezone` prioriza la
+    // cookie `tz` del navegador (correcto para pintar horas, no para decidir),
+    // y con ella el socio desplazaba `startsAt` hasta ~26 h — lo justo para
+    // colarse dentro del corte de antelación mínima o para cancelar dentro de
+    // la ventana de penalización recuperando igualmente el bono.
+    const enforcementTimeZone = cls.center.timezone || DEFAULT_TIMEZONE;
+    const startsAt = sessionStartsAt(occurrenceDate, cls.startTime, enforcementTimeZone);
     // RB-RES-001: antelación mínima. RB-RES-002: ventana de 7 días vista.
     if (startsAt.getTime() - now.getTime() < MIN_LEAD_MINUTES * 60 * 1000) {
       return { ok: false as const, error: `Esta clase empieza en menos de ${MIN_LEAD_MINUTES} minutos: ya no admite reservas.` };
@@ -706,12 +715,18 @@ export async function bookSessionForMember(
   });
 }
 
-export async function cancelBookingForMember(memberId: string, bookingId: string, timeZone: string): Promise<BookingResult> {
+export async function cancelBookingForMember(memberId: string, bookingId: string): Promise<BookingResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, memberId },
     include: {
       session: {
-        select: { startTime: true, capacity: true, orgId: true, bookings: { select: { status: true, occurrenceDate: true } } },
+        select: {
+          startTime: true,
+          capacity: true,
+          orgId: true,
+          center: { select: { timezone: true } },
+          bookings: { select: { status: true, occurrenceDate: true } },
+        },
       },
     },
   });
@@ -723,7 +738,14 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  const startsAt = sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone);
+  // Zona horaria del centro, nunca la del cliente (ver `bookSessionForMember`):
+  // de ella dependen tanto "la clase ya ha empezado" como la ventana de
+  // penalización que decide si se devuelve el bono.
+  const startsAt = sessionStartsAt(
+    booking.occurrenceDate,
+    booking.session.startTime,
+    booking.session.center.timezone || DEFAULT_TIMEZONE
+  );
   if (startsAt.getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }

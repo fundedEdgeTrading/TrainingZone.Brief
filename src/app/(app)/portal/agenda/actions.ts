@@ -5,7 +5,6 @@ import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import { getMemberForUser, bookSessionForMember, cancelBookingForMember, type BookingResult } from "@/lib/portal-queries";
-import { resolveTimezone } from "@/lib/timezone";
 
 export type BookingActionResult = BookingResult;
 
@@ -14,12 +13,7 @@ export async function bookSession(sessionId: string, occurrenceDate?: string): P
   const member = await getMemberForUser(session.user.id);
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
-  const result = await bookSessionForMember(
-    member,
-    sessionId,
-    await resolveTimezone(member.primaryCenter.timezone),
-    occurrenceDate
-  );
+  const result = await bookSessionForMember(member, sessionId, occurrenceDate);
   if (!result.ok) return result;
 
   revalidatePath("/portal/agenda");
@@ -34,7 +28,7 @@ export async function cancelMyBooking(bookingId: string): Promise<BookingActionR
   const member = await getMemberForUser(session.user.id);
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
-  const result = await cancelBookingForMember(member.id, bookingId, await resolveTimezone(member.primaryCenter.timezone));
+  const result = await cancelBookingForMember(member.id, bookingId);
   if (!result.ok) return result;
 
   revalidatePath("/portal/agenda");
