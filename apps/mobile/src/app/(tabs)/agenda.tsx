@@ -81,15 +81,14 @@ export default function AgendaScreen() {
         </FadeInUp>
       ) : null}
 
-      {/* Todas las reservas vivas, también las de fuera de los próximos 7 días:
-          son las que cuentan para el tope de reservas activas. */}
+      {/* Todas las reservas vivas, también las de fuera de los próximos 7 días. */}
       {data && data.upcomingBookings.length > 0 ? (
         <View style={{ gap: 10 }}>
           <View style={styles.upcomingHeader}>
             <Text style={[styles.dayLabel, { color: theme.text }]}>Tus próximas reservas</Text>
             <Badge
-              label={`${data.activeBookings.count} de ${data.activeBookings.max} activas`}
-              tone={data.activeBookings.count >= data.activeBookings.max ? "critical" : "neutral"}
+              label={`${data.upcomingBookings.length} ${data.upcomingBookings.length === 1 ? "reserva" : "reservas"}`}
+              tone="neutral"
             />
           </View>
           {data.upcomingBookings.map((b) => (

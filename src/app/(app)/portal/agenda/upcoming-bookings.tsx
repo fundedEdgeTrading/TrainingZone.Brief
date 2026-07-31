@@ -1,12 +1,11 @@
 import { sessionServiceKind } from "@/lib/members-queries";
-import { MAX_ACTIVE_BOOKINGS, countsTowardsActiveLimit, type UpcomingBooking } from "@/lib/portal-queries";
+import { isLiveBooking, type UpcomingBooking } from "@/lib/portal-queries";
 import BookingButton from "./booking-button";
 
 /**
  * "Tus próximas reservas": todas las reservas vivas del socio, también las que
  * caen fuera de los 7 días del listado de abajo o las que le agendó su
- * entrenador. Es la contrapartida visible del tope de RB-RES-004 — antes el
- * socio podía tener 3 reservas contadas y ver solo una en pantalla.
+ * entrenador.
  */
 export default function UpcomingBookings({
   bookings,
@@ -17,8 +16,7 @@ export default function UpcomingBookings({
 }) {
   if (bookings.length === 0) return null;
 
-  const active = bookings.filter(countsTowardsActiveLimit).length;
-  const atLimit = active >= MAX_ACTIVE_BOOKINGS;
+  const active = bookings.filter(isLiveBooking).length;
 
   return (
     <section
@@ -33,20 +31,10 @@ export default function UpcomingBookings({
         >
           Tus próximas reservas
         </h2>
-        <span
-          className={`inline-flex items-center rounded-full px-[11px] py-1.5 text-xs font-bold tabular-nums ${
-            atLimit ? "bg-[#fdecea] text-critical" : "bg-[#eef0e4] text-[#4b5a22]"
-          }`}
-        >
-          {active} de {MAX_ACTIVE_BOOKINGS} activas
+        <span className="inline-flex items-center rounded-full px-[11px] py-1.5 text-xs font-bold tabular-nums bg-[#eef0e4] text-[#4b5a22]">
+          {active} {active === 1 ? "reserva" : "reservas"}
         </span>
       </div>
-
-      {atLimit && (
-        <p className="text-[13px] text-brand-text-2 mt-2">
-          Has llegado al máximo de reservas activas. Cancela una de estas para poder reservar otra clase.
-        </p>
-      )}
 
       <div className="flex flex-col divide-y divide-[#eeede6] mt-1">
         {bookings.map((b) => {
