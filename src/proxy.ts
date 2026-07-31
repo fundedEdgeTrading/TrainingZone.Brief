@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   "/onboarding",
   "/lead-form",
   "/planes",
+  "/demo-checkout",
   "/hazte-socio",
   "/activar",
   "/verificar-email",

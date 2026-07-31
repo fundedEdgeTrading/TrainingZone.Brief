@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { getStripeClient, isPlatformStripeConfigured } from "@/lib/stripe";
 import {
+  fundadorEnabled,
   fundadorMaxSeats,
   getPlatformPlan,
-  listPurchasablePlans,
+  isDemoModeActive,
   resolveStripePriceId,
 } from "@/lib/platform-plans";
 
@@ -23,12 +24,15 @@ function appBaseUrl() {
  * (D-12), solo necesita que Stripe pueda emitir su recibo.
  */
 export async function createLicenseCheckoutSession(planCode: string): Promise<PlatformCheckoutResult> {
-  if (!isPlatformStripeConfigured()) {
-    return { ok: false, error: "El pago online no está disponible todavía. Escríbenos y te damos de alta." };
-  }
-
-  const plan = listPurchasablePlans().find((p) => p.code === planCode);
+  const plan = getPlatformPlan(planCode);
   if (!plan) return { ok: false, error: "Ese plan no está disponible." };
+  if (plan.limitedOffer && !fundadorEnabled()) return { ok: false, error: "Ese plan no está disponible." };
+
+  // Sin Stripe configurado no hay pago real posible: se enseña una pantalla de
+  // demo en vez de fingir un checkout que no puede completarse.
+  if (isDemoModeActive()) {
+    return { ok: true, url: `${appBaseUrl()}/demo-checkout?plan=${encodeURIComponent(plan.code)}` };
+  }
 
   const priceId = resolveStripePriceId(plan);
   if (!priceId) return { ok: false, error: "Ese plan no tiene precio configurado." };
