@@ -90,6 +90,24 @@ export async function rotateRefreshToken(presentedToken: string): Promise<Refres
     return { ok: false, error: existing.revokedAt ? "invalid" : "expired" };
   }
 
+  // El token se "reclama" con un UPDATE condicional (`revokedAt: null`), que es
+  // atómico: solo una petición puede pasar de no-revocado a revocado. Con la
+  // comprobación de arriba a secas, dos refrescos simultáneos con el MISMO
+  // token pasaban los dos y se emitían dos tokens válidos — justo el reuso que
+  // la rotación existe para detectar, y que así no llegaba a saltar nunca.
+  const claimed = await prisma.mobileRefreshToken.updateMany({
+    where: { id: existing.id, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  if (claimed.count === 0) {
+    // Otra petición se lo llevó entre medias: es reuso, se corta la familia.
+    await prisma.mobileRefreshToken.updateMany({
+      where: { userId: existing.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: false, error: "invalid" };
+  }
+
   const token = newOpaqueToken();
   const created = await prisma.mobileRefreshToken.create({
     data: {
@@ -98,9 +116,10 @@ export async function rotateRefreshToken(presentedToken: string): Promise<Refres
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000),
     },
   });
+  // `revokedAt` ya se fijó al reclamarlo; aquí solo queda enlazar el sucesor.
   await prisma.mobileRefreshToken.update({
     where: { id: existing.id },
-    data: { revokedAt: new Date(), replacedById: created.id },
+    data: { replacedById: created.id },
   });
 
   return { ok: true, userId: existing.userId, token };
