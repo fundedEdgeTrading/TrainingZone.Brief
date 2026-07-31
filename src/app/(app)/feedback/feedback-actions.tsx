@@ -27,7 +27,15 @@ export function RequestFeedbackButton({ memberId }: { memberId: string }) {
   );
 }
 
-export function FeedbackDetailActions({ memberId }: { memberId: string }) {
+export function FeedbackDetailActions({
+  memberId,
+  canReview,
+  alreadyReviewed,
+}: {
+  memberId: string;
+  canReview: boolean;
+  alreadyReviewed: boolean;
+}) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -36,7 +44,7 @@ export function FeedbackDetailActions({ memberId }: { memberId: string }) {
       <Button
         type="button"
         variant="primary"
-        disabled={pending}
+        disabled={pending || !canReview || alreadyReviewed}
         onClick={() =>
           startTransition(async () => {
             const result = await markFeedbackReviewedAction(memberId);
@@ -45,7 +53,7 @@ export function FeedbackDetailActions({ memberId }: { memberId: string }) {
           })
         }
       >
-        Marcar como revisado
+        {alreadyReviewed ? "Ya revisado" : canReview ? "Marcar como revisado" : "Sin debrief que revisar"}
       </Button>
       <Button
         type="button"

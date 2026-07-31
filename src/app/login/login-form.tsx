@@ -21,8 +21,13 @@ const DEMO_USERS = [
   },
   {
     email: "entrenador@trainingzone.es",
-    label: "Entrenador",
+    label: "Dani — Entrenador",
     desc: "Agenda, Session Brief y Debrief",
+  },
+  {
+    email: "laura.gimeno@trainingzone.es",
+    label: "Laura — Entrenadora",
+    desc: "Otro entrenador, misma centro (La Jota)",
   },
   {
     email: "recepcion@trainingzone.es",
@@ -31,8 +36,18 @@ const DEMO_USERS = [
   },
   {
     email: "socio@trainingzone.es",
-    label: "Socio",
-    desc: "Portal del socio: reservas y progreso",
+    label: "Marta — Socia",
+    desc: "Bono de grupos + bono de EP (uno de cada)",
+  },
+  {
+    email: "socio.grupos@trainingzone.es",
+    label: "Nuria — Socia",
+    desc: "Solo bono de grupos reducidos",
+  },
+  {
+    email: "socio.ep@trainingzone.es",
+    label: "Álvaro — Socio",
+    desc: "Solo bono de entrenamiento personal",
   },
 ];
 

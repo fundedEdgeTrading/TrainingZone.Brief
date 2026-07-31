@@ -23,6 +23,7 @@ import { randomUUID } from "crypto";
 import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
 import { startOfWeekMonday } from "@/lib/date-utils";
 import type { FeedbackDims } from "@/lib/feedback-queries";
+import { currentPeriodKey } from "@/lib/feedback-capture";
 
 faker.seed(20260717);
 
@@ -170,7 +171,15 @@ type ExtraImputacion = {
   primaryAllocationPct?: number;
 };
 type DemoPlanKey = "group4" | "group8" | "group12" | "ep4" | "ep8" | "ep12";
-type DemoMemberCfg = { email: string; firstName: string; lastName: string; centerKey: string; planKey?: DemoPlanKey };
+type DemoMemberCfg = {
+  email: string;
+  firstName: string;
+  lastName: string;
+  centerKey: string;
+  planKey?: DemoPlanKey;
+  /** Posición dentro de los `memberCount` del centro (por defecto 0, como el ancla principal). */
+  slotIndex?: number;
+};
 type OrgSeedConfig = {
   name: string;
   slug: string;
@@ -179,6 +188,9 @@ type OrgSeedConfig = {
   staff: StaffCfg[];
   extraImputaciones: ExtraImputacion[];
   demoMember: DemoMemberCfg | null;
+  // Socios adicionales de login directo (un tipo de bono cada uno), sin el
+  // contenido narrativo extra (fotos/rutina IA/chat) que sí tiene `demoMember`.
+  extraDemoMembers: DemoMemberCfg[];
   historyDays: number;
   futureDays: number;
 };
@@ -505,19 +517,35 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     planKey: DemoPlanKey;
     atRisk: boolean;
     isDemoAnchor: boolean;
+    /** Marta o cualquiera de los `extraDemoMembers` — todos reciben ficha completa (foto, consentimientos). */
+    isAnyDemoAnchor: boolean;
   };
   const members: SeedMember[] = [];
 
   const demoMemberId = cfg.demoMember ? id() : null;
   const demoMemberUserId = cfg.demoMember ? id() : null;
+  // Socios adicionales de login directo (un bono cada uno): mismo mecanismo de
+  // "ancla" que el demoMember principal, pero sin el contenido narrativo extra
+  // (fotos/rutina IA/chat) que sí recibe Marta más abajo.
+  const extraDemoIds = new Map(cfg.extraDemoMembers.map((dm) => [dm.email, { id: id(), userId: id() }]));
+
+  function anchorFor(centerKey: string, slotIndex: number): DemoMemberCfg | null {
+    if (cfg.demoMember && cfg.demoMember.centerKey === centerKey && slotIndex === 0) return cfg.demoMember;
+    return cfg.extraDemoMembers.find((dm) => dm.centerKey === centerKey && (dm.slotIndex ?? 0) === slotIndex) ?? null;
+  }
 
   for (const c of centersData) {
     const centerTemplates = templates.filter((t) => t.centerId === c.id && t.classType !== "Personal Training");
     const ptTemplates = templates.filter((t) => t.centerId === c.id && t.classType === "Personal Training");
     let ptCursor = 0;
     for (let i = 0; i < c.memberCount; i++) {
-      const isDemoAnchor = !!cfg.demoMember && c.key === cfg.demoMember.centerKey && i === 0;
-      const state = isDemoAnchor
+      const anchor = anchorFor(c.key, i);
+      // `isDemoAnchor` conserva su significado original (Marta, la única con
+      // contenido narrativo extra); `anchor` cubre a los tres socios de login.
+      const isDemoAnchor = anchor === cfg.demoMember && !!anchor;
+      const anchorIds = !anchor ? null : anchor === cfg.demoMember ? { id: demoMemberId!, userId: demoMemberUserId! } : extraDemoIds.get(anchor.email)!;
+
+      const state = anchor
         ? MemberState.ACTIVE
         : weightedPick<MemberState>([
             [MemberState.ACTIVE, 68],
@@ -531,15 +559,15 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       const joinedAt = addDays(TODAY, -joinedDaysAgo);
       const cancelledAt = state === MemberState.CANCELLED ? addDays(joinedAt, randInt(30, joinedDaysAgo)) : null;
 
-      const firstName = isDemoAnchor ? cfg.demoMember!.firstName : faker.person.firstName();
-      const lastName = isDemoAnchor ? cfg.demoMember!.lastName : `${faker.person.lastName()} ${faker.person.lastName()}`;
+      const firstName = anchor ? anchor.firstName : faker.person.firstName();
+      const lastName = anchor ? anchor.lastName : `${faker.person.lastName()} ${faker.person.lastName()}`;
 
       // El bono contratado decide a qué asiste: quien tiene Grupos reducidos
       // reserva clases colectivas y quien tiene EP ocupa una franja 1:1 fija.
       // Sin esta correspondencia la agenda mostraría socios de EP en clases de
       // grupo (y al revés), que es justo la incoherencia que había que quitar.
-      const planKey: DemoPlanKey = isDemoAnchor
-        ? cfg.demoMember!.planKey ?? "group8"
+      const planKey: DemoPlanKey = anchor
+        ? anchor.planKey ?? "group8"
         : weightedPick<DemoPlanKey>([
             ["group4", 14],
             ["group8", 26],
@@ -563,65 +591,70 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         }
       }
 
-      const atRisk = state === MemberState.ACTIVE && !isDemoAnchor && Math.random() < 0.14;
+      const atRisk = state === MemberState.ACTIVE && !anchor && Math.random() < 0.14;
 
       members.push({
-        id: isDemoAnchor ? demoMemberId! : id(),
+        id: anchor ? anchorIds!.id : id(),
         centerId: c.id,
         firstName,
         lastName,
-        email: isDemoAnchor
-          ? cfg.demoMember!.email
-          : faker.internet.email({ firstName, lastName: lastName.split(" ")[0] }).toLowerCase(),
+        email: anchor ? anchor.email : faker.internet.email({ firstName, lastName: lastName.split(" ")[0] }).toLowerCase(),
         state,
         joinedAt,
         cancelledAt,
-        userId: isDemoAnchor ? demoMemberUserId : null,
+        userId: anchor ? anchorIds!.userId : null,
         preferredTemplates,
         planKey,
         atRisk,
         isDemoAnchor,
+        isAnyDemoAnchor: !!anchor,
       });
     }
   }
 
-  // Usuario de login para el socio demo
-  if (cfg.demoMember) {
+  // Usuario de login para el socio demo y los socios adicionales de login directo
+  const demoLoginAnchors: { cfg: DemoMemberCfg; id: string; userId: string }[] = [
+    ...(cfg.demoMember ? [{ cfg: cfg.demoMember, id: demoMemberId!, userId: demoMemberUserId! }] : []),
+    ...cfg.extraDemoMembers.map((dm) => ({ cfg: dm, ...extraDemoIds.get(dm.email)! })),
+  ];
+  for (const a of demoLoginAnchors) {
     await prisma.identity.create({
       data: {
-        id: demoMemberUserId!,
-        email: cfg.demoMember.email,
+        id: a.userId,
+        email: a.cfg.email,
         passwordHash,
         passwordSetAt: new Date(),
       },
     });
     await prisma.user.create({
       data: {
-        id: demoMemberUserId!,
-        identityId: demoMemberUserId!,
+        id: a.userId,
+        identityId: a.userId,
         orgId,
-        centerId: centerIdByKey.get(cfg.demoMember.centerKey)!,
-        name: `${cfg.demoMember.firstName} ${cfg.demoMember.lastName}`,
-        email: cfg.demoMember.email,
+        centerId: centerIdByKey.get(a.cfg.centerKey)!,
+        name: `${a.cfg.firstName} ${a.cfg.lastName}`,
+        email: a.cfg.email,
         role: "MEMBER",
       },
     });
   }
+  const demoAnchorMemberIds = new Set(demoLoginAnchors.map((a) => a.id));
 
   // Se recuerda quién firmó imágenes para poder generarle luego la serie de
   // fotos de seguimiento sin volver a consultar la base de datos.
   const consentImagesByMember = new Map<string, boolean>();
   await prisma.member.createMany({
     data: members.map((m) => {
-      // El socio ancla de la demo (p.ej. Marta) tiene foto de perfil y todos los
-      // consentimientos firmados, para poder enseñar Fotos y Evolución en el front.
-      const consentHealth = m.isDemoAnchor || Math.random() < 0.7;
+      // Los socios ancla de la demo (Marta y los de login directo) tienen foto de
+      // perfil y todos los consentimientos firmados, para que su ficha se vea
+      // completa nada más entrar.
+      const consentHealth = m.isAnyDemoAnchor || Math.random() < 0.7;
       // Con consentimiento de imágenes se les puede generar la serie de fotos de
       // seguimiento; se firma en la mayoría de altas para que las galerías de
       // evolución tengan contenido en varios socios, no solo en el ancla.
-      const consentImages = m.isDemoAnchor || Math.random() < 0.65;
+      const consentImages = m.isAnyDemoAnchor || Math.random() < 0.65;
       consentImagesByMember.set(m.id, consentImages);
-      const consentMarketing = m.isDemoAnchor || Math.random() < 0.6;
+      const consentMarketing = m.isAnyDemoAnchor || Math.random() < 0.6;
       return {
         id: m.id,
         orgId,
@@ -635,7 +668,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         state: m.state,
         joinedAt: m.joinedAt,
         cancelledAt: m.cancelledAt,
-        photoUrl: m.isDemoAnchor ? demoAvatarUrl(m.email, `${m.firstName[0]}${m.lastName[0]}`.toUpperCase()) : null,
+        photoUrl: m.isAnyDemoAnchor ? demoAvatarUrl(m.email, `${m.firstName[0]}${m.lastName[0]}`.toUpperCase()) : null,
         consentContract: true,
         consentHealth,
         consentImages,
@@ -677,10 +710,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         : m.state === MemberState.FROZEN
         ? SubscriptionStatus.FROZEN
         : SubscriptionStatus.ACTIVE;
-    // El socio demo arranca con saldo intermedio garantizado (ni lleno ni a 0)
-    // para que se vea el contador y pueda reservar en la demo.
+    // Los socios ancla arrancan con saldo intermedio garantizado (ni lleno ni a
+    // 0) para que se vea el contador y puedan reservar nada más entrar.
     const sessionsRemaining = plan.sessionsIncluded
-      ? m.id === demoMemberId
+      ? demoAnchorMemberIds.has(m.id)
         ? Math.max(2, Math.round(plan.sessionsIncluded * 0.6))
         : randInt(0, plan.sessionsIncluded)
       : null;
@@ -1612,7 +1645,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   const anyCenter = centersData[0];
   const receptionOrOwner = staffUsers.filter((u) => u.role === "RECEPTION" || u.role === "TRAINER" || u.role === "CENTER_DIRECTOR");
-  const activeNonAnchorMembers = members.filter((m) => m.state === MemberState.ACTIVE && m.id !== demoMemberId);
+  const activeNonAnchorMembers = members.filter((m) => m.state === MemberState.ACTIVE && !demoAnchorMemberIds.has(m.id));
 
   type SeedLead = {
     id: string;
@@ -2059,8 +2092,18 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const anchor = demoMemberId ? activeMembersForFeedback.find((m) => m.id === demoMemberId) : undefined;
     if (anchor) feedbackCandidates.unshift(anchor);
 
-    const clientFeedbackRows: ({ id: string; memberId: string; comment: string; submittedAt: Date } & FeedbackDims)[] = [];
-    const trainerDebriefRows: ({ id: string; memberId: string; trainerId: string; note: string; debriefAt: Date } & FeedbackDims)[] = [];
+    const feedbackPeriodKey = currentPeriodKey();
+    const clientFeedbackRows: ({ id: string; orgId: string; memberId: string; periodKey: string; comment: string; submittedAt: Date } & FeedbackDims)[] = [];
+    const trainerDebriefRows: ({
+      id: string;
+      orgId: string;
+      memberId: string;
+      trainerId: string;
+      periodKey: string;
+      note: string;
+      debriefAt: Date;
+      reviewedAt: Date | null;
+    } & FeedbackDims)[] = [];
 
     feedbackCandidates.forEach((m, i) => {
       const scenario = m.id === demoMemberId ? "ciego" : scenarioPattern[i % scenarioPattern.length];
@@ -2090,12 +2133,26 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           break;
       }
 
-      trainerDebriefRows.push({ id: id(), memberId: m.id, trainerId, ...trainer, note: NOTES_BY_SCENARIO[scenario], debriefAt });
+      trainerDebriefRows.push({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        trainerId,
+        periodKey: feedbackPeriodKey,
+        ...trainer,
+        note: NOTES_BY_SCENARIO[scenario],
+        debriefAt,
+        // El caso ancla (punto ciego principal) se deja sin revisar para poder
+        // enseñar el botón "Marcar como revisado" en la demo.
+        reviewedAt: scenario === "alineado" ? addDays(debriefAt, randInt(1, 3)) : null,
+      });
 
       if (client) {
         clientFeedbackRows.push({
           id: id(),
+          orgId,
           memberId: m.id,
+          periodKey: feedbackPeriodKey,
           ...client,
           comment: COMMENT_BY_SCENARIO[scenario as Exclude<FeedbackScenario, "sin_feedback">],
           submittedAt: addDays(debriefAt, -randInt(0, 1)),
@@ -2397,6 +2454,12 @@ const ORGS: OrgSeedConfig[] = [
       { email: "entrenador@trainingzone.es", centerKey: "puertacarmen", role: "TRAINER", allocationPct: 40, primaryAllocationPct: 60 },
     ],
     demoMember: { email: "socio@trainingzone.es", firstName: "Marta", lastName: "García López", centerKey: "lajota", planKey: "group12" },
+    // Login directo (ver login-form.tsx): un socio con cada tipo de bono
+    // "puro", para completar el caso combinado de Marta (grupos + EP).
+    extraDemoMembers: [
+      { email: "socio.grupos@trainingzone.es", firstName: "Nuria", lastName: "Peña Soler", centerKey: "lajota", planKey: "group8", slotIndex: 1 },
+      { email: "socio.ep@trainingzone.es", firstName: "Álvaro", lastName: "Mateos Duque", centerKey: "lajota", planKey: "ep8", slotIndex: 2 },
+    ],
   },
 ];
 
@@ -2484,6 +2547,8 @@ async function main() {
   console.log("    marcos.iglesias@trainingzone.es           Entrenador");
   console.log("    recepcion.lajota@trainingzone.es          Recepción");
   console.log("    socio@trainingzone.es                     Socio (Marta García López · bono 12 grupos en La Jota + bono 4 EP en Puerta del Carmen)");
+  console.log("    socio.grupos@trainingzone.es              Socio (Nuria Peña Soler · solo bono de grupos reducidos)");
+  console.log("    socio.ep@trainingzone.es                  Socio (Álvaro Mateos Duque · solo bono de EP)");
   console.log("  Puerta del Carmen");
   console.log("    direccion.puertacarmen@trainingzone.es    Dirección de centro");
   console.log("    elena.vidal@trainingzone.es               Entrenadora");

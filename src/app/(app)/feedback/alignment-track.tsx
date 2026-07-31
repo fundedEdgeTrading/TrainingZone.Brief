@@ -20,13 +20,13 @@ export function AlignmentTrack({
   cat,
 }: {
   clientValue: number | null;
-  trainerValue: number;
+  trainerValue: number | null;
   cat: AlignmentCategory;
 }) {
-  const trainerLeft = trackPosition(trainerValue);
+  const trainerLeft = trainerValue != null ? trackPosition(trainerValue) : null;
   const clientLeft = clientValue != null ? trackPosition(clientValue) : null;
-  const gapLeft = clientLeft != null ? Math.min(clientLeft, trainerLeft) : null;
-  const gapWidth = clientLeft != null ? Math.max(Math.abs(trainerLeft - clientLeft), 1.5) : null;
+  const gapLeft = clientLeft != null && trainerLeft != null ? Math.min(clientLeft, trainerLeft) : null;
+  const gapWidth = clientLeft != null && trainerLeft != null ? Math.max(Math.abs(trainerLeft - clientLeft), 1.5) : null;
 
   return (
     <div className="relative flex-1 h-[34px] min-w-[110px]">
@@ -47,14 +47,16 @@ export function AlignmentTrack({
           }}
         />
       )}
-      <div
-        className="absolute top-1/2 w-3 h-3 bg-apta-gold border-2 border-white z-[2]"
-        style={{
-          left: `${trainerLeft}%`,
-          transform: "translate(-50%,-50%) rotate(45deg)",
-          boxShadow: "0 0 0 1px #cbb98f, 0 2px 6px -2px rgba(29,29,28,.5)",
-        }}
-      />
+      {trainerLeft != null && (
+        <div
+          className="absolute top-1/2 w-3 h-3 bg-apta-gold border-2 border-white z-[2]"
+          style={{
+            left: `${trainerLeft}%`,
+            transform: "translate(-50%,-50%) rotate(45deg)",
+            boxShadow: "0 0 0 1px #cbb98f, 0 2px 6px -2px rgba(29,29,28,.5)",
+          }}
+        />
+      )}
     </div>
   );
 }

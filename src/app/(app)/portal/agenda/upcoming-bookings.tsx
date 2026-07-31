@@ -8,7 +8,13 @@ import BookingButton from "./booking-button";
  * entrenador. Es la contrapartida visible del tope de RB-RES-004 — antes el
  * socio podía tener 3 reservas contadas y ver solo una en pantalla.
  */
-export default function UpcomingBookings({ bookings }: { bookings: UpcomingBooking[] }) {
+export default function UpcomingBookings({
+  bookings,
+  cancelWindowHours,
+}: {
+  bookings: UpcomingBooking[];
+  cancelWindowHours: number;
+}) {
   if (bookings.length === 0) return null;
 
   const active = bookings.filter(countsTowardsActiveLimit).length;
@@ -78,8 +84,9 @@ export default function UpcomingBookings({ bookings }: { bookings: UpcomingBooki
                 occurrenceDate={b.occurrenceDate}
                 myBookingId={b.bookingId}
                 myBookingStatus={b.status}
-                full={false}
+                full={b.full}
                 canCancelFreely={b.canCancelFreely}
+                cancelWindowHours={cancelWindowHours}
                 variant="row"
               />
             </div>

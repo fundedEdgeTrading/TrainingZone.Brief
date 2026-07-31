@@ -8,6 +8,7 @@ import {
   getMemberUpcomingBookings,
   MAX_ACTIVE_BOOKINGS,
   BOOKING_WINDOW_DAYS,
+  CANCEL_WINDOW_HOURS,
 } from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
 import { getOnlineWorkouts } from "@/lib/online-queries";
@@ -146,7 +147,7 @@ export default async function PortalAgendaPage() {
         </div>
       )}
 
-      <UpcomingBookings bookings={upcomingBookings} />
+      <UpcomingBookings bookings={upcomingBookings} cancelWindowHours={CANCEL_WINDOW_HOURS} />
 
       {hasOnline && <OnlineWorkoutLibrary workouts={onlineWorkouts} />}
 
@@ -172,7 +173,7 @@ export default async function PortalAgendaPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             {daySessions.map((s) => (
-              <SessionCard key={s.id} session={s} />
+              <SessionCard key={s.id} session={s} cancelWindowHours={CANCEL_WINDOW_HOURS} />
             ))}
           </div>
         </div>

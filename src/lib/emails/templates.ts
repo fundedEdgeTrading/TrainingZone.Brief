@@ -172,6 +172,33 @@ export function renderMemberBillingLinkEmail(opts: {
   });
 }
 
+export function renderSessionVacancyEmail(opts: {
+  recipientFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  sessionName: string;
+  dateLabel: string;
+  startTime: string;
+  centerName: string;
+  agendaUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Plaza liberada",
+    title: `¡Hola, ${opts.recipientFirstName}!<br>Se ha liberado un hueco.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Se ha quedado una plaza libre en <b>${opts.sessionName}</b>, el <b>${opts.dateLabel} a las ${opts.startTime}</b> en ${opts.centerName}.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Las plazas se cubren por orden de llegada: si te interesa, resérvala cuanto antes desde tu portal.</p>`,
+    ctaLabel: "Ver y reservar →",
+    ctaUrl: opts.agendaUrl,
+    noteHtml: `Si ya no te interesa esta sesión, no hace falta que hagas nada.`,
+    signOff: `Un saludo,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque tienes un bono activo para este tipo de sesión en este centro.`,
+    footerLine2: `Con tecnología de Apta`,
+  });
+}
+
 export function renderOwnerActivationEmail(opts: {
   orgName: string;
   planName: string;

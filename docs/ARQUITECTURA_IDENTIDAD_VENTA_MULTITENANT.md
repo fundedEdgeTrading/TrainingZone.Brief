@@ -9,8 +9,8 @@ todo el mundo. Propone alternativas por cada eje y recomienda una, con el criter
 cliente (el gimnasio), y por último para nosotros.
 
 **Emparejar con:** `docs/PLATAFORMA_COBRO_SMTP_STRIPE_CONNECT_IMPLEMENTACION.md` (los dos
-planos de cobro, ya decididos: no se reabren aquí) y `docs/ANALISIS_FALTAS_IMPLEMENTACION.md`
-(qué está construido de verdad).
+planos de cobro, ya decididos: no se reabren aquí) y `docs/REGLAS_NEGOCIO_ESTADO_IMPLEMENTACION.md`
+(qué está construido de verdad — sustituye al antiguo `ANALISIS_FALTAS_IMPLEMENTACION.md`).
 
 ---
 
@@ -448,14 +448,13 @@ requieren la cuenta de Apta con Connect activado.
 
 ### Recordatorio incómodo pero necesario
 
-Hay dos huecos fuera de este documento que **bloquean un piloto real** y conviene no
-descubrirlos con el cliente dentro (ambos catalogados en `ANALISIS_FALTAS_IMPLEMENTACION.md`):
+Un hueco de esta lista ya se cerró y otro sigue abierto (estado verificado en
+`docs/REGLAS_NEGOCIO_ESTADO_IMPLEMENTACION.md`):
 
-- **No existe recuperación de contraseña** (A9). Con login global y cientos de socios, es la
-  primera incidencia de soporte que va a llegar. F-1 es el momento natural de resolverlo,
-  porque toca exactamente el mismo código.
-- **Las reglas automáticas dependen de un cron que no está programado**, y si
-  `JOBS_CRON_SECRET` no está definido el endpoint queda **abierto sin autenticación** (A11).
+- ~~No existe recuperación de contraseña~~ — **resuelto**: `src/app/recuperar-clave/*` (F1).
+- **Las reglas automáticas siguen dependiendo de un cron externo que nadie ha programado**
+  (`/api/jobs/run`, sin `vercel.json` ni equivalente) — ver §15 "🔑 Necesitan credencial o
+  proveedor externo" del documento de estado.
 
 ---
 

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { canManageOrg } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
+import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
 import type { Role } from "@prisma/client";
 
@@ -151,9 +152,22 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
 export async function cancelSessionBooking(orgId: string, bookingId: string) {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, session: { orgId }, status: { in: ["BOOKED", "WAITLISTED"] } },
-    select: { id: true, status: true, subscriptionId: true },
+    select: {
+      id: true,
+      status: true,
+      subscriptionId: true,
+      sessionId: true,
+      occurrenceDate: true,
+      session: { select: { capacity: true, bookings: { select: { status: true, occurrenceDate: true } } } },
+    },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
+
+  // RB-RES-007: mismo aviso de hueco liberado que en la cancelación del
+  // propio socio, medido antes de cancelar (ver portal-queries.ts).
+  const dayBookings = booking.session.bookings.filter((b) => isSameDay(b.occurrenceDate, booking.occurrenceDate));
+  const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
+  const wasFull = activeCountBefore >= booking.session.capacity;
 
   await prisma.$transaction(async (tx) => {
     await tx.booking.update({
@@ -168,6 +182,10 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
       });
     }
   });
+
+  if (booking.status === "BOOKED" && wasFull) {
+    void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
+  }
 
   return { ok: true as const };
 }

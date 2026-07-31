@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 
@@ -256,7 +257,22 @@ export async function getMemberHealthTransparency(memberId: string, orgId: strin
 
 export const BOOKING_WINDOW_DAYS = 7; // RB-RES-002
 const MIN_LEAD_MINUTES = 30; // RB-RES-001
-const CANCEL_WINDOW_HOURS = 4; // RB-RES-005
+const DEFAULT_CANCEL_WINDOW_HOURS = 24;
+
+/**
+ * RB-RES-005: horas de antelación mínima para cancelar sin perder la sesión
+ * del bono. Configurable por entorno (`CANCELLATION_WINDOW_HOURS`) para poder
+ * cambiar esta regla de negocio sin desplegar código; si la variable falta o
+ * no es un número válido, cae a 24h por defecto.
+ */
+function resolveCancelWindowHours(): number {
+  const raw = process.env.CANCELLATION_WINDOW_HOURS;
+  if (!raw) return DEFAULT_CANCEL_WINDOW_HOURS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_CANCEL_WINDOW_HOURS;
+}
+
+export const CANCEL_WINDOW_HOURS = resolveCancelWindowHours();
 export const MAX_ACTIVE_BOOKINGS = 3; // RB-RES-004
 
 /**
@@ -408,6 +424,8 @@ export type UpcomingBooking = {
   /** La clase la anuló el centro: la reserva sigue viva pero ya no ocupa cupo. */
   sessionCancelled: boolean;
   canCancelFreely: boolean;
+  /** Aforo de esa ocurrencia ya cubierto. Si es `false` con `status: WAITLISTED`, hay hueco para reclamarlo. */
+  full: boolean;
 };
 
 /**
@@ -456,8 +474,12 @@ export async function getMemberUpcomingBookings(
           startTime: true,
           endTime: true,
           status: true,
+          capacity: true,
           center: { select: { name: true } },
           trainer: { select: { name: true } },
+          // Necesario para saber si sigue lleno: sin esto no hay forma de
+          // decidir si una reserva WAITLISTED ya puede reclamar hueco.
+          bookings: { select: { status: true, occurrenceDate: true } },
         },
       },
     },
@@ -465,22 +487,27 @@ export async function getMemberUpcomingBookings(
 
   const now = Date.now();
   return bookings
-    .map((b) => ({
-      bookingId: b.id,
-      status: b.status as "BOOKED" | "WAITLISTED",
-      waitlistPosition: b.waitlistPosition,
-      sessionId: b.session.id,
-      occurrenceDate: formatDateParam(b.occurrenceDate),
-      sessionName: b.session.name,
-      classType: b.session.classType,
-      startsAt: sessionStartsAt(b.occurrenceDate, b.session.startTime, timeZone),
-      dayLabel: formatDayLabel(b.occurrenceDate),
-      startTime: b.session.startTime,
-      endTime: b.session.endTime,
-      centerName: b.session.center.name,
-      trainerName: b.session.trainer?.name ?? null,
-      sessionCancelled: b.session.status !== "SCHEDULED",
-    }))
+    .map((b) => {
+      const dayBookings = b.session.bookings.filter((x) => sameDay(x.occurrenceDate, b.occurrenceDate));
+      const activeCount = dayBookings.filter((x) => x.status === "BOOKED" || x.status === "ATTENDED" || x.status === "NO_SHOW").length;
+      return {
+        bookingId: b.id,
+        status: b.status as "BOOKED" | "WAITLISTED",
+        waitlistPosition: b.waitlistPosition,
+        sessionId: b.session.id,
+        occurrenceDate: formatDateParam(b.occurrenceDate),
+        sessionName: b.session.name,
+        classType: b.session.classType,
+        startsAt: sessionStartsAt(b.occurrenceDate, b.session.startTime, timeZone),
+        dayLabel: formatDayLabel(b.occurrenceDate),
+        startTime: b.session.startTime,
+        endTime: b.session.endTime,
+        centerName: b.session.center.name,
+        trainerName: b.session.trainer?.name ?? null,
+        sessionCancelled: b.session.status !== "SCHEDULED",
+        full: activeCount >= b.session.capacity,
+      };
+    })
     .filter((b) => b.startsAt.getTime() > now)
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
     .map((b) => ({ ...b, canCancelFreely: canCancelWithoutPenalty(b.startsAt) }));
@@ -496,7 +523,7 @@ export function countsTowardsActiveLimit(b: Pick<UpcomingBooking, "sessionCancel
 }
 
 export type BookingResult =
-  | { ok: true; waitlisted: boolean }
+  | { ok: true; waitlisted: boolean; forfeited?: boolean }
   | { ok: false; error: string; needsTopUp?: boolean };
 
 type MemberForBooking = {
@@ -568,11 +595,6 @@ export async function bookSessionForMember(
       return { ok: false as const, error: "Esta franja de entrenamiento personal la gestiona tu entrenador." };
     }
 
-    const existing = await tx.booking.findFirst({
-      where: { sessionId, memberId: member.id, occurrenceDate, status: { in: ["BOOKED", "WAITLISTED"] } },
-    });
-    if (existing) return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
-
     // Aforo del DÍA reservado, no de la serie entera: sin acotar por ocurrencia
     // un grupo semanal se daba por lleno en cuanto se acumulaban reservas de
     // semanas distintas.
@@ -580,16 +602,32 @@ export async function bookSessionForMember(
     const activeCount = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
     const overCapacity = activeCount >= cls.capacity;
 
+    const existing = await tx.booking.findFirst({
+      where: { sessionId, memberId: member.id, occurrenceDate, status: { in: ["BOOKED", "WAITLISTED"] } },
+    });
+    // Decisión de negocio: sin promoción automática de lista de espera. Si ya
+    // estabas en espera y se ha liberado un hueco, lo reclamas tú mismo con el
+    // mismo botón "Reservar" que vería cualquiera — no hay orden de cola
+    // garantizado, es "quien primero llega" igual que una reserva nueva.
+    const claimingOwnWaitlistSpot = existing?.status === "WAITLISTED" && !overCapacity;
+    if (existing && !claimingOwnWaitlistSpot) {
+      return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
+    }
+
     // RB-RES-004: máximo 3 reservas activas simultáneas. Se cuentan las mismas
     // que el socio ve en "Tus próximas reservas" —clases aún no empezadas y no
     // anuladas por el centro— para que el aviso nunca contradiga la pantalla.
-    const upcoming = await getMemberUpcomingBookings(member.id, timeZone, tx);
-    const activeBookings = upcoming.filter(countsTowardsActiveLimit).length;
-    if (!overCapacity && activeBookings >= MAX_ACTIVE_BOOKINGS) {
-      return {
-        ok: false as const,
-        error: `Ya tienes ${activeBookings} reservas activas (el máximo es ${MAX_ACTIVE_BOOKINGS}): cancela alguna en "Tus próximas reservas" para reservar otra.`,
-      };
+    // Al reclamar el propio hueco no se suma ninguna reserva nueva (ya contaba
+    // en espera), así que este tope no aplica en ese caso.
+    if (!claimingOwnWaitlistSpot) {
+      const upcoming = await getMemberUpcomingBookings(member.id, timeZone, tx);
+      const activeBookings = upcoming.filter(countsTowardsActiveLimit).length;
+      if (!overCapacity && activeBookings >= MAX_ACTIVE_BOOKINGS) {
+        return {
+          ok: false as const,
+          error: `Ya tienes ${activeBookings} reservas activas (el máximo es ${MAX_ACTIVE_BOOKINGS}): cancela alguna en "Tus próximas reservas" para reservar otra.`,
+        };
+      }
     }
 
     const kind = sessionServiceKind(cls.classType);
@@ -631,6 +669,20 @@ export async function bookSessionForMember(
       }
     }
 
+    if (claimingOwnWaitlistSpot) {
+      await tx.booking.update({
+        where: { id: existing!.id },
+        data: { status: "BOOKED", waitlistPosition: null, subscriptionId: chargeSubscriptionId },
+      });
+      if (chargeSubscriptionId) {
+        await tx.subscription.update({
+          where: { id: chargeSubscriptionId },
+          data: { sessionsRemaining: { decrement: 1 } },
+        });
+      }
+      return { ok: true as const, waitlisted: false };
+    }
+
     // La posición en lista de espera se numera sobre los que ya esperan, no
     // sobre el aforo: `activeCount` no crece al añadir gente a la lista, así que
     // contarlo con `activeCount - capacity + 1` daba la posición 1 a todos.
@@ -660,7 +712,11 @@ export async function bookSessionForMember(
 export async function cancelBookingForMember(memberId: string, bookingId: string, timeZone: string): Promise<BookingResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, memberId },
-    include: { session: { select: { startTime: true } } },
+    include: {
+      session: {
+        select: { startTime: true, capacity: true, orgId: true, bookings: { select: { status: true, occurrenceDate: true } } },
+      },
+    },
   });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
 
@@ -670,14 +726,28 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  if (sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone).getTime() <= Date.now()) {
+  const startsAt = sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone);
+  if (startsAt.getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }
 
-  // RB-RES-006: al cancelar una reserva que consumió bono, se devuelve la sesión
-  // al mismo bono. La lista de espera nunca descontó, así que no se reembolsa.
+  // RB-RES-005/006: al cancelar una reserva que consumió bono, se devuelve la
+  // sesión al mismo bono — pero solo si se cancela con la antelación mínima
+  // configurada (CANCEL_WINDOW_HOURS). Por debajo de esa ventana la sesión se
+  // pierde (queda como empleada), igual que si se hubiera asistido: el socio ya
+  // ha visto el aviso correspondiente antes de confirmar. La lista de espera
+  // nunca descontó, así que nunca se reembolsa ni le afecta esta ventana.
+  const withinPenaltyWindow = booking.status === "BOOKED" && !canCancelWithoutPenalty(startsAt);
   const refundSubscriptionId =
-    booking.status === "BOOKED" && booking.subscriptionId ? booking.subscriptionId : null;
+    booking.status === "BOOKED" && booking.subscriptionId && !withinPenaltyWindow ? booking.subscriptionId : null;
+
+  // RB-RES-007: si esta cancelación libera un hueco de una sesión que estaba
+  // completa, se avisa por email — se mide ANTES de cancelar (incluye esta
+  // misma reserva en el recuento) para no confundir "estaba llena" con
+  // "cancelar una clase que ya tenía sitio", que no es una oportunidad real.
+  const dayBookings = booking.session.bookings.filter((b) => sameDay(b.occurrenceDate, booking.occurrenceDate));
+  const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
+  const wasFull = activeCountBefore >= booking.session.capacity;
 
   await prisma.$transaction(async (tx) => {
     await tx.booking.update({
@@ -692,5 +762,14 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
     }
   });
 
-  return { ok: true, waitlisted: false };
+  if (booking.status === "BOOKED" && wasFull) {
+    void notifySessionVacancy({
+      orgId: booking.session.orgId,
+      sessionId: booking.sessionId,
+      occurrenceDate: booking.occurrenceDate,
+      excludeMemberId: memberId,
+    });
+  }
+
+  return { ok: true, waitlisted: false, forfeited: withinPenaltyWindow };
 }

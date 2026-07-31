@@ -19,5 +19,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ boo
   revalidatePath("/portal");
   revalidateSessionViews();
 
-  return apiOk({ cancelled: true });
+  return apiOk({ cancelled: true, forfeited: !!result.forfeited });
 }
