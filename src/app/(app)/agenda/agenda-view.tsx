@@ -153,13 +153,13 @@ export default function AgendaView({
   // Un solo gesto activo: mover una sesión existente o pulsar en hueco libre
   // para crear una nueva. En táctil hay que mantener pulsado para arrastrar.
   type Gesture =
-    | { kind: "event"; id: string; grabDelta: number; dur: number }
+    | { kind: "event"; uid: string; grabDelta: number; dur: number }
     | { kind: "column"; day: number; min: number };
 
   const drag = usePointerDrag<Gesture>({
     threshold: 4,
     onActivate: (g) => {
-      if (g.kind === "event") setDraggingId(g.id);
+      if (g.kind === "event") setDraggingId(g.uid);
     },
     onMove: (gesture, p) => {
       if (gesture.kind !== "event") return;
@@ -168,7 +168,7 @@ export default function AgendaView({
       let ns = snap(g.min - gesture.grabDelta, 15);
       ns = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - gesture.dur, ns));
       setEvents((evs) =>
-        evs.map((ev) => (ev.id === gesture.id ? { ...ev, dayIndex: g.day, startMin: ns, endMin: ns + gesture.dur } : ev))
+        evs.map((ev) => (ev.uid === gesture.uid ? { ...ev, dayIndex: g.day, startMin: ns, endMin: ns + gesture.dur } : ev))
       );
     },
     onEnd: (gesture, _p, moved) => {
@@ -178,11 +178,11 @@ export default function AgendaView({
         return;
       }
       if (!moved) {
-        openEdit(gesture.id);
+        openEdit(gesture.uid);
         return;
       }
       if (!canEdit) return;
-      const ev = events.find((e) => e.id === gesture.id);
+      const ev = events.find((e) => e.uid === gesture.uid);
       if (!ev) return;
       const date = formatDateParam(addDays(weekStart, ev.dayIndex));
       moveSessionAction({ id: ev.id, centerId, date, startTime: fmtHHMM(ev.startMin), endTime: fmtHHMM(ev.endMin) }).then((res) => {
@@ -252,8 +252,8 @@ export default function AgendaView({
     });
   }
 
-  function openEdit(id: string) {
-    const ev = events.find((e) => e.id === id);
+  function openEdit(uid: string) {
+    const ev = events.find((e) => e.uid === uid);
     if (!ev || !canEdit) return;
     const dateISO = formatDateParam(addDays(weekStart, ev.dayIndex));
     setDlg({
@@ -529,7 +529,7 @@ export default function AgendaView({
                         const showTrainer = mobileDayOnly && ev.total === 1 && height >= 56;
                         return (
                           <TrainerTooltip
-                            key={ev.id}
+                            key={ev.uid}
                             name={trainerName[ev.trainerId] ?? "Sin entrenador"}
                             color={color}
                             data-event-card
@@ -539,7 +539,7 @@ export default function AgendaView({
                               const g = geom(e.clientX, e.clientY);
                               drag.start(e, {
                                 kind: "event",
-                                id: ev.id,
+                                uid: ev.uid,
                                 grabDelta: g ? g.min - ev.startMin : 0,
                                 dur: ev.endMin - ev.startMin,
                               });
@@ -551,9 +551,9 @@ export default function AgendaView({
                               left: `calc(${ev.col * widthPct}% + 1px)`,
                               width: `calc(${widthPct}% - 3px)`,
                               background: color,
-                              boxShadow: draggingId === ev.id ? "0 10px 24px -6px rgba(29,29,28,.45)" : "0 1px 2px rgba(29,29,28,.18)",
-                              cursor: canEdit ? (draggingId === ev.id ? "grabbing" : "grab") : "default",
-                              zIndex: draggingId === ev.id ? 3 : 2,
+                              boxShadow: draggingId === ev.uid ? "0 10px 24px -6px rgba(29,29,28,.45)" : "0 1px 2px rgba(29,29,28,.18)",
+                              cursor: canEdit ? (draggingId === ev.uid ? "grabbing" : "grab") : "default",
+                              zIndex: draggingId === ev.uid ? 3 : 2,
                               borderLeft: "3px solid rgba(255,255,255,.35)",
                             }}
                             title={ev.title}

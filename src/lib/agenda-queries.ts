@@ -39,7 +39,7 @@ export async function getCentersForUser(user: {
  * caen literalmente en el rango, más las series recurrentes nacidas antes de
  * la semana y aún no finalizadas (`recUntil` nulo o posterior a weekStart).
  * La proyección exacta día/semana (¿le toca ocurrencia esta semana?) se
- * resuelve en el llamador con `instanceForWeek` (agenda-utils.ts).
+ * resuelve en el llamador con `instancesForWeek` (agenda-utils.ts).
  */
 export async function getWeekSessions(orgId: string, centerId: string, weekStart: Date, weekEnd: Date) {
   const sessions = await prisma.classSession.findMany({
