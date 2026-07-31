@@ -138,7 +138,7 @@ export default async function PortalAgendaPage() {
             </div>
             <p className="text-[13px] text-brand-text-2 mt-0.5">
               Renueva tu bono para seguir reservando tus sesiones.{" "}
-              <Link href="/portal/comprar" className="font-semibold underline underline-offset-2 hover:text-critical">
+              <Link href="/portal/membresia" className="font-semibold underline underline-offset-2 hover:text-critical">
                 Comprar o renovar →
               </Link>
             </p>

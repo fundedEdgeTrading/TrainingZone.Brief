@@ -12,13 +12,18 @@ export type NavSection =
   | "Operativa del centro"
   | "Salud y aptitud"
   | "Administración"
-  | "Mi cuenta";
+  // Navegación del socio (rediseño NavBar premium, opción 1b): dos grupos con
+  // jerarquía en vez de un único "Mi cuenta" plano.
+  | "Entrenar"
+  | "Membresía";
 
 export type NavItem = {
   href: string;
   label: string;
   section: NavSection;
   badge?: number;
+  /** Texto corto a la derecha del item (p.ej. próxima reserva en "Reservar clase"). */
+  meta?: string;
   /** Si está presente, el elemento solo se muestra si el plan contratado lo incluye (RB-PLAN-003). */
   feature?: PlatformFeature;
 };
@@ -98,13 +103,15 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
     { href: "/billing", label: "Cobros", section: "Operativa del centro" },
   ],
+  // "Mi perfil" ya no vive en el nav: se accede desde el bloque de usuario del
+  // pie del sidebar y desde el chip de usuario del header (menú de cuenta).
+  // "Mi plan" + "Comprar/renovar" se fusionan en "Mi membresía".
   MEMBER: [
-    { href: "/portal", label: "Mi actividad", section: "Mi cuenta" },
-    { href: "/portal/agenda", label: "Reservar clase", section: "Mi cuenta" },
-    { href: "/portal/evolucion", label: "Mi evolución", section: "Mi cuenta" },
-    { href: "/portal/plan", label: "Mi plan", section: "Mi cuenta" },
-    { href: "/portal/comprar", label: "Comprar / renovar", section: "Mi cuenta" },
-    { href: "/portal/perfil", label: "Mi perfil", section: "Mi cuenta" },
+    { href: "/portal", label: "Mi actividad", section: "Entrenar" },
+    { href: "/portal/agenda", label: "Reservar clase", section: "Entrenar" },
+    { href: "/portal/evolucion", label: "Mi evolución", section: "Entrenar" },
+    { href: "/portal/membresia", label: "Mi membresía", section: "Membresía" },
+    { href: "/portal/membresia/facturas", label: "Facturas y pagos", section: "Membresía" },
   ],
   HR_MANAGER: [
     { href: "/organization", label: "Organización", section: "Administración" },
@@ -125,7 +132,8 @@ export const NAV_SECTION_ORDER: NavSection[] = [
   "Operativa del centro",
   "Salud y aptitud",
   "Administración",
-  "Mi cuenta",
+  "Entrenar",
+  "Membresía",
 ];
 
 export function groupNav(nav: NavItem[]) {
