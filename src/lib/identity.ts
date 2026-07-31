@@ -12,6 +12,13 @@ const BCRYPT_ROUNDS = 10;
 
 export const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * Hash de descarte con el que comparar cuando el email no existe, para que el
+ * login tarde lo mismo exista o no. Es un bcrypt válido de coste
+ * `BCRYPT_ROUNDS` que ninguna contraseña real produce.
+ */
+const DUMMY_PASSWORD_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
 export type Membership = {
   userId: string;
   orgId: string;
@@ -76,10 +83,13 @@ export async function authenticate(
     where: { email: email.trim().toLowerCase() },
     select: { id: true, passwordHash: true },
   });
-  if (!identity) return { ok: false };
 
-  const valid = await bcrypt.compare(password, identity.passwordHash);
-  if (!valid) return { ok: false };
+  // Con un `return` seco cuando el email no existe, la respuesta llegaba sin
+  // pagar el coste de bcrypt: la diferencia de tiempo (~100 ms) convertía el
+  // login en el oráculo de emails que este módulo dice evitar. Comparar
+  // siempre, contra un hash de descarte si hace falta, iguala ambos caminos.
+  const valid = await bcrypt.compare(password, identity?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!identity || !valid) return { ok: false };
 
   const memberships = await membershipsFor(identity.id);
   if (memberships.length === 0) return { ok: false };

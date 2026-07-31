@@ -45,7 +45,14 @@ export async function requireCenterRole(centerId: string, allowed: Role[]) {
   const session = await requireSession();
   const { id: userId, role, orgId, centerId: baseCenterId } = session.user;
 
-  if (canManageOrg(role)) return session;
+  // OWNER / PLATFORM_ADMIN mandan en toda SU organización, no en cualquiera:
+  // devolver la sesión sin mirar el centro dejaba pasar un `centerId` de otra
+  // organización, que es justo lo que esta guarda debe cortar.
+  if (canManageOrg(role)) {
+    const center = await prisma.center.findFirst({ where: { id: centerId, orgId }, select: { id: true } });
+    if (center) return session;
+    redirect(defaultRouteForRole(role));
+  }
 
   if (allowed.includes(role)) {
     if (baseCenterId === centerId) return session;

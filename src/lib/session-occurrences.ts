@@ -1,4 +1,4 @@
-import { addDays, instanceForWeek, weekdayIdx } from "@/app/(app)/agenda/agenda-utils";
+import { addDays, instancesForWeek, weekdayIdx } from "@/app/(app)/agenda/agenda-utils";
 import { parseDateParam } from "@/lib/date-utils";
 
 /**
@@ -6,11 +6,11 @@ import { parseDateParam } from "@/lib/date-utils";
  *
  * La agenda guarda una serie recurrente como UNA fila (`date` = primera
  * ocurrencia, `recurrence`, `recUntil`) y proyecta las ocurrencias en lectura
- * con `instanceForWeek`. El panel del entrenador y el índice de briefs
+ * con `instancesForWeek`. El panel del entrenador y el índice de briefs
  * consultaban `classSession` por rango de fechas sin esa proyección, así que
  * una serie semanal solo aparecía la semana en que se creó — y con la fecha
  * base, no la del día real. Estos helpers replican la semántica de
- * `instanceForWeek` para un rango arbitrario, para que agenda, panel y brief
+ * `instancesForWeek` para un rango arbitrario, para que agenda, panel y brief
  * respondan siempre lo mismo.
  */
 
@@ -55,9 +55,17 @@ export function occurrencesInRange(session: RecurringSession, from: Date, to: Da
   if (session.recurrence === "NONE") {
     return base >= from && base < to ? [base] : [];
   }
-  // Misma regla que `instanceForWeek`: una ocurrencia por semana en el día de
-  // la semana de la fecha base; "WEEKDAYS" además exige que ese día sea L-V.
-  if (session.recurrence === "WEEKDAYS" && weekdayIdx(base) > 4) return [];
+  // Misma regla que `instancesForWeek`: "WEEKDAYS" es todos los días
+  // laborables (L–V), no uno por semana.
+  if (session.recurrence === "WEEKDAYS") {
+    const out: Date[] = [];
+    let day = base > from ? base : from;
+    for (; day < to; day = addDays(day, 1)) {
+      if (session.recUntil && day > session.recUntil) break;
+      if (weekdayIdx(day) <= 4) out.push(day);
+    }
+    return out;
+  }
 
   let occ = base;
   if (occ < from) {
@@ -120,4 +128,4 @@ export function expandOccurrences<T extends RecurringSession & { startTime: stri
 
 // Reexportado para que quien proyecte una semana concreta (la rejilla de la
 // agenda) siga usando exactamente la misma implementación.
-export { instanceForWeek };
+export { instancesForWeek };

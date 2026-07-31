@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runLeadOwnerAlertRule } from "@/lib/leads-queries";
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "jobs deshabilitados: falta JOBS_CRON_SECRET" }, { status: 503 });
   }
   const provided = req.headers.get("x-cron-secret") ?? req.nextUrl.searchParams.get("secret");
-  if (provided !== secret) {
+  if (!provided || !safeEqual(provided, secret)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
@@ -42,16 +43,45 @@ export async function GET(req: NextRequest) {
   };
 
 
+  // Cada regla se aísla: antes las ocho corrían sueltas dentro del bucle, así
+  // que una sola organización con datos que hicieran fallar una regla tumbaba
+  // el handler entero y TODAS las organizaciones siguientes se quedaban sin
+  // procesar, en silencio y hasta la próxima pasada del cron.
+  const failures: { orgId: string; rule: string; error: string }[] = [];
+  const run = async (orgId: string, rule: string, fn: () => Promise<number>) => {
+    try {
+      return await fn();
+    } catch (error) {
+      failures.push({ orgId, rule, error: error instanceof Error ? error.message : String(error) });
+      console.error(`[jobs] ${rule} falló en la organización ${orgId}:`, error);
+      return 0;
+    }
+  };
+
   for (const org of orgs) {
-    summary.leadOwnerAlerts += await runLeadOwnerAlertRule(org.id);
-    summary.fewSessionsAlerts += await runFewSessionsScheduledRule(org.id);
-    summary.lowPackAlerts += await runLowPackBalanceRule(org.id);
-    summary.stallAlerts += await runStallDetectionRule(org.id);
-    summary.checkins += await runPeriodicCheckinRule(org.id);
-    summary.offerSuggestions += await generateOfferSuggestions(org.id);
-    summary.scheduledCancellations += await runScheduledCancellationsRule(org.id);
-    summary.feedbackCyclePrompts += await runFeedbackCycleRule(org.id);
+    summary.leadOwnerAlerts += await run(org.id, "leadOwnerAlerts", () => runLeadOwnerAlertRule(org.id));
+    summary.fewSessionsAlerts += await run(org.id, "fewSessionsAlerts", () => runFewSessionsScheduledRule(org.id));
+    summary.lowPackAlerts += await run(org.id, "lowPackAlerts", () => runLowPackBalanceRule(org.id));
+    summary.stallAlerts += await run(org.id, "stallAlerts", () => runStallDetectionRule(org.id));
+    summary.checkins += await run(org.id, "checkins", () => runPeriodicCheckinRule(org.id));
+    summary.offerSuggestions += await run(org.id, "offerSuggestions", () => generateOfferSuggestions(org.id));
+    summary.scheduledCancellations += await run(org.id, "scheduledCancellations", () => runScheduledCancellationsRule(org.id));
+    summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
   }
 
-  return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), summary });
+  // 207 cuando algo falló: el cron sigue considerándose ejecutado (no tiene
+  // sentido reintentar las reglas que sí pasaron) pero el fallo queda visible
+  // en la respuesta en vez de perderse en los logs.
+  return NextResponse.json(
+    { ok: failures.length === 0, ranAt: new Date().toISOString(), summary, failures },
+    { status: failures.length === 0 ? 200 : 207 }
+  );
+}
+
+/** Comparación en tiempo constante: un `!==` filtra el secreto carácter a carácter. */
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
 }

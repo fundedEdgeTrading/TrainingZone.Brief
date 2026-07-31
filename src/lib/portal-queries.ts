@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
-import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam } from "@/lib/date-utils";
+import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
@@ -549,7 +549,6 @@ const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GR
 export async function bookSessionForMember(
   member: MemberForBooking,
   sessionId: string,
-  timeZone: string,
   /** Día concreto de la serie que se reserva ("YYYY-MM-DD"); por defecto, la fecha base. */
   occurrenceDateParam?: string | null
 ): Promise<BookingResult> {
@@ -561,7 +560,10 @@ export async function bookSessionForMember(
 
     const cls = await tx.classSession.findUnique({
       where: { id: sessionId },
-      include: { bookings: { select: { status: true, occurrenceDate: true } } },
+      include: {
+        bookings: { select: { status: true, occurrenceDate: true } },
+        center: { select: { timezone: true } },
+      },
     });
     if (!cls || cls.status !== "SCHEDULED") {
       return { ok: false as const, error: "Esta clase ya no está disponible para reservar." };
@@ -576,7 +578,14 @@ export async function bookSessionForMember(
     }
 
     const now = new Date();
-    const startsAt = sessionStartsAt(occurrenceDate, cls.startTime, timeZone);
+    // La zona horaria de referencia es SIEMPRE la del centro que imparte la
+    // clase, nunca la que llegue del cliente: `resolveTimezone` prioriza la
+    // cookie `tz` del navegador (correcto para pintar horas, no para decidir),
+    // y con ella el socio desplazaba `startsAt` hasta ~26 h — lo justo para
+    // colarse dentro del corte de antelación mínima o para cancelar dentro de
+    // la ventana de penalización recuperando igualmente el bono.
+    const enforcementTimeZone = cls.center.timezone || DEFAULT_TIMEZONE;
+    const startsAt = sessionStartsAt(occurrenceDate, cls.startTime, enforcementTimeZone);
     // RB-RES-001: antelación mínima. RB-RES-002: ventana de 7 días vista.
     if (startsAt.getTime() - now.getTime() < MIN_LEAD_MINUTES * 60 * 1000) {
       return { ok: false as const, error: `Esta clase empieza en menos de ${MIN_LEAD_MINUTES} minutos: ya no admite reservas.` };
@@ -613,6 +622,16 @@ export async function bookSessionForMember(
     const kind = sessionServiceKind(cls.classType);
     let chargeSubscriptionId: string | null = null;
 
+    // El saldo se relee DENTRO de la transacción. `member.subscriptions` lo
+    // carga `getMemberForUser` antes de abrirla, y con esa foto obsoleta dos
+    // reservas simultáneas de sesiones DISTINTAS (el lock de arriba solo
+    // serializa las de una misma sesión) leían ambas el mismo saldo, descontaban
+    // las dos y dejaban el bono en negativo.
+    const freshSubscriptions = await tx.subscription.findMany({
+      where: { memberId: member.id, status: "ACTIVE" },
+      select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
+    });
+
     // RB-AGENDA-003: exige también el centro de la clase — un bono de EP en
     // otro centro de la organización no cubre esta sesión, igual que uno de
     // otra modalidad. El mensaje de error es el mismo para ambos casos. Esta
@@ -621,8 +640,8 @@ export async function bookSessionForMember(
     // organización o sin bono aplicable (antes de RB-AGENDA-003 la cubría el
     // `cls.centerId !== member.primaryCenterId` de más arriba, que sí corría
     // incondicionalmente).
-    const matching = member.subscriptions.filter(
-      (s) => s.status === "ACTIVE" && s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
+    const matching = freshSubscriptions.filter(
+      (s) => s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
     );
     if (matching.length === 0) {
       return {
@@ -649,17 +668,30 @@ export async function bookSessionForMember(
       }
     }
 
+    // Descuento condicional: el `sessionsRemaining > 0` viaja dentro del propio
+    // UPDATE, así que es la base de datos —y no una lectura previa— la que
+    // decide si queda saldo. Barrera final contra el bono en negativo si dos
+    // transacciones concurrentes llegan hasta aquí con el mismo bono. Va ANTES
+    // de escribir la reserva para poder abortar sin dejar nada a medias.
+    if (chargeSubscriptionId) {
+      const charged = await tx.subscription.updateMany({
+        where: { id: chargeSubscriptionId, sessionsRemaining: { gt: 0 } },
+        data: { sessionsRemaining: { decrement: 1 } },
+      });
+      if (charged.count === 0) {
+        return {
+          ok: false as const,
+          needsTopUp: true,
+          error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
+        };
+      }
+    }
+
     if (claimingOwnWaitlistSpot) {
       await tx.booking.update({
         where: { id: existing!.id },
         data: { status: "BOOKED", waitlistPosition: null, subscriptionId: chargeSubscriptionId },
       });
-      if (chargeSubscriptionId) {
-        await tx.subscription.update({
-          where: { id: chargeSubscriptionId },
-          data: { sessionsRemaining: { decrement: 1 } },
-        });
-      }
       return { ok: true as const, waitlisted: false };
     }
 
@@ -678,23 +710,23 @@ export async function bookSessionForMember(
         subscriptionId: chargeSubscriptionId,
       },
     });
-    if (chargeSubscriptionId) {
-      await tx.subscription.update({
-        where: { id: chargeSubscriptionId },
-        data: { sessionsRemaining: { decrement: 1 } },
-      });
-    }
 
     return { ok: true as const, waitlisted: overCapacity };
   });
 }
 
-export async function cancelBookingForMember(memberId: string, bookingId: string, timeZone: string): Promise<BookingResult> {
+export async function cancelBookingForMember(memberId: string, bookingId: string): Promise<BookingResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, memberId },
     include: {
       session: {
-        select: { startTime: true, capacity: true, orgId: true, bookings: { select: { status: true, occurrenceDate: true } } },
+        select: {
+          startTime: true,
+          capacity: true,
+          orgId: true,
+          center: { select: { timezone: true } },
+          bookings: { select: { status: true, occurrenceDate: true } },
+        },
       },
     },
   });
@@ -706,7 +738,14 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  const startsAt = sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone);
+  // Zona horaria del centro, nunca la del cliente (ver `bookSessionForMember`):
+  // de ella dependen tanto "la clase ya ha empezado" como la ventana de
+  // penalización que decide si se devuelve el bono.
+  const startsAt = sessionStartsAt(
+    booking.occurrenceDate,
+    booking.session.startTime,
+    booking.session.center.timezone || DEFAULT_TIMEZONE
+  );
   if (startsAt.getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }
@@ -729,18 +768,26 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: bookingId },
+  // La cancelación solo se aplica si la reserva SIGUE activa, y la condición
+  // viaja dentro del propio UPDATE: comprobar el estado con la lectura de más
+  // arriba (fuera de la transacción) permitía que dos cancelaciones simultáneas
+  // pasaran las dos y devolvieran el bono por duplicado.
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const applied = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: ["BOOKED", "WAITLISTED"] } },
       data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
     });
+    if (applied.count === 0) return false;
+
     if (refundSubscriptionId) {
       await tx.subscription.update({
         where: { id: refundSubscriptionId },
         data: { sessionsRemaining: { increment: 1 } },
       });
     }
+    return true;
   });
+  if (!cancelled) return { ok: false, error: "Esta reserva ya no está activa." };
 
   if (booking.status === "BOOKED" && wasFull) {
     void notifySessionVacancy({

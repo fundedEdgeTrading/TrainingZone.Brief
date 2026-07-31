@@ -6,7 +6,7 @@ import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { isSameDay } from "@/lib/session-occurrences";
-import { addDays, instanceForWeek, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
+import { addDays, instancesForWeek, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
 import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
 
@@ -51,10 +51,10 @@ export default async function AgendaPage({
 
   const occurrences: WeekOccurrence[] = [];
   for (const s of sessions) {
-    const dayIndex = instanceForWeek(s, weekStart, weekEnd);
-    // De momento la agenda no opera en domingo: se descarta esa ocurrencia.
-    if (dayIndex === null || dayIndex >= VISIBLE_DAYS) continue;
     if (!s.trainerId) continue;
+    for (const dayIndex of instancesForWeek(s, weekStart, weekEnd)) {
+    // De momento la agenda no opera en domingo: se descarta esa ocurrencia.
+    if (dayIndex >= VISIBLE_DAYS) continue;
     // Reservas del día que se pinta: en una serie recurrente todas las
     // ocurrencias comparten fila, y contarlas juntas inflaba el aforo.
     const occurrenceDay = addDays(weekStart, dayIndex);
@@ -65,6 +65,7 @@ export default async function AgendaPage({
     );
     occurrences.push({
       id: s.id,
+      uid: `${s.id}:${dayIndex}`,
       dayIndex,
       startMin: toMinutes(s.startTime),
       endMin: toMinutes(s.endTime),
@@ -81,6 +82,7 @@ export default async function AgendaPage({
       bookedCount: active.length,
       status: s.status,
     });
+    }
   }
 
   return (

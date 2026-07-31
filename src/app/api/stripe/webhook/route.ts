@@ -40,7 +40,14 @@ export async function POST(req: NextRequest) {
   if (event.account) {
     await handleConnectEvent(event);
   } else {
-    await handlePlatformEvent(event);
+    const result = await handlePlatformEvent(event);
+    if (!result.ok) {
+      // 500 a propósito: Stripe reintenta con backoff. Devolver 200 aquí daba
+      // el evento por consumido, así que un alta que no llegara a completarse
+      // dejaba a un cliente que YA ha pagado sin organización y sin que nadie
+      // lo volviera a intentar.
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ ok: true });
@@ -109,8 +116,10 @@ async function resolveConnectOrgId(accountId: string | null | undefined): Promis
   return account?.orgId ?? null;
 }
 
+type PlatformEventResult = { ok: true } | { ok: false; error: string };
+
 /** Parte A.4: eventos de la suscripción de plataforma (Apta cobra al director). RB-PLAT-004: idempotente. */
-async function handlePlatformEvent(event: Stripe.Event) {
+async function handlePlatformEvent(event: Stripe.Event): Promise<PlatformEventResult> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -120,7 +129,10 @@ async function handlePlatformEvent(event: Stripe.Event) {
       // no existe: nace aquí) de una RENOVACIÓN o cambio de plan.
       if (!orgId) {
         const result = await provisionOrganizationFromCheckout(session);
-        if (!result.ok) console.error("[webhook] alta no completada:", result.error);
+        if (!result.ok) {
+          console.error("[webhook] alta no completada:", result.error);
+          return { ok: false, error: result.error };
+        }
         break;
       }
 
@@ -180,4 +192,5 @@ async function handlePlatformEvent(event: Stripe.Event) {
     default:
       break;
   }
+  return { ok: true };
 }

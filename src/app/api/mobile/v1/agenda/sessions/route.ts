@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
     recUntil: body.recUntil ? parseDateParam(body.recUntil) : null,
   };
 
-  const session = await saveSession(claims.orgId, input);
-  revalidateSessionViews(session.id);
-  return apiOk({ id: session.id });
+  const result = await saveSession(claims.orgId, input);
+  if (!result.ok) return apiError(result.error, 404);
+  revalidateSessionViews(result.session.id);
+  return apiOk({ id: result.session.id });
 }
