@@ -8,16 +8,16 @@ import { loginAs } from "./helpers";
 const toast = (page: Page) => page.locator(".tz-toast");
 
 /**
- * Reserva lo que haya disponible hasta topar con el límite (RB-RES-004) o
- * quedarse sin clases libres, y devuelve cuántas reservas vivas quedan.
+ * Reserva lo que haya disponible hasta quedarse sin clases libres o sin saldo
+ * en el bono, y devuelve cuántas reservas vivas quedan.
  *
  * El socio demo puede llegar sin ninguna reserva futura: el seed reparte las
- * asistencias al azar y poda las que se van de la ventana de 7 días o del tope.
+ * asistencias al azar y poda las que se van de la ventana de 7 días.
  * Estas pruebas creaban su propia reserva pero luego daban por hecho que el
  * panel existía, así que fallaban de forma intermitente según el sorteo del
  * seed; ahora se crea la reserva y se comprueba explícitamente que la hay.
  */
-async function bookUpToLimit(page: Page): Promise<number> {
+async function bookAvailable(page: Page): Promise<number> {
   for (let i = 0; i < 4; i++) {
     const bookable = page.getByRole("button", { name: "Reservar", exact: true }).first();
     if ((await bookable.count()) === 0) break;
@@ -26,7 +26,7 @@ async function bookUpToLimit(page: Page): Promise<number> {
     await expect(message).toBeVisible({ timeout: 15_000 });
     const text = await message.innerText();
     await page.reload();
-    if (/reservas activas/.test(text)) break;
+    if (/no te quedan sesiones/i.test(text)) break;
   }
 
   // `count()` no espera: tras el `reload` hay que dejar que el panel aparezca
@@ -42,8 +42,7 @@ async function bookUpToLimit(page: Page): Promise<number> {
 
 /**
  * El seed reparte asistencias e reservas futuras al azar (ver nota de arriba):
- * el socio demo puede llegar con reservas activas ya puestas por el seed, que
- * cuentan para el tope de RB-RES-004 igual que las que crea el test. Se
+ * el socio demo puede llegar con reservas activas ya puestas por el seed. Se
  * cancelan todas al principio para partir de un punto de partida determinista.
  */
 async function clearActiveBookings(page: Page) {
@@ -74,7 +73,7 @@ test.describe("RB-RES — Reservas del socio", () => {
    * Va primero en el fichero para partir de un socio sin reservas activas
    * todavía, y al final deshace sus propias reservas: los demás tests de este
    * fichero reservan/cancelan sobre el mismo socio demo y dan por hecho su
-   * propio punto de partida (tope de reservas activas, saldo del bono).
+   * propio punto de partida (saldo del bono).
    */
   test("el socio ve y reserva EP de un centro y grupo del otro según sus dos bonos", async ({ page }) => {
     // Limpia el punto de partida, reserva dos veces y deshace las dos reservas:
@@ -86,13 +85,13 @@ test.describe("RB-RES — Reservas del socio", () => {
     await page.goto("/portal/agenda");
 
     // El seed puede haberle puesto reservas futuras al azar (ver nota de
-    // `clearActiveBookings`): sin este paso, esas reservas ya podían agotar el
-    // tope de RB-RES-004 antes de que el test reservase nada, y la segunda
-    // reserva (grupo) fallaba en silencio con el toast de éxito de la primera
-    // todavía visible en pantalla.
+    // `clearActiveBookings`): sin este paso, una reserva previa de grupo o EP
+    // podía agotar el saldo del bono antes de que el test reservase nada, y la
+    // segunda reserva (grupo) fallaba en silencio con el toast de éxito de la
+    // primera todavía visible en pantalla.
     await clearActiveBookings(page);
 
-    // `count()` no espera (ver nota de `bookUpToLimit` más abajo): hay que dejar
+    // `count()` no espera (ver nota de `bookAvailable` más abajo): hay que dejar
     // que al menos una tarjeta aparezca antes de contar, o se lee 0 en una
     // página a medio hidratar.
     await page
@@ -103,9 +102,9 @@ test.describe("RB-RES — Reservas del socio", () => {
 
     // Excluye tarjetas que Marta ya tenga reservadas: el seed puede haberle
     // dejado una reserva de una sesión de hoy cuya hora ya pasó, que sigue
-    // apareciendo aquí como "Reservada" (aunque ya no cuenta para el tope de
-    // RB-RES-004 ni aparece en "Tus próximas reservas") pero no tiene botón
-    // Reservar — `.first()` sin este filtro podía escoger esa y colgarse.
+    // apareciendo aquí como "Reservada" (aunque ya no aparece en "Tus próximas
+    // reservas") pero no tiene botón Reservar — `.first()` sin este filtro
+    // podía escoger esa y colgarse.
     const bookableButton = () => page.getByRole("button", { name: /Reservar|Unirme a lista/ });
     const epCard = page
       .getByRole("article")
@@ -184,23 +183,22 @@ test.describe("RB-RES — Reservas del socio", () => {
   });
 
   /**
-   * Regresión: el listado de "Reservar clase" solo enseña 7 días del centro del
-   * socio, pero el tope de reservas activas (RB-RES-004) cuenta todas sus
-   * reservas futuras. Se veía una reserva en pantalla y la app respondía "ya
-   * tienes 3 activas". El panel "Tus próximas reservas" debe enseñar exactamente
-   * las mismas que se cuentan.
+   * El socio ya no tiene un tope fijo de reservas activas: puede reservar de
+   * una tirada tantas veces como sesiones le queden en el bono. El contador de
+   * "Tus próximas reservas" debe enseñar exactamente las mismas reservas que
+   * el socio ve en el panel, sin comparar contra ningún máximo.
    */
-  test("lo que cuenta el tope de reservas es lo que el socio ve en pantalla", async ({ page }) => {
+  test("el contador de próximas reservas coincide con las filas del panel", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/agenda");
 
-    const rows = await bookUpToLimit(page);
+    const rows = await bookAvailable(page);
     test.skip(rows === 0, "El seed no ha dejado clases libres en la ventana de reserva de este socio.");
 
     const panel = page.getByRole("region", { name: "Tus próximas reservas" });
     await expect(panel).toBeVisible();
 
-    const counter = await panel.getByText(/^\d+ de \d+ activas$/).innerText();
+    const counter = await panel.getByText(/^\d+ reservas?$/).innerText();
     const active = Number(counter.split(" ")[0]);
     // Una fila por reserva viva: el contador nunca puede ir por delante.
     await expect(panel.getByRole("button", { name: /Cancelar|Salir de lista/ })).toHaveCount(active);
@@ -224,7 +222,7 @@ test.describe("RB-RES — Reservas del socio", () => {
     // el seed le haya dejado una futura.
     const panel = page.getByRole("region", { name: "Tus próximas reservas" });
     const cancellable = panel.getByRole("button", { name: "Cancelar" });
-    if ((await bookUpToLimit(page)) === 0) test.skip(true, "El seed no ha dejado clases libres que reservar y cancelar.");
+    if ((await bookAvailable(page)) === 0) test.skip(true, "El seed no ha dejado clases libres que reservar y cancelar.");
     await expect(cancellable.first()).toBeVisible({ timeout: 10_000 });
 
     // Marta tiene dos bonos (EP + grupos, RB-AGENDA-003): la reserva creada

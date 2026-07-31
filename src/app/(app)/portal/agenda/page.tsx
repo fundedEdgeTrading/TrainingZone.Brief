@@ -6,7 +6,6 @@ import {
   getBookableSessions,
   getPendingSessionFeedback,
   getMemberUpcomingBookings,
-  MAX_ACTIVE_BOOKINGS,
   BOOKING_WINDOW_DAYS,
   CANCEL_WINDOW_HOURS,
 } from "@/lib/portal-queries";
@@ -65,7 +64,7 @@ export default async function PortalAgendaPage() {
         <p className="text-sm text-brand-text-2 mt-1.5 font-medium">
           {hasOnline && !hasPresencial
             ? "Entrena cuando quieras con tu biblioteca de sesiones preparadas."
-            : `Hasta ${BOOKING_WINDOW_DAYS} días vista · máximo ${MAX_ACTIVE_BOOKINGS} reservas activas a la vez.`}
+            : `Hasta ${BOOKING_WINDOW_DAYS} días vista · reserva tantas sesiones como te queden en tu bono.`}
         </p>
       </div>
 

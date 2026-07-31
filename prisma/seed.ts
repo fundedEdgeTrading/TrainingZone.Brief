@@ -2381,10 +2381,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   // ---------- Reservas futuras: cuadrar con las reglas de reserva ----------
   // Las reservas se generan recorriendo las franjas preferidas de cada socio a
   // lo largo de TODO el horizonte sembrado (60 días), pero el socio solo puede
-  // reservar a 7 días vista (RB-RES-002) y con un máximo de 3 reservas activas
-  // (RB-RES-004). Sin este ajuste el socio demo arrancaba con ~10 reservas
-  // futuras: en su portal solo veía la que caía dentro de los 7 días y, al
-  // intentar reservar otra, la app le respondía que ya tenía 3 activas.
+  // reservar a 7 días vista (RB-RES-002), así que las que caen fuera de esa
+  // ventana no reflejan una reserva real que el socio hubiera podido hacer y
+  // se podan del seed.
   // Además se enlaza cada reserva viva con el bono del que salió, para que
   // cancelarla devuelva la sesión al saldo (RB-RES-006).
   const bookingWindowEnd = addDays(TODAY, 7);
@@ -2413,7 +2412,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const drop: string[] = [];
     for (const b of live) {
       const outOfWindow = b.session.date > bookingWindowEnd;
-      if (outOfWindow || keep.length >= 3) drop.push(b.id);
+      if (outOfWindow) drop.push(b.id);
       else keep.push(b.id);
     }
     if (drop.length) {
@@ -2434,7 +2433,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
 
   console.log(
-    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas (${prunedFutureBookings} futuras podadas fuera de ventana/tope) · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas · ${fixes.length} solapes corregidos`
+    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas (${prunedFutureBookings} futuras podadas fuera de ventana) · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas · ${fixes.length} solapes corregidos`
   );
 }
 

@@ -1,11 +1,5 @@
 import type { NextRequest } from "next/server";
-import {
-  getBookableSessions,
-  getPendingSessionFeedback,
-  getMemberUpcomingBookings,
-  countsTowardsActiveLimit,
-  MAX_ACTIVE_BOOKINGS,
-} from "@/lib/portal-queries";
+import { getBookableSessions, getPendingSessionFeedback, getMemberUpcomingBookings } from "@/lib/portal-queries";
 import { getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import { requireMember } from "../../_lib/require-member";
@@ -41,9 +35,5 @@ export async function GET(req: NextRequest) {
     balances,
     pendingFeedback,
     upcomingBookings,
-    activeBookings: {
-      count: upcomingBookings.filter(countsTowardsActiveLimit).length,
-      max: MAX_ACTIVE_BOOKINGS,
-    },
   });
 }
