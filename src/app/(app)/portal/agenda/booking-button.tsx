@@ -31,7 +31,7 @@ export default function BookingButton({
 }) {
   const [pending, startTransition] = useTransition();
   // F6: cuando bookSession agota el bono (needsTopUp), el socio necesita un
-  // camino visible a /portal/comprar en ese mismo momento — el toast solo
+  // camino visible a /portal/membresia en ese mismo momento — el toast solo
   // explica el motivo y desaparece a los pocos segundos sin salida ninguna.
   const [needsTopUp, setNeedsTopUp] = useState(false);
   // RB-RES-005: cancelar una reserva BOOKED fuera de la ventana de antelación
@@ -173,7 +173,7 @@ export default function BookingButton({
       </button>
       {needsTopUp && (
         <Link
-          href="/portal/comprar"
+          href="/portal/membresia"
           className="text-[11px] font-semibold text-brand-text underline underline-offset-2 hover:text-brand-ink whitespace-nowrap"
         >
           Comprar bono →

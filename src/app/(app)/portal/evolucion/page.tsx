@@ -1,11 +1,16 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
-import { getMemberForUser, getMemberEvolution } from "@/lib/portal-queries";
+import { getMemberForUser, getMemberEvolution, getMemberGoals, getMemberRatingSummary } from "@/lib/portal-queries";
+import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { CompositionSummary } from "@/app/(app)/members/[id]/composition-summary";
 import { BodyCompositionChart } from "@/app/(app)/members/[id]/composition-chart";
 import { ProgressComparator } from "@/app/(app)/members/[id]/progress-forms";
 import { SingleMetricChart } from "@/components/single-metric-chart";
 import { Card } from "@/components/kpi-card";
+import { Badge } from "@/components/ui/badge";
+import { RequestWorkoutButton } from "./workout-request-button";
+
+const STATUS_LABEL: Record<string, string> = { DRAFT: "Por confirmar", PENDING_TRAINER: "Por confirmar", ACTIVE: "Activa", COMPLETED: "Completada" };
 
 // RB-PERFIL-004: el socio ve su propio seguimiento de fotos y evolución de composición
 // corporal — la misma información que consulta su entrenador en su ficha, en modo lectura.
@@ -14,11 +19,17 @@ export default async function PortalEvolutionPage() {
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
 
-  const evolution = await getMemberEvolution(member.id, session.user.orgId);
+  const [evolution, goals, programs, ratings] = await Promise.all([
+    getMemberEvolution(member.id, session.user.orgId),
+    getMemberGoals(member.id),
+    listWorkoutPrograms(session.user.orgId, member.id),
+    getMemberRatingSummary(member.id),
+  ]);
   if (!evolution) redirect("/portal");
 
   const { consentHealth, consentImages, progressEntries, compositionTiles, compositionChartPoints, bodyFatChartPoints, measuredAt } =
     evolution;
+  const hasPendingProgram = programs.some((p) => p.status === "DRAFT" || p.status === "PENDING_TRAINER");
 
   if (!consentHealth && !consentImages) {
     return (
@@ -112,6 +123,69 @@ export default async function PortalEvolutionPage() {
           <ProgressComparator entries={progressEntries} />
         </div>
       )}
+
+      {/* Objetivos, rutina y medias de valoración: vivían en la antigua "Mi
+          plan", que se fusionó en "Mi membresía" (solo producto/facturación).
+          Encajan mejor aquí, junto al resto del seguimiento de progreso. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="bg-brand-card border border-brand-border rounded-2xl p-[22px]">
+          <div className="text-[11px] font-bold tracking-[.1em] uppercase text-brand-muted">
+            Tu valoración media · entrenadores
+          </div>
+          <div className="flex items-baseline gap-1.5 mt-2.5">
+            <span className="font-display font-extrabold text-4xl text-brand-text tabular-nums">
+              {ratings.trainerAvg != null ? ratings.trainerAvg.toFixed(1) : "—"}
+            </span>
+            <span className="text-base font-bold text-brand-muted-2">/ 10</span>
+          </div>
+          <div className="text-[12.5px] text-brand-muted mt-2">
+            {ratings.trainerCount > 0 ? `sobre ${ratings.trainerCount} sesiones valoradas` : "aún sin valoraciones"}
+          </div>
+        </div>
+        <div className="bg-brand-card border border-brand-border rounded-2xl p-[22px]">
+          <div className="text-[11px] font-bold tracking-[.1em] uppercase text-brand-muted">Tu autoevaluación media</div>
+          <div className="flex items-baseline gap-1.5 mt-2.5">
+            <span className="font-display font-extrabold text-4xl text-good tabular-nums">
+              {ratings.selfAvg != null ? ratings.selfAvg.toFixed(1) : "—"}
+            </span>
+            <span className="text-base font-bold text-brand-muted-2">/ 10</span>
+          </div>
+          <div className="text-[12.5px] text-brand-muted mt-2">energía y esfuerzo percibido</div>
+        </div>
+      </div>
+
+      <Card title="Tus objetivos" meta={`${goals.length} activos`}>
+        {goals.length === 0 ? (
+          <p className="text-sm text-brand-muted">Tu entrenador aún no te ha asignado objetivos concretos.</p>
+        ) : (
+          <ul className="space-y-2">
+            {goals.map((g) => (
+              <li key={g.id} className="flex items-center justify-between border-t border-tz-sand pt-2 first:border-0 first:pt-0 text-sm">
+                <span className={g.achievedAt ? "line-through text-brand-muted" : "text-brand-text"}>{g.label}</span>
+                {g.achievedAt && <Badge tone="good">Conseguido</Badge>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      <Card title="Tu rutina para casa" meta="generada con ayuda de IA, confirmada por tu entrenador">
+        <div className="space-y-3">
+          <RequestWorkoutButton hasPending={hasPendingProgram} />
+          {programs.length === 0 ? (
+            <p className="text-sm text-brand-muted">Todavía no has solicitado ninguna rutina.</p>
+          ) : (
+            <ul className="space-y-2">
+              {programs.map((p) => (
+                <li key={p.id} className="border border-brand-border rounded-lg p-3 text-sm flex items-center justify-between">
+                  <span className="text-brand-text-2">{p.createdAt.toLocaleDateString("es-ES")}</span>
+                  <Badge tone={p.status === "ACTIVE" ? "good" : "neutral"}>{STATUS_LABEL[p.status]}</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

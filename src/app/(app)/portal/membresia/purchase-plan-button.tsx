@@ -1,11 +1,18 @@
 "use client";
 
 import { useTransition } from "react";
-import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { purchasePlan } from "./actions";
 
-export default function PurchasePlanButton({ planId }: { planId: string }) {
+export default function PurchasePlanButton({
+  planId,
+  children,
+  className,
+}: {
+  planId: string;
+  children: React.ReactNode;
+  className: string;
+}) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -22,9 +29,8 @@ export default function PurchasePlanButton({ planId }: { planId: string }) {
   };
 
   return (
-    <Button onClick={handleClick} disabled={pending} className="w-full">
-      {pending && <ButtonSpinner />}
-      {pending ? "Redirigiendo..." : "Comprar"}
-    </Button>
+    <button type="button" onClick={handleClick} disabled={pending} className={className}>
+      {pending ? "Redirigiendo…" : children}
+    </button>
   );
 }

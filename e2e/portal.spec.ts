@@ -4,7 +4,9 @@ import { loginAs } from "./helpers";
 test.describe("F16 — Portal del socio: IA, objetivos y chat", () => {
   test("el socio ve su plan (objetivos, rutina)", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
-    await page.goto("/portal/plan");
+    // "Mi plan" se fusionó en "Mi membresía" (producto/facturación); objetivos
+    // y rutina de casa viven ahora en "Mi evolución" (handoff NavBar premium 1b).
+    await page.goto("/portal/evolucion");
 
     await expect(page.getByRole("heading", { name: "Tus objetivos" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tu rutina para casa" })).toBeVisible();

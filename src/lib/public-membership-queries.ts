@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { isStripeConfiguredForOrg } from "@/lib/stripe";
 
-/** Catálogo de planes activos de la organización — compartido entre la landing pública (`/hazte-socio`) y el autoservicio autenticado (`/portal/comprar`, F6). */
+/** Catálogo de planes activos de la organización — compartido entre la landing pública (`/hazte-socio`) y el autoservicio autenticado (`/portal/membresia`, F6). */
 export async function getActiveMembershipPlans(orgId: string) {
   return prisma.membershipPlan.findMany({
     where: { orgId, active: true },

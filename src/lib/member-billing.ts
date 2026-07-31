@@ -125,12 +125,12 @@ export async function createMemberCheckout(params: {
 
   const recurring = isRecurring(plan.type);
   // "landing" (checkout público anónimo, sin sesión) no tiene ni /billing ni
-  // /portal/comprar a los que volver: aterriza en una confirmación pública
+  // /portal/membresia a los que volver: aterriza en una confirmación pública
   // genérica, igual que el checkout anónimo de organizaciones vuelve a
   // /activar en vez de a un panel (platform-billing.ts). "portal" (F6) vuelve
-  // a /portal/comprar, no a /portal/plan — ese es "Mi plan de entrenamiento"
-  // (objetivos/programas), sin relación con facturación.
-  const returnPath = origin === "portal" ? "/portal/comprar" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
+  // a /portal/membresia (hero + renovar/ampliar + historial, fusión de las
+  // antiguas /portal/plan y /portal/comprar).
+  const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
 
   const checkoutSession = await stripe.checkout.sessions.create(
     {
@@ -257,7 +257,7 @@ export async function createMemberBillingPortalSession(orgId: string, memberId: 
   if (!member?.stripeCustomerId) return { ok: false, error: "Este socio todavía no tiene un cliente de Stripe." };
 
   const portalSession = await stripe.billingPortal.sessions.create(
-    { customer: member.stripeCustomerId, return_url: `${appBaseUrl()}/portal/plan` },
+    { customer: member.stripeCustomerId, return_url: `${appBaseUrl()}/portal/membresia` },
     { stripeAccount: accountId }
   );
 

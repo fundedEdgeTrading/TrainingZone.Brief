@@ -60,6 +60,7 @@ export default async function PortalProfilePage() {
         </ActionForm>
       </Card>
 
+      <div id="consentimientos" className="scroll-mt-6">
       <Card title="Tus consentimientos" meta="RGPD">
         <p className="text-[13px] text-brand-muted -mt-3 mb-2">
           Puedes retirarlos en cualquier momento. Retirar datos de salud o imágenes no borra lo ya registrado, pero
@@ -87,6 +88,7 @@ export default async function PortalProfilePage() {
           grantedAt={member.consentMarketingAt}
         />
       </Card>
+      </div>
 
       <Card title="Tus datos" meta="RGPD">
         <p className="text-[13px] text-brand-muted -mt-3 mb-3">

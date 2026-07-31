@@ -4,10 +4,8 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { requestWorkoutProgram } from "@/lib/workout-programs";
+import { createMemberCheckout, createMemberBillingPortalSession } from "@/lib/member-billing";
 import { submitTrainerRating } from "@/lib/trainer-rating-access";
-
-export type PortalPlanResult = { ok: true } | { ok: false; error: string };
 
 async function currentMember() {
   const session = await requireRole(["MEMBER"]);
@@ -16,14 +14,31 @@ async function currentMember() {
   return { session, member };
 }
 
-export async function requestWorkoutProgramAction(): Promise<PortalPlanResult> {
+export type PortalBillingResult = { ok: true; url: string } | { ok: false; error: string };
+
+/** F6: compra/recarga de bono desde el propio portal — mismo motor de checkout que recepción y la landing pública. */
+export async function purchasePlan(planId: string): Promise<PortalBillingResult> {
   const ctx = await currentMember();
-  if (!ctx) return { ok: false, error: "Socio no encontrado." };
-  const result = await requestWorkoutProgram(ctx.session.user.orgId, ctx.member.id);
-  if (!result.ok) return result;
-  revalidatePath("/portal/plan");
-  return { ok: true };
+  if (!ctx) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+
+  return createMemberCheckout({
+    orgId: ctx.session.user.orgId,
+    memberId: ctx.member.id,
+    planId,
+    centerId: ctx.member.primaryCenterId,
+    origin: "portal",
+  });
 }
+
+/** F6: mismo Billing Portal de Stripe que usa el enlace mágico sin login (A.1), aquí ya autenticado. */
+export async function manageMyBilling(): Promise<PortalBillingResult> {
+  const ctx = await currentMember();
+  if (!ctx) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+
+  return createMemberBillingPortalSession(ctx.session.user.orgId, ctx.member.id);
+}
+
+export type PortalMembresiaResult = { ok: true } | { ok: false; error: string };
 
 export type SessionRatingInput = {
   trainerScore: number;
@@ -37,7 +52,7 @@ export type SessionRatingInput = {
 const clampScale = (n: number) => Math.min(10, Math.max(1, Math.round(n)));
 
 /** Valoración de sesión (F16): puntuación 1-10 al entrenador + autoevaluación de energía/RPE. */
-export async function submitSessionRatingAction(bookingId: string, input: SessionRatingInput): Promise<PortalPlanResult> {
+export async function submitSessionRatingAction(bookingId: string, input: SessionRatingInput): Promise<PortalMembresiaResult> {
   const ctx = await currentMember();
   if (!ctx) return { ok: false, error: "Socio no encontrado." };
 
@@ -69,7 +84,7 @@ export async function submitSessionRatingAction(bookingId: string, input: Sessio
   // devuelve error, que aquí no bloquea el resto de la valoración de sesión.
   await submitTrainerRating(ctx.session.user.orgId, ctx.session.user.id, { score: trainerScore });
 
-  revalidatePath("/portal/plan");
+  revalidatePath("/portal/membresia");
   revalidatePath("/portal/agenda");
   return { ok: true };
 }
