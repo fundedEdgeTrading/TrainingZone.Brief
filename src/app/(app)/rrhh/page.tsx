@@ -3,6 +3,7 @@ import { canReviewStaffProposals, canViewTrainerRatings, canManageOrg } from "@/
 import { listMyTimeClockEntries, listAllTimeClockEntries, crossCheckHours } from "@/lib/timeclock-queries";
 import { listStaffProposals } from "@/lib/staff-proposals";
 import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
+import { getSalesRanking, currentMonthRange } from "@/lib/sales-ranking";
 import { getCheckinConfigs } from "@/lib/checkin-schedule";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { zonedToday } from "@/lib/date-utils";
@@ -12,6 +13,10 @@ import { TimeClockWidget, ProposalForm, ProposalReviewList, CheckinConfigForm } 
 
 function fmtHours(minutes: number) {
   return `${(minutes / 60).toFixed(1)}h`;
+}
+
+function fmtEuros(cents: number) {
+  return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
 
 export default async function RrhhPage() {
@@ -26,11 +31,13 @@ export default async function RrhhPage() {
   const myEntries = await listMyTimeClockEntries(session.user.orgId, session.user.id, 14);
   const todayEntry = myEntries.find((e) => e.workDate.toDateString() === today) ?? null;
 
-  const [proposals, crossCheck, ratingSummary, checkinConfigs] = await Promise.all([
+  const monthRange = currentMonthRange();
+  const [proposals, crossCheck, ratingSummary, checkinConfigs, salesRanking] = await Promise.all([
     isReviewer ? listStaffProposals(session.user.orgId) : Promise.resolve([]),
     isReviewer ? crossCheckHours(session.user.orgId, timezone) : Promise.resolve([]),
     canViewTrainerRatings(session.user.role) ? getTrainerRatingSummary(session.user.orgId, session.user.role) : Promise.resolve(null),
     isDirection ? getCheckinConfigs(session.user.orgId) : Promise.resolve([]),
+    isDirection ? getSalesRanking(session.user.orgId, monthRange) : Promise.resolve([]),
   ]);
 
   return (
@@ -108,6 +115,42 @@ export default async function RrhhPage() {
               </tbody>
             </table>
           </div>
+        </Card>
+      )}
+
+      {isDirection && (
+        <Card title="Ranking de ventas" meta={`RB-RRHH-004 — ${monthRange.label}`}>
+          {salesRanking.length === 0 ? (
+            <p className="text-sm text-brand-muted">Sin cobros atribuidos a ningún trabajador este mes.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-faint text-left">
+                  <tr>
+                    <th className="pb-2">Trabajador</th>
+                    <th className="pb-2">Rol</th>
+                    <th className="pb-2">Ventas</th>
+                    <th className="pb-2">Importe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {salesRanking.map((r, i) => (
+                    <tr key={r.userId} className="border-t border-tz-sand">
+                      <td className="py-2 font-semibold">
+                        {i === 0 && "🥇 "}
+                        {i === 1 && "🥈 "}
+                        {i === 2 && "🥉 "}
+                        {r.name}
+                      </td>
+                      <td className="py-2 text-brand-muted">{r.role}</td>
+                      <td className="py-2 tz-nums">{r.salesCount}</td>
+                      <td className="py-2 tz-nums font-semibold">{fmtEuros(r.totalCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </Card>
       )}
 
