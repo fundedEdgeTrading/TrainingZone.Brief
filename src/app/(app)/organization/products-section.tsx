@@ -2,7 +2,7 @@ import type { MembershipPlan, PlanType } from "@prisma/client";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TableShell, THead, Th, TRow, Td } from "@/components/ui/table";
+import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
 import { createMembershipPlan, setMembershipPlanActive } from "./actions";
 import { EditPlanDrawer } from "./product-controls";
@@ -42,41 +42,7 @@ export function ProductsSection({ plans }: { plans: MembershipPlan[] }) {
             Todavía no tienes productos. Crea el primero para poder cobrar a tus socios.
           </p>
         ) : (
-          <TableShell>
-            <THead>
-              <Th>Producto</Th>
-              <Th>Tipo</Th>
-              <Th>Precio</Th>
-              <Th>Sesiones</Th>
-              <Th>Validez</Th>
-              <Th> </Th>
-            </THead>
-            <tbody>
-              {active.map((plan) => (
-                <TRow key={plan.id}>
-                  <Td>
-                    <span className="font-medium text-brand-text">{plan.name}</span>
-                  </Td>
-                  <Td>{PLAN_TYPE_LABEL[plan.type]}</Td>
-                  <Td>{euros(plan.priceCents)}</Td>
-                  <Td>{plan.sessionsIncluded ?? "—"}</Td>
-                  <Td>{plan.validityDays ? `${plan.validityDays} días` : "—"}</Td>
-                  <Td>
-                    <div className="flex items-center gap-2 justify-end">
-                      <EditPlanDrawer plan={plan} />
-                      <ActionForm action={setMembershipPlanActive} successMessage="Producto archivado.">
-                        <input type="hidden" name="planId" value={plan.id} />
-                        <input type="hidden" name="active" value="false" />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Archivar
-                        </Button>
-                      </ActionForm>
-                    </div>
-                  </Td>
-                </TRow>
-              ))}
-            </tbody>
-          </TableShell>
+          <DataTable columns={productColumns} rows={active.map(planToRow)} pageSize={10} />
         )}
       </div>
 
@@ -136,4 +102,45 @@ export function ProductsSection({ plans }: { plans: MembershipPlan[] }) {
       )}
     </section>
   );
+}
+
+const productColumns: DataTableColumn[] = [
+  { key: "name", header: "Producto", sortable: true },
+  { key: "type", header: "Tipo", sortable: true },
+  { key: "price", header: "Precio", sortable: true },
+  { key: "sessions", header: "Sesiones", sortable: true },
+  { key: "validity", header: "Validez", sortable: true },
+  { key: "actions", header: " ", align: "right" },
+];
+
+function planToRow(plan: MembershipPlan): DataTableRow {
+  return {
+    key: plan.id,
+    sortValues: {
+      name: plan.name,
+      type: PLAN_TYPE_LABEL[plan.type],
+      price: plan.priceCents,
+      sessions: plan.sessionsIncluded ?? -1,
+      validity: plan.validityDays ?? -1,
+    },
+    cells: {
+      name: <span className="font-medium text-brand-text">{plan.name}</span>,
+      type: PLAN_TYPE_LABEL[plan.type],
+      price: euros(plan.priceCents),
+      sessions: plan.sessionsIncluded ?? "—",
+      validity: plan.validityDays ? `${plan.validityDays} días` : "—",
+      actions: (
+        <div className="flex items-center gap-2 justify-end">
+          <EditPlanDrawer plan={plan} />
+          <ActionForm action={setMembershipPlanActive} successMessage="Producto archivado.">
+            <input type="hidden" name="planId" value={plan.id} />
+            <input type="hidden" name="active" value="false" />
+            <Button type="submit" variant="ghost" size="sm">
+              Archivar
+            </Button>
+          </ActionForm>
+        </div>
+      ),
+    },
+  };
 }

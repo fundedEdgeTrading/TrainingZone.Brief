@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import type { BadgeTone } from "@/components/ui/badge";
@@ -58,6 +58,7 @@ export function FilterBar({
 }: FilterBarProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const toggleId = useId();
   const [query, setQuery] = useState(searchDefault ?? "");
   const [chip, setChip] = useState(chipDefault ?? "");
   const [extraChip, setExtraChip] = useState(extraChipDefault ?? "");
@@ -95,26 +96,52 @@ export function FilterBar({
         className="h-[3px]"
         style={{ background: "linear-gradient(90deg,#1d1d1c 0%,#c8ab72 55%,#e7dfd2 100%)" }}
       />
-      <div className="p-6">
-        <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
-          <div className="flex items-center gap-2.5">
+      <div className="p-3.5 md:p-6">
+        {/* Checkbox-only toggle (no JS state): colapsado por defecto en móvil
+            para no comerse la pantalla (ver captura del handoff); en md+
+            siempre expandido, como antes. */}
+        <input type="checkbox" id={toggleId} className="peer sr-only" />
+
+        <div className="flex items-center justify-between gap-3 md:mb-4">
+          <label
+            htmlFor={toggleId}
+            className="flex items-center gap-2.5 min-w-0 cursor-pointer md:cursor-default md:pointer-events-none"
+          >
             <span className="w-[30px] h-[30px] rounded-lg bg-tz-black inline-flex items-center justify-center shrink-0">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f4f0e8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 4h18l-7 8v6l-4 2v-8z" />
               </svg>
             </span>
-            <span className="text-[11px] font-bold tracking-[.14em] uppercase text-brand-text-2">{kicker}</span>
-          </div>
+            <span className="min-w-0">
+              <span className="block text-[11px] font-bold tracking-[.14em] uppercase text-brand-text-2">{kicker}</span>
+              {activeCount > 0 && (
+                <span className="block md:hidden text-[11.5px] text-faint truncate">{parts.join(" · ")}</span>
+              )}
+            </span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="md:hidden shrink-0 ml-1 text-brand-muted transition-transform duration-200 peer-checked:rotate-180"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </label>
           {activeCount > 0 && (
             <button
               type="button"
               onClick={clearFilters}
-              className="inline-flex items-center gap-[7px] text-[12.5px] font-semibold text-brand-muted hover:bg-brand-bg hover:text-brand-text-2 px-2 py-1.5 rounded-lg transition-colors duration-200"
+              className="inline-flex items-center gap-[7px] text-[12.5px] font-semibold text-brand-muted hover:bg-brand-bg hover:text-brand-text-2 px-2 py-1.5 rounded-lg transition-colors duration-200 shrink-0"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
-              Limpiar
+              <span className="hidden sm:inline">Limpiar</span>
               <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-[5px] rounded-pill bg-tz-black text-tz-bone text-[10.5px] font-bold">
                 {activeCount}
               </span>
@@ -122,8 +149,9 @@ export function FilterBar({
           )}
         </div>
 
+        <div className="hidden peer-checked:block md:block mt-4 md:mt-0">
         <label className="block text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mb-2">Búsqueda</label>
-        <div className="relative mb-[22px]">
+        <div className="relative mb-4 md:mb-[22px]">
           <span className="absolute left-4 top-1/2 -translate-y-1/2 flex pointer-events-none">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#c8ab72" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="11" cy="11" r="7" />
@@ -140,7 +168,7 @@ export function FilterBar({
           />
         </div>
 
-        <label className="block text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mt-[22px] mb-2.5">{chipLabel}</label>
+        <label className="block text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mt-4 md:mt-[22px] mb-2.5">{chipLabel}</label>
         <div className="flex flex-wrap gap-2 items-center">
           {chipOptions.map((opt) => {
             const active = opt.value === chip;
@@ -178,7 +206,7 @@ export function FilterBar({
 
         {extraChipOptions && extraChipOptions.length > 0 && (
           <>
-            <label className="block text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mt-[22px] mb-2.5">{extraChipLabel}</label>
+            <label className="block text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mt-4 md:mt-[22px] mb-2.5">{extraChipLabel}</label>
             <div className="flex flex-wrap gap-2 items-center">
               {extraChipOptions.map((opt) => {
                 const active = opt.value === extraChip;
@@ -216,7 +244,7 @@ export function FilterBar({
           </>
         )}
 
-        <div className="flex items-center justify-between gap-3 mt-6 pt-5 border-t border-[#ede7dc] flex-wrap">
+        <div className="flex items-center justify-between gap-3 mt-4 md:mt-6 pt-4 md:pt-5 border-t border-[#ede7dc] flex-wrap">
           <span className="text-[12.5px] text-faint">
             {activeCount === 0 ? "Sin filtros aplicados" : `Filtrando · ${parts.join(" · ")}`}
           </span>
@@ -226,6 +254,7 @@ export function FilterBar({
             </svg>
             Filtrar
           </Button>
+        </div>
         </div>
       </div>
     </div>
