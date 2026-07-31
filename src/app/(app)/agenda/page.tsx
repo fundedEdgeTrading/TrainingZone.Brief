@@ -13,7 +13,7 @@ import CenterSwitcher from "./center-switcher";
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ center?: string; week?: string; day?: string }>;
+  searchParams: Promise<{ center?: string; week?: string; day?: string; view?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
   const params = await searchParams;
@@ -25,6 +25,10 @@ export default async function AgendaPage({
   // con las flechas: marca con qué día debe abrirse la semana de destino.
   const dayParam = Number(params.day);
   const initialDayIndex = Number.isInteger(dayParam) && dayParam >= 0 && dayParam < VISIBLE_DAYS ? dayParam : null;
+  // La navegación por flechas re-crea AgendaView (cambia `weekStartISO`), así
+  // que el modo semana de móvil viaja en la URL igual que `day`, o se perdía
+  // al pasar de semana.
+  const initialMobileWeekView = params.view === "week";
 
   // Sin `?week`, la agenda abre en la semana en curso *del centro*: con la hora
   // del servidor (UTC) un domingo por la noche en España abría la semana anterior.
@@ -86,6 +90,7 @@ export default async function AgendaPage({
       <AgendaView
         key={formatDateParam(weekStart)}
         initialDayIndex={initialDayIndex}
+        initialMobileWeekView={initialMobileWeekView}
         weekStartISO={formatDateParam(weekStart)}
         centerId={centerId ?? ""}
         occurrences={occurrences}
