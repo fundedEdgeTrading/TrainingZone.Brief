@@ -23,6 +23,7 @@ import { randomUUID } from "crypto";
 import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
 import { startOfWeekMonday } from "@/lib/date-utils";
 import type { FeedbackDims } from "@/lib/feedback-queries";
+import { currentPeriodKey } from "@/lib/feedback-capture";
 
 faker.seed(20260717);
 
@@ -2059,8 +2060,18 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const anchor = demoMemberId ? activeMembersForFeedback.find((m) => m.id === demoMemberId) : undefined;
     if (anchor) feedbackCandidates.unshift(anchor);
 
-    const clientFeedbackRows: ({ id: string; memberId: string; comment: string; submittedAt: Date } & FeedbackDims)[] = [];
-    const trainerDebriefRows: ({ id: string; memberId: string; trainerId: string; note: string; debriefAt: Date } & FeedbackDims)[] = [];
+    const feedbackPeriodKey = currentPeriodKey();
+    const clientFeedbackRows: ({ id: string; orgId: string; memberId: string; periodKey: string; comment: string; submittedAt: Date } & FeedbackDims)[] = [];
+    const trainerDebriefRows: ({
+      id: string;
+      orgId: string;
+      memberId: string;
+      trainerId: string;
+      periodKey: string;
+      note: string;
+      debriefAt: Date;
+      reviewedAt: Date | null;
+    } & FeedbackDims)[] = [];
 
     feedbackCandidates.forEach((m, i) => {
       const scenario = m.id === demoMemberId ? "ciego" : scenarioPattern[i % scenarioPattern.length];
@@ -2090,12 +2101,26 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           break;
       }
 
-      trainerDebriefRows.push({ id: id(), memberId: m.id, trainerId, ...trainer, note: NOTES_BY_SCENARIO[scenario], debriefAt });
+      trainerDebriefRows.push({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        trainerId,
+        periodKey: feedbackPeriodKey,
+        ...trainer,
+        note: NOTES_BY_SCENARIO[scenario],
+        debriefAt,
+        // El caso ancla (punto ciego principal) se deja sin revisar para poder
+        // enseñar el botón "Marcar como revisado" en la demo.
+        reviewedAt: scenario === "alineado" ? addDays(debriefAt, randInt(1, 3)) : null,
+      });
 
       if (client) {
         clientFeedbackRows.push({
           id: id(),
+          orgId,
           memberId: m.id,
+          periodKey: feedbackPeriodKey,
           ...client,
           comment: COMMENT_BY_SCENARIO[scenario as Exclude<FeedbackScenario, "sin_feedback">],
           submittedAt: addDays(debriefAt, -randInt(0, 1)),

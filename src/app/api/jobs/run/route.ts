@@ -7,6 +7,7 @@ import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { generateOfferSuggestions } from "@/lib/offers-queries";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
+import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 
 /**
  * Disparador único para todas las reglas temporales del CRM (F10/F13/F14/F15):
@@ -37,6 +38,7 @@ export async function GET(req: NextRequest) {
     checkins: 0,
     offerSuggestions: 0,
     scheduledCancellations: 0,
+    feedbackCyclePrompts: 0,
   };
 
 
@@ -48,6 +50,7 @@ export async function GET(req: NextRequest) {
     summary.checkins += await runPeriodicCheckinRule(org.id);
     summary.offerSuggestions += await generateOfferSuggestions(org.id);
     summary.scheduledCancellations += await runScheduledCancellationsRule(org.id);
+    summary.feedbackCyclePrompts += await runFeedbackCycleRule(org.id);
   }
 
   return NextResponse.json({ ok: true, ranAt: new Date().toISOString(), summary });

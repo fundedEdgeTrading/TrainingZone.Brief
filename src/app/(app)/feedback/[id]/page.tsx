@@ -26,8 +26,12 @@ function daysAgo(date: Date) {
   return `hace ${days} días`;
 }
 
-function interpretation(cat: AlignmentCategory, clientSat: number | null | undefined) {
-  if (cat === "sin_feedback") return "Aún sin feedback del cliente. Solo se muestra la valoración del entrenador.";
+function interpretation(cat: AlignmentCategory, hasClient: boolean, hasDebrief: boolean, clientSat: number | null | undefined) {
+  if (cat === "sin_feedback") {
+    if (!hasClient && !hasDebrief) return "Todavía no hay feedback de ninguno de los dos lados. Usa \"Solicitar feedback\" para abrir el ciclo.";
+    if (!hasClient) return "El entrenador ya ha dejado su debrief, pero el socio todavía no ha respondido.";
+    return "El socio ya ha respondido, pero su entrenador todavía no ha dejado el debrief de este periodo.";
+  }
   if (cat === "ciego")
     return "Punto ciego: el entrenador percibe al socio bastante más satisfecho de lo que realmente está. Riesgo de baja que puede pasar desapercibido.";
   if (cat === "cliente_positivo")
@@ -44,7 +48,7 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
   const member = await getMemberFeedbackDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const text = interpretation(member.cat, member.client?.sat);
+  const text = interpretation(member.cat, member.client != null, member.debrief != null, member.client?.sat);
 
   return (
     <div className="tz-page space-y-4">
@@ -85,8 +89,11 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
           </div>
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Entrenador</div>
-            <div className="font-display font-extrabold text-[34px] tabular-nums leading-none" style={{ color: "#8a6d2f" }}>
-              {member.trainerAvg.toFixed(1)}
+            <div
+              className="font-display font-extrabold text-[34px] tabular-nums leading-none"
+              style={{ color: member.trainerAvg != null ? "#8a6d2f" : "#c7bfad" }}
+            >
+              {member.trainerAvg != null ? member.trainerAvg.toFixed(1) : "—"}
               <span className="text-sm text-faint font-semibold">/10</span>
             </div>
           </div>
@@ -98,8 +105,8 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
         <div className="space-y-3">
           {DIMENSION_LABEL.map(({ key, label }) => {
             const clientV = member.client ? member.client[key] : null;
-            const trainerV = member.debrief[key];
-            const delta = clientV != null ? trainerV - clientV : null;
+            const trainerV = member.debrief ? member.debrief[key] : null;
+            const delta = clientV != null && trainerV != null ? trainerV - clientV : null;
             const deltaTone: BadgeTone = delta == null ? "neutral" : delta >= 1.5 ? "critical" : delta <= -1.5 ? "trial" : "good";
             return (
               <div key={key} className="flex items-center gap-3 flex-wrap">
@@ -110,8 +117,8 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
                   {clientV != null ? clientV : "—"}
                 </span>
                 <AlignmentTrack clientValue={clientV} trainerValue={trainerV} cat={member.cat} />
-                <span className="text-sm font-bold tabular-nums" style={{ color: "#8a6d2f", width: 28 }}>
-                  {trainerV}
+                <span className={`text-sm font-bold tabular-nums ${trainerV == null ? "text-[#c7bfad]" : ""}`} style={{ color: trainerV != null ? "#8a6d2f" : undefined, width: 28 }}>
+                  {trainerV ?? "—"}
                 </span>
                 <Badge tone={deltaTone} className="justify-center" dot={false}>
                   <span style={{ minWidth: 24, display: "inline-block", textAlign: "center" }}>
@@ -148,15 +155,35 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
           <div className="p-5">
             <div className="flex items-baseline justify-between gap-2 mb-3">
               <h3 className="font-display font-extrabold text-base uppercase text-brand-text">Debrief del entrenador</h3>
-              <span className="text-xs text-brand-muted">{daysAgo(member.debrief.debriefAt)}</span>
+              {member.debrief && <span className="text-xs text-brand-muted">{daysAgo(member.debrief.debriefAt)}</span>}
             </div>
-            <p className="text-[15px] text-brand-text">{member.debrief.note}</p>
-            <p className="text-xs font-semibold text-brand-muted mt-2">— {member.debrief.trainerName}</p>
+            {member.debrief ? (
+              <>
+                <p className="text-[15px] text-brand-text">{member.debrief.note}</p>
+                <p className="text-xs font-semibold text-brand-muted mt-2">— {member.debrief.trainerName}</p>
+                {member.debrief.reviewedAt && (
+                  <Badge tone="good" className="mt-2.5">
+                    Revisado {daysAgo(member.debrief.reviewedAt)}
+                  </Badge>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-brand-muted">
+                {member.trainerName ?? "Su entrenador"} todavía no ha dejado el debrief de este periodo.
+              </p>
+            )}
           </div>
         </div>
       </div>
 
-      <FeedbackDetailActions memberId={member.memberId} />
+      {member.client && member.debrief && member.periodMismatch && (
+        <div className="bg-[#fdf8ef] border border-[#f3e3c0] rounded-xl px-4 py-3 text-[13px] text-[#8a5a12]">
+          Ojo: el feedback del cliente es de <b>{member.client.periodKey}</b> y el debrief del entrenador de{" "}
+          <b>{member.debrief.periodKey}</b> — no son del mismo periodo, la comparación es orientativa.
+        </div>
+      )}
+
+      <FeedbackDetailActions memberId={member.memberId} canReview={member.debrief != null} alreadyReviewed={!!member.debrief?.reviewedAt} />
     </div>
   );
 }

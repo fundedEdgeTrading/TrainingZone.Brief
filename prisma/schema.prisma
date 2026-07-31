@@ -572,7 +572,9 @@ model Subscription {
 // calculan en `lib/feedback-queries.ts`, nunca se persisten.
 model ClientFeedback {
   id          String   @id @default(cuid())
+  orgId       String // aislamiento propio: antes solo se navegaba vía Member (E3 del audit)
   memberId    String
+  periodKey   String // "YYYY-MM": ancla el ciclo para emparejar con el TrainerDebrief del mismo periodo
   sat         Int
   prog        Int
   adher       Int
@@ -584,27 +586,35 @@ model ClientFeedback {
 
   member Member @relation(fields: [memberId], references: [id])
 
+  @@index([orgId])
   @@index([memberId])
+  @@index([periodKey])
 }
 
 model TrainerDebrief {
-  id        String   @id @default(cuid())
-  memberId  String
-  trainerId String
-  sat       Int
-  prog      Int
-  adher     Int
-  motiv     Int
-  esf       Int
-  note      String
-  debriefAt DateTime @default(now())
-  createdAt DateTime @default(now())
+  id               String    @id @default(cuid())
+  orgId            String // aislamiento propio: antes solo se navegaba vía Member (E3 del audit)
+  memberId         String
+  trainerId        String
+  periodKey        String // "YYYY-MM": ancla el ciclo para emparejar con el ClientFeedback del mismo periodo
+  sat              Int
+  prog             Int
+  adher            Int
+  motiv            Int
+  esf              Int
+  note             String
+  debriefAt        DateTime  @default(now())
+  reviewedAt       DateTime? // "Marcar como revisado" de dirección (/feedback)
+  reviewedByUserId String?
+  createdAt        DateTime  @default(now())
 
   member  Member @relation(fields: [memberId], references: [id])
   trainer User   @relation(fields: [trainerId], references: [id])
 
+  @@index([orgId])
   @@index([memberId])
   @@index([trainerId])
+  @@index([periodKey])
 }
 
 // ---------- Agenda y reservas (A.2.2) ----------

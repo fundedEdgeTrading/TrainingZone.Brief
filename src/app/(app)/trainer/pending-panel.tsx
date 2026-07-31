@@ -21,24 +21,28 @@ type AptitudeItem = {
   description: string;
   meta: string;
 };
+type FeedbackItem = { memberId: string; name: string; dueDate: Date | null };
 
 const TABS = [
   { key: "debriefs", label: "Debriefs", badgeClass: "bg-warning-bg text-warning-text" },
   { key: "briefs", label: "Briefs", badgeClass: "bg-gold-bg text-gold" },
+  { key: "feedback", label: "Feedback", badgeClass: "bg-good-bg text-good" },
   { key: "aptitude", label: "Aptitud", badgeClass: "bg-critical-bg text-critical" },
 ] as const;
 
 export function PendingPanel({
   debriefs,
   briefs,
+  feedback,
   aptitude,
 }: {
   debriefs: ScheduleItem[];
   briefs: ScheduleItem[];
+  feedback: FeedbackItem[];
   aptitude: AptitudeItem[];
 }) {
   const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("debriefs");
-  const counts = { debriefs: debriefs.length, briefs: briefs.length, aptitude: aptitude.length };
+  const counts = { debriefs: debriefs.length, briefs: briefs.length, feedback: feedback.length, aptitude: aptitude.length };
 
   return (
     <div>
@@ -71,6 +75,32 @@ export function PendingPanel({
         <ScheduleList items={debriefs} hrefBase="/agenda/session" labelClass="text-warning-text" empty="Sin debriefs pendientes." />
       )}
       {tab === "briefs" && <ScheduleList items={briefs} hrefBase="/brief" labelClass="text-gold" empty="Sin briefs pendientes." />}
+      {tab === "feedback" &&
+        (feedback.length === 0 ? (
+          <p className="text-sm text-brand-muted py-6 text-center">Sin feedback mensual pendiente.</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {feedback.map((f, i) => (
+              <Link
+                key={f.memberId}
+                href={`/trainer/feedback/${f.memberId}`}
+                className="block p-3 rounded-xl bg-brand-bg border border-tz-sand tz-fade-up transition-[transform,border-color] duration-200 hover:border-brand-border-hover hover:-translate-y-[2px]"
+                style={{ animationDelay: `${i * 0.06}s` }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[.06em] text-good">Debrief mensual</span>
+                  {f.dueDate && (
+                    <span className="text-[11px] text-brand-muted-2 whitespace-nowrap">
+                      antes del {f.dueDate.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm font-bold text-brand-text mt-1">{f.name}</div>
+                <div className="text-xs text-brand-muted mt-0.5">Valora su satisfacción, progreso y adherencia de este periodo.</div>
+              </Link>
+            ))}
+          </div>
+        ))}
       {tab === "aptitude" &&
         (aptitude.length === 0 ? (
           <p className="text-sm text-brand-muted py-6 text-center">Sin alertas de aptitud.</p>

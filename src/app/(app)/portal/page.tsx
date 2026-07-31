@@ -8,10 +8,12 @@ import {
   getMemberMonthlyActivity,
 } from "@/lib/portal-queries";
 import { getAnnouncementsForMember, registerAnnouncementViews } from "@/lib/announcements-queries";
+import { getPendingClientFeedback } from "@/lib/feedback-capture";
 import { resolveTimezone } from "@/lib/timezone";
 import { KpiCard, Card } from "@/components/kpi-card";
 import ActivityChart from "./activity-chart";
 import { AnnouncementsBanner } from "./announcements-banner";
+import { PendingFeedbackBanner } from "./pending-feedback-banner";
 
 const LIGHT_COLOR: Record<string, string> = { RED: "#8A3420", AMBER: "#8A5A12", GREEN: "#4B5A22" };
 
@@ -23,7 +25,7 @@ export default async function PortalHomePage() {
   // "Este mes" / "este año" se cuentan sobre el calendario del centro, no el del servidor.
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
-  const [progress, adaptations, activity, announcements] = await Promise.all([
+  const [progress, adaptations, activity, announcements, pendingFeedback] = await Promise.all([
     getMemberProgress(member.id, timezone),
     getMemberHealthTransparency(member.id, session.user.orgId),
     getMemberMonthlyActivity(member.id, timezone),
@@ -33,6 +35,7 @@ export default async function PortalHomePage() {
       primaryCenterId: member.primaryCenterId,
       state: member.state,
     }),
+    getPendingClientFeedback(session.user.orgId, session.user.id),
   ]);
 
   // RB-ANUN-003: contabilizar como vistos los anuncios que se le muestran.
@@ -42,6 +45,8 @@ export default async function PortalHomePage() {
 
   return (
     <div className="max-w-[1120px] mx-auto flex flex-col gap-[18px]">
+      <PendingFeedbackBanner hasPending={!!pendingFeedback} />
+
       <div
         className={`grid gap-4 tz-fade-up ${
           announcements.length > 0 ? "grid-cols-1 md:grid-cols-[1.6fr_1fr]" : "grid-cols-1"

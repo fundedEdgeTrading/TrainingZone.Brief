@@ -2,9 +2,13 @@ import { prisma } from "@/lib/prisma";
 
 // Página "Feedback" de Dirección: contrasta el feedback que reporta el socio
 // (ClientFeedback) con el debrief que registra su entrenador (TrainerDebrief),
-// ambos sobre las mismas 5 dimensiones 0-10. Solo importa el más reciente de
-// cada uno por socio ("por periodo"); los agregados (medias, gap, categoría,
-// KPIs) se calculan aquí, nunca se persisten.
+// ambos sobre las mismas 5 dimensiones 0-10. El universo de candidatos es
+// **todo socio de EP activo** (mismo criterio de elegibilidad que el ciclo de
+// `lib/feedback-capture.ts`), no solo los que ya tienen algún debrief — así un
+// socio que respondió pero cuyo entrenador no lo ha hecho (o viceversa) es
+// visible como hueco real, no invisible. Solo importa el más reciente de cada
+// lado ("por periodo"); los agregados (medias, gap, categoría, KPIs) se
+// calculan aquí, nunca se persisten.
 
 export type FeedbackDims = { sat: number; prog: number; adher: number; motiv: number; esf: number };
 
@@ -31,8 +35,9 @@ function mean(d: FeedbackDims): number {
   return (d.sat + d.prog + d.adher + d.motiv + d.esf) / 5;
 }
 
-export function categorize(clientAvg: number | null, trainerAvg: number): { cat: AlignmentCategory; gap: number | null } {
-  if (clientAvg == null) return { cat: "sin_feedback", gap: null };
+/** Ninguno de los dos lados es obligatorio para que exista el otro: si falta cualquiera, no hay comparación posible. */
+export function categorize(clientAvg: number | null, trainerAvg: number | null): { cat: AlignmentCategory; gap: number | null } {
+  if (clientAvg == null || trainerAvg == null) return { cat: "sin_feedback", gap: null };
   const gap = trainerAvg - clientAvg;
   if (gap >= GAP_THRESHOLD) return { cat: "ciego", gap };
   if (gap <= -GAP_THRESHOLD) return { cat: "cliente_positivo", gap };
@@ -43,8 +48,10 @@ export function isAtRisk(clientSat: number | null, cat: AlignmentCategory): bool
   return (clientSat != null && clientSat < 5) || cat === "ciego";
 }
 
-export type MemberFeedbackClient = (FeedbackDims & { comment: string | null; submittedAt: Date }) | null;
-export type MemberFeedbackDebrief = FeedbackDims & { note: string; debriefAt: Date; trainerName: string };
+export type MemberFeedbackClient = (FeedbackDims & { comment: string | null; submittedAt: Date; periodKey: string }) | null;
+export type MemberFeedbackDebrief =
+  | (FeedbackDims & { note: string; debriefAt: Date; trainerName: string; periodKey: string; reviewedAt: Date | null })
+  | null;
 
 export type MemberFeedbackRow = {
   memberId: string;
@@ -57,16 +64,19 @@ export type MemberFeedbackRow = {
   client: MemberFeedbackClient;
   debrief: MemberFeedbackDebrief;
   clientAvg: number | null;
-  trainerAvg: number;
+  trainerAvg: number | null;
   gap: number | null;
   cat: AlignmentCategory;
   atRisk: boolean;
+  /** Ambos lados respondieron, pero en periodos ("YYYY-MM") distintos: la comparación existe pero es menos fiable. */
+  periodMismatch: boolean;
 };
 
 async function listCandidateMembers(orgId: string, opts: { q?: string; centerId?: string } = {}) {
   return prisma.member.findMany({
     where: {
       orgId,
+      state: "ACTIVE",
       primaryCenterId: opts.centerId || undefined,
       ...(opts.q
         ? {
@@ -76,9 +86,11 @@ async function listCandidateMembers(orgId: string, opts: { q?: string; centerId?
             ],
           }
         : {}),
-      // Solo importan socios con al menos un debrief del entrenador: sin
-      // debrief no hay nada que contrastar (RB de la página).
-      trainerDebriefs: { some: {} },
+      // Elegible para el ciclo (mismo criterio que runFeedbackCycleRule): al
+      // menos una sesión de EP asistida, de donde se deriva "su" entrenador
+      // (no hay Member.trainerId fijo). Deliberadamente NO se exige que ya
+      // exista un debrief: eso es justo lo que queremos poder ver como hueco.
+      bookings: { some: { status: "ATTENDED", session: { classType: "Personal Training" } } },
     },
     include: {
       primaryCenter: { select: { id: true, name: true } },
@@ -94,24 +106,62 @@ async function listCandidateMembers(orgId: string, opts: { q?: string; centerId?
   });
 }
 
-function toRow(m: Awaited<ReturnType<typeof listCandidateMembers>>[number]): MemberFeedbackRow | null {
-  const debrief = m.trainerDebriefs[0];
-  if (!debrief) return null;
+/** Para socios sin debrief todavía: el entrenador se deriva igual que en el resto del sistema (última sesión de EP asistida). */
+async function backfillTrainerNames(memberIds: string[]): Promise<Map<string, string>> {
+  if (memberIds.length === 0) return new Map();
+  const bookings = await prisma.booking.findMany({
+    where: {
+      memberId: { in: memberIds },
+      status: "ATTENDED",
+      session: { classType: "Personal Training", trainerId: { not: null } },
+    },
+    orderBy: { session: { date: "desc" } },
+    distinct: ["memberId"],
+    select: { memberId: true, session: { select: { trainer: { select: { name: true } } } } },
+  });
+  const map = new Map<string, string>();
+  for (const b of bookings) {
+    if (b.session.trainer?.name) map.set(b.memberId, b.session.trainer.name);
+  }
+  return map;
+}
 
-  const clientFb = m.clientFeedback[0] ?? null;
-  const client: MemberFeedbackClient = clientFb
+function toRow(
+  m: Awaited<ReturnType<typeof listCandidateMembers>>[number],
+  fallbackTrainerName: string | null
+): MemberFeedbackRow {
+  const debriefRow = m.trainerDebriefs[0] ?? null;
+  const clientRow = m.clientFeedback[0] ?? null;
+
+  const client: MemberFeedbackClient = clientRow
     ? {
-        sat: clientFb.sat,
-        prog: clientFb.prog,
-        adher: clientFb.adher,
-        motiv: clientFb.motiv,
-        esf: clientFb.esf,
-        comment: clientFb.comment,
-        submittedAt: clientFb.submittedAt,
+        sat: clientRow.sat,
+        prog: clientRow.prog,
+        adher: clientRow.adher,
+        motiv: clientRow.motiv,
+        esf: clientRow.esf,
+        comment: clientRow.comment,
+        submittedAt: clientRow.submittedAt,
+        periodKey: clientRow.periodKey,
       }
     : null;
 
-  const trainerAvg = mean(debrief);
+  const debrief: MemberFeedbackDebrief = debriefRow
+    ? {
+        sat: debriefRow.sat,
+        prog: debriefRow.prog,
+        adher: debriefRow.adher,
+        motiv: debriefRow.motiv,
+        esf: debriefRow.esf,
+        note: debriefRow.note,
+        debriefAt: debriefRow.debriefAt,
+        trainerName: debriefRow.trainer.name,
+        periodKey: debriefRow.periodKey,
+        reviewedAt: debriefRow.reviewedAt,
+      }
+    : null;
+
+  const trainerAvg = debrief ? mean(debrief) : null;
   const clientAvg = client ? mean(client) : null;
   const { cat, gap } = categorize(clientAvg, trainerAvg);
 
@@ -120,25 +170,17 @@ function toRow(m: Awaited<ReturnType<typeof listCandidateMembers>>[number]): Mem
     firstName: m.firstName,
     lastName: m.lastName,
     planName: m.subscriptions[0]?.plan.name ?? null,
-    trainerName: debrief.trainer.name,
+    trainerName: debrief?.trainerName ?? fallbackTrainerName,
     centerId: m.primaryCenter.id,
     centerName: m.primaryCenter.name,
     client,
-    debrief: {
-      sat: debrief.sat,
-      prog: debrief.prog,
-      adher: debrief.adher,
-      motiv: debrief.motiv,
-      esf: debrief.esf,
-      note: debrief.note,
-      debriefAt: debrief.debriefAt,
-      trainerName: debrief.trainer.name,
-    },
+    debrief,
     clientAvg,
     trainerAvg,
     gap,
     cat,
     atRisk: isAtRisk(client?.sat ?? null, cat),
+    periodMismatch: !!(client && debrief && client.periodKey !== debrief.periodKey),
   };
 }
 
@@ -149,7 +191,10 @@ export async function listMemberFeedback(
   opts: { q?: string; centerId?: string; cat?: AlignmentCategory | "all"; sortBy?: SortBy } = {}
 ): Promise<MemberFeedbackRow[]> {
   const members = await listCandidateMembers(orgId, opts);
-  let rows = members.map(toRow).filter((r): r is MemberFeedbackRow => r !== null);
+  const needFallback = members.filter((m) => m.trainerDebriefs.length === 0).map((m) => m.id);
+  const fallbackNames = await backfillTrainerNames(needFallback);
+
+  let rows = members.map((m) => toRow(m, fallbackNames.get(m.id) ?? null));
 
   if (opts.cat && opts.cat !== "all") {
     rows = rows.filter((r) => r.cat === opts.cat);
@@ -180,6 +225,8 @@ export type FeedbackKpis = {
   collected: number;
   total: number;
   responseRate: number;
+  debriefCollected: number;
+  debriefResponseRate: number;
   clientAvgSat: number | null;
   trainerAvgRating: number | null;
   blindSpots: number;
@@ -189,9 +236,11 @@ export type FeedbackKpis = {
 export function computeFeedbackKpis(rows: MemberFeedbackRow[]): FeedbackKpis {
   const total = rows.length;
   const withClient = rows.filter((r) => r.client != null);
+  const withDebrief = rows.filter((r) => r.debrief != null);
   const collected = withClient.length;
+  const debriefCollected = withDebrief.length;
   const clientAvgSat = collected ? withClient.reduce((s, r) => s + r.client!.sat, 0) / collected : null;
-  const trainerAvgRating = total ? rows.reduce((s, r) => s + r.debrief.sat, 0) / total : null;
+  const trainerAvgRating = debriefCollected ? withDebrief.reduce((s, r) => s + r.debrief!.sat, 0) / debriefCollected : null;
   const blindSpots = rows.filter((r) => r.cat === "ciego").length;
   const atRisk = rows.filter((r) => r.atRisk).length;
 
@@ -199,6 +248,8 @@ export function computeFeedbackKpis(rows: MemberFeedbackRow[]): FeedbackKpis {
     collected,
     total,
     responseRate: total ? Math.round((collected / total) * 100) : 0,
+    debriefCollected,
+    debriefResponseRate: total ? Math.round((debriefCollected / total) * 100) : 0,
     clientAvgSat,
     trainerAvgRating,
     blindSpots,
@@ -225,7 +276,8 @@ export async function getMemberFeedbackDetail(orgId: string, memberId: string): 
     },
   });
   if (!m) return null;
-  return toRow(m);
+  const fallbackNames = m.trainerDebriefs.length === 0 ? await backfillTrainerNames([m.id]) : new Map<string, string>();
+  return toRow(m, fallbackNames.get(m.id) ?? null);
 }
 
 export const DIMENSION_LABEL: { key: keyof FeedbackDims; label: string }[] = [

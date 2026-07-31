@@ -102,7 +102,13 @@ export default async function FeedbackPage({
       />
 
       <div className="grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
-        <KpiCard label="Feedback recogido" value={`${kpis.collected}/${kpis.total}`} hint={`${kpis.responseRate}% de respuesta`} tone="accent" />
+        <KpiCard label="Feedback del socio" value={`${kpis.collected}/${kpis.total}`} hint={`${kpis.responseRate}% de respuesta`} tone="accent" />
+        <KpiCard
+          label="Debrief del entrenador"
+          value={`${kpis.debriefCollected}/${kpis.total}`}
+          hint={`${kpis.debriefResponseRate}% de respuesta`}
+          tone={kpis.debriefResponseRate < 100 ? "warning" : "accent"}
+        />
         <KpiCard
           label="Satisfacción cliente"
           value={kpis.clientAvgSat != null ? kpis.clientAvgSat.toFixed(1) : "—"}
@@ -182,8 +188,8 @@ export default async function FeedbackPage({
                       {r.clientAvg != null ? r.clientAvg.toFixed(1) : "—"}
                     </span>
                     <AlignmentTrack clientValue={r.clientAvg} trainerValue={r.trainerAvg} cat={r.cat} />
-                    <span className="text-sm font-bold tabular-nums w-9" style={{ color: "#8a6d2f" }}>
-                      {r.trainerAvg.toFixed(1)}
+                    <span className={`text-sm font-bold tabular-nums w-9 ${r.trainerAvg == null ? "text-[#c7bfad]" : ""}`} style={r.trainerAvg != null ? { color: "#8a6d2f" } : undefined}>
+                      {r.trainerAvg != null ? r.trainerAvg.toFixed(1) : "—"}
                     </span>
                   </div>
 
