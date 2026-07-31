@@ -84,6 +84,23 @@ export type SaveSessionInput = {
 
 /** Crea o actualiza una sesión de la agenda (rediseño estilo Google Calendar). */
 export async function saveSession(orgId: string, input: SaveSessionInput) {
+  // Centro, entrenador y socio llegan tal cual del formulario. Sin contrastarlos
+  // contra la organización, quien pudiera tocar la agenda de su propio centro
+  // podía crear una sesión apuntando al centro o al entrenador de otra
+  // organización, y sobre todo colar una reserva a nombre de un socio ajeno sin
+  // más que conocer su id.
+  const [center, trainer] = await Promise.all([
+    prisma.center.findFirst({ where: { id: input.centerId, orgId }, select: { id: true } }),
+    prisma.user.findFirst({ where: { id: input.trainerId, orgId }, select: { id: true } }),
+  ]);
+  if (!center) return { ok: false as const, error: "Centro no encontrado." };
+  if (!trainer) return { ok: false as const, error: "Entrenador no encontrado." };
+
+  if (input.memberId) {
+    const member = await prisma.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
+    if (!member) return { ok: false as const, error: "Socio no encontrado." };
+  }
+
   const isPersonal = input.type === "personal";
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
   const capacity = isPersonal
@@ -140,7 +157,7 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
     }
   }
 
-  return session;
+  return { ok: true as const, session };
 }
 
 /**

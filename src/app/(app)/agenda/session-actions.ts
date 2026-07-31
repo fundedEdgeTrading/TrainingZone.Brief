@@ -46,7 +46,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   if (!title) title = type === "reduced" ? "Grupo reducido" : "Sesión";
   if (isTrial && !title.startsWith("Prueba · ")) title = `Prueba · ${title}`;
 
-  await saveSession(session.user.orgId, {
+  const result = await saveSession(session.user.orgId, {
     id,
     centerId,
     trainerId,
@@ -62,6 +62,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     recurrence,
     recUntil: recurrence !== "NONE" && recUntilRaw ? parseDateParam(recUntilRaw) : null,
   });
+  if (!result.ok) return result;
 
   revalidateSessionViews();
   return { ok: true };
