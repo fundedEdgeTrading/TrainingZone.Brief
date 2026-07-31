@@ -248,10 +248,15 @@ export async function rescheduleSession(orgId: string, sessionId: string, date: 
   return { ok: true as const };
 }
 
+/**
+ * Suma minutos a un "HH:MM" SIN cruzar la medianoche: se topa en 23:59. Con el
+ * `% 24` anterior, una franja que empezara a las 23:45 acababa a las "00:15",
+ * anterior a su propia hora de inicio, y la duración salía negativa.
+ */
 function addMinutesToTime(time: string, minutes: number) {
   const [h, m] = time.split(":").map(Number);
-  const total = h * 60 + m + minutes;
-  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  const total = Math.min(h * 60 + m + minutes, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /**
