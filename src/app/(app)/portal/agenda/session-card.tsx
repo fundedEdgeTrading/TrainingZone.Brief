@@ -25,7 +25,7 @@ type BookableSession = {
  * —Grupo reducido vs Entrenamiento personal— se deriva del `classType` y se
  * muestra siempre como badge, con indicador visual distinto por tipo.
  */
-export default function SessionCard({ session: s }: { session: BookableSession }) {
+export default function SessionCard({ session: s, cancelWindowHours }: { session: BookableSession; cancelWindowHours: number }) {
   const kind = sessionServiceKind(s.classType);
   const isGroup = kind === "GROUP";
   const full = s.bookedCount >= s.capacity;
@@ -99,6 +99,7 @@ export default function SessionCard({ session: s }: { session: BookableSession }
           myBookingStatus={s.myBookingStatus}
           full={full}
           canCancelFreely={s.canCancelFreely}
+          cancelWindowHours={cancelWindowHours}
         />
       </div>
     </article>

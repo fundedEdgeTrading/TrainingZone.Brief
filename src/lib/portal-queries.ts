@@ -256,7 +256,22 @@ export async function getMemberHealthTransparency(memberId: string, orgId: strin
 
 export const BOOKING_WINDOW_DAYS = 7; // RB-RES-002
 const MIN_LEAD_MINUTES = 30; // RB-RES-001
-const CANCEL_WINDOW_HOURS = 4; // RB-RES-005
+const DEFAULT_CANCEL_WINDOW_HOURS = 24;
+
+/**
+ * RB-RES-005: horas de antelación mínima para cancelar sin perder la sesión
+ * del bono. Configurable por entorno (`CANCELLATION_WINDOW_HOURS`) para poder
+ * cambiar esta regla de negocio sin desplegar código; si la variable falta o
+ * no es un número válido, cae a 24h por defecto.
+ */
+function resolveCancelWindowHours(): number {
+  const raw = process.env.CANCELLATION_WINDOW_HOURS;
+  if (!raw) return DEFAULT_CANCEL_WINDOW_HOURS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_CANCEL_WINDOW_HOURS;
+}
+
+export const CANCEL_WINDOW_HOURS = resolveCancelWindowHours();
 export const MAX_ACTIVE_BOOKINGS = 3; // RB-RES-004
 
 /**
@@ -496,7 +511,7 @@ export function countsTowardsActiveLimit(b: Pick<UpcomingBooking, "sessionCancel
 }
 
 export type BookingResult =
-  | { ok: true; waitlisted: boolean }
+  | { ok: true; waitlisted: boolean; forfeited?: boolean }
   | { ok: false; error: string; needsTopUp?: boolean };
 
 type MemberForBooking = {
@@ -670,14 +685,20 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  if (sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone).getTime() <= Date.now()) {
+  const startsAt = sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timeZone);
+  if (startsAt.getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }
 
-  // RB-RES-006: al cancelar una reserva que consumió bono, se devuelve la sesión
-  // al mismo bono. La lista de espera nunca descontó, así que no se reembolsa.
+  // RB-RES-005/006: al cancelar una reserva que consumió bono, se devuelve la
+  // sesión al mismo bono — pero solo si se cancela con la antelación mínima
+  // configurada (CANCEL_WINDOW_HOURS). Por debajo de esa ventana la sesión se
+  // pierde (queda como empleada), igual que si se hubiera asistido: el socio ya
+  // ha visto el aviso correspondiente antes de confirmar. La lista de espera
+  // nunca descontó, así que nunca se reembolsa ni le afecta esta ventana.
+  const withinPenaltyWindow = booking.status === "BOOKED" && !canCancelWithoutPenalty(startsAt);
   const refundSubscriptionId =
-    booking.status === "BOOKED" && booking.subscriptionId ? booking.subscriptionId : null;
+    booking.status === "BOOKED" && booking.subscriptionId && !withinPenaltyWindow ? booking.subscriptionId : null;
 
   await prisma.$transaction(async (tx) => {
     await tx.booking.update({
@@ -692,5 +713,5 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
     }
   });
 
-  return { ok: true, waitlisted: false };
+  return { ok: true, waitlisted: false, forfeited: withinPenaltyWindow };
 }
