@@ -84,6 +84,34 @@ export default function BookingButton({
   };
 
   if (myBookingId) {
+    // Sin promoción automática de lista de espera (decisión de negocio): si se
+    // libera un hueco, quien esperaba ve el mismo "Reservar" que vería
+    // cualquiera y lo reclama él mismo — nadie se lo confirma solo.
+    const canClaimSpot = myBookingStatus === "WAITLISTED" && !full;
+    if (canClaimSpot) {
+      return (
+        <div className={variant === "card" ? "flex-1 flex flex-col items-stretch gap-1.5" : "flex flex-col items-end gap-1.5"}>
+          <button
+            disabled={pending}
+            onClick={handleBook}
+            className={`${
+              variant === "row" ? "shrink-0" : "w-full"
+            } min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97] bg-tz-black text-tz-bone border border-tz-black hover:-translate-y-0.5 hover:shadow-[0_10px_22px_-10px_rgba(29,29,28,.35)]`}
+          >
+            {pending && <ButtonSpinner />}
+            Se ha liberado un hueco · Reservar
+          </button>
+          <button
+            disabled={pending}
+            onClick={() => handleCancel(myBookingId)}
+            className="text-[11px] font-semibold text-brand-muted underline underline-offset-2 hover:text-brand-text whitespace-nowrap"
+          >
+            Salir de la lista de espera
+          </button>
+        </div>
+      );
+    }
+
     const warnForfeit = myBookingStatus === "BOOKED" && !canCancelFreely;
     return (
       <>

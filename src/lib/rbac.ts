@@ -104,6 +104,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/portal/evolucion", label: "Mi evolución", section: "Mi cuenta" },
     { href: "/portal/plan", label: "Mi plan", section: "Mi cuenta" },
     { href: "/portal/comprar", label: "Comprar / renovar", section: "Mi cuenta" },
+    { href: "/portal/perfil", label: "Mi perfil", section: "Mi cuenta" },
   ],
   HR_MANAGER: [
     { href: "/organization", label: "Organización", section: "Administración" },

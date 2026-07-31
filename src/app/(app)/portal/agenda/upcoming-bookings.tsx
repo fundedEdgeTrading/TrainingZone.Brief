@@ -84,7 +84,7 @@ export default function UpcomingBookings({
                 occurrenceDate={b.occurrenceDate}
                 myBookingId={b.bookingId}
                 myBookingStatus={b.status}
-                full={false}
+                full={b.full}
                 canCancelFreely={b.canCancelFreely}
                 cancelWindowHours={cancelWindowHours}
                 variant="row"
