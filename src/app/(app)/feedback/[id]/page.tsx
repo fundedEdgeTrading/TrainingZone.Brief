@@ -79,25 +79,27 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
       />
 
       <Card title="Resumen">
-        <div className="flex items-start gap-8 flex-wrap">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Cliente</div>
-            <div className={`font-display font-extrabold text-[34px] tabular-nums leading-none ${member.clientAvg != null ? "text-brand-text" : "text-[#c7bfad]"}`}>
-              {member.clientAvg != null ? member.clientAvg.toFixed(1) : "—"}
-              <span className="text-sm text-faint font-semibold">/10</span>
+        <div className="flex flex-col sm:flex-row items-start gap-4 sm:gap-8 flex-wrap">
+          <div className="flex items-start gap-6 sm:contents">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Cliente</div>
+              <div className={`font-display font-extrabold text-[28px] sm:text-[34px] tabular-nums leading-none ${member.clientAvg != null ? "text-brand-text" : "text-[#c7bfad]"}`}>
+                {member.clientAvg != null ? member.clientAvg.toFixed(1) : "—"}
+                <span className="text-sm text-faint font-semibold">/10</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Entrenador</div>
+              <div
+                className="font-display font-extrabold text-[28px] sm:text-[34px] tabular-nums leading-none"
+                style={{ color: member.trainerAvg != null ? "#8a6d2f" : "#c7bfad" }}
+              >
+                {member.trainerAvg != null ? member.trainerAvg.toFixed(1) : "—"}
+                <span className="text-sm text-faint font-semibold">/10</span>
+              </div>
             </div>
           </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Entrenador</div>
-            <div
-              className="font-display font-extrabold text-[34px] tabular-nums leading-none"
-              style={{ color: member.trainerAvg != null ? "#8a6d2f" : "#c7bfad" }}
-            >
-              {member.trainerAvg != null ? member.trainerAvg.toFixed(1) : "—"}
-              <span className="text-sm text-faint font-semibold">/10</span>
-            </div>
-          </div>
-          <p className="text-sm text-brand-text-2 flex-1 min-w-[220px] pt-1">{text}</p>
+          <p className="text-sm text-brand-text-2 w-full sm:flex-1 sm:min-w-[220px] pt-1">{text}</p>
         </div>
       </Card>
 
@@ -109,29 +111,31 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
             const delta = clientV != null && trainerV != null ? trainerV - clientV : null;
             const deltaTone: BadgeTone = delta == null ? "neutral" : delta >= 1.5 ? "critical" : delta <= -1.5 ? "trial" : "good";
             return (
-              <div key={key} className="flex items-center gap-3 flex-wrap">
-                <span className="text-[13px] font-semibold text-brand-text-2" style={{ width: 116 }}>
+              <div key={key} className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
+                <span className="text-[13px] font-semibold text-brand-text-2 sm:w-[116px] sm:shrink-0">
                   {label}
                 </span>
-                <span className={`text-sm font-bold tabular-nums text-right ${clientV != null ? "text-brand-text" : "text-[#c7bfad]"}`} style={{ width: 28 }}>
-                  {clientV != null ? clientV : "—"}
-                </span>
-                <AlignmentTrack clientValue={clientV} trainerValue={trainerV} cat={member.cat} />
-                <span className={`text-sm font-bold tabular-nums ${trainerV == null ? "text-[#c7bfad]" : ""}`} style={{ color: trainerV != null ? "#8a6d2f" : undefined, width: 28 }}>
-                  {trainerV ?? "—"}
-                </span>
-                <Badge tone={deltaTone} className="justify-center" dot={false}>
-                  <span style={{ minWidth: 24, display: "inline-block", textAlign: "center" }}>
-                    {delta == null ? "—" : `${delta >= 0 ? "+" : ""}${delta}`}
+                <div className="flex items-center gap-2 sm:gap-3 sm:flex-1 min-w-0">
+                  <span className={`text-sm font-bold tabular-nums text-right shrink-0 ${clientV != null ? "text-brand-text" : "text-[#c7bfad]"}`} style={{ width: 28 }}>
+                    {clientV != null ? clientV : "—"}
                   </span>
-                </Badge>
+                  <AlignmentTrack clientValue={clientV} trainerValue={trainerV} cat={member.cat} />
+                  <span className={`text-sm font-bold tabular-nums shrink-0 ${trainerV == null ? "text-[#c7bfad]" : ""}`} style={{ color: trainerV != null ? "#8a6d2f" : undefined, width: 28 }}>
+                    {trainerV ?? "—"}
+                  </span>
+                  <Badge tone={deltaTone} className="justify-center shrink-0" dot={false}>
+                    <span style={{ minWidth: 24, display: "inline-block", textAlign: "center" }}>
+                      {delta == null ? "—" : `${delta >= 0 ? "+" : ""}${delta}`}
+                    </span>
+                  </Badge>
+                </div>
               </div>
             );
           })}
         </div>
       </Card>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))" }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="relative bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden pl-[19px]">
           <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-brand-ink" />
           <div className="p-5">

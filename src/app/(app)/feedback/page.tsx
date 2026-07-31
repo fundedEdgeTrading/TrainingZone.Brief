@@ -101,7 +101,7 @@ export default async function FeedbackPage({
         }
       />
 
-      <div className="grid gap-3.5" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))" }}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-3.5">
         <KpiCard label="Feedback del socio" value={`${kpis.collected}/${kpis.total}`} hint={`${kpis.responseRate}% de respuesta`} tone="accent" />
         <KpiCard
           label="Debrief del entrenador"
@@ -158,18 +158,18 @@ export default async function FeedbackPage({
         {rows.length === 0 ? (
           <p className="text-[13px] text-faint text-center py-10">Sin resultados para este filtro.</p>
         ) : (
-          <div className="-mx-[22px]">
+          <div className="-mx-4 sm:-mx-[22px]">
             {rows.map((r) => {
               const highlighted = HIGHLIGHT_BLIND_SPOTS && r.cat === "ciego";
               return (
                 <Link
                   key={r.memberId}
                   href={`/feedback/${r.memberId}`}
-                  className={`flex items-center gap-4 flex-wrap px-[22px] py-4 border-b border-[#ede7dc] last:border-0 transition-colors duration-150 hover:bg-[#faf8f3] ${
+                  className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 sm:flex-wrap px-4 sm:px-[22px] py-4 border-b border-[#ede7dc] last:border-0 transition-colors duration-150 hover:bg-[#faf8f3] ${
                     highlighted ? "bg-[#fbf1ec]" : ""
                   }`}
                 >
-                  <div className="flex items-center gap-3" style={{ flex: "1 1 240px" }}>
+                  <div className="flex items-center gap-3 min-w-0 sm:[flex:1_1_240px]">
                     <span className="w-10 h-10 rounded-full bg-[#efe8dc] text-[#5c4a34] font-bold text-[13px] inline-flex items-center justify-center shrink-0">
                       {initials(r.firstName, r.lastName)}
                     </span>
@@ -183,7 +183,7 @@ export default async function FeedbackPage({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2.5" style={{ flex: "2 1 300px" }}>
+                  <div className="flex items-center gap-2.5 sm:[flex:2_1_300px]">
                     <span className={`text-sm font-bold tabular-nums w-9 text-right ${r.clientAvg != null ? "text-brand-text" : "text-[#c7bfad]"}`}>
                       {r.clientAvg != null ? r.clientAvg.toFixed(1) : "—"}
                     </span>
@@ -193,7 +193,7 @@ export default async function FeedbackPage({
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-3 justify-end" style={{ flex: "1 1 200px" }}>
+                  <div className="flex items-center gap-3 justify-between sm:justify-end sm:[flex:1_1_200px]">
                     <Badge tone={CATEGORY_TONE[r.cat]}>{CATEGORY_LABEL[r.cat]}</Badge>
                     {r.gap != null && (
                       <span
@@ -204,7 +204,7 @@ export default async function FeedbackPage({
                         {r.gap.toFixed(1)}
                       </span>
                     )}
-                    <span className="text-[#c7bfad]">›</span>
+                    <span className="text-[#c7bfad] hidden sm:inline">›</span>
                   </div>
                 </Link>
               );

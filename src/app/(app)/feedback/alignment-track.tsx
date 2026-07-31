@@ -29,7 +29,7 @@ export function AlignmentTrack({
   const gapWidth = clientLeft != null && trainerLeft != null ? Math.max(Math.abs(trainerLeft - clientLeft), 1.5) : null;
 
   return (
-    <div className="relative flex-1 h-[34px] min-w-[110px]">
+    <div className="relative flex-1 h-[34px] min-w-[64px] sm:min-w-[110px]">
       <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[6px] rounded-pill bg-brand-bg" />
       {gapLeft != null && gapWidth != null && cat !== "sin_feedback" && (
         <div
