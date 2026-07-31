@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { ensureIdentity } from "@/lib/identity";
@@ -21,8 +22,20 @@ import { renderOwnerActivationEmail } from "@/lib/emails/templates";
 const OWNER_INVITATION_TTL_DAYS = 14;
 
 export type ProvisionResult =
-  | { ok: true; created: boolean; orgId: string }
+  | { ok: true; created: boolean; orgId: string; activationUrl: string | null }
   | { ok: false; error: string };
+
+type ProvisionInput = {
+  /** Clave de idempotencia: sesión de Stripe real, o un id sintético en modo demo. */
+  provisioningSessionId: string;
+  planCode: string | null | undefined;
+  email: string | null | undefined;
+  billingName: string | null;
+  taxId: string | null;
+  customerId: string | null;
+  subscriptionId: string | null;
+  periodEnd: Date | null;
+};
 
 function ownerInvitationExpiry() {
   return new Date(Date.now() + OWNER_INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -59,44 +72,36 @@ function periodEndFrom(session: Stripe.Checkout.Session, isLifetime: boolean): D
   return null;
 }
 
-export async function provisionOrganizationFromCheckout(
-  session: Stripe.Checkout.Session
-): Promise<ProvisionResult> {
+async function provisionOrganization(input: ProvisionInput): Promise<ProvisionResult> {
   // 1. Idempotencia: un reenvío del mismo evento no debe crear nada ni enviar
   //    un segundo email de bienvenida.
   const already = await prisma.organization.findUnique({
-    where: { provisioningSessionId: session.id },
+    where: { provisioningSessionId: input.provisioningSessionId },
     select: { id: true },
   });
-  if (already) return { ok: true, created: false, orgId: already.id };
+  if (already) return { ok: true, created: false, orgId: already.id, activationUrl: null };
 
-  const planCode = session.metadata?.planCode;
-  const plan = getPlatformPlan(planCode);
-  if (!plan) return { ok: false, error: `Plan no reconocido en el checkout: ${planCode ?? "(ninguno)"}` };
+  const plan = getPlatformPlan(input.planCode);
+  if (!plan) return { ok: false, error: `Plan no reconocido en el checkout: ${input.planCode ?? "(ninguno)"}` };
 
-  const details = session.customer_details;
-  const email = details?.email?.trim().toLowerCase();
+  const email = input.email?.trim().toLowerCase();
   if (!email) {
     // Sin email no hay a quién activar. No se inventa nada: queda registrado
     // para que soporte lo resuelva a mano con la sesión de Stripe en la mano.
-    return { ok: false, error: `Checkout ${session.id} sin email de comprador.` };
+    return { ok: false, error: `Alta ${input.provisioningSessionId} sin email de comprador.` };
   }
 
-  const billingName = details?.name?.trim() || null;
-  const taxId = details?.tax_ids?.[0]?.value ?? null;
-  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id ?? null;
-  const subscriptionId =
-    typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
+  const billingName = input.billingName;
   const isLifetime = plan.interval === "lifetime";
 
   const platformFields = {
     platformStatus: "ACTIVE" as const,
     platformStatusSince: new Date(),
     platformPlan: plan.code,
-    currentPeriodEnd: periodEndFrom(session, isLifetime),
-    platformStripeCustomerId: customerId,
-    platformStripeSubscriptionId: subscriptionId,
-    provisioningSessionId: session.id,
+    currentPeriodEnd: isLifetime ? null : input.periodEnd,
+    platformStripeCustomerId: input.customerId,
+    platformStripeSubscriptionId: input.subscriptionId,
+    provisioningSessionId: input.provisioningSessionId,
   };
 
   // 2. RB-ALTA-003: si ese email ya dirige una organización, se le actualiza el
@@ -108,7 +113,7 @@ export async function provisionOrganizationFromCheckout(
   });
   if (existingOwner) {
     await prisma.organization.update({ where: { id: existingOwner.orgId }, data: platformFields });
-    return { ok: true, created: false, orgId: existingOwner.orgId };
+    return { ok: true, created: false, orgId: existingOwner.orgId, activationUrl: null };
   }
 
   const orgName = billingName || email.split("@")[0];
@@ -122,7 +127,7 @@ export async function provisionOrganizationFromCheckout(
         slug: await uniqueOrgSlug(orgName),
         billingEmail: email,
         billingName,
-        taxId,
+        taxId: input.taxId,
         ...platformFields,
       },
     });
@@ -154,6 +159,8 @@ export async function provisionOrganizationFromCheckout(
     return { orgId: org.id, token: invitation.token };
   });
 
+  const activationUrl = onboardingUrlFor(token);
+
   // 4. Email de bienvenida best-effort: un fallo de SMTP no revierte un alta ya
   //    pagada. Para eso existe el reenvío desde /activar (RB-ALTA-002).
   try {
@@ -166,14 +173,55 @@ export async function provisionOrganizationFromCheckout(
         orgName,
         planName: plan.name,
         aptaLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
-        activationUrl: onboardingUrlFor(token),
+        activationUrl,
       }),
     });
   } catch (error) {
     console.error("[provisioning] error enviando el email de activación:", error);
   }
 
-  return { ok: true, created: true, orgId };
+  return { ok: true, created: true, orgId, activationUrl };
+}
+
+export async function provisionOrganizationFromCheckout(
+  session: Stripe.Checkout.Session
+): Promise<ProvisionResult> {
+  const details = session.customer_details;
+  return provisionOrganization({
+    provisioningSessionId: session.id,
+    planCode: session.metadata?.planCode,
+    email: details?.email,
+    billingName: details?.name?.trim() || null,
+    taxId: details?.tax_ids?.[0]?.value ?? null,
+    customerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
+    subscriptionId:
+      typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null,
+    periodEnd: periodEndFrom(session, getPlatformPlan(session.metadata?.planCode)?.interval === "lifetime"),
+  });
+}
+
+/**
+ * Alta de demo cuando Stripe no está configurado en este entorno
+ * (`isDemoModeActive`, ver `lib/platform-plans.ts`): mismo flujo de
+ * aprovisionamiento que un pago real, sin cliente ni suscripción de Stripe.
+ * El id de idempotencia es sintético (`demo_...`) porque no hay sesión de
+ * checkout real detrás.
+ */
+export async function provisionDemoOrganization(input: {
+  planCode: string;
+  email: string;
+  name: string | null;
+}): Promise<ProvisionResult> {
+  return provisionOrganization({
+    provisioningSessionId: `demo_${crypto.randomUUID()}`,
+    planCode: input.planCode,
+    email: input.email,
+    billingName: input.name,
+    taxId: null,
+    customerId: null,
+    subscriptionId: null,
+    periodEnd: null,
+  });
 }
 
 /** Renovación o cambio de plan de una organización que ya existe. */

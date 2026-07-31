@@ -9,6 +9,7 @@
  * CENTROS, nunca el de socios — escala con el valor entregado y con nuestro
  * coste, y no penaliza justo lo que queremos que el gimnasio haga crecer.
  */
+import { isPlatformStripeConfigured } from "@/lib/stripe";
 
 /** Capacidades gateables por plan. El registro de datos NO se gatea (ver `entitlements.ts`). */
 export type PlatformFeature =
@@ -175,10 +176,25 @@ export function fundadorMaxSeats() {
 }
 
 /**
+ * Sin `STRIPE_SECRET_KEY` no hay pago real posible en este entorno. En vez de
+ * dejar `/planes` vacía (nadie puede ver el producto ni hacer una demo del
+ * alta), se activa un modo demo: se enseña el catálogo completo y el pago se
+ * sustituye por una pantalla que lo deja explícito, sin fingir un cobro real.
+ */
+export function isDemoModeActive() {
+  return !isPlatformStripeConfigured();
+}
+
+/**
  * Planes comprables en este entorno: los que tienen precio configurado, más el
  * interruptor de la oferta limitada. Sin precios no se muestran botones muertos.
+ * En modo demo se enseña el catálogo entero, porque no hay precios reales que
+ * resolver — el pago tampoco es real (ver `isDemoModeActive`).
  */
 export function listPurchasablePlans(): PlatformPlan[] {
+  if (isDemoModeActive()) {
+    return PLATFORM_PLANS.filter((plan) => !plan.limitedOffer || fundadorEnabled());
+  }
   return PLATFORM_PLANS.filter((plan) => {
     if (!resolveStripePriceId(plan)) return false;
     if (plan.limitedOffer && !fundadorEnabled()) return false;
