@@ -613,6 +613,16 @@ export async function bookSessionForMember(
     const kind = sessionServiceKind(cls.classType);
     let chargeSubscriptionId: string | null = null;
 
+    // El saldo se relee DENTRO de la transacción. `member.subscriptions` lo
+    // carga `getMemberForUser` antes de abrirla, y con esa foto obsoleta dos
+    // reservas simultáneas de sesiones DISTINTAS (el lock de arriba solo
+    // serializa las de una misma sesión) leían ambas el mismo saldo, descontaban
+    // las dos y dejaban el bono en negativo.
+    const freshSubscriptions = await tx.subscription.findMany({
+      where: { memberId: member.id, status: "ACTIVE" },
+      select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
+    });
+
     // RB-AGENDA-003: exige también el centro de la clase — un bono de EP en
     // otro centro de la organización no cubre esta sesión, igual que uno de
     // otra modalidad. El mensaje de error es el mismo para ambos casos. Esta
@@ -621,8 +631,8 @@ export async function bookSessionForMember(
     // organización o sin bono aplicable (antes de RB-AGENDA-003 la cubría el
     // `cls.centerId !== member.primaryCenterId` de más arriba, que sí corría
     // incondicionalmente).
-    const matching = member.subscriptions.filter(
-      (s) => s.status === "ACTIVE" && s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
+    const matching = freshSubscriptions.filter(
+      (s) => s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
     );
     if (matching.length === 0) {
       return {
@@ -649,17 +659,30 @@ export async function bookSessionForMember(
       }
     }
 
+    // Descuento condicional: el `sessionsRemaining > 0` viaja dentro del propio
+    // UPDATE, así que es la base de datos —y no una lectura previa— la que
+    // decide si queda saldo. Barrera final contra el bono en negativo si dos
+    // transacciones concurrentes llegan hasta aquí con el mismo bono. Va ANTES
+    // de escribir la reserva para poder abortar sin dejar nada a medias.
+    if (chargeSubscriptionId) {
+      const charged = await tx.subscription.updateMany({
+        where: { id: chargeSubscriptionId, sessionsRemaining: { gt: 0 } },
+        data: { sessionsRemaining: { decrement: 1 } },
+      });
+      if (charged.count === 0) {
+        return {
+          ok: false as const,
+          needsTopUp: true,
+          error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
+        };
+      }
+    }
+
     if (claimingOwnWaitlistSpot) {
       await tx.booking.update({
         where: { id: existing!.id },
         data: { status: "BOOKED", waitlistPosition: null, subscriptionId: chargeSubscriptionId },
       });
-      if (chargeSubscriptionId) {
-        await tx.subscription.update({
-          where: { id: chargeSubscriptionId },
-          data: { sessionsRemaining: { decrement: 1 } },
-        });
-      }
       return { ok: true as const, waitlisted: false };
     }
 
@@ -678,12 +701,6 @@ export async function bookSessionForMember(
         subscriptionId: chargeSubscriptionId,
       },
     });
-    if (chargeSubscriptionId) {
-      await tx.subscription.update({
-        where: { id: chargeSubscriptionId },
-        data: { sessionsRemaining: { decrement: 1 } },
-      });
-    }
 
     return { ok: true as const, waitlisted: overCapacity };
   });
