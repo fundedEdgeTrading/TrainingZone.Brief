@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { submitClientFeedbackAction } from "./feedback-actions";
 
-type DimKey = "sat" | "prog" | "adher" | "motiv" | "esf";
+type DimKey = "sat" | "prog" | "adher" | "motiv" | "esf" | "descanso" | "nutricion" | "bienestar" | "comunicacion";
 
 const DIMENSIONS: { key: DimKey; label: string; hint: string }[] = [
   { key: "sat", label: "Satisfacción", hint: "¿Qué tan contento/a estás con tu experiencia últimamente?" },
@@ -13,9 +13,23 @@ const DIMENSIONS: { key: DimKey; label: string; hint: string }[] = [
   { key: "adher", label: "Adherencia", hint: "¿Qué tan bien estás cumpliendo tu plan?" },
   { key: "motiv", label: "Motivación", hint: "¿Con qué ganas vienes a entrenar ahora mismo?" },
   { key: "esf", label: "Esfuerzo", hint: "¿Cuánto esfuerzo estás poniendo tú de tu parte?" },
+  { key: "descanso", label: "Descanso", hint: "¿Qué tal estás durmiendo y recuperando entre sesiones?" },
+  { key: "nutricion", label: "Nutrición", hint: "¿Qué tan bien estás cuidando tu alimentación?" },
+  { key: "bienestar", label: "Bienestar físico", hint: "¿Cómo te encuentras físicamente, sin dolores ni molestias?" },
+  { key: "comunicacion", label: "Comunicación", hint: "¿Qué tan cómodo/a te sientes contándole a tu entrenador dudas o molestias?" },
 ];
 
-const DEFAULT_DIMS: Record<DimKey, number> = { sat: 8, prog: 7, adher: 7, motiv: 8, esf: 7 };
+const DEFAULT_DIMS: Record<DimKey, number> = {
+  sat: 8,
+  prog: 7,
+  adher: 7,
+  motiv: 8,
+  esf: 7,
+  descanso: 7,
+  nutricion: 7,
+  bienestar: 8,
+  comunicacion: 8,
+};
 
 const noopSubscribe = () => () => {};
 function useMounted() {
@@ -36,7 +50,7 @@ export function PendingFeedbackBanner({ hasPending }: { hasPending: boolean }) {
           </div>
           <p className="text-[14.5px] text-tz-bone mt-2 max-w-[480px] leading-[1.5]">
             Tu entrenador también va a dejar su valoración de tus últimas semanas — necesitamos la tuya para que la
-            comparación sea real. Son 5 preguntas, menos de un minuto.
+            comparación sea real. Son 9 preguntas de un toque, sin escribir nada: menos de dos minutos.
           </p>
         </div>
         <button

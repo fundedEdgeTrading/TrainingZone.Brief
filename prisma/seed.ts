@@ -2115,21 +2115,42 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       let client: FeedbackDims | null;
       switch (scenario) {
         case "ciego":
-          trainer = { sat: randInt(7, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(7, 8), esf: randInt(6, 8) };
-          client = { sat: randInt(3, 4), prog: randInt(4, 5), adher: randInt(4, 5), motiv: randInt(3, 5), esf: randInt(5, 6) };
+          trainer = {
+            sat: randInt(7, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(7, 8), esf: randInt(6, 8),
+            descanso: randInt(6, 8), nutricion: randInt(6, 8), bienestar: randInt(7, 8), comunicacion: randInt(6, 8),
+          };
+          client = {
+            sat: randInt(3, 4), prog: randInt(4, 5), adher: randInt(4, 5), motiv: randInt(3, 5), esf: randInt(5, 6),
+            descanso: randInt(3, 5), nutricion: randInt(3, 5), bienestar: randInt(4, 5), comunicacion: randInt(2, 4),
+          };
           break;
         case "cliente_positivo":
-          trainer = { sat: randInt(5, 6), prog: randInt(5, 6), adher: randInt(5, 6), motiv: randInt(5, 6), esf: randInt(5, 6) };
-          client = { sat: randInt(8, 9), prog: randInt(7, 9), adher: randInt(8, 9), motiv: randInt(8, 9), esf: randInt(7, 9) };
+          trainer = {
+            sat: randInt(5, 6), prog: randInt(5, 6), adher: randInt(5, 6), motiv: randInt(5, 6), esf: randInt(5, 6),
+            descanso: randInt(5, 6), nutricion: randInt(5, 6), bienestar: randInt(5, 6), comunicacion: randInt(5, 6),
+          };
+          client = {
+            sat: randInt(8, 9), prog: randInt(7, 9), adher: randInt(8, 9), motiv: randInt(8, 9), esf: randInt(7, 9),
+            descanso: randInt(7, 9), nutricion: randInt(7, 9), bienestar: randInt(8, 9), comunicacion: randInt(8, 9),
+          };
           break;
         case "sin_feedback":
-          trainer = { sat: randInt(6, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(6, 8), esf: randInt(6, 8) };
+          trainer = {
+            sat: randInt(6, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(6, 8), esf: randInt(6, 8),
+            descanso: randInt(6, 8), nutricion: randInt(6, 8), bienestar: randInt(6, 8), comunicacion: randInt(6, 8),
+          };
           client = null;
           break;
         case "alineado":
         default:
-          trainer = { sat: randInt(7, 8), prog: randInt(7, 8), adher: randInt(7, 8), motiv: randInt(7, 8), esf: randInt(7, 8) };
-          client = { sat: randInt(7, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(7, 8), esf: randInt(6, 8) };
+          trainer = {
+            sat: randInt(7, 8), prog: randInt(7, 8), adher: randInt(7, 8), motiv: randInt(7, 8), esf: randInt(7, 8),
+            descanso: randInt(7, 8), nutricion: randInt(7, 8), bienestar: randInt(7, 8), comunicacion: randInt(7, 8),
+          };
+          client = {
+            sat: randInt(7, 8), prog: randInt(6, 8), adher: randInt(6, 8), motiv: randInt(7, 8), esf: randInt(6, 8),
+            descanso: randInt(6, 8), nutricion: randInt(6, 8), bienestar: randInt(7, 8), comunicacion: randInt(6, 8),
+          };
           break;
       }
 

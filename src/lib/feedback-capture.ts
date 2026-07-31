@@ -3,9 +3,11 @@ import { createNotificationOnce } from "@/lib/notifications";
 
 /**
  * Captura real del contraste cliente vs. entrenador que pinta /feedback
- * (antes solo lo poblaba el seed). Ambos lados comparten las mismas 5
- * dimensiones (sat/prog/adher/motiv/esf) para que la comparación sea
- * legítima; lo único que cambia es el enunciado según quién responde.
+ * (antes solo lo poblaba el seed). Ambos lados comparten las mismas 9
+ * dimensiones (sat/prog/adher/motiv/esf/descanso/nutricion/bienestar/comunicacion)
+ * para que la comparación sea legítima; lo único que cambia es el enunciado
+ * según quién responde. Todas se responden con slider (0-10), sin texto
+ * obligatorio en ninguno de los dos lados.
  *
  * Ámbito: el "vs" solo aplica a clientes de EP — son los que tienen un
  * entrenador derivable de su última sesión asistida (Member.trainerId ya no
@@ -14,7 +16,17 @@ import { createNotificationOnce } from "@/lib/notifications";
  * individual sobre él.
  */
 
-export type FeedbackDimsInput = { sat: number; prog: number; adher: number; motiv: number; esf: number };
+export type FeedbackDimsInput = {
+  sat: number;
+  prog: number;
+  adher: number;
+  motiv: number;
+  esf: number;
+  descanso: number;
+  nutricion: number;
+  bienestar: number;
+  comunicacion: number;
+};
 
 const CLIENT_FEEDBACK_ENTITY = "ClientFeedbackPrompt";
 const TRAINER_DEBRIEF_ENTITY = "TrainerDebriefPrompt";
@@ -26,7 +38,17 @@ function clampDim(n: number) {
 }
 
 function clampDims(d: FeedbackDimsInput): FeedbackDimsInput {
-  return { sat: clampDim(d.sat), prog: clampDim(d.prog), adher: clampDim(d.adher), motiv: clampDim(d.motiv), esf: clampDim(d.esf) };
+  return {
+    sat: clampDim(d.sat),
+    prog: clampDim(d.prog),
+    adher: clampDim(d.adher),
+    motiv: clampDim(d.motiv),
+    esf: clampDim(d.esf),
+    descanso: clampDim(d.descanso),
+    nutricion: clampDim(d.nutricion),
+    bienestar: clampDim(d.bienestar),
+    comunicacion: clampDim(d.comunicacion),
+  };
 }
 
 /** Ciclo mensual de comparación ("YYYY-MM"): ancla cada respuesta a su periodo. */
