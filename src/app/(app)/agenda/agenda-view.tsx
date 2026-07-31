@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatDateParam, parseDateParam } from "@/lib/date-utils";
 import {
@@ -42,6 +43,7 @@ export default function AgendaView({
   currentUserId,
   isDirection,
   initialDayIndex,
+  initialMobileWeekView,
   centerSwitcher,
 }: {
   weekStartISO: string;
@@ -53,6 +55,7 @@ export default function AgendaView({
   currentUserId: string;
   isDirection: boolean;
   initialDayIndex?: number | null;
+  initialMobileWeekView?: boolean;
   centerSwitcher?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -91,7 +94,7 @@ export default function AgendaView({
   // "semana" (los 6 días a la vez, como escritorio, para arrastrar sesiones
   // entre días). "expanded" oculta la cabecera de la app y usa toda la
   // pantalla: la semana en miniatura necesita cada pixel posible.
-  const [mobileWeekView, setMobileWeekView] = useState(false);
+  const [mobileWeekView, setMobileWeekView] = useState(initialMobileWeekView ?? false);
   const [expanded, setExpanded] = useState(false);
   const fullscreen = isMobile && expanded;
 
@@ -194,7 +197,11 @@ export default function AgendaView({
 
   function navigate(newWeekStart: Date, day?: number) {
     const dayParam = day != null ? `&day=${day}` : "";
-    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}`);
+    // AgendaView se remonta al navegar (cambia `weekStartISO`, ver `key` en
+    // page.tsx), así que el modo semana de móvil se reenvía por la URL o se
+    // perdía en cada salto de semana con las flechas.
+    const viewParam = mobileWeekView ? "&view=week" : "";
+    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}${viewParam}`);
   }
 
   /** Flechas: en semana completa saltan de semana; en día único, de día en día. */
@@ -288,7 +295,7 @@ export default function AgendaView({
   const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
   const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
-  return (
+  const content = (
     <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col bg-white" : "flex flex-col h-full min-h-0"}>
       <div className="shrink-0 border-b border-brand-border flex flex-wrap items-center gap-1.5 lg:gap-2.5 px-2.5 py-1.5 lg:min-h-[60px] lg:px-6 lg:py-2.5">
         <button
@@ -606,6 +613,14 @@ export default function AgendaView({
       )}
     </div>
   );
+
+  // La tarjeta de la página (`.tz-page`, ver page.tsx) anima su entrada y
+  // acaba en `transform: none`, pero el navegador deja como valor computado
+  // la matriz identidad en vez de "none": eso la convierte en containing
+  // block de los descendientes `position: fixed`, atrapando el overlay de
+  // pantalla completa dentro de la tarjeta. Un portal a `document.body` lo
+  // esquiva sin depender de que ningún ancestro se quede sin transform.
+  return fullscreen ? createPortal(content, document.body) : content;
 }
 
 function MiniCalendar({
