@@ -273,7 +273,6 @@ function resolveCancelWindowHours(): number {
 }
 
 export const CANCEL_WINDOW_HOURS = resolveCancelWindowHours();
-export const MAX_ACTIVE_BOOKINGS = 3; // RB-RES-004
 
 /**
  * Instante real de comienzo de una sesión: `ClassSession.date` guarda el día a
@@ -442,13 +441,10 @@ function formatDayLabel(day: Date) {
  * filtrar por ventana de reserva, centro ni tipo de servicio.
  *
  * El listado de "Reservar clase" solo enseña los próximos 7 días del centro del
- * socio (RB-RES-002/RB-AGENDA-001), mientras que el tope de reservas activas
- * (RB-RES-004) cuenta *todas* sus reservas futuras. Con solo aquel listado, una
- * reserva fuera de esa ventana —una franja de EP que le agendó su entrenador a
- * mano, una clase que el centro movió a otro día— era invisible para el socio y
- * aun así le consumía cupo: veía una sola reserva en pantalla y la app le decía
- * que ya tenía 3. Esta consulta es la que alimenta "Tus próximas reservas", de
- * forma que lo que se cuenta y lo que se ve sean siempre lo mismo.
+ * socio (RB-RES-002/RB-AGENDA-001); esta consulta no tiene ese límite, así que
+ * también recoge reservas fuera de esa ventana —una franja de EP que le agendó
+ * su entrenador a mano, una clase que el centro movió a otro día— y alimenta
+ * "Tus próximas reservas" con la lista completa.
  */
 export async function getMemberUpcomingBookings(
   memberId: string,
@@ -514,11 +510,11 @@ export async function getMemberUpcomingBookings(
 }
 
 /**
- * Reservas que consumen cupo de RB-RES-004: las de clases que todavía no han
- * empezado y que el centro no ha anulado. Una clase que el centro canceló deja
- * de bloquear cupo (el socio no puede asistir a ella).
+ * Reservas de clases que todavía no han empezado y que el centro no ha
+ * anulado (a diferencia de una reserva sobre una clase que el centro sí
+ * canceló, a la que el socio ya no puede asistir).
  */
-export function countsTowardsActiveLimit(b: Pick<UpcomingBooking, "sessionCancelled">) {
+export function isLiveBooking(b: Pick<UpcomingBooking, "sessionCancelled">) {
   return !b.sessionCancelled;
 }
 
@@ -541,7 +537,7 @@ type MemberForBooking = {
 const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GROUP: "grupos reducidos" };
 
 /**
- * Núcleo de la reserva (RB-RES-001/002/004/006), extraído de la Server Action
+ * Núcleo de la reserva (RB-RES-001/002/006), extraído de la Server Action
  * del portal (`portal/agenda/actions.ts`) para que la API móvil (F0) lo
  * reutilice sin duplicar la lógica de negocio — "no se reescribe el backend"
  * (§11). Las reglas de qué se puede reservar (centro, antelación, ventana,
@@ -612,22 +608,6 @@ export async function bookSessionForMember(
     const claimingOwnWaitlistSpot = existing?.status === "WAITLISTED" && !overCapacity;
     if (existing && !claimingOwnWaitlistSpot) {
       return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
-    }
-
-    // RB-RES-004: máximo 3 reservas activas simultáneas. Se cuentan las mismas
-    // que el socio ve en "Tus próximas reservas" —clases aún no empezadas y no
-    // anuladas por el centro— para que el aviso nunca contradiga la pantalla.
-    // Al reclamar el propio hueco no se suma ninguna reserva nueva (ya contaba
-    // en espera), así que este tope no aplica en ese caso.
-    if (!claimingOwnWaitlistSpot) {
-      const upcoming = await getMemberUpcomingBookings(member.id, timeZone, tx);
-      const activeBookings = upcoming.filter(countsTowardsActiveLimit).length;
-      if (!overCapacity && activeBookings >= MAX_ACTIVE_BOOKINGS) {
-        return {
-          ok: false as const,
-          error: `Ya tienes ${activeBookings} reservas activas (el máximo es ${MAX_ACTIVE_BOOKINGS}): cancela alguna en "Tus próximas reservas" para reservar otra.`,
-        };
-      }
     }
 
     const kind = sessionServiceKind(cls.classType);

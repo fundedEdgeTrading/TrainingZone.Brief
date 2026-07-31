@@ -93,7 +93,6 @@ export type AgendaResponse = {
   balances: SessionBalance[];
   pendingFeedback: PendingFeedback[];
   upcomingBookings: UpcomingBooking[];
-  activeBookings: { count: number; max: number };
 };
 
 export type BookSessionResponse = { waitlisted: boolean };
