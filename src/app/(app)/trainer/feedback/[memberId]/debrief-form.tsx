@@ -5,17 +5,33 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { submitTrainerDebriefAction } from "./actions";
 
-type DimKey = "sat" | "prog" | "adher" | "motiv" | "esf";
+type DimKey = "sat" | "prog" | "adher" | "motiv" | "esf" | "descanso" | "nutricion" | "bienestar" | "comunicacion";
 
+// Mismas 9 dimensiones que el formulario del socio (portal/pending-feedback-banner.tsx),
+// solo cambia el enunciado según quién responde, para que /feedback compare de verdad lo mismo.
 const DIMENSIONS: { key: DimKey; label: string; hint: string }[] = [
   { key: "sat", label: "Satisfacción", hint: "¿Cómo de satisfecho/a lo ves con el servicio?" },
   { key: "prog", label: "Progreso", hint: "¿Está avanzando hacia su objetivo?" },
   { key: "adher", label: "Adherencia", hint: "¿Cumple el plan y viene con la frecuencia esperada?" },
   { key: "motiv", label: "Motivación", hint: "¿Con qué actitud llega a las sesiones?" },
   { key: "esf", label: "Esfuerzo", hint: "¿Cuánto esfuerzo real pone en cada sesión?" },
+  { key: "descanso", label: "Descanso", hint: "¿Cómo lo ves de descansado/a y recuperado/a entre sesiones?" },
+  { key: "nutricion", label: "Nutrición", hint: "¿Qué tan bien cuida su alimentación, por lo que te cuenta o ves?" },
+  { key: "bienestar", label: "Bienestar físico", hint: "¿Cómo lo ves físicamente, libre de dolores o molestias?" },
+  { key: "comunicacion", label: "Comunicación", hint: "¿Qué tan abierto/a está a contarte dudas o molestias?" },
 ];
 
-const DEFAULT_DIMS: Record<DimKey, number> = { sat: 7, prog: 7, adher: 7, motiv: 7, esf: 7 };
+const DEFAULT_DIMS: Record<DimKey, number> = {
+  sat: 7,
+  prog: 7,
+  adher: 7,
+  motiv: 7,
+  esf: 7,
+  descanso: 7,
+  nutricion: 7,
+  bienestar: 7,
+  comunicacion: 7,
+};
 
 export function TrainerDebriefForm({ memberId, memberName }: { memberId: string; memberName: string }) {
   const router = useRouter();

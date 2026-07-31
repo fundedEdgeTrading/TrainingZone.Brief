@@ -566,23 +566,29 @@ model Subscription {
 // ---------- Feedback (cliente vs. debrief del entrenador) ----------
 // Página "Feedback" de Dirección: contrasta lo que el socio reporta
 // (ClientFeedback) con lo que registra su entrenador en el debrief
-// (TrainerDebrief), ambos sobre las mismas 5 dimensiones 0-10, para detectar
-// desalineaciones de percepción ("puntos ciegos"). Solo importa el más
-// reciente de cada uno por socio; los agregados (medias, gap, categoría) se
-// calculan en `lib/feedback-queries.ts`, nunca se persisten.
+// (TrainerDebrief), ambos sobre las mismas 9 dimensiones 0-10 (sliders, cero
+// texto obligatorio en ninguno de los dos lados), para detectar
+// desalineaciones de percepción ("puntos ciegos") con la mayor precisión
+// posible. Solo importa el más reciente de cada uno por socio; los agregados
+// (medias, gap, categoría) se calculan en `lib/feedback-queries.ts`, nunca se
+// persisten.
 model ClientFeedback {
-  id          String   @id @default(cuid())
-  orgId       String // aislamiento propio: antes solo se navegaba vía Member (E3 del audit)
-  memberId    String
-  periodKey   String // "YYYY-MM": ancla el ciclo para emparejar con el TrainerDebrief del mismo periodo
-  sat         Int
-  prog        Int
-  adher       Int
-  motiv       Int
-  esf         Int
-  comment     String?
-  submittedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  orgId        String // aislamiento propio: antes solo se navegaba vía Member (E3 del audit)
+  memberId     String
+  periodKey    String // "YYYY-MM": ancla el ciclo para emparejar con el TrainerDebrief del mismo periodo
+  sat          Int
+  prog         Int
+  adher        Int
+  motiv        Int
+  esf          Int
+  descanso     Int
+  nutricion    Int
+  bienestar    Int
+  comunicacion Int
+  comment      String?
+  submittedAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   member Member @relation(fields: [memberId], references: [id])
 
@@ -602,6 +608,10 @@ model TrainerDebrief {
   adher            Int
   motiv            Int
   esf              Int
+  descanso         Int
+  nutricion        Int
+  bienestar        Int
+  comunicacion     Int
   note             String
   debriefAt        DateTime  @default(now())
   reviewedAt       DateTime? // "Marcar como revisado" de dirección (/feedback)

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 
 // Página "Feedback" de Dirección: contrasta el feedback que reporta el socio
 // (ClientFeedback) con el debrief que registra su entrenador (TrainerDebrief),
-// ambos sobre las mismas 5 dimensiones 0-10. El universo de candidatos es
+// ambos sobre las mismas 9 dimensiones 0-10. El universo de candidatos es
 // **todo socio de EP activo** (mismo criterio de elegibilidad que el ciclo de
 // `lib/feedback-capture.ts`), no solo los que ya tienen algún debrief — así un
 // socio que respondió pero cuyo entrenador no lo ha hecho (o viceversa) es
@@ -10,7 +10,17 @@ import { prisma } from "@/lib/prisma";
 // lado ("por periodo"); los agregados (medias, gap, categoría, KPIs) se
 // calculan aquí, nunca se persisten.
 
-export type FeedbackDims = { sat: number; prog: number; adher: number; motiv: number; esf: number };
+export type FeedbackDims = {
+  sat: number;
+  prog: number;
+  adher: number;
+  motiv: number;
+  esf: number;
+  descanso: number;
+  nutricion: number;
+  bienestar: number;
+  comunicacion: number;
+};
 
 export type AlignmentCategory = "ciego" | "cliente_positivo" | "alineado" | "sin_feedback";
 
@@ -31,8 +41,10 @@ export const CATEGORY_TONE: Record<AlignmentCategory, "critical" | "trial" | "go
 
 const GAP_THRESHOLD = 1.5;
 
+const DIM_KEYS: (keyof FeedbackDims)[] = ["sat", "prog", "adher", "motiv", "esf", "descanso", "nutricion", "bienestar", "comunicacion"];
+
 function mean(d: FeedbackDims): number {
-  return (d.sat + d.prog + d.adher + d.motiv + d.esf) / 5;
+  return DIM_KEYS.reduce((sum, key) => sum + d[key], 0) / DIM_KEYS.length;
 }
 
 /** Ninguno de los dos lados es obligatorio para que exista el otro: si falta cualquiera, no hay comparación posible. */
@@ -140,6 +152,10 @@ function toRow(
         adher: clientRow.adher,
         motiv: clientRow.motiv,
         esf: clientRow.esf,
+        descanso: clientRow.descanso,
+        nutricion: clientRow.nutricion,
+        bienestar: clientRow.bienestar,
+        comunicacion: clientRow.comunicacion,
         comment: clientRow.comment,
         submittedAt: clientRow.submittedAt,
         periodKey: clientRow.periodKey,
@@ -153,6 +169,10 @@ function toRow(
         adher: debriefRow.adher,
         motiv: debriefRow.motiv,
         esf: debriefRow.esf,
+        descanso: debriefRow.descanso,
+        nutricion: debriefRow.nutricion,
+        bienestar: debriefRow.bienestar,
+        comunicacion: debriefRow.comunicacion,
         note: debriefRow.note,
         debriefAt: debriefRow.debriefAt,
         trainerName: debriefRow.trainer.name,
@@ -286,4 +306,8 @@ export const DIMENSION_LABEL: { key: keyof FeedbackDims; label: string }[] = [
   { key: "adher", label: "Adherencia" },
   { key: "motiv", label: "Motivación" },
   { key: "esf", label: "Esfuerzo" },
+  { key: "descanso", label: "Descanso" },
+  { key: "nutricion", label: "Nutrición" },
+  { key: "bienestar", label: "Bienestar físico" },
+  { key: "comunicacion", label: "Comunicación" },
 ];
