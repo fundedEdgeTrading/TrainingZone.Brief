@@ -53,6 +53,9 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     const [h, m] = startTime.split(":").map(Number);
     const total = Math.min(h * 60 + m + 30, 23 * 60 + 59);
     endTime = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+    // Tan tarde que ni siquiera cabe un minuto antes de medianoche: la sesión
+    // tendría duración cero, así que se pide una hora de inicio razonable.
+    if (endTime <= startTime) return { ok: false, error: "La hora de inicio es demasiado tardía: la sesión no cabe en el día." };
   }
 
   if (!title) title = type === "reduced" ? "Grupo reducido" : "Sesión";
