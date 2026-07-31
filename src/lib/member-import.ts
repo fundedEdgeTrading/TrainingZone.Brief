@@ -48,9 +48,26 @@ export type ParsedCsv = {
 // ---------- Parser CSV (RFC 4180, con autodetección de separador) ----------
 
 function detectDelimiter(headerLine: string): string {
-  const semis = (headerLine.match(/;/g) ?? []).length;
-  const commas = (headerLine.match(/,/g) ?? []).length;
-  const tabs = (headerLine.match(/\t/g) ?? []).length;
+  // Solo cuentan los separadores FUERA de comillas: una cabecera como
+  // `nombre;"apellidos, y alias";email` tiene más comas que puntos y coma
+  // dentro del campo entrecomillado, y se elegía la coma como separador,
+  // partiendo mal el fichero entero.
+  let semis = 0;
+  let commas = 0;
+  let tabs = 0;
+  let inQuotes = false;
+  for (let i = 0; i < headerLine.length; i++) {
+    const ch = headerLine[i];
+    if (ch === '"') {
+      if (inQuotes && headerLine[i + 1] === '"') i++;
+      else inQuotes = !inQuotes;
+      continue;
+    }
+    if (inQuotes) continue;
+    if (ch === ";") semis++;
+    else if (ch === ",") commas++;
+    else if (ch === "\t") tabs++;
+  }
   if (tabs > semis && tabs > commas) return "\t";
   return semis > commas ? ";" : ",";
 }
