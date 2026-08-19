@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { loginAs } from "./helpers";
+import { prisma } from "@/lib/prisma";
 
 // Ojo: `[role=alert]` por sí solo también engancha el "route announcer" propio
 // de Next.js (`#__next-route-announcer__`, vacío casi siempre), que además
@@ -63,21 +64,32 @@ async function bookAvailable(page: Page): Promise<number> {
  * el socio demo puede llegar con reservas activas ya puestas por el seed. Se
  * cancelan todas al principio para partir de un punto de partida determinista.
  */
-async function clearActiveBookings(page: Page) {
+/**
+ * Deja al socio sin reservas activas. Devuelve `true` si lo ha conseguido.
+ *
+ * El tope de vueltas es generoso a propósito: el seed reparte reservas al azar
+ * y puede dejar bastantes, y quedarse a medias no es inocuo — un test que
+ * después mida el saldo del bono puede acabar cancelando una reserva sembrada
+ * (que no descontó bono) en vez de la suya. La espera del panel tampoco puede
+ * ser corta: es un `reload` completo por vuelta.
+ */
+async function clearActiveBookings(page: Page): Promise<boolean> {
   const panel = page.getByRole("region", { name: "Tus próximas reservas" });
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 16; i++) {
     const visible = await panel
-      .waitFor({ state: "visible", timeout: 3_000 })
+      .waitFor({ state: "visible", timeout: 8_000 })
       .then(() => true)
       .catch(() => false);
-    if (!visible) break;
+    // Sin panel no hay reservas activas: objetivo cumplido.
+    if (!visible) return true;
     const btn = panel.getByRole("button", { name: /Cancelar|Salir de lista/ }).first();
-    if ((await btn.count()) === 0) break;
+    if ((await btn.count()) === 0) return true;
     await btn.click();
     await confirmForfeitIfAsked(page);
     await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
     await page.reload();
   }
+  return false;
 }
 
 test.describe("RB-RES — Reservas del socio", () => {
@@ -246,21 +258,21 @@ test.describe("RB-RES — Reservas del socio", () => {
   });
 
   test("cancelar una reserva devuelve la sesión al bono", async ({ page }) => {
+    test.setTimeout(75_000);
+
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/agenda");
 
-    // La reserva a cancelar la crea la propia prueba: no puede depender de que
-    // el seed le haya dejado una futura.
-    //
-    // RB-RES-005: esta prueba mide que cancelar DEVUELVE la sesión al bono, y
-    // eso solo pasa fuera de la ventana de 24h — una cancelación penalizada no
-    // devuelve nada, por diseño. Así que no vale reservar "lo primero que
-    // haya": se reserva la clase MÁS LEJANA de la ventana de 7 días, que
-    // siempre está fuera de plazo. El listado va en orden ascendente
-    // (getBookableSessions → expandOccurrences, y la página agrupa en un Map
-    // que conserva el orden), así que `.last()` es la más lejana.
-    const panel = page.getByRole("region", { name: "Tus próximas reservas" });
+    // Punto de partida determinista: se cancelan las reservas que el seed haya
+    // dejado, para que el panel contenga solo la que crea esta prueba.
+    const cleared = await clearActiveBookings(page);
+    test.skip(!cleared, "No se ha podido dejar al socio sin reservas activas para partir de un estado limpio.");
 
+    // RB-RES-005: cancelar a menos de 24h NO devuelve la sesión al bono (y pide
+    // confirmar un modal). Esta prueba mide justo la devolución, así que se
+    // reserva la clase MÁS LEJANA de la ventana de 7 días, siempre fuera de
+    // plazo. El listado va en orden ascendente (getBookableSessions →
+    // expandOccurrences, y la página agrupa en un Map que conserva el orden).
     await page.getByRole("article").first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
     const bookable = page.getByRole("button", { name: "Reservar", exact: true });
     if ((await bookable.count()) === 0) test.skip(true, "El seed no ha dejado clases libres que reservar y cancelar.");
@@ -268,28 +280,44 @@ test.describe("RB-RES — Reservas del socio", () => {
     await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
     await page.reload();
 
-    // `exact: true`: una reserva dentro de la ventana de penalización se
-    // etiqueta "Cancelar ⚠︎" (booking-button.tsx) y abre el modal de pérdida
-    // de sesión — no es la que queremos medir aquí.
+    // El saldo se comprueba contra la BASE DE DATOS y no contra el texto
+    // "N sesiones gastadas de M" del portal: ese número agrega los dos bonos de
+    // Marta (EP + grupos, RB-AGENDA-003) y además se recorta en 0
+    // (getSessionBalances), así que si el saldo sembrado queda por encima de las
+    // sesiones incluidas la cifra no se mueve al devolver y la prueba medía algo
+    // insensible a lo que dice medir.
+    const created = await prisma.booking.findFirstOrThrow({
+      where: { member: { email: "socio@trainingzone.es" }, status: "BOOKED" },
+      orderBy: { bookedAt: "desc" },
+      select: { id: true, subscriptionId: true },
+    });
+    test.skip(
+      created.subscriptionId == null,
+      "La reserva creada no descontó bono (cuota ilimitada o lista de espera): no hay devolución que medir."
+    );
+    const remainingBefore = (
+      await prisma.subscription.findUniqueOrThrow({
+        where: { id: created.subscriptionId! },
+        select: { sessionsRemaining: true },
+      })
+    ).sessionsRemaining;
+
+    // Tras la limpieza el panel tiene exactamente esa reserva. `exact: true`
+    // descarta además el "Cancelar ⚠︎" de una reserva dentro de la ventana de
+    // penalización, que por diseño no devolvería la sesión.
+    const panel = page.getByRole("region", { name: "Tus próximas reservas" });
     const cancellable = panel.getByRole("button", { name: "Cancelar", exact: true });
-    await expect(cancellable.last()).toBeVisible({ timeout: 10_000 });
+    await expect(cancellable).toHaveCount(1, { timeout: 10_000 });
 
-    // Marta tiene dos bonos (EP + grupos, RB-AGENDA-003): la reserva creada
-    // pudo cargarse en cualquiera de las dos tarjetas de saldo, así que se
-    // suman las gastadas de todas en vez de asumir que solo hay una.
-    const usedLine = page.getByText(/\d+ sesion(es)? gastadas? de \d+ del bono/);
-    const totalUsed = async () =>
-      (await usedLine.allInnerTexts()).reduce((sum, t) => sum + Number(t.split(" ")[0]), 0);
-    const usedBefore = await totalUsed();
-
-    // `.last()`: el panel ordena ascendente por `startsAt` (portal-queries.ts),
-    // así que es la reserva que acaba de crear el test — la única que se sabe
-    // seguro que descontó bono.
-    await cancellable.last().click();
+    await cancellable.click();
     await expect(toast(page).getByText(/Reserva cancelada/i)).toBeVisible({ timeout: 15_000 });
 
-    await page.reload();
-    const usedAfter = await totalUsed();
-    expect(usedAfter).toBe(usedBefore - 1);
+    const remainingAfter = (
+      await prisma.subscription.findUniqueOrThrow({
+        where: { id: created.subscriptionId! },
+        select: { sessionsRemaining: true },
+      })
+    ).sessionsRemaining;
+    expect(remainingAfter).toBe((remainingBefore ?? 0) + 1);
   });
 });
