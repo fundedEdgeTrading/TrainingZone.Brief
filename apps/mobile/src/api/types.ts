@@ -485,6 +485,9 @@ export type MemberListItem = {
 };
 
 export type MembersResponse = {
+  page: number;
+  /** null = no hay más páginas (scroll infinito de D2). */
+  nextPage: number | null;
   counts: { all: number; active: number; delinquent: number; frozen: number; trial: number; cancelled: number };
   members: MemberListItem[];
 };

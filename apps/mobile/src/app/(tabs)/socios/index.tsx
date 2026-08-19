@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { useMembers } from "@/api/queries";
@@ -32,10 +32,21 @@ export default function MembersScreen() {
   const theme = useTheme();
   const [search, setSearch] = useState("");
   const [state, setState] = useState<MemberState | undefined>();
-  const { data, isLoading, isError, refetch, isRefetching } = useMembers(search, state);
+  const { data, isLoading, isError, refetch, isRefetching, fetchNextPage, hasNextPage, isFetchingNextPage } = useMembers(
+    search,
+    state
+  );
+
+  const counts = data?.pages[0]?.counts;
+  const members = useMemo(() => (data?.pages ?? []).flatMap((page) => page.members), [data]);
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
+    <ScreenContainer
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+      onEndReached={() => {
+        if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+      }}
+    >
       <FadeInUp>
         <ScreenHeader kicker="DIRECCIÓN" title="Socios" />
       </FadeInUp>
@@ -49,20 +60,20 @@ export default function MembersScreen() {
       />
 
       <ChipRow>
-        <Chip label={`Todos${data ? ` ${data.counts.all}` : ""}`} selected={!state} onPress={() => setState(undefined)} />
+        <Chip label={`Todos${counts ? ` ${counts.all}` : ""}`} selected={!state} onPress={() => setState(undefined)} />
         <Chip
-          label={`Activos${data ? ` ${data.counts.active}` : ""}`}
+          label={`Activos${counts ? ` ${counts.active}` : ""}`}
           selected={state === "ACTIVE"}
           onPress={() => setState("ACTIVE")}
         />
         <Chip
-          label={`Morosos${data ? ` ${data.counts.delinquent}` : ""}`}
+          label={`Morosos${counts ? ` ${counts.delinquent}` : ""}`}
           tone="critical"
           selected={state === "DELINQUENT"}
           onPress={() => setState("DELINQUENT")}
         />
         <Chip
-          label={`Bajas${data ? ` ${data.counts.cancelled}` : ""}`}
+          label={`Bajas${counts ? ` ${counts.cancelled}` : ""}`}
           selected={state === "CANCELLED"}
           onPress={() => setState("CANCELLED")}
         />
@@ -72,14 +83,14 @@ export default function MembersScreen() {
         <SkeletonList rows={5} />
       ) : isError || !data ? (
         <EmptyState icon="alert" title="No se pudieron cargar los socios" description="Desliza hacia abajo para reintentar." />
-      ) : data.members.length === 0 ? (
+      ) : members.length === 0 ? (
         <EmptyState icon="users" title="Sin resultados" description="Prueba con otro nombre o quita los filtros." />
       ) : (
-        data.members.map((member, index) => {
+        members.map((member, index) => {
           const badge = STATE_BADGE[member.state];
           const delinquent = member.state === "DELINQUENT";
           return (
-            <FadeInUp key={member.id} delay={stagger(index)}>
+            <FadeInUp key={member.id} delay={stagger(index % 7)}>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Abrir la ficha de ${member.name}`}
@@ -109,6 +120,8 @@ export default function MembersScreen() {
           );
         })
       )}
+
+      {isFetchingNextPage ? <SkeletonList rows={1} /> : null}
     </ScreenContainer>
   );
 }

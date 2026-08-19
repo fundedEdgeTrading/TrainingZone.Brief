@@ -97,7 +97,7 @@ export default function ProductFormScreen() {
   }
 
   return (
-    <ScreenFrame>
+    <ScreenFrame withTabBar>
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"

@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactElement } from "react";
-import { ScrollView, StyleSheet, View, type RefreshControlProps } from "react-native";
+import { ScrollView, StyleSheet, View, type NativeScrollEvent, type NativeSyntheticEvent, type RefreshControlProps } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, layout } from "@/theme/theme";
 
@@ -11,11 +11,19 @@ type Props = PropsWithChildren<{
   flush?: boolean;
   /** La barra de pestañas flota sobre el contenido: hay que dejarle hueco. */
   withTabBar?: boolean;
+  /** Scroll infinito: se llama al acercarse al final de la lista. */
+  onEndReached?: () => void;
 }>;
 
-export function ScreenContainer({ children, refreshControl, gap = layout.gap, flush, withTabBar = true }: Props) {
+export function ScreenContainer({ children, refreshControl, gap = layout.gap, flush, withTabBar = true, onEndReached }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+
+  function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (!onEndReached) return;
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) onEndReached();
+  }
 
   return (
     <ScrollView
@@ -30,14 +38,24 @@ export function ScreenContainer({ children, refreshControl, gap = layout.gap, fl
       ]}
       keyboardShouldPersistTaps="handled"
       refreshControl={refreshControl}
+      onScroll={onEndReached ? handleScroll : undefined}
+      scrollEventThrottle={onEndReached ? 200 : undefined}
     >
       {children}
     </ScrollView>
   );
 }
 
-/** Contenedor fijo (sin scroll) para pantallas de flujo: login, pago, feedback. */
-export function ScreenFrame({ children, padded = true }: PropsWithChildren<{ padded?: boolean }>) {
+/**
+ * Contenedor fijo (sin scroll) para pantallas de flujo: login, pago, feedback.
+ * `withTabBar` deja hueco a la barra de pestañas cuando la pantalla vive dentro
+ * del grupo (tabs) — si no, el pie de la pantalla queda debajo de la barra.
+ */
+export function ScreenFrame({
+  children,
+  padded = true,
+  withTabBar = false,
+}: PropsWithChildren<{ padded?: boolean; withTabBar?: boolean }>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   return (
@@ -47,7 +65,7 @@ export function ScreenFrame({ children, padded = true }: PropsWithChildren<{ pad
         {
           backgroundColor: theme.background,
           paddingTop: insets.top,
-          paddingBottom: insets.bottom,
+          paddingBottom: insets.bottom + (withTabBar ? layout.tabBarHeight + 10 : 0),
           paddingHorizontal: padded ? layout.screenPadding : 0,
         },
       ]}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, Text, View, StyleSheet } from "react-native";
+import { Alert, PanResponder, Pressable, RefreshControl, ScrollView, Text, View, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useStaffAgenda, useSaveStaffSession, useDeleteStaffSession } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
@@ -50,6 +50,19 @@ export default function StaffAgendaScreen() {
       to: Math.max(DEFAULT_RANGE.to, ...ends),
     };
   }, [sessions]);
+
+  // Swipe horizontal para cambiar de día: el gesto solo se reclama cuando el
+  // movimiento es claramente horizontal, para no robarle el scroll vertical a
+  // la timeline.
+  const swipe = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 24 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 2,
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx <= -40) setDate((d) => addDaysToIso(d, 1));
+        else if (gesture.dx >= 40) setDate((d) => addDaysToIso(d, -1));
+      },
+    })
+  ).current;
 
   const isToday = date === todayIso();
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
@@ -138,7 +151,7 @@ export default function StaffAgendaScreen() {
         ) : isError || !data ? (
           <EmptyState icon="alert" title="No se pudo cargar la agenda" description="Desliza hacia abajo para reintentar." />
         ) : (
-          <Card tone="alt" padding={0} style={styles.timelineCard}>
+          <Card tone="alt" padding={0} style={styles.timelineCard} {...swipe.panHandlers}>
             <ScrollView ref={scrollRef} nestedScrollEnabled style={{ maxHeight: HOUR_HEIGHT * 6.5 }}>
               <View style={{ height: (range.to - range.from) * HOUR_HEIGHT, flexDirection: "row" }}>
                 <View style={styles.hoursColumn}>

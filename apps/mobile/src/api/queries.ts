@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./client";
 import type {
   ActivityResponse,
@@ -251,14 +251,18 @@ export function useMemberCalendar(month: string) {
 
 // ---------- Socios (D2 · D3) ----------
 
+/** Listado paginado (scroll infinito) de socios. */
 export function useMembers(search: string, state?: MemberState) {
-  const params = new URLSearchParams();
-  if (search.trim()) params.set("search", search.trim());
-  if (state) params.set("state", state);
-  const qs = params.toString();
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ["members", search.trim(), state ?? null],
-    queryFn: () => apiRequest<MembersResponse>(`/members${qs ? `?${qs}` : ""}`),
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ page: String(pageParam) });
+      if (search.trim()) params.set("search", search.trim());
+      if (state) params.set("state", state);
+      return apiRequest<MembersResponse>(`/members?${params.toString()}`);
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
   });
 }
 

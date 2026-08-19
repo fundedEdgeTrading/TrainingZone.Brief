@@ -125,7 +125,7 @@ export default function SessionFeedbackScreen() {
   }
 
   return (
-    <ScreenFrame>
+    <ScreenFrame withTabBar>
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"

@@ -41,6 +41,9 @@ export default function StaffFormScreen() {
 
   const isNew = id === "nuevo";
   const member = isNew ? undefined : data?.staff.find((s) => s.id === id);
+  // Dirección de centro puede consultar el equipo, pero no editarlo
+  // (canManageStaff en src/lib/rbac.ts): sin permiso, la ficha es de lectura.
+  const canManage = data?.canManage ?? false;
 
   const [name, setName] = useState(member?.name ?? "");
   const [email, setEmail] = useState(member?.email ?? "");
@@ -134,14 +137,14 @@ export default function StaffFormScreen() {
 
   if (!isNew && data && !member) {
     return (
-      <ScreenFrame>
+      <ScreenFrame withTabBar>
         <EmptyState icon="alert" title="No se ha encontrado a esa persona" />
       </ScreenFrame>
     );
   }
 
   return (
-    <ScreenFrame padded={false}>
+    <ScreenFrame padded={false} withTabBar>
       <LinearGradient colors={theme.heroGradient} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.hero}>
         <View style={styles.heroBar}>
           <Pressable
@@ -154,13 +157,15 @@ export default function StaffFormScreen() {
             <Icon name="chevron-left" size={16} color="#F4F0E8" />
           </Pressable>
           <Text style={[typo.kicker, { color: theme.onInk.muted, flex: 1 }]}>{isNew ? "NUEVO MIEMBRO" : "FICHA DE EQUIPO"}</Text>
-          <Pressable accessibilityRole="button" hitSlop={10} onPress={submit}>
-            <Text style={[typo.button, { color: theme.goldSoft }]}>Guardar</Text>
-          </Pressable>
+          {canManage ? (
+            <Pressable accessibilityRole="button" hitSlop={10} onPress={submit}>
+              <Text style={[typo.button, { color: theme.goldSoft }]}>Guardar</Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={styles.photoBlock}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Cambiar la foto" onPress={changePhoto}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cambiar la foto" disabled={!canManage} onPress={changePhoto}>
             <Avatar name={name || "Nuevo"} uri={image} size={132} />
             <View style={[styles.photoButton, { backgroundColor: theme.gold }]}>
               <Icon name="plus" size={17} color="#1D1D1C" />
@@ -250,17 +255,22 @@ export default function StaffFormScreen() {
 
         {error ? <Text style={[typo.rowMeta, { color: theme.critical }]}>{error}</Text> : null}
 
-        <Button
-          title={isNew ? "Enviar invitación" : "Guardar cambios"}
-          variant="gold"
-          size="lg"
-          loading={createStaff.isPending || updateStaff.isPending}
-          onPress={submit}
-        />
-
-        {!isNew ? (
-          <Button title="Dar de baja del equipo" variant="danger" loading={removeStaff.isPending} onPress={confirmRemoval} />
-        ) : null}
+        {canManage ? (
+          <>
+            <Button
+              title={isNew ? "Enviar invitación" : "Guardar cambios"}
+              variant="gold"
+              size="lg"
+              loading={createStaff.isPending || updateStaff.isPending}
+              onPress={submit}
+            />
+            {!isNew ? (
+              <Button title="Dar de baja del equipo" variant="danger" loading={removeStaff.isPending} onPress={confirmRemoval} />
+            ) : null}
+          </>
+        ) : (
+          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>Tu rol puede consultar el equipo, pero no editarlo.</Text>
+        )}
       </ScrollView>
     </ScreenFrame>
   );

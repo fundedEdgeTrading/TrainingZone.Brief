@@ -10,6 +10,8 @@ import { apiOk, apiError } from "../_lib/response";
 // src/app/(app)/members/page.tsx, que hasta ahora solo existía en web).
 const STAFF_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "RECEPTION", "PLATFORM_ADMIN"];
 const STATES: MemberState[] = ["PROSPECT", "TRIAL", "ACTIVE", "DELINQUENT", "FROZEN", "CANCELLED"];
+/** Tamaño de página del scroll infinito de D2. */
+const PAGE_SIZE = 30;
 
 export async function GET(req: NextRequest) {
   const auth = await requireApiRole(req, STAFF_ROLES);
@@ -21,14 +23,24 @@ export async function GET(req: NextRequest) {
   const stateParam = params.get("state");
   const state = stateParam && STATES.includes(stateParam as MemberState) ? (stateParam as MemberState) : undefined;
 
+  const page = Math.max(0, Number(params.get("page") ?? 0) || 0);
+
   const [members, byState] = await Promise.all([
-    listMembers(claims.orgId, { q: params.get("search")?.trim() || undefined, state }),
+    listMembers(claims.orgId, {
+      q: params.get("search")?.trim() || undefined,
+      state,
+      skip: page * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
     prisma.member.groupBy({ by: ["state"], where: { orgId: claims.orgId }, _count: { _all: true } }),
   ]);
 
   const counts = Object.fromEntries(byState.map((row) => [row.state, row._count._all])) as Partial<Record<MemberState, number>>;
 
   return apiOk({
+    page,
+    // null = no hay más páginas que pedir.
+    nextPage: members.length === PAGE_SIZE ? page + 1 : null,
     counts: {
       all: byState.reduce((sum, row) => sum + row._count._all, 0),
       active: counts.ACTIVE ?? 0,

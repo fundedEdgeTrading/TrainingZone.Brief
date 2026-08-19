@@ -3,7 +3,9 @@ import type { MemberState } from "@prisma/client";
 
 export async function listMembers(
   orgId: string,
-  opts: { q?: string; state?: MemberState; centerId?: string } = {}
+  // `skip`/`take`: paginación opcional para el scroll infinito de la app móvil;
+  // sin ellos se mantiene el listado completo que consume la web.
+  opts: { q?: string; state?: MemberState; centerId?: string; skip?: number; take?: number } = {}
 ) {
   return prisma.member.findMany({
     where: {
@@ -29,7 +31,8 @@ export async function listMembers(
       },
     },
     orderBy: [{ state: "asc" }, { lastName: "asc" }],
-    take: 300,
+    skip: opts.skip,
+    take: opts.take ?? 300,
   });
 }
 
