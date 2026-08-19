@@ -5,13 +5,18 @@ import {
   getMemberAttendanceStats,
   getMemberNotes,
   getMemberServiceKinds,
+  getSessionBalances,
+  getMemberSessionCalendar,
   listCentersForOrg,
   listActivePlansForOrg,
   listClientGoalTemplates,
 } from "@/lib/members-queries";
+import { getCentersForUser } from "@/lib/agenda-queries";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
+import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
-import { canDeleteMembers, canManageOrg } from "@/lib/rbac";
+import { canAdjustSessionBalance, canDeleteMembers, canManageOrg } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
@@ -37,6 +42,8 @@ import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { StaffChatThread } from "./staff-chat-thread";
 import { WorkoutProgramList } from "./workout-panel";
 import { SingleMetricChart } from "@/components/single-metric-chart";
+import { BonosPanel } from "./bonos-panel";
+import { MemberSessionsCalendar } from "./member-calendar";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -110,6 +117,37 @@ export default async function MemberDetailPage({
         : `${manageableSubscriptions.length} bonos activos`;
   const canManageSub = canManageBilling(session.user.role);
   const canDelete = canDeleteMembers(session.user.role);
+
+  // Pestaña "Bonos y calendario". El mes en curso sale de la zona del CENTRO y
+  // no de `new Date()` del servidor (UTC): el día 1 a medianoche en España
+  // abriría el mes anterior (mismo fallo ya corregido en /agenda).
+  const calendarTz = await resolveTimezoneForCenter(member.primaryCenterId);
+  const calendarToday = zonedToday(calendarTz);
+  const calendarMonthStart = new Date(calendarToday.getFullYear(), calendarToday.getMonth(), 1);
+  // Ventana precargada: 12 meses atrás + el actual + el siguiente. Fuera de
+  // ella el propio componente pide el mes con `fetchMemberSessionsMonth`, para
+  // no tener que cambiar la URL — eso re-renderizaría esta página y
+  // `getHealthRecordsForMember` escribe una fila de auditoría por cada lectura.
+  const calendarFrom = new Date(calendarMonthStart);
+  calendarFrom.setMonth(calendarFrom.getMonth() - 12);
+  const calendarTo = new Date(calendarMonthStart);
+  calendarTo.setMonth(calendarTo.getMonth() + 2);
+
+  const [calendarEvents, openableCenters] = await Promise.all([
+    getMemberSessionCalendar(session.user.orgId, member.id, calendarFrom, calendarTo),
+    // /agenda/session/[id] exige requireCenterRole: sin esto, el enlace echaría
+    // de la ficha a quien no esté imputado al centro del bono (RB-AGENDA-003:
+    // el bono puede ser de otro centro de la misma organización).
+    getCentersForUser(session.user),
+  ]);
+
+  const sessionBalances = getSessionBalances(
+    member.subscriptions.map((s) => ({
+      status: s.status,
+      sessionsRemaining: s.sessionsRemaining,
+      plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
+    }))
+  );
 
   const canChat = await canAccessMemberChat(session.user.orgId, member.id, session.user.id, session.user.role);
   const [chatMessages, workoutPrograms] = await Promise.all([
@@ -404,6 +442,41 @@ export default async function MemberDetailPage({
                       </table>
                     </div>
                   </div>
+                </div>
+              ),
+            },
+            {
+              key: "bonos-calendario",
+              label: "Bonos y calendario",
+              content: (
+                <div className="space-y-6">
+                  <BonosPanel
+                    canAdjust={canAdjustSessionBalance(session.user.role)}
+                    balances={sessionBalances}
+                    bonos={member.subscriptions.map((s) => ({
+                      id: s.id,
+                      planName: s.plan.name,
+                      planType: s.plan.type,
+                      sessionsIncluded: s.plan.sessionsIncluded,
+                      sessionsRemaining: s.sessionsRemaining,
+                      status: s.status,
+                      centerName: s.center.name,
+                      startDateISO: formatDateParam(s.startDate),
+                      endDateISO: s.endDate ? formatDateParam(s.endDate) : null,
+                      priceCents: s.priceCents,
+                      isRecurring: s.stripeSubscriptionId != null,
+                    }))}
+                  />
+                  <MemberSessionsCalendar
+                    memberId={member.id}
+                    events={calendarEvents}
+                    loadedFromMonth={formatDateParam(calendarFrom).slice(0, 7)}
+                    loadedToMonth={formatDateParam(calendarTo).slice(0, 7)}
+                    initialMonth={formatDateParam(calendarMonthStart).slice(0, 7)}
+                    todayISO={formatDateParam(calendarToday)}
+                    minMonth={formatDateParam(member.joinedAt).slice(0, 7)}
+                    openableCenterIds={openableCenters.map((c) => c.id)}
+                  />
                 </div>
               ),
             },

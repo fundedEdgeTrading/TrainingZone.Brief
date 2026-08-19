@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import type { MemberState } from "@prisma/client";
+import type { BookingStatus, MemberState } from "@prisma/client";
+import { formatDateParam } from "@/lib/date-utils";
+import { toMin } from "@/app/(app)/agenda/agenda-utils";
 
 export async function listMembers(
   orgId: string,
@@ -115,8 +117,15 @@ export function activeBookingSubscriptions(
 // Además del saldo se expone lo ya gastado del bono contratado: `used` sale de
 // `sessionsIncluded - sessionsRemaining` del propio bono (no del histórico de
 // asistencias, que incluye bonos anteriores y sesiones agendadas a mano por el
-// entrenador) para que "gastadas + disponibles" cuadre siempre con el total
-// contratado que ve el socio.
+// entrenador) para que "gastadas + disponibles" cuadre con el total contratado
+// que ve el socio.
+//
+// OJO: desde que la ficha del socio permite ajustar el saldo a mano
+// (members/[id]/bonos-actions.ts), esa cuadratura ya NO es un invariante:
+// `remaining` puede superar `sessionsIncluded` y entonces `used` se queda en 0.
+// Este objeto se sirve tal cual a la app nativa
+// (api/mobile/v1/portal/agenda/route.ts), así que cualquier barra de progreso
+// que se pinte con él tiene que recortar al 100 %.
 export type SessionBalance = {
   serviceKind: ServiceKind;
   remaining: number | null;
@@ -219,4 +228,88 @@ export async function getMemberAttendanceStats(memberId: string) {
     cancelled,
     noShowRate: total ? Math.round((noShow / total) * 100) : 0,
   };
+}
+
+// ---------- Calendario de entrenamientos del socio ----------
+// Pestaña "Bonos y calendario" de la ficha del socio.
+//
+// Se consulta BOOKING, no CLASSSESSION: `Booking.occurrenceDate` ya materializa
+// el día concreto de cada ocurrencia de una serie recurrente, así que aquí NO
+// hace falta proyectar recurrencias (sessionsInRangeWhere/expandOccurrences de
+// session-occurrences.ts). Expandirlas sería además incorrecto: pintaría todas
+// las ocurrencias futuras de una serie semanal a la que el socio no está
+// apuntado. El filtro cae justo sobre el índice Booking[memberId, occurrenceDate].
+export type MemberCalendarEvent = {
+  bookingId: string;
+  sessionId: string;
+  /** Día REAL de la ocurrencia ("YYYY-MM-DD"), no la fecha base de la serie. */
+  dateISO: string;
+  startTime: string; // "HH:mm"
+  endTime: string;
+  title: string;
+  kind: "EP" | "GROUP";
+  status: BookingStatus;
+  /** La sesión entera está cancelada (distinto de que lo esté esta reserva). */
+  sessionCancelled: boolean;
+  centerId: string;
+  centerName: string;
+  trainerId: string | null;
+  trainerName: string | null;
+  hasDebrief: boolean;
+};
+
+export async function getMemberSessionCalendar(
+  orgId: string,
+  memberId: string,
+  from: Date, // medianoche local, inclusive
+  to: Date // medianoche local, EXCLUSIVO
+): Promise<MemberCalendarEvent[]> {
+  const bookings = await prisma.booking.findMany({
+    // Aislamiento multi-tenant vía el socio: Booking tampoco tiene orgId.
+    where: { memberId, member: { orgId }, occurrenceDate: { gte: from, lt: to } },
+    select: {
+      id: true,
+      sessionId: true,
+      status: true,
+      occurrenceDate: true,
+      debrief: { select: { id: true } },
+      session: {
+        select: {
+          name: true,
+          classType: true,
+          startTime: true,
+          endTime: true,
+          status: true,
+          trainerId: true,
+          directedByUserId: true,
+          center: { select: { id: true, name: true } },
+          trainer: { select: { name: true } },
+          directedBy: { select: { name: true } },
+        },
+      },
+    },
+  });
+
+  return bookings
+    .map((b) => ({
+      bookingId: b.id,
+      sessionId: b.sessionId,
+      // `formatDateParam` usa componentes locales: con toISOString() el día se
+      // desplazaría en Europe/Madrid (ver date-utils.ts).
+      dateISO: formatDateParam(b.occurrenceDate),
+      startTime: b.session.startTime,
+      endTime: b.session.endTime,
+      title: b.session.name,
+      kind: sessionServiceKind(b.session.classType),
+      status: b.status,
+      sessionCancelled: b.session.status === "CANCELLED",
+      centerId: b.session.center.id,
+      centerName: b.session.center.name,
+      // RB-AGENDA-004: manda quien la dirigió de verdad, si consta; el
+      // entrenador asignado en la plantilla puede no ser el que dio la sesión.
+      trainerId: b.session.directedByUserId ?? b.session.trainerId,
+      trainerName: b.session.directedBy?.name ?? b.session.trainer?.name ?? null,
+      hasDebrief: b.debrief != null,
+    }))
+    .sort((a, b) => a.dateISO.localeCompare(b.dateISO) || toMin(a.startTime) - toMin(b.startTime));
 }
