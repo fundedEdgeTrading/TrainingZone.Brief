@@ -204,6 +204,17 @@ export function canManageEpSlots(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
 }
 
+// RB-RES-006 — ajuste manual del saldo de sesiones de un bono desde la ficha
+// del socio. A diferencia del resto de la gestión de bonos (`canManageBilling`),
+// aquí SÍ entra el ENTRENADOR: es quien detecta en pista que a un socio le falta
+// o le sobra una sesión (sesión regalada, o hueco de EP agendado a mano, que
+// crea la reserva con `subscriptionId` null y por tanto no descuenta bono —
+// agenda-queries.ts::createEpSlot). No mueve dinero: solo saldo, y cada ajuste
+// queda en AuditLog.
+export function canAdjustSessionBalance(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "RECEPTION";
+}
+
 // F14/RB-RRHH-013 — aprobar (luz verde) ofertas personalizadas.
 export function canApproveOffers(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR";

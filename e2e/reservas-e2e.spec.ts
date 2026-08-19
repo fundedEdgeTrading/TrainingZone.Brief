@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { loginAs, isoDay } from "./helpers";
 import { createBookingMember, deleteBookingMembers, type Fixture } from "./fixtures/booking-members";
 
 /**
@@ -18,12 +18,6 @@ import { createBookingMember, deleteBookingMembers, type Fixture } from "./fixtu
 
 const TRAINER_EMAIL = "entrenador@trainingzone.es";
 const TRAINER_NAME = "Dani Herrero";
-
-function isoDay(offset: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 const toast = (page: Page) => page.locator("[role=status], [role=alert]");
 
