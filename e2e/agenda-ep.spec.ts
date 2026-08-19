@@ -1,13 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { loginAs, isoDay } from "./helpers";
 
 const toast = (page: import("@playwright/test").Page) => page.locator("[role=status], [role=alert]");
-
-function isoDay(offset: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 /** En la agenda, un clic en la tarjeta abre el diálogo de edición de esa sesión. */
 async function openSessionInAgenda(page: import("@playwright/test").Page, title: string, date: string) {

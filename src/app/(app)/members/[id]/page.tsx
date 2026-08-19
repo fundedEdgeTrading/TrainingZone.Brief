@@ -512,7 +512,7 @@ export default async function MemberDetailPage({
                       <tbody>
                         {member.bookings.map((b) => (
                           <tr key={b.id} className="border-t border-tz-sand">
-                            <td className="py-2">{b.session.date.toLocaleDateString("es-ES")}</td>
+                            <td className="py-2">{b.occurrenceDate.toLocaleDateString("es-ES")}</td>
                             <td className="py-2">{b.session.name}</td>
                             <td className="py-2">{b.status}</td>
                             <td className="py-2">

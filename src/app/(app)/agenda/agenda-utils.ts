@@ -40,6 +40,19 @@ export function weekdayIdx(d: Date) {
   return (d.getDay() + 6) % 7;
 }
 
+/**
+ * ¿Opera el centro ese día? Hoy: de lunes a sábado.
+ *
+ * La regla vivía solo como un descarte de PINTADO en la rejilla de la agenda
+ * (`VISIBLE_DAYS`), y esa asimetría dejaba que el socio reservara por el portal
+ * una sesión en domingo que su entrenador no podía ni abrir ni editar. Al
+ * exponerla como predicado, rejilla y motor de reservas (portal-queries.ts)
+ * citan la MISMA fuente en vez de duplicar un `=== 0` mágico.
+ */
+export function isOperatingDay(d: Date): boolean {
+  return weekdayIdx(d) < VISIBLE_DAYS;
+}
+
 export function toMin(hhmm: string) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;

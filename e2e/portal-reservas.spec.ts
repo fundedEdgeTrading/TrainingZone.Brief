@@ -8,6 +8,24 @@ import { loginAs } from "./helpers";
 const toast = (page: Page) => page.locator(".tz-toast");
 
 /**
+ * RB-RES-005: cancelar una reserva BOOKED a menos de CANCELLATION_WINDOW_HOURS
+ * (24h por defecto) ya no lanza la acción directamente — abre un modal de
+ * confirmación ("Vas a perder esta sesión", booking-button.tsx), porque esa
+ * cancelación NO devuelve la sesión al bono. Sin confirmarlo no se llama al
+ * servidor y no hay toast que esperar. Que la reserva caiga dentro o fuera de
+ * la ventana depende de la hora a la que se ejecute la suite, así que se
+ * confirma solo si el modal aparece.
+ */
+async function confirmForfeitIfAsked(page: Page) {
+  const confirm = page.getByRole("alertdialog").getByRole("button", { name: "Cancelar de todos modos" });
+  const shown = await confirm
+    .waitFor({ state: "visible", timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (shown) await confirm.click();
+}
+
+/**
  * Reserva lo que haya disponible hasta quedarse sin clases libres o sin saldo
  * en el bono, y devuelve cuántas reservas vivas quedan.
  *
@@ -56,6 +74,7 @@ async function clearActiveBookings(page: Page) {
     const btn = panel.getByRole("button", { name: /Cancelar|Salir de lista/ }).first();
     if ((await btn.count()) === 0) break;
     await btn.click();
+    await confirmForfeitIfAsked(page);
     await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
     await page.reload();
   }
@@ -105,19 +124,29 @@ test.describe("RB-RES — Reservas del socio", () => {
     // apareciendo aquí como "Reservada" (aunque ya no aparece en "Tus próximas
     // reservas") pero no tiene botón Reservar — `.first()` sin este filtro
     // podía escoger esa y colgarse.
+    //
+    // `.last()` y no `.first()`: la lista va en orden ascendente, así que
+    // `.first()` es la clase MÁS PRÓXIMA — justo la que puede cruzar el corte
+    // de antelación mínima (RB-RES-001, 30 min) entre que la página se pinta y
+    // el test llega a pulsar, después de limpiar reservas y reservar la otra.
+    // Cuando eso pasaba, el servidor rechazaba la reserva con "empieza en menos
+    // de 30 minutos" mientras el toast de la reserva ANTERIOR seguía en
+    // pantalla, así que la aserción de toast pasaba igualmente y el fallo se
+    // manifestaba mucho después, en el panel. La clase más lejana de la ventana
+    // de 7 días no tiene esa carrera.
     const bookableButton = () => page.getByRole("button", { name: /Reservar|Unirme a lista/ });
     const epCard = page
       .getByRole("article")
       .filter({ hasText: "Entrenamiento personal" })
       .filter({ hasText: "Puerta del Carmen" })
       .filter({ has: bookableButton() })
-      .first();
+      .last();
     const groupCard = page
       .getByRole("article")
       .filter({ hasText: "Grupo reducido" })
       .filter({ hasText: "La Jota" })
       .filter({ has: bookableButton() })
-      .first();
+      .last();
 
     const hasBoth = (await epCard.count()) > 0 && (await groupCard.count()) > 0;
     test.skip(
@@ -170,6 +199,7 @@ test.describe("RB-RES — Reservas del socio", () => {
     await rowContaining("Puerta del Carmen")
       .getByRole("button", { name: /Cancelar|Salir de lista/ })
       .click();
+    await confirmForfeitIfAsked(page);
     await expect(toast(page).last()).toContainText(/Reserva cancelada\.|Has salido de la lista de espera\./, {
       timeout: 15_000,
     });
@@ -177,6 +207,7 @@ test.describe("RB-RES — Reservas del socio", () => {
     await rowContaining(groupName, "La Jota")
       .getByRole("button", { name: /Cancelar|Salir de lista/ })
       .click();
+    await confirmForfeitIfAsked(page);
     await expect(toast(page).last()).toContainText(/Reserva cancelada\.|Has salido de la lista de espera\./, {
       timeout: 15_000,
     });
@@ -220,10 +251,28 @@ test.describe("RB-RES — Reservas del socio", () => {
 
     // La reserva a cancelar la crea la propia prueba: no puede depender de que
     // el seed le haya dejado una futura.
+    //
+    // RB-RES-005: esta prueba mide que cancelar DEVUELVE la sesión al bono, y
+    // eso solo pasa fuera de la ventana de 24h — una cancelación penalizada no
+    // devuelve nada, por diseño. Así que no vale reservar "lo primero que
+    // haya": se reserva la clase MÁS LEJANA de la ventana de 7 días, que
+    // siempre está fuera de plazo. El listado va en orden ascendente
+    // (getBookableSessions → expandOccurrences, y la página agrupa en un Map
+    // que conserva el orden), así que `.last()` es la más lejana.
     const panel = page.getByRole("region", { name: "Tus próximas reservas" });
-    const cancellable = panel.getByRole("button", { name: "Cancelar" });
-    if ((await bookAvailable(page)) === 0) test.skip(true, "El seed no ha dejado clases libres que reservar y cancelar.");
-    await expect(cancellable.first()).toBeVisible({ timeout: 10_000 });
+
+    await page.getByRole("article").first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {});
+    const bookable = page.getByRole("button", { name: "Reservar", exact: true });
+    if ((await bookable.count()) === 0) test.skip(true, "El seed no ha dejado clases libres que reservar y cancelar.");
+    await bookable.last().click();
+    await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
+    await page.reload();
+
+    // `exact: true`: una reserva dentro de la ventana de penalización se
+    // etiqueta "Cancelar ⚠︎" (booking-button.tsx) y abre el modal de pérdida
+    // de sesión — no es la que queremos medir aquí.
+    const cancellable = panel.getByRole("button", { name: "Cancelar", exact: true });
+    await expect(cancellable.last()).toBeVisible({ timeout: 10_000 });
 
     // Marta tiene dos bonos (EP + grupos, RB-AGENDA-003): la reserva creada
     // pudo cargarse en cualquiera de las dos tarjetas de saldo, así que se
@@ -233,7 +282,10 @@ test.describe("RB-RES — Reservas del socio", () => {
       (await usedLine.allInnerTexts()).reduce((sum, t) => sum + Number(t.split(" ")[0]), 0);
     const usedBefore = await totalUsed();
 
-    await cancellable.first().click();
+    // `.last()`: el panel ordena ascendente por `startsAt` (portal-queries.ts),
+    // así que es la reserva que acaba de crear el test — la única que se sabe
+    // seguro que descontó bono.
+    await cancellable.last().click();
     await expect(toast(page).getByText(/Reserva cancelada/i)).toBeVisible({ timeout: 15_000 });
 
     await page.reload();

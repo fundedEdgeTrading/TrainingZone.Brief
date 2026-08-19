@@ -340,6 +340,15 @@ tarjeta o domiciliación gestionada por Stripe).
 **`RB-PAGO-002`** — El cierre de un Lead (`RB-LEAD-005`) depende de la confirmación de pago de
 Stripe, no de una acción manual del entrenador.
 
+**`RB-RES-008`** — El centro **no opera en domingo**: el portal del socio no
+ofrece sesiones de domingo y `bookSessionForMember` las rechaza (también por la
+API móvil). La regla existía solo como un descarte de pintado en la rejilla de la
+agenda (lunes a sábado), y esa asimetría permitía que el socio reservara una
+sesión que su entrenador no podía abrir ni editar. Las reservas de domingo
+**anteriores** siguen visibles y cancelables, para no dejar a nadie atrapado con
+una reserva que no puede soltar. El predicado único es `isOperatingDay`
+(`agenda-utils.ts`), que comparten rejilla y motor de reservas.
+
 **`RB-PAGO-008`** — El saldo de sesiones de un bono (`Subscription.sessionsRemaining`) se puede
 **ajustar a mano** desde la pestaña "Bonos y calendario" de la ficha del socio. Es una corrección
 de contador, no un cobro: no genera `Payment` ni viaja a Stripe. Lo pueden hacer dirección de

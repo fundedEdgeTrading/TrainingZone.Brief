@@ -4,6 +4,7 @@ import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
 // de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
@@ -413,6 +414,11 @@ export async function getBookableSessions(
       };
     })
     .filter((s) => s.canBook || s.myBookingId)
+    // El centro no abre los domingos y la agenda del entrenador no los pinta:
+    // ofrecerlos aquí vendía una sesión que luego nadie podía gestionar. Se
+    // mantienen, eso sí, las que el socio YA tuviera reservadas de antes, o se
+    // quedaría con una reserva que no puede cancelar.
+    .filter((s) => isOperatingDay(s.date) || s.myBookingId)
     .filter((s) => s.startsAt.getTime() <= windowEndMs);
 }
 
@@ -599,6 +605,13 @@ export async function bookSessionForMember(
     const occurrenceDate = occurrenceDateParam ? parseDateParam(occurrenceDateParam) : cls.date;
     if (!occursOn(cls, occurrenceDate)) {
       return { ok: false as const, error: "Esta clase no se imparte ese día." };
+    }
+
+    // Se comprueba también aquí y no solo al listar: la API móvil
+    // (api/mobile/v1/portal/agenda/book) entra con un `sessionId` crudo y se
+    // salta el listado entero.
+    if (!isOperatingDay(occurrenceDate)) {
+      return { ok: false as const, error: "El centro no abre los domingos: esa clase no admite reservas." };
     }
 
     const now = new Date();
