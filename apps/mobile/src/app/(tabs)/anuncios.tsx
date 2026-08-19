@@ -77,7 +77,7 @@ export default function AnnouncementsScreen() {
                   {a.centerName} · {a.viewsCount} vistas{a.pinned ? " · fijado" : ""}
                 </Text>
                 <View style={styles.actionsRow}>
-                  <Button title={a.active ? "Desactivar" : "Activar"} variant="secondary" onPress={() => handleToggle(a)} loading={toggleAnnouncement.isPending} />
+                  <Button title={a.active ? "Desactivar" : "Activar"} variant="outline" onPress={() => handleToggle(a)} loading={toggleAnnouncement.isPending} />
                   <Button title="Eliminar" variant="danger" onPress={() => handleDelete(a.id)} loading={deleteAnnouncement.isPending} />
                 </View>
               </Card>
@@ -199,7 +199,7 @@ function CreateAnnouncementModal({
             {error ? <Text style={{ color: theme.critical, fontFamily: "Poppins_500Medium", fontSize: 13 }}>{error}</Text> : null}
 
             <Button title="Publicar" onPress={handleSubmit} loading={createAnnouncement.isPending} />
-            <Button title="Cancelar" variant="secondary" onPress={onClose} />
+            <Button title="Cancelar" variant="outline" onPress={onClose} />
           </ScrollView>
         </View>
       </View>

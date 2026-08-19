@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiSession } from "../_lib/api-session";
+import { memberSummaryFor } from "../_lib/session-user";
 import { apiOk, apiError } from "../_lib/response";
 
 export async function GET(req: NextRequest) {
@@ -13,5 +14,10 @@ export async function GET(req: NextRequest) {
   });
   if (!user) return apiError("No autenticado.", 401);
 
-  return apiOk(user);
+  // Gate de compra del handoff (A2): el socio sin ningún bono vivo entra al
+  // catálogo del centro en vez de a las tabs. Se resuelve aquí, con la sesión,
+  // para no encadenar una petición extra al abrir la app.
+  const member = await memberSummaryFor(user.id, user.orgId, user.role);
+
+  return apiOk({ ...user, member });
 }

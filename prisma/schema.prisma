@@ -173,6 +173,9 @@ model User {
   email        String // desnormalizado desde Identity: evita un join en cada listado
   role         Role
   image        String?
+  // D7 del handoff: si está activo, su foto y su nombre acompañan a las
+  // sesiones que dirige en la app del socio.
+  visibleInApp Boolean  @default(true)
   createdAt    DateTime @default(now())
 
   identity            Identity          @relation(fields: [identityId], references: [id], onDelete: Cascade)
@@ -505,6 +508,13 @@ model MembershipPlan {
   validityDays     Int?
   active           Boolean  @default(true)
   createdAt        DateTime @default(now())
+
+  // Catálogo de la app móvil (handoff "App móvil premium", A2/D4/D5): el socio
+  // compra el bono desde el primer login, así que el plan necesita texto de
+  // venta y foto. `active` es la visibilidad: un plan oculto no aparece en el
+  // catálogo pero sigue vivo para quien ya lo tiene contratado.
+  description String?
+  imageUrl    String? // 1600 × 1000 recomendado (data URL, igual que el resto de imágenes de la demo)
 
   // F5 (RB-VENTA-002): espejo del producto/precio en la cuenta CONECTADA del
   // gimnasio. Los precios de Stripe son inmutables — cambiar el importe crea
@@ -896,6 +906,19 @@ model SessionDebrief {
   rpe       Int?
   note      String?
   createdAt DateTime       @default(now())
+
+  // Feedback 1-10 por socio al terminar la sesión (handoff C4). `rpe` ya
+  // existía como esfuerzo percibido y sigue siendo el primer eje; el resto se
+  // añade aquí. Todos son opcionales: el entrenador puede guardar a medias
+  // (autoguardado por eje) y completar después.
+  technique Int?
+  attitude  Int?
+  energy    Int?
+  mobility  Int?
+  pain      Int?
+  adherence Int?
+  progress  Int?
+  updatedAt DateTime @updatedAt
 
   booking Booking @relation(fields: [bookingId], references: [id])
 }

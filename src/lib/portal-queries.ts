@@ -372,7 +372,9 @@ export async function getBookableSessions(
     },
     include: {
       center: { select: { name: true } },
-      trainer: { select: { name: true } },
+      // `visibleInApp` (D7): si el entrenador no está publicado en la app del
+      // socio, su nombre y su foto no acompañan a la sesión.
+      trainer: { select: { name: true, image: true, visibleInApp: true } },
       bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
     },
     orderBy: { date: "asc" },
@@ -401,7 +403,9 @@ export async function getBookableSessions(
         endTime: s.endTime,
         capacity: s.capacity,
         bookedCount: activeBookings.length,
-        trainerName: s.trainer?.name ?? null,
+        room: s.room,
+        trainerName: s.trainer?.visibleInApp ? s.trainer.name : null,
+        trainerImage: s.trainer?.visibleInApp ? s.trainer.image : null,
         // Una lista de reserva puede mezclar sesiones de varios centros de la
         // organización (RB-AGENDA-003): la tarjeta necesita indicar cuál.
         centerName: s.center.name,
@@ -443,7 +447,11 @@ export type UpcomingBooking = {
   startTime: string;
   endTime: string;
   centerName: string;
+  /** Sala del centro (D7/B3: la app la muestra junto a la hora). */
+  room: string | null;
   trainerName: string | null;
+  /** Foto del entrenador si su ficha está publicada en la app del socio (D7). */
+  trainerImage: string | null;
   /** La clase la anuló el centro: la reserva sigue viva pero ya no ocupa cupo. */
   sessionCancelled: boolean;
   canCancelFreely: boolean;
@@ -495,8 +503,9 @@ export async function getMemberUpcomingBookings(
           endTime: true,
           status: true,
           capacity: true,
+          room: true,
           center: { select: { name: true } },
-          trainer: { select: { name: true } },
+          trainer: { select: { name: true, image: true, visibleInApp: true } },
           // Necesario para saber si sigue lleno: sin esto no hay forma de
           // decidir si una reserva WAITLISTED ya puede reclamar hueco.
           bookings: { select: { status: true, occurrenceDate: true } },
@@ -523,7 +532,9 @@ export async function getMemberUpcomingBookings(
         startTime: b.session.startTime,
         endTime: b.session.endTime,
         centerName: b.session.center.name,
-        trainerName: b.session.trainer?.name ?? null,
+        room: b.session.room,
+        trainerName: b.session.trainer?.visibleInApp ? b.session.trainer.name : null,
+        trainerImage: b.session.trainer?.visibleInApp ? b.session.trainer.image : null,
         sessionCancelled: b.session.status !== "SCHEDULED",
         full: activeCount >= b.session.capacity,
       };
