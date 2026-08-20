@@ -53,6 +53,7 @@ export async function listAssignableStaff(orgId: string, roles?: Role[]) {
   return prisma.user.findMany({
     where: { orgId, role: roles ? { in: roles } : { not: "MEMBER" } },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, role: true },
+    // `image`: los chips de entrenador de la agenda móvil llevan su foto.
+    select: { id: true, name: true, role: true, image: true },
   });
 }

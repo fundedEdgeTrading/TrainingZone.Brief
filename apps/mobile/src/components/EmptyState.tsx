@@ -1,18 +1,29 @@
 import { View, Text, StyleSheet } from "react-native";
 import { useTheme } from "@/theme/theme";
+import { typo } from "@/theme/typography";
+import { Icon, type IconName } from "./Icon";
 
-export function EmptyState({ title, description }: { title: string; description?: string }) {
+export function EmptyState({
+  title,
+  description,
+  icon,
+}: {
+  title: string;
+  description?: string;
+  icon?: IconName;
+}) {
   const theme = useTheme();
   return (
     <View style={styles.container}>
-      <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
-      {description ? <Text style={[styles.description, { color: theme.textMuted }]}>{description}</Text> : null}
+      {icon ? <Icon name={icon} size={26} color={theme.textFaint} /> : null}
+      <Text style={[typo.cardTitleSmall, { color: theme.text, textAlign: "center" }]}>{title}</Text>
+      {description ? (
+        <Text style={[typo.body, { color: theme.textMuted, textAlign: "center", maxWidth: 280 }]}>{description}</Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { paddingVertical: 40, alignItems: "center", gap: 6 },
-  title: { fontFamily: "Poppins_600SemiBold", fontSize: 15, textAlign: "center" },
-  description: { fontFamily: "Poppins_400Regular", fontSize: 13, textAlign: "center", maxWidth: 280 },
+  container: { paddingVertical: 36, alignItems: "center", gap: 8 },
 });

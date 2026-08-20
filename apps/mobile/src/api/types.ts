@@ -13,6 +13,13 @@ export type MeResponse = {
   role: Role;
   orgId: string;
   centerId: string | null;
+  /** Solo para MEMBER: resuelve el gate de compra del primer login (A2). */
+  member: {
+    id: string;
+    firstName: string;
+    centerName: string;
+    hasActiveMembership: boolean;
+  } | null;
 };
 
 export type ActivityResponse = {
@@ -33,6 +40,10 @@ export type BookingStatus = "BOOKED" | "WAITLISTED" | "ATTENDED" | "NO_SHOW" | "
 
 export type BookableSession = {
   id: string;
+  /** Día concreto de la serie: el id de sesión no distingue ocurrencias. */
+  occurrenceDate: string;
+  /** `id:occurrenceDate` — clave estable de lista y de reserva. */
+  key: string;
   name: string;
   classType: string;
   date: string;
@@ -40,11 +51,15 @@ export type BookableSession = {
   endTime: string;
   capacity: number;
   bookedCount: number;
+  room: string | null;
   trainerName: string | null;
+  trainerImage: string | null;
   /** Un socio puede tener bonos de varios centros: la lista puede mezclarlos. */
   centerName: string;
   startsAt: string;
   canBook: boolean;
+  /** Cancelación gratuita: fuera de esa ventana, cancelar consume la sesión del bono. */
+  canCancelFreely: boolean;
   myBookingId: string | null;
   myBookingStatus: BookingStatus | null;
 };
@@ -66,6 +81,7 @@ export type UpcomingBooking = {
   status: "BOOKED" | "WAITLISTED";
   waitlistPosition: number | null;
   sessionId: string;
+  occurrenceDate: string;
   sessionName: string;
   classType: string;
   startsAt: string;
@@ -74,8 +90,11 @@ export type UpcomingBooking = {
   startTime: string;
   endTime: string;
   centerName: string;
+  room: string | null;
   trainerName: string | null;
+  trainerImage: string | null;
   sessionCancelled: boolean;
+  full: boolean;
   canCancelFreely: boolean;
 };
 
@@ -265,11 +284,13 @@ export type StaffSession = {
   startTime: string;
   endTime: string;
   capacity: number;
+  room: string | null;
   isTrial: boolean;
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   selfBookable: boolean;
   trainerId: string | null;
   trainerName: string | null;
+  trainerImage: string | null;
   bookings: StaffSessionBooking[];
 };
 
@@ -278,12 +299,14 @@ export type StaffAgendaResponse = {
   centers: { id: string; name: string }[];
   centerId: string | null;
   canEdit: boolean;
-  trainers: { id: string; name: string }[];
+  trainers: { id: string; name: string; image: string | null }[];
   members: { id: string; firstName: string; lastName: string }[];
   sessions: StaffSession[];
 };
 
 export type SaveStaffSessionInput = {
+  /** Presente = edición de una sesión existente (PATCH); ausente = alta (POST). */
+  id?: string;
   centerId: string;
   trainerId: string;
   title: string;
@@ -292,6 +315,7 @@ export type SaveStaffSessionInput = {
   startTime: string;
   endTime: string;
   memberId: string | null;
+  capacity?: number | null;
   isTrial: boolean;
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recUntil: string | null;
@@ -299,20 +323,16 @@ export type SaveStaffSessionInput = {
 
 // ---------- Panel de control / anuncios / organización (dirección) ----------
 
-export type DashboardKpis = {
-  activeMembers: number;
-  delinquent: number;
-  frozen: number;
-  openAlerts: number;
-  monthRevenueCents: number;
-  sessionsThisMonth: number;
-};
-
 export type DashboardResponse = {
-  kpis: DashboardKpis;
-  memberStateBreakdown: { state: string; count: number }[];
-  occupancyByCenter: { center: string; occupancyPct: number; sessions: number }[];
-  noShowRatePct: number;
+  centers: { id: string; name: string }[];
+  centerId: string | null;
+  canChooseCenter: boolean;
+  revenue: { monthCents: number; deltaPct: number | null; series: { label: string; cents: number }[] };
+  members: { active: number; newThisMonth: number; churnedThisMonth: number };
+  delinquency: { members: number; amountCents: number };
+  attendance: { avgPct: number; noShowPct: number; sessionsHeld: number };
+  /** null cuando el rol no puede leer valoraciones de entrenadores (RB-RRHH-011). */
+  ranking: { trainerUserId: string; name: string; image: string | null; avgScore: number; count: number }[] | null;
 };
 
 export type AnnouncementCategory = "NEWS" | "EVENT" | "PROMO" | "ALERT";
@@ -355,4 +375,239 @@ export type OrganizationResponse = {
   organization: { id: string; name: string; logoUrl: string | null } | null;
   centers: { id: string; name: string; timezone: string; membersCount: number; staffCount: number }[];
   staff: { id: string; name: string; email: string; role: Role; roleLabel: string; centerNames: string[]; invitationPending: boolean }[];
+};
+
+// ---------- Catálogo y productos (A2 · D4 · D5) ----------
+
+export type ProductItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  priceCents: number;
+  sessionsIncluded: number | null;
+  validityDays: number | null;
+  planType: string;
+  serviceKind: ServiceKind;
+  visible: boolean;
+  /** null para el socio: solo dirección ve cuánta gente tiene contratado el bono. */
+  subscribersCount: number | null;
+  featured: boolean;
+};
+
+export type ProductsResponse = { canManage: boolean; centerName: string | null; products: ProductItem[] };
+
+export type SaveProductInput = {
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  priceCents: number;
+  sessionsIncluded: number | null;
+  validityDays: number | null;
+  serviceKind: ServiceKind;
+  visible: boolean;
+};
+
+/** El cobro con tarjeta se abre SIEMPRE en el navegador del dispositivo, nunca en un WebView. */
+export type CheckoutResponse =
+  | { mode: "stripe"; url: string; planName: string; priceCents: number }
+  | { mode: "manual"; planName: string; priceCents: number; reason: string };
+
+// ---------- Mis bonos (B4) ----------
+
+export type MembershipItem = {
+  id: string;
+  planName: string;
+  serviceKind: ServiceKind;
+  status: "ACTIVE" | "FROZEN" | "CANCELLED" | "EXPIRED";
+  unlimited: boolean;
+  remaining: number | null;
+  total: number | null;
+  used: number | null;
+  priceCents: number;
+  centerName: string;
+  renewsAt: string | null;
+  cancelAt: string | null;
+  pauseUntil: string | null;
+  isRecurring: boolean;
+};
+
+export type ConsumptionItem = {
+  bookingId: string;
+  day: string;
+  sessionName: string;
+  startTime: string;
+  serviceKind: "EP" | "GROUP";
+  status: "ATTENDED" | "NO_SHOW";
+  planName: string | null;
+  consumed: number | null;
+};
+
+export type MembershipsResponse = {
+  balances: SessionBalance[];
+  memberships: MembershipItem[];
+  consumption: ConsumptionItem[];
+};
+
+// ---------- Calendario del socio (B5) y de su ficha (D3) ----------
+
+export type CalendarEntry = {
+  bookingId: string;
+  day: string;
+  sessionName: string;
+  startTime: string;
+  endTime: string;
+  centerName: string;
+  trainerName: string | null;
+  serviceKind: "EP" | "GROUP";
+  status: BookingStatus;
+  feedbackAvg: number | null;
+};
+
+export type MemberCalendarResponse = {
+  month: string;
+  entries: CalendarEntry[];
+  summary: { attended: number; booked: number; noShow: number };
+};
+
+// ---------- Socios (D2 · D3) ----------
+
+export type MemberState = "PROSPECT" | "TRIAL" | "ACTIVE" | "DELINQUENT" | "FROZEN" | "CANCELLED";
+
+export type MemberListItem = {
+  id: string;
+  name: string;
+  email: string;
+  state: MemberState;
+  centerName: string;
+  planName: string | null;
+  photoUrl: string | null;
+};
+
+export type MembersResponse = {
+  page: number;
+  /** null = no hay más páginas (scroll infinito de D2). */
+  nextPage: number | null;
+  counts: { all: number; active: number; delinquent: number; frozen: number; trial: number; cancelled: number };
+  members: MemberListItem[];
+};
+
+export type MemberDetailResponse = {
+  member: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    state: MemberState;
+    centerName: string;
+    joinedAt: string;
+    photoUrl: string | null;
+    planNames: string[];
+  };
+  stats: { attended: number; booked: number; noShow: number; adherencePct: number };
+  memberships: {
+    id: string;
+    planName: string;
+    serviceKind: ServiceKind;
+    status: string;
+    remaining: number | null;
+    total: number | null;
+    priceCents: number;
+    centerName: string;
+    renewsAt: string | null;
+  }[];
+  payments: { id: string; date: string; amountCents: number; status: string; method: string }[];
+  upcoming: MemberBookingSummary[];
+  recent: MemberBookingSummary[];
+};
+
+export type MemberBookingSummary = {
+  bookingId: string;
+  day: string;
+  sessionName: string;
+  startTime: string;
+  endTime: string;
+  serviceKind: "EP" | "GROUP";
+  status: BookingStatus;
+  feedbackAvg: number | null;
+};
+
+// ---------- Equipo (D6 · D7) ----------
+
+export type StaffAllocation = { centerId: string; centerName: string; pct: number | null; isPrimary: boolean };
+
+export type StaffMemberItem = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  roleLabel: string;
+  image: string | null;
+  visibleInApp: boolean;
+  joinedAt: string;
+  invitationPending: boolean;
+  allocations: StaffAllocation[];
+};
+
+export type StaffResponse = {
+  canManage: boolean;
+  centers: { id: string; name: string }[];
+  staff: StaffMemberItem[];
+};
+
+export type CreateStaffInput = { name: string; email: string; role: Role; centerId: string | null };
+
+export type UpdateStaffInput = {
+  id: string;
+  name?: string;
+  role?: Role;
+  image?: string | null;
+  visibleInApp?: boolean;
+  allocations?: { centerId: string; pct: number }[];
+};
+
+// ---------- Feedback 1-10 por socio (C4) ----------
+
+export type FeedbackAxis =
+  | "rpe"
+  | "technique"
+  | "attitude"
+  | "energy"
+  | "mobility"
+  | "pain"
+  | "adherence"
+  | "progress";
+
+export type FeedbackScores = Record<FeedbackAxis, number | null>;
+
+export type FeedbackMember = {
+  bookingId: string;
+  memberId: string;
+  name: string;
+  attended: boolean;
+  monthlyCount: number;
+  planNames: string[];
+  aptitude: { zone: string | null; light: "RED" | "AMBER" | "GREEN" } | null;
+  scores: FeedbackScores;
+  note: string | null;
+};
+
+export type SessionFeedbackResponse = {
+  session: {
+    id: string;
+    name: string;
+    classType: string;
+    startTime: string;
+    endTime: string;
+    centerName: string;
+    trainerName: string | null;
+    occurrenceDate: string;
+  };
+  members: FeedbackMember[];
+};
+
+export type SaveFeedbackInput = {
+  bookingId: string;
+  scores: Partial<FeedbackScores>;
+  note?: string | null;
 };

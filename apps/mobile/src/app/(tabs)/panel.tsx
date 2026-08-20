@@ -1,106 +1,138 @@
-import { ActivityIndicator, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
+import { RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "@/auth/auth-context";
 import { useTrainerPanel } from "@/api/queries";
-import { useTheme } from "@/theme/theme";
+import { useTheme, radii } from "@/theme/theme";
+import { fonts, tabular, typo } from "@/theme/typography";
+import { stagger } from "@/theme/motion";
 import { ScreenContainer } from "@/components/ScreenContainer";
+import { ScreenHeader, SectionTitle } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
-import { EmptyState } from "@/components/EmptyState";
-import { FadeInUp } from "@/components/FadeInUp";
+import { Avatar } from "@/components/Avatar";
+import { KpiTile } from "@/components/KpiTile";
 import { HeroCard } from "@/components/HeroCard";
 import { ProgressRing } from "@/components/ProgressRing";
 import { Countdown } from "@/components/Countdown";
+import { ListRow, Divider } from "@/components/Row";
+import { EmptyState } from "@/components/EmptyState";
+import { FadeInUp } from "@/components/FadeInUp";
+import { SkeletonList } from "@/components/Skeleton";
 import type { TrainerAgendaSession, TrainerPanelResponse, TrainerPendingItem } from "@/api/types";
 
+// C1 del handoff: panel del entrenador con spotlight de la sesión en curso,
+// KPIs del mes, aviso de feedback pendiente y agenda del día.
 export default function TrainerPanelScreen() {
   const { state } = useAuth();
   const theme = useTheme();
   const { data, isLoading, isError, refetch, isRefetching } = useTrainerPanel();
-  const firstName = state.status === "signedIn" ? state.user.name.split(" ")[0] : "";
+  const user = state.status === "signedIn" ? state.user : null;
+  const firstName = user?.name.split(" ")[0] ?? "";
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
+    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
       <FadeInUp>
-        <Text style={[styles.kicker, { color: theme.textMuted }]}>MI PANEL{data?.centerName ? ` · ${data.centerName}` : ""}</Text>
-        <Text style={[styles.title, { color: theme.text }]}>Hola, {firstName}</Text>
+        <ScreenHeader
+          kicker={`MI PANEL${data?.centerName ? ` · ${data.centerName}` : ""}`}
+          title={`Hola, ${firstName}`}
+          tight
+          right={<Avatar name={user?.name ?? ""} uri={user?.image} size={42} />}
+        />
       </FadeInUp>
 
       {isLoading ? (
-        <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />
+        <SkeletonList rows={3} />
       ) : isError || !data ? (
-        <EmptyState title="No se pudo cargar tu panel" description="Desliza hacia abajo para reintentar." />
+        <EmptyState icon="alert" title="No se pudo cargar tu panel" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <FadeInUp delay={60} style={styles.kpiRow}>
-            <Kpi label="Horas EP/mes" value={`${data.epHours}h`} accent="gold" />
-            <Kpi label="Horas grupos" value={`${data.groupHours}h`} />
-            <Kpi label="Clientes EP" value={`${data.epClients.length}`} />
-            <Kpi label="Adherencia" value={`${data.adherenceAvg}%`} accent="good" />
+          <Spotlight data={data} />
+
+          <FadeInUp delay={stagger(2)} style={styles.kpiRow}>
+            <KpiTile label="Horas EP/mes" value={`${data.epHours} h`} tone="gold" small />
+            <KpiTile label="Horas grupos" value={`${data.groupHours} h`} small />
+            <KpiTile
+              label="Clientes EP"
+              value={`${data.epClients.length}`}
+              small
+              hint={data.epClientsNewThisMonth ? `+${data.epClientsNewThisMonth} este mes` : undefined}
+              hintTone="good"
+            />
+            <KpiTile label="Adherencia" value={`${data.adherenceAvg}%`} tone="good" small />
           </FadeInUp>
 
-          {data.agendaIsToday ? <Spotlight data={data} /> : null}
+          {data.pendingDebriefs.length > 0 ? (
+            <FadeInUp delay={stagger(3)}>
+              <Card style={{ borderColor: theme.warning, gap: 10 }}>
+                <View style={styles.pendingHeader}>
+                  <Badge label="Feedback pendiente" tone="warning" dot />
+                  <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>
+                    {data.pendingDebriefs.length} {data.pendingDebriefs.length === 1 ? "sesión" : "sesiones"}
+                  </Text>
+                </View>
+                {data.pendingDebriefs.slice(0, 3).map((item) => (
+                  <PendingRow key={`${item.sessionId}-${item.occurrenceDate}`} item={item} />
+                ))}
+              </Card>
+            </FadeInUp>
+          ) : null}
 
-          <FadeInUp delay={160}>
-            <Card>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>
-                {data.agendaIsToday ? "Agenda de hoy" : `Agenda · ${data.agendaDay}`}
-              </Text>
+          <SectionTitle label={data.agendaIsToday ? "Agenda de hoy" : `Agenda · ${data.agendaDay}`} />
+          <FadeInUp delay={stagger(4)}>
+            <Card tone="alt" padding={0} style={{ gap: 0 }}>
               {data.agendaSessions.length === 0 ? (
-                <Text style={{ color: theme.textMuted, fontFamily: "Poppins_400Regular", fontSize: 13 }}>Sin sesiones programadas.</Text>
+                <Text style={[typo.rowMeta, { color: theme.textMuted, padding: 16 }]}>Sin sesiones programadas.</Text>
               ) : (
-                data.agendaSessions.map((s) => <SessionRow key={s.id} session={s} />)
+                data.agendaSessions.map((session, index) => (
+                  <View key={`${session.id}-${session.startTime}`}>
+                    {index > 0 ? <Divider /> : null}
+                    <AgendaRow session={session} agendaDay={data.agendaDay} />
+                  </View>
+                ))
               )}
             </Card>
           </FadeInUp>
 
-          {(data.pendingDebriefs.length > 0 || data.pendingBriefs.length > 0) && (
-            <FadeInUp delay={200}>
-              <Card>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Pendientes</Text>
-                {data.pendingDebriefs.map((p) => (
-                  <PendingRow key={`d-${p.sessionId}`} item={p} tone="warning" onPress={() => openBrief(p)} />
-                ))}
-                {data.pendingBriefs.map((p) => (
-                  <PendingRow key={`b-${p.sessionId}`} item={p} tone="warning" onPress={() => openBrief(p)} />
-                ))}
-              </Card>
-            </FadeInUp>
-          )}
+          {data.aptitudeAlerts.length > 0 ? (
+            <>
+              <SectionTitle label="Alertas de aptitud" />
+              <FadeInUp delay={stagger(5)}>
+                <Card style={{ gap: 10 }}>
+                  {data.aptitudeAlerts.map((alert) => (
+                    <ListRow
+                      key={alert.memberId}
+                      left={<Avatar name={alert.name} size={34} />}
+                      title={alert.name}
+                      meta={`${alert.description} · ${alert.meta}`}
+                      right={
+                        <Badge
+                          label={alert.light === "RED" ? "Evitar" : "Adaptar"}
+                          tone={alert.light === "RED" ? "critical" : "warning"}
+                        />
+                      }
+                    />
+                  ))}
+                </Card>
+              </FadeInUp>
+            </>
+          ) : null}
 
-          {data.aptitudeAlerts.length > 0 && (
-            <FadeInUp delay={240}>
-              <Card>
-                <Text style={[styles.cardTitle, { color: theme.text }]}>Alertas de aptitud</Text>
-                {data.aptitudeAlerts.map((a) => (
-                  <View key={a.memberId} style={styles.alertRow}>
-                    <Badge label={a.light === "RED" ? "Evitar" : "Adaptar"} tone={a.light === "RED" ? "critical" : "warning"} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.alertName, { color: theme.text }]}>{a.name}</Text>
-                      <Text style={[styles.alertMeta, { color: theme.textMuted }]}>{a.description} · {a.meta}</Text>
-                    </View>
-                  </View>
-                ))}
-              </Card>
-            </FadeInUp>
-          )}
-
-          <FadeInUp delay={280}>
-            <Card>
-              <Text style={[styles.cardTitle, { color: theme.text }]}>Mis clientes de EP</Text>
+          <SectionTitle label="Mis clientes de EP" />
+          <FadeInUp delay={stagger(6)}>
+            <Card tone="alt" padding={0} style={{ gap: 0 }}>
               {data.epClients.length === 0 ? (
-                <Text style={{ color: theme.textMuted, fontFamily: "Poppins_400Regular", fontSize: 13 }}>Sin clientes de EP asignados.</Text>
+                <Text style={[typo.rowMeta, { color: theme.textMuted, padding: 16 }]}>Sin clientes de EP asignados.</Text>
               ) : (
-                data.epClients.map((c) => (
-                  <View key={c.id} style={styles.clientRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.clientName, { color: theme.text }]}>
-                        {c.firstName} {c.lastName}
-                      </Text>
-                      <Text style={[styles.clientMeta, { color: theme.textMuted }]}>{c.planNames || "—"} · {c.nextLabel}</Text>
-                    </View>
-                    <Text style={[styles.clientAdherence, { color: theme.text }]}>{c.adherencePct}%</Text>
+                data.epClients.map((client, index) => (
+                  <View key={client.id} style={{ paddingHorizontal: 14 }}>
+                    {index > 0 ? <Divider /> : null}
+                    <ListRow
+                      left={<Avatar name={`${client.firstName} ${client.lastName}`} size={34} />}
+                      title={`${client.firstName} ${client.lastName}`}
+                      meta={`${client.planNames || "Sin bono"} · ${client.nextLabel}`}
+                      right={<Text style={[styles.adherence, { color: theme.text }]}>{client.adherencePct}%</Text>}
+                    />
                   </View>
                 ))
               )}
@@ -113,39 +145,42 @@ export default function TrainerPanelScreen() {
 }
 
 function Spotlight({ data }: { data: TrainerPanelResponse }) {
+  const theme = useTheme();
   const spotlight = data.currentSession ?? data.nextSession;
-  if (!spotlight) return null;
+  if (!spotlight || !data.agendaIsToday) return null;
+
   const isCurrent = Boolean(data.currentSession);
   const seconds = (isCurrent ? spotlight.secondsRemaining : spotlight.secondsUntil) ?? 0;
 
   return (
-    <FadeInUp delay={110}>
+    <FadeInUp delay={stagger(1)}>
       <HeroCard>
         <View style={styles.spotlightRow}>
-          <ProgressRing progressPct={data.todayProgressPct} />
-          <View style={{ flex: 1, minWidth: 0 }}>
+          <ProgressRing progressPct={data.todayProgressPct} size={86} strokeWidth={6}>
+            <Text style={[styles.ringValue, { color: theme.onInk.text }]}>{Math.round(data.todayProgressPct)}%</Text>
+            <Text style={[typo.legend, { color: theme.onInk.muted }]}>DEL DÍA</Text>
+          </ProgressRing>
+
+          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
             <View style={styles.spotlightBadgeRow}>
               <Badge label={isCurrent ? "En curso" : "Próxima"} tone="gold" />
-              <Text style={styles.spotlightCountdownLabel}>
-                {isCurrent ? "quedan" : "empieza en"} <Countdown initialSeconds={seconds} style={styles.spotlightCountdown} />
+              <Text style={[typo.rowMetaSmall, { color: theme.onInk.muted }]}>
+                {isCurrent ? "quedan " : "empieza en "}
+                <Countdown initialSeconds={seconds} format="mmss" style={[styles.countdown, { color: theme.onInk.text }]} />
               </Text>
             </View>
-            <Text style={styles.spotlightTitle} numberOfLines={1}>
+            <Text style={[styles.spotlightTitle, { color: theme.onInk.text }]} numberOfLines={1}>
               {spotlight.startTime}–{spotlight.endTime} · {spotlight.title}
             </Text>
-            <Text style={styles.spotlightMeta} numberOfLines={2}>
+            <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={2}>
               {spotlight.meta}
             </Text>
-            <Pressable
-              onPress={() =>
-                isCurrent && spotlight.soloMemberId
-                  ? null
-                  : router.push({ pathname: "/brief/[id]", params: { id: spotlight.id, d: data.agendaDay } })
-              }
-              style={styles.spotlightButton}
-            >
-              <Text style={styles.spotlightButtonText}>{isCurrent ? "Ver sesión" : "Abrir Session Brief"}</Text>
-            </Pressable>
+            <Button
+              title="Ver sesión"
+              size="sm"
+              style={{ alignSelf: "flex-start", marginTop: 6 }}
+              onPress={() => router.push({ pathname: "/brief/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
+            />
           </View>
         </View>
       </HeroCard>
@@ -153,78 +188,66 @@ function Spotlight({ data }: { data: TrainerPanelResponse }) {
   );
 }
 
-function openBrief(item: TrainerPendingItem) {
-  router.push({ pathname: "/brief/[id]", params: { id: item.sessionId, d: item.occurrenceDate } });
-}
-
-function Kpi({ label, value, accent }: { label: string; value: string; accent?: "gold" | "good" }) {
-  const theme = useTheme();
-  const color = accent === "gold" ? theme.gold : accent === "good" ? theme.good : theme.text;
+function PendingRow({ item }: { item: TrainerPendingItem }) {
   return (
-    <Card style={styles.kpiCard}>
-      <Text style={[styles.kpiValue, { color }]}>{value}</Text>
-      <Text style={[styles.kpiLabel, { color: theme.textMuted }]}>{label}</Text>
-    </Card>
+    <ListRow
+      title={item.title}
+      meta={item.detail}
+      right={
+        <Button
+          title="Rellenar"
+          variant="gold"
+          size="sm"
+          onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: item.sessionId, d: item.occurrenceDate } })}
+        />
+      }
+    />
   );
 }
 
-function SessionRow({ session }: { session: TrainerAgendaSession }) {
+function AgendaRow({ session, agendaDay }: { session: TrainerAgendaSession; agendaDay: string }) {
   const theme = useTheme();
+  const isNow = session.status === "current";
+
   return (
-    <View style={styles.sessionRow}>
-      <View style={{ width: 56 }}>
-        <Text style={[styles.sessionTime, { color: theme.textSecondary }]}>{session.startTime}</Text>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.sessionTitle, { color: theme.text }]}>{session.title}</Text>
-        <Text style={[styles.sessionMeta, { color: theme.textMuted }]}>{session.meta}</Text>
+    <View
+      style={[
+        styles.agendaRow,
+        isNow
+          ? { backgroundColor: "rgba(200,171,114,.08)", borderColor: theme.gold, borderWidth: 1, borderRadius: radii.chip }
+          : null,
+        session.status === "past" ? { opacity: 0.6 } : null,
+      ]}
+    >
+      <Text style={[styles.agendaTime, { color: theme.textSecondary }]}>{session.startTime}</Text>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={[typo.rowTitleSmall, { color: theme.text }]} numberOfLines={1}>
+          {session.title}
+        </Text>
+        <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]} numberOfLines={1}>
+          {session.meta}
+        </Text>
       </View>
       <Badge label={session.chipLabel} tone={session.chipTone} />
+      <Button
+        title="Feedback"
+        variant="ghost"
+        size="sm"
+        onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: session.id, d: agendaDay } })}
+      />
     </View>
   );
 }
 
-function PendingRow({ item, tone, onPress }: { item: TrainerPendingItem; tone: "warning" | "good"; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable style={styles.pendingRow} onPress={onPress}>
-      <Badge label={item.label} tone={tone} />
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.pendingTitle, { color: theme.text }]}>{item.title}</Text>
-        <Text style={[styles.pendingMeta, { color: theme.textMuted }]}>{item.detail}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  kicker: { fontFamily: "Poppins_700Bold", fontSize: 11, letterSpacing: 1.5 },
-  title: { fontFamily: "Poppins_700Bold", fontSize: 26, marginTop: 4 },
   kpiRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  kpiCard: { minWidth: "45%", flex: 1, alignItems: "center", padding: 14 },
-  kpiValue: { fontFamily: "Poppins_700Bold", fontSize: 20 },
-  kpiLabel: { fontFamily: "Poppins_500Medium", fontSize: 11, marginTop: 2, textAlign: "center" },
-  cardTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 15, marginBottom: 4 },
-  sessionRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(0,0,0,0.08)" },
-  sessionTime: { fontFamily: "Poppins_600SemiBold", fontSize: 12 },
-  sessionTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 14 },
-  sessionMeta: { fontFamily: "Poppins_400Regular", fontSize: 12, marginTop: 1 },
-  alertRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
-  alertName: { fontFamily: "Poppins_600SemiBold", fontSize: 13 },
-  alertMeta: { fontFamily: "Poppins_400Regular", fontSize: 12 },
-  clientRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(0,0,0,0.08)" },
-  clientName: { fontFamily: "Poppins_600SemiBold", fontSize: 14 },
-  clientMeta: { fontFamily: "Poppins_400Regular", fontSize: 12, marginTop: 1 },
-  clientAdherence: { fontFamily: "Poppins_700Bold", fontSize: 14 },
-  pendingRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
-  pendingTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 13 },
-  pendingMeta: { fontFamily: "Poppins_400Regular", fontSize: 12 },
   spotlightRow: { flexDirection: "row", gap: 16, alignItems: "center" },
+  ringValue: { fontFamily: fonts.bold, fontSize: 17, ...tabular },
   spotlightBadgeRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  spotlightCountdownLabel: { fontFamily: "Poppins_400Regular", fontSize: 12, color: "#A8A296" },
-  spotlightCountdown: { fontFamily: "Poppins_700Bold", fontSize: 12, color: "#F4F0E8" },
-  spotlightTitle: { fontFamily: "Poppins_700Bold", fontSize: 17, color: "#F4F0E8", marginTop: 8 },
-  spotlightMeta: { fontFamily: "Poppins_400Regular", fontSize: 13, color: "#D8CCB8", marginTop: 2 },
-  spotlightButton: { backgroundColor: "#F4F0E8", borderRadius: 10, paddingVertical: 10, alignItems: "center", marginTop: 12, alignSelf: "flex-start", paddingHorizontal: 16 },
-  spotlightButtonText: { fontFamily: "Poppins_700Bold", fontSize: 13, color: "#1D1D1C" },
+  countdown: { fontFamily: fonts.bold, fontSize: 12, ...tabular },
+  spotlightTitle: { fontFamily: fonts.bold, fontSize: 16.5 },
+  pendingHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  agendaRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12 },
+  agendaTime: { fontFamily: fonts.bold, fontSize: 12.5, width: 44, ...tabular },
+  adherence: { fontFamily: fonts.bold, fontSize: 13, ...tabular },
 });

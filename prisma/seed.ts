@@ -366,13 +366,15 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   // ---------- Catálogo comercial ----------
   // Catálogo (decisión de producto): dos modalidades — Grupos reducidos y
   // Entrenamiento personal — cada una con bonos de 4, 8 y 12 sesiones.
+  // `description` alimenta los puntos del catálogo de la app móvil (una línea
+  // por ventaja); `imageUrl` lo sube dirección desde la ficha del producto.
   const plans = [
-    { id: id(), name: "Grupos reducidos · Bono 4 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 4 as number | null, priceCents: 4000, validityDays: 30 },
-    { id: id(), name: "Grupos reducidos · Bono 8 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 8 as number | null, priceCents: 7200, validityDays: 60 },
-    { id: id(), name: "Grupos reducidos · Bono 12 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 12 as number | null, priceCents: 10200, validityDays: 90 },
-    { id: id(), name: "Entrenamiento personal · Bono 4 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 4 as number | null, priceCents: 14000, validityDays: 30 },
-    { id: id(), name: "Entrenamiento personal · Bono 8 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 8 as number | null, priceCents: 26400, validityDays: 60 },
-    { id: id(), name: "Entrenamiento personal · Bono 12 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 12 as number | null, priceCents: 37200, validityDays: 90 },
+    { id: id(), name: "Grupos reducidos · Bono 4 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 4 as number | null, priceCents: 4000, validityDays: 30, description: "4 sesiones en grupo de hasta 6\nCaducan a 30 días\nCambia de horario cuando quieras" },
+    { id: id(), name: "Grupos reducidos · Bono 8 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 8 as number | null, priceCents: 7200, validityDays: 60, description: "8 sesiones en grupo de hasta 6\nCaducan a 60 días\nEl más elegido del centro" },
+    { id: id(), name: "Grupos reducidos · Bono 12 sesiones", type: PlanType.SESSION_PACK, sessionsIncluded: 12 as number | null, priceCents: 10200, validityDays: 90, description: "12 sesiones en grupo de hasta 6\nCaducan a 90 días\nEl mejor precio por sesión" },
+    { id: id(), name: "Entrenamiento personal · Bono 4 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 4 as number | null, priceCents: 14000, validityDays: 30, description: "4 sesiones uno a uno\nCaducan a 30 días\nPlan de entrenamiento a medida" },
+    { id: id(), name: "Entrenamiento personal · Bono 8 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 8 as number | null, priceCents: 26400, validityDays: 60, description: "8 sesiones uno a uno\nCaducan a 60 días\nSeguimiento de composición corporal" },
+    { id: id(), name: "Entrenamiento personal · Bono 12 sesiones", type: PlanType.PERSONAL_TRAINING, sessionsIncluded: 12 as number | null, priceCents: 37200, validityDays: 90, description: "12 sesiones uno a uno\nCaducan a 90 días\nRevisión mensual con tu entrenador" },
   ];
   await prisma.membershipPlan.createMany({ data: plans.map((p) => ({ ...p, orgId })) });
   const [group4, group8, group12, ep4, ep8, ep12] = plans;
