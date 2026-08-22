@@ -792,51 +792,50 @@ nuevo en schema.prisma, PARA y dilo en vez de migrar por tu cuenta.
   remitente verificado, `JOBS_CRON_SECRET`, y un despliegue accesible desde el
   emulador. Sin eso, esas fases se validan a medias.
 
-### 11.7 `e2e/billing-dashboard.spec.ts` está inestable — arreglarlo en F9
+### 11.7 La carrera del login en los e2e — RESUELTA (PR #124)
 
-Dos ejecuciones de CI sobre el mismo código (solo cambiaba este `.md`) dieron
-resultados distintos:
+`e2e/billing-dashboard.spec.ts` caía de forma inestable en CI:
+`strict mode violation: getByText('LTV medio por cliente') resolved to 2 elements`.
+Tres ejecuciones seguidas en rojo, con el conjunto de tests fallidos variando entre
+ellas sobre contenido idéntico.
 
-| Ejecución | Resultado |
-|---|---|
-| 1ª | 42 pasan · 16 saltados · **1 falla** (`:20`, métricas de BI) |
-| 2ª | 40 pasan · 17 saltados · **2 fallan** (`:20` y `:5`, aviso de Stripe) |
+**Causa, medida instrumentando `loginAs`:**
 
-Que el conjunto de fallos cambie entre ejecuciones con código idéntico es la
-definición de suite inestable. El de la línea 20 falla en las dos; el de la línea 5
-solo en una.
+```
+URL tras login:            http://localhost:3000/dashboard
+nodos LTV antes del goto:  0
+nodos LTV tras el goto:    1
+```
 
-**Lo que está confirmado:**
+1. `loginAs` devolvía el control demasiado pronto: `waitForURL` se cumple cuando el
+   App Router cambia la URL, pero el destino aún no está pintado — de ahí los cero nodos.
+2. El test navegaba a la ruta en la que ya estaba (dirección aterriza en `/dashboard`
+   al iniciar sesión), lanzando una segunda navegación sobre la primera en vuelo.
 
-- El error es `strict mode violation: getByText('LTV medio por cliente') resolved to
-  2 elements`, y ambas copias llegan al timeout de 5 s con `unexpected value "hidden"`.
-- **No es un bug de producto.** El label aparece una sola vez en el código
-  (`dashboard/page.tsx:172`, un único `KpiCard`), pero el DOM presenta dos nodos
-  idénticos, con la misma clase.
-- **No es `prefers-reduced-motion`.** El bloque de `globals.css:705` acorta duraciones
-  sin dejar pegado el estado inicial de la animación, que sería la trampa habitual.
-- **No lo causa ningún cambio de producto**: el commit base pasó en verde en `release`
-  el 20 de agosto.
-- La última aserción de ese mismo test ya usa `.first()` para el mapa de calor —
-  alguien se topó con esto antes y lo parcheó solo en esa línea.
+En el runner de CI los dos árboles convivían en el DOM lo suficiente para que el
+locator encontrase dos coincidencias. Era el único fichero del suite que navegaba a la
+ruta donde el login ya había aterrizado; el resto va a rutas distintas, donde `goto`
+espera correctamente.
 
-**Lo que falta por determinar:** de dónde sale el segundo nodo. La hipótesis en pie es
-que el test hace `loginAs()` —que ya aterriza en `/dashboard`— y **luego** un
-`page.goto("/dashboard")` redundante, de modo que durante la transición del App Router
-conviven el árbol saliente y el entrante. No está comprobado. El `trace.zip` está en el
-artefacto `playwright-report` de la ejecución fallida: ábrelo con
-`npx playwright show-trace` antes de tocar nada, o reprodúcelo en local.
+**Arreglo (mergeado):** `loginAs` espera además a que el `main` del destino sea
+visible — ataca la causa común, no solo este test —, y fuera el `goto` redundante.
+CI en verde. **No hay nada que hacer aquí en F9.**
 
-**Arreglo (F9), por orden de preferencia:**
+### 11.8 Lo que sigue pendiente: la suite depende de su propio estado
 
-1. Quitar el `goto` redundante si `loginAs` ya deja la sesión en el panel.
-2. Si no, acotar las aserciones con `.first()`, como ya se hizo en la última línea.
-3. **Nunca** un `waitForTimeout`: tapa la carrera en vez de cerrarla, y devuelve el
-   problema con intereses.
+Ejecutando el suite completo en local fallan **9 tests** que en CI pasan, con y sin el
+arreglo anterior: cuatro de `members-bonos-calendario`, uno de `portal-reservas` y
+cuatro de `reservas-e2e`. El primero revienta en
+`prisma.user.findFirstOrThrow({ email: "entrenador@trainingzone.es" })`.
 
-Revisar de paso si el resto del suite comparte el patrón `loginAs` + `goto` a la misma
-ruta. Este repo ya arregló tandas de e2e frágiles dos veces (commits `ae243b1` y
-`c13b132`); merece la pena cortar la causa común y no el síntoma de hoy.
+Apunta a que los tests **dependen del estado que dejan los anteriores** y no son
+idempotentes: repetir el suite sin volver a sembrar cambia el resultado. Encaja con que
+en CI el conjunto de fallos variase entre ejecuciones.
+
+No bloquea la jornada, pero conviene tenerlo presente: con varias sesiones escribiendo
+tests nuevos sobre esa base, los rojos ajenos van a confundir a todo el mundo. Merece
+su propio PR — con `ae243b1` y `c13b132`, sería la tercera vez que este repo arregla
+e2e frágiles, y la causa de fondo sigue ahí.
 
 ---
 
