@@ -236,3 +236,68 @@ export async function resolveHealthRecord({
   return { ok: true };
 }
 
+/**
+ * Propagación del screening de una valoración (F3 §4.3). Si las lesiones
+ * declaradas se quedaran dentro de `Assessment.answers`, el Semáforo de Aptitud
+ * y el Session Brief no se enterarían de ellas — y son justo las dos cosas para
+ * las que se pregunta. Entra por el mismo punto único que el resto: permisos,
+ * consentimiento de salud y rastro append-only en AuditLog.
+ */
+export async function createHealthRecordsFromAssessment({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+  assessmentId,
+  records,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  assessmentId: string;
+  records: {
+    type: HealthRecordType;
+    zone: string | null;
+    description: string;
+    severity: HealthSeverity;
+  }[];
+}): Promise<HealthWriteResult> {
+  if (!canEditHealthData(actorRole)) return { ok: false, error: "forbidden" };
+  if (!records.length) return { ok: true };
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { id: true, consentHealth: true },
+  });
+  if (!member) return { ok: false, error: "not_found" };
+  if (!member.consentHealth) return { ok: false, error: "no_consent" };
+
+  const now = new Date();
+  await prisma.healthRecord.createMany({
+    data: records.map((r) => ({
+      memberId,
+      type: r.type,
+      zone: r.zone,
+      description: r.description,
+      severity: r.severity,
+      status: "ACTIVE" as const,
+      reportedByUserId: actorUserId,
+      consentSignedAt: now,
+    })),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "HEALTH_RECORD_CREATED_FROM_ASSESSMENT",
+      entityType: "Assessment",
+      entityId: assessmentId,
+      memberId,
+      metadata: { count: records.length, zones: records.map((r) => r.zone) },
+    },
+  });
+
+  return { ok: true };
+}

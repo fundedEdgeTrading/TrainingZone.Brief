@@ -2,10 +2,9 @@
 
 import { prisma } from "@/lib/prisma";
 import { MIN_PASSWORD_LENGTH, ensureIdentity, hashPassword, setPassword } from "@/lib/identity";
+import { CONSENT_VERSION } from "@/lib/consent";
 
 export type OnboardingResult = { ok: true } | { ok: false; error: string };
-
-const CONSENT_VERSION = "2026-07-v1";
 
 function invitationInvalidError(reason: "notfound" | "used" | "expired" | "type"): string | null {
   switch (reason) {
@@ -51,7 +50,14 @@ export async function completeStaffOnboarding(token: string, password: string): 
 
 export async function completeMemberOnboarding(
   token: string,
-  input: { password?: string; consentHealth: boolean; consentImages: boolean; consentMarketing: boolean; sex?: "FEMALE" | "MALE" | "OTHER" | "" }
+  input: {
+    password?: string;
+    consentHealth: boolean;
+    consentImages: boolean;
+    consentMarketing: boolean;
+    consentAI: boolean;
+    sex?: "FEMALE" | "MALE" | "OTHER" | "";
+  }
 ): Promise<OnboardingResult> {
   const invitation = await prisma.invitation.findUnique({ where: { token } });
   if (!invitation) return { ok: false, error: invitationInvalidError("notfound")! };
@@ -121,6 +127,10 @@ export async function completeMemberOnboarding(
         consentImagesAt: input.consentImages ? now : null,
         consentMarketing: input.consentMarketing,
         consentMarketingAt: input.consentMarketing ? now : null,
+        // F3 §4.4: la IA es un consentimiento propio y separado. Oponerse no
+        // afecta al acceso al servicio — solo a por qué vía entra en F6.
+        consentAI: input.consentAI,
+        consentAIAt: input.consentAI ? now : null,
         consentVersion: CONSENT_VERSION,
       },
     });
