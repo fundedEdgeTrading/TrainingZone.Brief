@@ -114,7 +114,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const org = await prisma.organization.findUnique({ where: { id: claims.orgId }, select: { name: true, logoUrl: true } });
+  const [org, inviteCenter] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: claims.orgId }, select: { name: true, logoUrl: true } }),
+    centerId
+      ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, address: true } })
+      : Promise.resolve(null),
+  ]);
   // Email de invitación no bloqueante: el alta ya está guardada.
   void sendMail({
     to: email,
@@ -126,6 +131,8 @@ export async function POST(req: NextRequest) {
       orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       roleLabel: ROLE_LABEL[role],
       onboardingUrl: onboardingUrlFor(invitation.token),
+      centerName: inviteCenter?.name,
+      postalAddress: inviteCenter?.address ?? undefined,
     }),
   });
 

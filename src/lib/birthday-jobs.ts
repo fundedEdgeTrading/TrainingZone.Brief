@@ -4,6 +4,8 @@ import { renderBirthdayEmail } from "@/lib/emails/templates";
 import { absoluteUrl } from "@/lib/invitations";
 import { createNotification, resolveNotification } from "@/lib/notifications";
 import { isBirthdayOn, zonedToday, DEFAULT_TIMEZONE } from "@/lib/date-utils";
+import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 
 /**
  * F5 — felicitación de cumpleaños. Dos registros con papeles distintos:
@@ -37,8 +39,11 @@ export async function runBirthdayRule(orgId: string): Promise<number> {
         email: true,
         birthDate: true,
         userId: true,
-        primaryCenter: { select: { timezone: true } },
+        joinedAt: true,
+        ...MEMBER_EMAIL_PREFERENCES_SELECT,
+        primaryCenter: { select: { name: true, address: true, timezone: true } },
         user: { select: { email: true } },
+        _count: { select: { bookings: { where: { status: "ATTENDED" } } } },
       },
     }),
   ]);
@@ -90,11 +95,28 @@ export async function runBirthdayRule(orgId: string): Promise<number> {
 
     const to = member.user?.email ?? member.email;
     if (!to) continue;
+    // La felicitación por correo es prescindible: quien la ha desactivado (o se
+    // dio de baja de todo) sigue teniendo su tarjeta en el portal, pero no el
+    // email. La `Notification` de arriba no depende de esta preferencia.
+    if (!canSendMemberEmail("birthday", member)) continue;
+
+    const footer = memberEmailFooterLinks(member.id);
     void sendMail({
       to,
       fromName: brandName,
       subject: `¡Felicidades, ${member.firstName}!`,
-      html: renderBirthdayEmail({ memberFirstName: member.firstName, brandName, brandLogoUrl, portalUrl }),
+      html: renderBirthdayEmail({
+        memberFirstName: member.firstName,
+        brandName,
+        brandLogoUrl,
+        portalUrl,
+        memberSinceLabel: member.joinedAt.toLocaleDateString("es-ES", { month: "long", year: "numeric" }),
+        sessionCount: member._count.bookings,
+        centerName: member.primaryCenter.name,
+        postalAddress: member.primaryCenter.address ?? undefined,
+        prefsToken: footer.token,
+      }),
+      unsubscribeUrl: footer.oneClickUnsubscribeUrl,
     });
   }
 

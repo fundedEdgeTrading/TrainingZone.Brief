@@ -137,7 +137,12 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
     });
   }
 
-  const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
+  const [org, inviteCenter] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } }),
+    centerId
+      ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, address: true } })
+      : Promise.resolve(null),
+  ]);
   // Email de invitación no bloqueante: el staff ya está guardado, un SMTP lento no debe colgar el alta.
   void sendMail({
     to: email,
@@ -149,6 +154,8 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
       orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       roleLabel: ROLE_LABEL[role],
       onboardingUrl: onboardingUrlFor(invitation.token),
+      centerName: inviteCenter?.name,
+      postalAddress: inviteCenter?.address ?? undefined,
     }),
   });
 

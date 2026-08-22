@@ -6,6 +6,7 @@ import { confirmLeadClosureForMember, revertLeadClosureForFailedPayment } from "
 import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -129,7 +130,7 @@ async function provisionMemberFromLandingCheckout(orgId: string, session: Stripe
 
     const [plan, center] = await Promise.all([
       prisma.membershipPlan.findFirst({ where: { id: planId, orgId } }),
-      prisma.center.findFirst({ where: { id: centerId, orgId }, select: { id: true, name: true } }),
+      prisma.center.findFirst({ where: { id: centerId, orgId }, select: { id: true, name: true, address: true } }),
     ]);
     if (!plan || !center) {
       console.error("[webhook] provisionMemberFromLandingCheckout: plan o centro no encontrado", { orgId, planId, centerId });
@@ -186,6 +187,7 @@ async function provisionMemberFromLandingCheckout(orgId: string, session: Stripe
     //    best-effort: el socio ya está guardado, un SMTP lento no debe
     //    bloquear el webhook.
     const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } });
+    const footer = memberEmailFooterLinks(member.id);
     void sendMail({
       to: email,
       fromName: org?.name ?? "Training Zone",
@@ -196,7 +198,11 @@ async function provisionMemberFromLandingCheckout(orgId: string, session: Stripe
         orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
         centerName: center.name,
         onboardingUrl: onboardingUrlFor(invitation.token),
+        memberFullName: `${firstName} ${lastName}`,
+        postalAddress: center.address ?? undefined,
+        prefsToken: footer.token,
       }),
+      unsubscribeUrl: footer.oneClickUnsubscribeUrl,
     });
   } catch (error) {
     // 4. El webhook nunca debe tumbarse por esto: Stripe reintentaría

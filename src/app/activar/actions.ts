@@ -30,19 +30,28 @@ export async function resendVerificationEmailAction(): Promise<ResendResult> {
   if (!user) return { ok: false, error: "Usuario no encontrado." };
   if (user.identity.emailVerifiedAt) return { ok: true };
 
-  const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true } });
+  const org = await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { name: true, logoUrl: true, centers: { select: { name: true, address: true }, orderBy: { createdAt: "asc" } } },
+  });
   const token = generateVerifyEmailToken(user.identity.id);
+  const orgName = org?.name ?? "Training Zone";
 
   try {
     await sendMail({
       to: user.email,
-      fromName: "Apta",
-      subject: `Confirma tu email — ${org?.name ?? "Apta"}`,
+      // El correo de dirección lo firma la plataforma, y la plataforma es
+      // Training Zone: el rediseño de las plantillas retiró la marca Apta.
+      fromName: "Training Zone",
+      subject: `Confirma tu email — ${orgName}`,
       html: renderVerifyEmail({
-        directorFirstName: user.name,
-        orgName: org?.name ?? "Apta",
-        orgLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
+        directorFirstName: user.name.split(/\s+/)[0] ?? user.name,
+        orgName,
+        orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
         verifyUrl: verifyEmailUrlFor(token),
+        directorEmail: user.email,
+        centerNames: org?.centers.map((c) => c.name),
+        postalAddress: org?.centers[0]?.address ?? undefined,
       }),
     });
   } catch {
