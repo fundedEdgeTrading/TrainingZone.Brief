@@ -3,6 +3,8 @@ import { sendMail } from "@/lib/mailer";
 import { renderSessionVacancyEmail } from "@/lib/emails/templates";
 import { absoluteUrl } from "@/lib/invitations";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 
 /**
  * RB-RES-007 (decisión de negocio): en vez de "promocionar" automáticamente a
@@ -26,11 +28,28 @@ export async function notifySessionVacancy(params: {
 
   const session = await prisma.classSession.findFirst({
     where: { id: sessionId, orgId },
-    select: { name: true, classType: true, startTime: true, centerId: true, center: { select: { name: true } } },
+    select: {
+      name: true,
+      classType: true,
+      startTime: true,
+      capacity: true,
+      room: true,
+      centerId: true,
+      center: { select: { name: true, address: true } },
+    },
   });
   if (!session) return;
 
   const kind = sessionServiceKind(session.classType);
+
+  // Plazas libres en ESA ocurrencia (no en la serie): mismo criterio de ocupación
+  // que la agenda — cuenta lo reservado, lo asistido y los no-show; la lista de
+  // espera no ocupa sitio (ver `agenda-queries.ts`).
+  const occupied = await prisma.booking.count({
+    where: { sessionId, occurrenceDate, status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+  });
+  const freeSpots = Math.max(0, session.capacity - occupied);
+  const spotsLabel = freeSpots > 0 ? `${freeSpots} ${freeSpots === 1 ? "plaza" : "plazas"}` : undefined;
 
   const [org, candidates] = await Promise.all([
     prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
@@ -44,14 +63,19 @@ export async function notifySessionVacancy(params: {
       select: {
         id: true,
         firstName: true,
+        ...MEMBER_EMAIL_PREFERENCES_SELECT,
         user: { select: { email: true } },
         subscriptions: { where: { status: "ACTIVE" }, select: { centerId: true, plan: { select: { type: true } } } },
       },
     }),
   ]);
 
-  const recipients = candidates.filter((m) =>
-    m.subscriptions.some((s) => s.centerId === session.centerId && planServiceKind(s.plan.type) === kind)
+  const recipients = candidates.filter(
+    (m) =>
+      m.subscriptions.some((s) => s.centerId === session.centerId && planServiceKind(s.plan.type) === kind) &&
+      // El aviso de plaza es correo prescindible: quien lo ha desactivado (o se
+      // ha dado de baja de todo) no entra en el reparto.
+      canSendMemberEmail("vacancy", m)
   );
   if (recipients.length === 0) return;
 
@@ -62,6 +86,7 @@ export async function notifySessionVacancy(params: {
 
   for (const member of recipients) {
     if (!member.user?.email) continue;
+    const footer = memberEmailFooterLinks(member.id);
     // Fire-and-forget, igual que el resto de emails transaccionales del
     // portal: un SMTP lento no debe retrasar la respuesta de la cancelación.
     void sendMail({
@@ -77,7 +102,12 @@ export async function notifySessionVacancy(params: {
         startTime: session.startTime,
         centerName: session.center.name,
         agendaUrl,
+        room: session.room ?? undefined,
+        spotsLabel,
+        postalAddress: session.center.address ?? undefined,
+        prefsToken: footer.token,
       }),
+      unsubscribeUrl: footer.oneClickUnsubscribeUrl,
     });
   }
 }

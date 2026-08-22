@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
 import { CONSENT_VERSION } from "@/lib/consent";
+import type { MemberEmailKind } from "@/lib/email-preferences";
 
 export type ProfileActionResult = { ok: true } | { ok: false; error: string };
 
@@ -137,5 +138,57 @@ export async function acceptCurrentConsentAction(consentAI: boolean): Promise<Pr
   });
 
   revalidatePath("/portal", "layout");
+  return { ok: true };
+}
+
+/**
+ * Preferencias de correo desde el portal. Es el mismo interruptor que el
+ * enlace del pie de los emails (`/preferencias/<token>`), pero para quien ya
+ * está dentro: obligarle a pedirse un correo para dejar de recibir correos
+ * sería absurdo. El marketing no entra aquí — vive arriba, como consentimiento
+ * RGPD, y tener el mismo dato en dos sitios de la misma pantalla confunde.
+ */
+export type EmailPreferenceKind = Exclude<MemberEmailKind, "marketing">;
+
+const EMAIL_PREFERENCE_FIELD: Record<EmailPreferenceKind, "notifyVacancies" | "notifyBirthday" | "notifyAssessments"> = {
+  vacancy: "notifyVacancies",
+  birthday: "notifyBirthday",
+  assessment: "notifyAssessments",
+};
+
+export async function updateMyEmailPreferenceAction(
+  kind: EmailPreferenceKind,
+  enabled: boolean
+): Promise<ProfileActionResult> {
+  const session = await requireRole(["MEMBER"]);
+  const member = await getMemberForUser(session.user.id);
+  if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+
+  const field = EMAIL_PREFERENCE_FIELD[kind];
+  if (!field) return { ok: false, error: "Preferencia desconocida." };
+
+  await prisma.member.update({
+    where: { id: member.id },
+    data: {
+      [field]: enabled,
+      // Encender cualquier aviso levanta la baja global: si no, el socio
+      // marcaría la casilla y seguiría sin recibir nada (ver `email-preferences`).
+      ...(enabled ? { emailOptOutAt: null } : {}),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      action: "EMAIL_PREFERENCES_UPDATED",
+      entityType: "MemberEmailPreferences",
+      entityId: member.id,
+      memberId: member.id,
+      metadata: { [kind]: enabled },
+    },
+  });
+
+  revalidatePath("/portal/perfil");
   return { ok: true };
 }

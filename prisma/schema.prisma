@@ -338,6 +338,17 @@ model Member {
   consentMarketingAt DateTime?
   consentAIAt        DateTime?
   consentVersion     String? // versión del texto legal firmado en el onboarding
+
+  // --- Preferencias de correo (pie "Preferencias" / "Darme de baja") ---
+  // El correo estrictamente transaccional (acceso, contraseña, cobros) no se
+  // puede desactivar: es parte del servicio contratado y sin él el socio se
+  // queda sin poder pagar ni entrar. Lo que sí se puede parar es todo lo demás.
+  notifyVacancies    Boolean     @default(true) // avisos de plaza liberada
+  notifyBirthday     Boolean     @default(true) // felicitación de cumpleaños
+  notifyAssessments  Boolean     @default(true) // recordatorio de valoración pendiente
+  /// Baja global de todo el correo no imprescindible. Se guarda la fecha, no un
+  /// booleano, porque es la prueba de cuándo se ejerció la oposición (Art. 21 RGPD).
+  emailOptOutAt      DateTime?
   notes              String?
   createdAt          DateTime    @default(now())
 
