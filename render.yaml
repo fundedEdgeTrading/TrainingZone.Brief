@@ -1,0 +1,46 @@
+# Blueprint de Render.
+#
+# El cron programado del día a día vive en GitHub Actions
+# (.github/workflows/jobs-cron.yml), que es gratis. Este fichero es el
+# equivalente en Render para cuando el piloto esté en marcha y la puntualidad
+# importe: los cron de Actions se retrasan y a veces se saltan ejecuciones.
+#
+# NO está activo por defecto. Para encenderlo: New → Blueprint en el dashboard
+# de Render, apuntando a este repo. Si lo activas, DESACTIVA el workflow de
+# Actions o las reglas se ejecutarán dos veces al día.
+services:
+  - type: cron
+    name: trainingzone-jobs-diario
+    # Imagen pública con curl: construir la app entera para hacer una petición
+    # HTTP sería pagar un build de varios minutos por cada ejecución.
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    plan: starter
+    region: frankfurt
+
+    # 05:00 UTC. Render evalúa en UTC y no aplica el cambio de hora: son las
+    # 07:00 en Madrid en verano y las 06:00 en invierno. Se elige de madrugada
+    # para que el desfase estacional nunca mueva la ejecución al día anterior.
+    schedule: "0 5 * * *"
+
+    # Mismo contrato que el workflow: secreto en cabecera (no en la query
+    # string, que acaba en los logs) y el 207 tratado como fallo, porque
+    # significa que alguna regla reventó y `curl -f` no lo detectaría.
+    dockerCommand: >-
+      sh -c '
+      code=$(curl -sS -o /tmp/r.json -w "%{http_code}" --max-time 300 --retry 2 --retry-delay 30
+      -H "x-cron-secret: $JOBS_CRON_SECRET" "$APP_URL/api/jobs/run");
+      cat /tmp/r.json;
+      echo "HTTP $code";
+      test "$code" = "200"
+      '
+
+    envVars:
+      # `sync: false` hace que Render pida el valor en el dashboard en vez de
+      # guardarlo aquí. El secreto NUNCA va en el repo, y tiene que coincidir
+      # con el del servicio web o el endpoint responde 401.
+      - key: JOBS_CRON_SECRET
+        sync: false
+      - key: APP_URL
+        sync: false
