@@ -32,3 +32,27 @@ export function SkeletonTable({ rows = 6 }: { rows?: number }) {
     </div>
   );
 }
+
+/** Fila de KPIs del panel de control: misma rejilla que la página real. */
+export function SkeletonKpiRow({ count = 6 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+      {Array.from({ length: count }).map((_, i) => (
+        <SkeletonCard key={i} />
+      ))}
+    </div>
+  );
+}
+
+/** Card con título y lienzo de gráfico. `height` iguala la altura de la card real. */
+export function SkeletonChartCard({ height = 288 }: { height?: number }) {
+  return (
+    <div
+      className="bg-brand-card border border-brand-border rounded-card p-[22px] flex flex-col gap-4"
+      style={{ height }}
+    >
+      <Skeleton className="h-3.5 w-44" />
+      <Skeleton className="flex-1" />
+    </div>
+  );
+}

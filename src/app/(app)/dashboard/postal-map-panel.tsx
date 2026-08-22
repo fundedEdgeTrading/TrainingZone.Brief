@@ -101,8 +101,13 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
 
           <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-[18px]">
             <div className="relative rounded-2xl overflow-hidden border border-tz-linen">
+              {/*
+                Se le pasa la lista completa y estable: el mapa filtra y
+                dimensiona por métrica sin rehacer los marcadores, para que el
+                radio de la burbuja interpole al cambiar de métrica.
+              */}
               <PostalHeatmap
-                points={rows}
+                points={points}
                 metric={metric}
                 hoveredCode={hovered}
                 onHoverProvince={setHovered}
@@ -161,8 +166,11 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                       <div className="flex items-center gap-2 mt-[5px]">
                         <div className="flex-1 h-[5px] rounded-full bg-tz-sand overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-tz-black transition-[width] duration-500"
-                            style={{ width: `${(metricValue(p) / maxValue) * 100}%` }}
+                            className="h-full rounded-full bg-tz-black origin-left"
+                            style={{
+                              width: `${(metricValue(p) / maxValue) * 100}%`,
+                              animation: `tzGrow .8s var(--ease-out-soft) ${(0.1 + Math.min(i, 8) * 0.04).toFixed(2)}s both`,
+                            }}
                           />
                         </div>
                         <span className="text-[10px] text-brand-muted whitespace-nowrap shrink-0 tz-nums">

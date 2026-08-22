@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
 import { groupNav, type NavItem } from "@/lib/rbac";
@@ -23,6 +23,25 @@ export type MemberSidebarData = {
   centerName: string;
   bono: MemberBonoCard;
 };
+
+/**
+ * Punto de 7×7 px del item de navegación. Mientras el `<Link>` que lo contiene
+ * está pendiente pasa a oro y pulsa con `tzLiveDot`: el usuario ve *qué* item
+ * ha pulsado mientras la ruta carga. `useLinkStatus` exige vivir dentro del
+ * `<Link>`, de ahí el componente aparte.
+ */
+function NavDot({ activeClass }: { activeClass: string }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden="true"
+      className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
+        pending ? "bg-apta-gold" : activeClass
+      }`}
+      style={pending ? { animation: "tzLiveDot 1.1s ease-in-out infinite" } : undefined}
+    />
+  );
+}
 
 export default function Sidebar({
   nav,
@@ -119,11 +138,7 @@ export default function Sidebar({
                           style={{ background: "linear-gradient(180deg,#e3cfa2,#b58e52)" }}
                         />
                       )}
-                      <span
-                        className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
-                          active ? "bg-apta-gold" : "bg-faint"
-                        }`}
-                      />
+                      <NavDot activeClass={active ? "bg-apta-gold" : "bg-faint"} />
                       <span className="flex-1">{item.label}</span>
                       {item.meta && <span className="text-[11px] font-bold tracking-[.06em] text-muted">{item.meta}</span>}
                       {!!item.badge && (
@@ -162,11 +177,7 @@ export default function Sidebar({
                       }`}
                       style={{ animation: `tzNavIn .45s ${(0.1 + i * 0.04).toFixed(2)}s both` }}
                     >
-                      <span
-                        className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
-                          active ? "bg-tz-bone" : "bg-faint"
-                        }`}
-                      />
+                      <NavDot activeClass={active ? "bg-tz-bone" : "bg-faint"} />
                       <span className="flex-1">{item.label}</span>
                       {!!item.badge && (
                         <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-critical text-white text-[11px] font-extrabold flex items-center justify-center">
