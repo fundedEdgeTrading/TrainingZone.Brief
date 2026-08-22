@@ -792,26 +792,51 @@ nuevo en schema.prisma, PARA y dilo en vez de migrar por tu cuenta.
   remitente verificado, `JOBS_CRON_SECRET`, y un despliegue accesible desde el
   emulador. Sin eso, esas fases se validan a medias.
 
-### 11.7 Un e2e frágil que va a molestar
+### 11.7 `e2e/billing-dashboard.spec.ts` está inestable — arreglarlo en F9
 
-`e2e/billing-dashboard.spec.ts:20` falla de forma intermitente con
-`strict mode violation: getByText('LTV medio por cliente') resolved to 2 elements`.
+Dos ejecuciones de CI sobre el mismo código (solo cambiaba este `.md`) dieron
+resultados distintos:
 
-**No es un bug de producto.** El label se renderiza una sola vez
-(`dashboard/page.tsx:172`, un único `KpiCard`). Son dos cosas sumadas:
+| Ejecución | Resultado |
+|---|---|
+| 1ª | 42 pasan · 16 saltados · **1 falla** (`:20`, métricas de BI) |
+| 2ª | 40 pasan · 17 saltados · **2 fallan** (`:20` y `:5`, aviso de Stripe) |
 
-1. `KpiCard` entra con `tz-fade-up` y `animationDelay: 0.5s`: durante medio segundo el
-   elemento existe pero no es visible (de ahí el `unexpected value "hidden"` del log).
-2. El test hace `loginAs()` —que ya aterriza en `/dashboard`— y **luego** un
-   `page.goto("/dashboard")` redundante. Durante esa transición conviven en el DOM el
-   árbol saliente y el entrante, y el locator encuentra dos.
+Que el conjunto de fallos cambie entre ejecuciones con código idéntico es la
+definición de suite inestable. El de la línea 20 falla en las dos; el de la línea 5
+solo en una.
 
-Es una carrera, no un fallo determinista: el mismo commit base pasó en verde el 20 de
-agosto. La última aserción de ese mismo test ya usa `.first()` para el mapa de calor —
-alguien se topó con esto antes y lo parcheó solo ahí.
+**Lo que está confirmado:**
 
-Arreglo (pertenece a F9): quitar el `goto` redundante, o acotar las aserciones con
-`.first()` como ya se hizo en la última línea. **No lo tapes con un `waitForTimeout`.**
+- El error es `strict mode violation: getByText('LTV medio por cliente') resolved to
+  2 elements`, y ambas copias llegan al timeout de 5 s con `unexpected value "hidden"`.
+- **No es un bug de producto.** El label aparece una sola vez en el código
+  (`dashboard/page.tsx:172`, un único `KpiCard`), pero el DOM presenta dos nodos
+  idénticos, con la misma clase.
+- **No es `prefers-reduced-motion`.** El bloque de `globals.css:705` acorta duraciones
+  sin dejar pegado el estado inicial de la animación, que sería la trampa habitual.
+- **No lo causa ningún cambio de producto**: el commit base pasó en verde en `release`
+  el 20 de agosto.
+- La última aserción de ese mismo test ya usa `.first()` para el mapa de calor —
+  alguien se topó con esto antes y lo parcheó solo en esa línea.
+
+**Lo que falta por determinar:** de dónde sale el segundo nodo. La hipótesis en pie es
+que el test hace `loginAs()` —que ya aterriza en `/dashboard`— y **luego** un
+`page.goto("/dashboard")` redundante, de modo que durante la transición del App Router
+conviven el árbol saliente y el entrante. No está comprobado. El `trace.zip` está en el
+artefacto `playwright-report` de la ejecución fallida: ábrelo con
+`npx playwright show-trace` antes de tocar nada, o reprodúcelo en local.
+
+**Arreglo (F9), por orden de preferencia:**
+
+1. Quitar el `goto` redundante si `loginAs` ya deja la sesión en el panel.
+2. Si no, acotar las aserciones con `.first()`, como ya se hizo en la última línea.
+3. **Nunca** un `waitForTimeout`: tapa la carrera en vez de cerrarla, y devuelve el
+   problema con intereses.
+
+Revisar de paso si el resto del suite comparte el patrón `loginAs` + `goto` a la misma
+ruta. Este repo ya arregló tandas de e2e frágiles dos veces (commits `ae243b1` y
+`c13b132`); merece la pena cortar la causa común y no el síntoma de hoy.
 
 ---
 
