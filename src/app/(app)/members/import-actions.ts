@@ -1,17 +1,19 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { Prisma } from "@prisma/client";
+import { Prisma, type PlanType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/guard";
 import { canImportMembers } from "@/lib/rbac";
-import { parseMembersCsv, type ParsedMemberData } from "@/lib/member-import";
+import { parseMembersCsv, type ParsedMemberData, type ParsedSubscriptionData } from "@/lib/member-import";
 
 export type ImportSummary = {
   total: number;
   created: number;
   updated: number;
   skipped: number;
+  /** Cuotas dadas de alta a partir de la columna «Plan» del CSV. */
+  subscriptionsCreated: number;
   errors: { row: number; messages: string[] }[];
 };
 
@@ -48,6 +50,67 @@ function commonData(d: ParsedMemberData) {
   };
 }
 
+
+/** Mismo criterio laxo que las cabeceras: sin acentos, sin mayúsculas, sin dobles espacios. */
+function normalizePlanName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+type PlanRef = { id: string; name: string; type: PlanType; priceCents: number };
+
+/**
+ * Da de alta la cuota que el socio ya venía pagando. Devuelve `true` solo si ha
+ * creado una suscripción nueva.
+ *
+ * Es idempotente a propósito: una migración real se ejecuta varias veces —el
+ * gimnasio corrige el CSV y lo vuelve a subir— y duplicar la cuota significaría
+ * cobrar dos veces al mismo socio.
+ */
+async function upsertImportedSubscription(
+  memberId: string,
+  centerId: string,
+  plan: PlanRef,
+  sub: ParsedSubscriptionData,
+  joinedAt: Date | null
+): Promise<boolean> {
+  const existing = await prisma.subscription.findFirst({
+    where: { memberId, planId: plan.id, status: { in: ["ACTIVE", "FROZEN"] } },
+    select: { id: true },
+  });
+
+  const priceCents = sub.priceCents ?? plan.priceCents;
+  // Sin fecha de alta de la cuota se usa la de inscripción del socio: es lo más
+  // cercano a la verdad y deja el histórico coherente. `new Date()` fecharía
+  // todas las altas el día de la importación y falsearía la antigüedad.
+  const startDate = sub.startDate ?? joinedAt ?? new Date();
+  const sessionsRemaining = plan.type === "SESSION_PACK" ? sub.sessionsRemaining : null;
+
+  if (existing) {
+    await prisma.subscription.update({
+      where: { id: existing.id },
+      data: { priceCents, startDate, ...(sessionsRemaining !== null ? { sessionsRemaining } : {}) },
+    });
+    return false;
+  }
+
+  await prisma.subscription.create({
+    data: {
+      memberId,
+      planId: plan.id,
+      centerId,
+      startDate,
+      priceCents,
+      ...(sessionsRemaining !== null ? { sessionsRemaining } : {}),
+    },
+  });
+  return true;
+}
+
 export async function importMembersCsv(formData: FormData): Promise<ImportMembersResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
   if (!canImportMembers(session.user.role)) {
@@ -79,11 +142,20 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
     return { ok: false, error: `El CSV supera el máximo de ${MAX_ROWS} filas por importación.` };
   }
 
+  // Los planes se cargan una vez, no por fila: una importación de 5.000 socios
+  // haría 5.000 consultas idénticas.
+  const plans = await prisma.membershipPlan.findMany({
+    where: { orgId, active: true },
+    select: { id: true, name: true, type: true, priceCents: true },
+  });
+  const plansByName = new Map(plans.map((p) => [normalizePlanName(p.name), p]));
+
   const summary: ImportSummary = {
     total: rows.length,
     created: 0,
     updated: 0,
     skipped: 0,
+    subscriptionsCreated: 0,
     errors: [],
   };
 
@@ -95,6 +167,27 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
     }
 
     const d = row.data;
+
+    // El plan se valida ANTES de tocar la base: si el CSV nombra una tarifa que
+    // no existe, es un error de la fila entera y no vale importar a la persona
+    // dejándola sin cuota — quedaría como socio activo que nadie cobra, que es
+    // justo el silencio que esta importación viene a evitar.
+    let plan: PlanRef | null = null;
+    if (row.subscription) {
+      plan = plansByName.get(normalizePlanName(row.subscription.planName)) ?? null;
+      if (!plan) {
+        summary.skipped++;
+        summary.errors.push({
+          row: row.rowNumber,
+          messages: [
+            `El plan «${row.subscription.planName}» no existe o está archivado. ` +
+              "Créalo en Productos antes de importar, o corrige el nombre en el CSV.",
+          ],
+        });
+        continue;
+      }
+    }
+
     try {
       // Localiza al socio existente por la clave estable del origen y, en su
       // defecto, por email dentro de la organización — para no duplicar.
@@ -123,8 +216,18 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
           },
         });
         summary.updated++;
+        if (plan && row.subscription) {
+          const created = await upsertImportedSubscription(
+            existing.id,
+            center.id,
+            plan,
+            row.subscription,
+            d.joinedAt
+          );
+          if (created) summary.subscriptionsCreated++;
+        }
       } else {
-        await prisma.member.create({
+        const member = await prisma.member.create({
           data: {
             orgId,
             primaryCenterId: center.id,
@@ -139,6 +242,16 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
           },
         });
         summary.created++;
+        if (plan && row.subscription) {
+          const created = await upsertImportedSubscription(
+            member.id,
+            center.id,
+            plan,
+            row.subscription,
+            d.joinedAt
+          );
+          if (created) summary.subscriptionsCreated++;
+        }
       }
     } catch (e) {
       summary.skipped++;
