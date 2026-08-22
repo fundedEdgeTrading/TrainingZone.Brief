@@ -3,6 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { stripeForOrg } from "@/lib/stripe";
 import { createPaymentWithReceipt } from "@/lib/payments";
 import { createNotificationOnce } from "@/lib/notifications";
+import { sendMail } from "@/lib/mailer";
+import { renderPaymentFailedEmail } from "@/lib/emails/templates";
+import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-verification";
+import { absoluteUrl } from "@/lib/invitations";
 import type { PlanType, SubscriptionStatus } from "@prisma/client";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
@@ -452,6 +456,69 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
 }
 
 /** `invoice.payment_failed`: marca al socio moroso y avisa a recepción/dirección — idempotente por `Payment.stripeInvoiceId`. */
+/**
+ * Registro de envío del aviso de impago. Va en `AuditLog` (append-only, no
+ * exige cuenta de usuario) y no en el propio `Payment`, porque la fila de pago
+ * se actualiza en cada reintento y no sirve de marca de "ya avisado".
+ *
+ * La clave es la FACTURA, no el socio: Stripe reintenta la misma factura varias
+ * veces en un ciclo de dunning, y el socio debe recibir un aviso por cobro
+ * fallido, no uno por reintento.
+ */
+const DUNNING_ENTITY = "DunningNotice";
+const DUNNING_SENT_ACTION = "DUNNING_NOTICE_SENT";
+
+async function sendDunningNoticeOnce(
+  orgId: string,
+  memberId: string,
+  invoiceId: string,
+  amountCents: number
+): Promise<void> {
+  const already = await prisma.auditLog.findFirst({
+    where: { entityType: DUNNING_ENTITY, entityId: invoiceId },
+    select: { id: true },
+  });
+  if (already) return;
+
+  const [org, member] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.member.findUnique({
+      where: { id: memberId },
+      select: { firstName: true, email: true, user: { select: { email: true } } },
+    }),
+  ]);
+  const to = member?.user?.email ?? member?.email;
+  if (!member || !to) return;
+
+  // Se registra ANTES de enviar: si el correo falla, el socio se queda sin
+  // aviso de ESTA factura, que es preferible a recibir uno por cada reintento
+  // del banco. Recepción lo ve igual en la lista de morosos.
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      action: DUNNING_SENT_ACTION,
+      entityType: DUNNING_ENTITY,
+      entityId: invoiceId,
+      memberId,
+      metadata: { amountCents },
+    },
+  });
+
+  const brandName = org?.name ?? "Training Zone";
+  void sendMail({
+    to,
+    fromName: brandName,
+    subject: "No hemos podido cobrar tu cuota",
+    html: renderPaymentFailedEmail({
+      memberFirstName: member.firstName,
+      brandName,
+      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      amountLabel: new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(amountCents / 100),
+      portalUrl: memberBillingUrlFor(generateMemberDunningToken(memberId)),
+    }),
+  });
+}
+
 export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice: Stripe.Invoice) {
   if (!invoice.id) return;
 
@@ -488,6 +555,11 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
   }
 
   await prisma.member.update({ where: { id: subscription.memberId }, data: { state: "DELINQUENT" } });
+
+  // El socio se entera antes que nadie y con el enlace que lo arregla. Hasta
+  // ahora el impago solo generaba un aviso interno: alguien tenía que llamarlo,
+  // y mientras tanto el cobro seguía sin entrar.
+  await sendDunningNoticeOnce(orgId, subscription.memberId, invoice.id, invoice.amount_due ?? 0);
 
   // Aviso a recepción: reutiliza el motor de notificaciones de F10
   // (lib/notifications.ts), con el mismo grupo de roles que ya puede cobrar a

@@ -172,6 +172,36 @@ export function renderMemberBillingLinkEmail(opts: {
   });
 }
 
+/**
+ * Cobro fallido. El tono importa más de lo habitual: casi siempre es una
+ * tarjeta caducada, no alguien que no quiere pagar, y tratar al socio de moroso
+ * en el primer email es la forma más rápida de perderlo. Se explica qué ha
+ * pasado, se da el botón que lo arregla en un minuto y no se amenaza con nada.
+ */
+export function renderPaymentFailedEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  amountLabel: string;
+  portalUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Cobro no completado",
+    title: `Hola, ${opts.memberFirstName}.<br>No hemos podido cobrar tu cuota.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">El cobro de <b>${opts.amountLabel}</b> no ha salido adelante. Casi siempre es una tarjeta caducada o un límite del banco, y se resuelve en un minuto desde el botón de abajo.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Mientras tanto sigues teniendo tu acceso y tus reservas: no hemos tocado nada.</p>`,
+    ctaLabel: "Actualizar mi método de pago →",
+    ctaUrl: opts.portalUrl,
+    noteHtml: `El enlace caduca en <b style="color:${TEXT2}">72 horas</b>. Si ya lo has arreglado por tu cuenta, ignora este email.`,
+    signOff: `Cualquier duda, aquí estamos,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque un cobro de tu cuota no se ha completado.`,
+    footerLine2: `Con tecnología de Apta`,
+  });
+}
+
 export function renderSessionVacancyEmail(opts: {
   recipientFirstName: string;
   brandName: string;
