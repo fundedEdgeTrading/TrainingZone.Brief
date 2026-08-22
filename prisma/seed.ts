@@ -2996,27 +2996,32 @@ const ORGS: OrgSeedConfig[] = [
         leadCount: 14,
       },
     ],
-    // Un único director de organización (OWNER, rol más alto), un director por
-    // centro y tres entrenadores por centro — uno de ellos, Entrenador Admin
-    // (manda en el aforo de su centro y ajusta bonos). Recepción, RRHH y admin
-    // de plataforma se mantienen porque sin ellos esos módulos no tienen con
-    // quién demostrarse.
+    // Un par de usuarios por rol y centro: dos personas con el mismo rol en el
+    // mismo centro es lo que revela si el alcance se resuelve por persona o por
+    // centro (y deja probar traspasos sin inventar usuarios a mano). Los roles de
+    // ámbito de organización no se replican por centro: OWNER es único y RRHH va
+    // en pareja para toda la organización. PLATFORM_ADMIN no es de la org.
     staff: [
       { name: "Sergio Martín", email: "sergio@trainingzone.es", role: "OWNER", centerKey: null },
+      // La Jota
       { name: "Beatriz Ruiz", email: "direccion.lajota@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "lajota" },
-      { name: "Rubén Castillo", email: "direccion.puertacarmen@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "puertacarmen" },
+      { name: "Hugo Lacasa", email: "direccion2.lajota@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "lajota" },
+      { name: "Marcos Iglesias", email: "marcos.iglesias@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "lajota" },
+      { name: "Nerea Bailo", email: "entrenadoradmin2.lajota@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "lajota" },
       { name: "Dani Herrero", email: "entrenador@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
       { name: "Laura Gimeno", email: "laura.gimeno@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
-      { name: "Marcos Iglesias", email: "marcos.iglesias@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "lajota" },
+      { name: "Ana Cabrera", email: "recepcion.lajota@trainingzone.es", role: "RECEPTION", centerKey: "lajota" },
+      { name: "Pablo Used", email: "recepcion2.lajota@trainingzone.es", role: "RECEPTION", centerKey: "lajota" },
+      // Puerta del Carmen
+      { name: "Rubén Castillo", email: "direccion.puertacarmen@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "puertacarmen" },
+      { name: "Marta Lahoz", email: "direccion2.puertacarmen@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "puertacarmen" },
+      { name: "Sara Ortiz", email: "sara.ortiz@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "puertacarmen" },
+      { name: "Iker Bandrés", email: "entrenadoradmin2.puertacarmen@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "puertacarmen" },
       { name: "Elena Vidal", email: "elena.vidal@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
       { name: "Javier Soto", email: "javier.soto@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
-      { name: "Sara Ortiz", email: "sara.ortiz@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
-      { name: "Ana Cabrera", email: "recepcion.lajota@trainingzone.es", role: "RECEPTION", centerKey: "lajota" },
       { name: "Óscar Bravo", email: "recepcion.puertacarmen@trainingzone.es", role: "RECEPTION", centerKey: "puertacarmen" },
-      { name: "Cristina Molina", email: "rrhh@trainingzone.es", role: "HR_MANAGER", centerKey: null },
-      // F7 · Santander: dos usuarios por rol para poder probar el alcance de cada
-      // uno (y que dos personas del mismo rol no se pisen). OWNER no se repite:
-      // es de organización, no de centro.
+      { name: "Irene Palacio", email: "recepcion2.puertacarmen@trainingzone.es", role: "RECEPTION", centerKey: "puertacarmen" },
+      // Santander (F7)
       { name: "Iría Lastra", email: "director1.santander@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "santander" },
       { name: "Nacho Puente", email: "director2.santander@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "santander" },
       { name: "Sonia Gándara", email: "entrenadoradmin1.santander@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "santander" },
@@ -3025,8 +3030,9 @@ const ORGS: OrgSeedConfig[] = [
       { name: "Diego Ceballos", email: "entrenador2.santander@trainingzone.es", role: "TRAINER", centerKey: "santander" },
       { name: "Lucía Trueba", email: "recepcion1.santander@trainingzone.es", role: "RECEPTION", centerKey: "santander" },
       { name: "Mateo Bolado", email: "recepcion2.santander@trainingzone.es", role: "RECEPTION", centerKey: "santander" },
-      { name: "Rosa Sainz", email: "rrhh1.santander@trainingzone.es", role: "HR_MANAGER", centerKey: null },
-      { name: "Tomás Riancho", email: "rrhh2.santander@trainingzone.es", role: "HR_MANAGER", centerKey: null },
+      // Organización y plataforma
+      { name: "Cristina Molina", email: "rrhh@trainingzone.es", role: "HR_MANAGER", centerKey: null },
+      { name: "Rosa Sainz", email: "rrhh2@trainingzone.es", role: "HR_MANAGER", centerKey: null },
       { name: "Piensaenweb Admin", email: "admin@piensaenweb.dev", role: "PLATFORM_ADMIN", centerKey: null },
     ],
     extraImputaciones: [
@@ -3141,38 +3147,43 @@ async function main() {
   console.log("\nSeed completado.");
   console.log("TRAINING ZONE · centros: La Jota, Puerta del Carmen y Santander");
   console.log("Usuarios demo (contraseña: demo1234):");
-  console.log("  Organización");
-  console.log("    sergio@trainingzone.es                    Dirección de organización (Owner)");
-  console.log("    rrhh@trainingzone.es                      RRHH");
-  console.log("    admin@piensaenweb.dev                     Admin de plataforma");
-  console.log("  La Jota");
-  console.log("    direccion.lajota@trainingzone.es          Dirección de centro");
-  console.log("    entrenador@trainingzone.es                Entrenador (Dani Herrero · panel /trainer)");
-  console.log("    laura.gimeno@trainingzone.es              Entrenadora");
-  console.log("    marcos.iglesias@trainingzone.es           Entrenador Admin (aforo del centro y ajuste de bonos)");
-  console.log("    recepcion.lajota@trainingzone.es          Recepción");
-  console.log("    socio@trainingzone.es                     Socio (Marta García López · bono 12 grupos en La Jota + bono 4 EP en Puerta del Carmen)");
-  console.log("    socio.grupos@trainingzone.es              Socio (Nuria Peña Soler · solo bono de grupos reducidos)");
-  console.log("    socio.ep@trainingzone.es                  Socio (Álvaro Mateos Duque · solo bono de EP)");
-  console.log("  Puerta del Carmen");
-  console.log("    direccion.puertacarmen@trainingzone.es    Dirección de centro");
-  console.log("    elena.vidal@trainingzone.es               Entrenadora");
-  console.log("    javier.soto@trainingzone.es               Entrenador");
-  console.log("    sara.ortiz@trainingzone.es                Entrenadora");
-  console.log("    recepcion.puertacarmen@trainingzone.es    Recepción");
-  console.log("  Santander");
-  console.log("    director1.santander@trainingzone.es       Dirección de centro");
-  console.log("    director2.santander@trainingzone.es       Dirección de centro");
-  console.log("    entrenadoradmin1.santander@trainingzone.es  Entrenador Admin");
-  console.log("    entrenadoradmin2.santander@trainingzone.es  Entrenador Admin (imputado también a La Jota)");
-  console.log("    entrenador1.santander@trainingzone.es     Entrenadora");
-  console.log("    entrenador2.santander@trainingzone.es     Entrenador");
-  console.log("    recepcion1.santander@trainingzone.es      Recepción");
-  console.log("    recepcion2.santander@trainingzone.es      Recepción");
-  console.log("    rrhh1.santander@trainingzone.es           RRHH (ámbito de organización)");
-  console.log("    rrhh2.santander@trainingzone.es           RRHH (ámbito de organización)");
-  console.log("    socio1.santander@trainingzone.es          Socia (Amaia Roiz · historial completo, semáforo ámbar, mesociclo aprobado, cumple hoy)");
-  console.log("    socio2.santander@trainingzone.es          Socio (Rubén Setién · revisión vencida, impago y alerta de retención)");
+  console.log("  Organización (roles de ámbito global, no por centro)");
+  console.log("    sergio@trainingzone.es                       Dirección de organización (Owner)");
+  console.log("    rrhh@trainingzone.es                         RRHH (Cristina Molina)");
+  console.log("    rrhh2@trainingzone.es                        RRHH (Rosa Sainz)");
+  console.log("    admin@piensaenweb.dev                        Admin de plataforma");
+  console.log("  La Jota — dos usuarios por rol");
+  console.log("    direccion.lajota@trainingzone.es             Dirección de centro (Beatriz Ruiz)");
+  console.log("    direccion2.lajota@trainingzone.es            Dirección de centro (Hugo Lacasa)");
+  console.log("    marcos.iglesias@trainingzone.es              Entrenador Admin (aforo del centro y ajuste de bonos)");
+  console.log("    entrenadoradmin2.lajota@trainingzone.es      Entrenadora Admin (Nerea Bailo)");
+  console.log("    entrenador@trainingzone.es                   Entrenador (Dani Herrero · panel /trainer)");
+  console.log("    laura.gimeno@trainingzone.es                 Entrenadora (Laura Gimeno)");
+  console.log("    recepcion.lajota@trainingzone.es             Recepción (Ana Cabrera)");
+  console.log("    recepcion2.lajota@trainingzone.es            Recepción (Pablo Used)");
+  console.log("    socio@trainingzone.es                        Socio (Marta García López · bono 12 grupos en La Jota + bono 4 EP en Puerta del Carmen)");
+  console.log("    socio.grupos@trainingzone.es                 Socio (Nuria Peña Soler · solo bono de grupos reducidos)");
+  console.log("    socio.ep@trainingzone.es                     Socio (Álvaro Mateos Duque · solo bono de EP)");
+  console.log("  Puerta del Carmen — dos usuarios por rol");
+  console.log("    direccion.puertacarmen@trainingzone.es       Dirección de centro (Rubén Castillo)");
+  console.log("    direccion2.puertacarmen@trainingzone.es      Dirección de centro (Marta Lahoz)");
+  console.log("    sara.ortiz@trainingzone.es                   Entrenadora Admin (Sara Ortiz)");
+  console.log("    entrenadoradmin2.puertacarmen@trainingzone.es  Entrenador Admin (Iker Bandrés)");
+  console.log("    elena.vidal@trainingzone.es                  Entrenadora (Elena Vidal)");
+  console.log("    javier.soto@trainingzone.es                  Entrenador (Javier Soto)");
+  console.log("    recepcion.puertacarmen@trainingzone.es       Recepción (Óscar Bravo)");
+  console.log("    recepcion2.puertacarmen@trainingzone.es      Recepción (Irene Palacio)");
+  console.log("  Santander — dos usuarios por rol");
+  console.log("    director1.santander@trainingzone.es          Dirección de centro (Iría Lastra)");
+  console.log("    director2.santander@trainingzone.es          Dirección de centro (Nacho Puente)");
+  console.log("    entrenadoradmin1.santander@trainingzone.es   Entrenadora Admin (Sonia Gándara)");
+  console.log("    entrenadoradmin2.santander@trainingzone.es   Entrenador Admin (Álex Quijano · imputado también a La Jota)");
+  console.log("    entrenador1.santander@trainingzone.es        Entrenadora (Paula Cobo)");
+  console.log("    entrenador2.santander@trainingzone.es        Entrenador (Diego Ceballos)");
+  console.log("    recepcion1.santander@trainingzone.es         Recepción (Lucía Trueba)");
+  console.log("    recepcion2.santander@trainingzone.es         Recepción (Mateo Bolado)");
+  console.log("    socio1.santander@trainingzone.es             Socia (Amaia Roiz · historial completo, semáforo ámbar, mesociclo aprobado, cumple hoy)");
+  console.log("    socio2.santander@trainingzone.es             Socio (Rubén Setién · revisión vencida, impago y alerta de retención)");
 }
 
 main()

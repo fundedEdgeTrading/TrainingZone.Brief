@@ -15,7 +15,7 @@ const DEMO_USERS = [
     desc: "Ámbito global, todos los centros",
   },
   {
-    email: "direccion.centro@trainingzone.es",
+    email: "direccion.lajota@trainingzone.es",
     label: "Dirección de centro",
     desc: "P&L y operativa de su centro",
   },
@@ -32,10 +32,10 @@ const DEMO_USERS = [
   {
     email: "laura.gimeno@trainingzone.es",
     label: "Laura — Entrenadora",
-    desc: "Otro entrenador, misma centro (La Jota)",
+    desc: "Otro entrenador, mismo centro (La Jota)",
   },
   {
-    email: "recepcion@trainingzone.es",
+    email: "recepcion.lajota@trainingzone.es",
     label: "Recepción",
     desc: "Socios, agenda y cobros (sin datos de salud)",
   },

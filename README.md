@@ -57,23 +57,20 @@ Abrir `http://localhost:3000` — redirige a `/login`.
 | Email | Rol | Qué ver |
 |---|---|---|
 | `sergio@trainingzone.es` | Dirección (Owner) | Panel de control, todos los centros, reglas de aptitud, auditoría |
-| `direccion.centro@trainingzone.es` | Dirección de centro | Panel, socios, agenda, cobros, retención (ámbito de su centro) |
+| `direccion.lajota@trainingzone.es` | Dirección de centro | Panel, socios, agenda, cobros, retención (ámbito de su centro) |
+| `marcos.iglesias@trainingzone.es` | Entrenador Admin | Aforo por defecto de su centro y ajuste de bonos |
 | `entrenador@trainingzone.es` | Entrenador (Dani Herrero) | Agenda, Session Brief + Debrief, semáforo de aptitud |
-| `recepcion@trainingzone.es` | Recepción | Socios, agenda, cobros — **sin acceso a datos de salud** |
+| `recepcion.lajota@trainingzone.es` | Recepción | Socios, agenda, cobros — **sin acceso a datos de salud** |
 | `rrhh@trainingzone.es` | RRHH | Organización: alta de centros y personal, imputación multi-centro — **sin acceso a datos de salud** |
 | `socio@trainingzone.es` | Socio (Marta García López) | Portal: reservar clase, progreso, transparencia de adaptaciones |
 
-También hay entrenadores/recepción/dirección adicionales por centro (ver
-`prisma/seed.ts`) para poblar la agenda con datos realistas.
+Cada centro tiene **dos usuarios por rol** (dirección, entrenador admin,
+entrenador y recepción), para poder comprobar que el alcance se resuelve por
+persona y no por centro; los roles de ámbito de organización no se replican por
+centro (un único Owner y una pareja de RRHH). La lista completa la imprime
+`npm run db:seed` al terminar.
 
-### Segunda empresa (demo multi-tenant)
-
-El seed crea también una **segunda organización, `VITALIA WELLNESS`**, con sus
-propios dos centros (Chamberí y Retiro), equipo, socios, historial y **logo
-propio** (`/brand/vitalia-logo.svg`). Sirve para enseñar el aislamiento
-multi-tenant y el logo por organización en el NavBar. Sus cuentas demo
-(contraseña `demo1234`): `owner@vitalia.es`, `entrenador@vitalia.es` (imputado a
-los dos centros), `rrhh@vitalia.es`, `socio@vitalia.es`.
+### Logo por organización y centro
 
 **Logo en el NavBar:** cada organización (y opcionalmente cada centro) tiene un
 `logoUrl`. El NavBar muestra el del centro, si no el de la organización, y si
@@ -82,13 +79,12 @@ módulo **Organización** (marca de la organización y logo por centro).
 
 ## Datos de demostración
 
-El seed genera **dos organizaciones** (Training Zone con 3 centros, Vitalia con
-2), y por cada una:
+El seed genera **una única organización**, `TRAINING ZONE`, con sus 3 centros
+(La Jota y Puerta del Carmen en Zaragoza, y Santander), y para ella:
 
-- Socios con estados realistas (activo, moroso, congelado, prueba, baja) —
-  ~425 en total entre las dos empresas
+- Socios con estados realistas (activo, moroso, congelado, prueba, baja)
 - ~6-7 meses de histórico + hasta 3 semanas futuras de sesiones, reservas,
-  check-ins, no-shows y lista de espera (~13 000 reservas en total)
+  check-ins, no-shows y lista de espera
 - Imputación de personal a centros (`CenterMembership`), con ejemplos de
   entrenadores/dirección repartidos entre varios centros
 - Pagos con métodos variados (tarjeta, Bizum, efectivo, SEPA, transferencia)

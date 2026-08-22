@@ -216,10 +216,10 @@ export default async function OrganizationPage({
             className={`${CARD} grid grid-cols-1 md:grid-cols-4 gap-3 items-end`}
           >
             <Field label="Nombre del centro" className="md:col-span-2">
-              <Input name="name" placeholder="p.ej. Vitalia Este" required />
+              <Input name="name" placeholder="p.ej. TRAINING ZONE Delicias" required />
             </Field>
             <Field label="Slug" hint="Opcional — se genera del nombre">
-              <Input name="slug" placeholder="este" />
+              <Input name="slug" placeholder="delicias" />
             </Field>
             <Field label="Logo (URL)" hint="Opcional — si no, hereda">
               <Input name="logoUrl" placeholder="/brand/…" />
