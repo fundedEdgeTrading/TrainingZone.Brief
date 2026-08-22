@@ -583,7 +583,11 @@ textarea:focus-visible {
   place-items: center;
   position: relative;
   animation: tzMapBubbleIn 0.55s var(--ease-spring) both;
-  cursor: pointer;
+  /* La caja mide siempre lo mismo (para que el radio pueda interpolar), así que
+     quien recibe el puntero es el círculo escalado, no la caja: si no, un
+     barrio pequeño tendría un área de clic de 64 px que pisaría a sus vecinos.
+     Con `--s: 0` el círculo no tiene área y el barrio deja de ser pulsable. */
+  pointer-events: none;
 }
 .tz-map-bubble-core {
   width: 100%;
@@ -596,6 +600,8 @@ textarea:focus-visible {
   /* `--s` es el radio relativo de la métrica activa: al cambiarlo, el radio
      interpola en vez de desmontarse y volver a entrar (plan §6.3). */
   transform: scale(var(--s, 1));
+  pointer-events: auto;
+  cursor: pointer;
   transition: transform 0.28s var(--ease-spring), box-shadow 0.28s var(--ease-out-soft),
     opacity 0.28s var(--ease-out-soft);
 }

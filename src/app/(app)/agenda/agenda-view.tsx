@@ -185,14 +185,14 @@ export default function AgendaView({
         evs.map((ev) => (ev.uid === gesture.uid ? { ...ev, dayIndex: g.day, startMin: ns, endMin: ns + gesture.dur } : ev))
       );
     },
-    onEnd: (gesture, _p, moved) => {
+    onEnd: (gesture, point, moved) => {
       setDraggingId(null);
       if (gesture.kind === "column") {
-        if (!moved && canEdit) openCreate(gesture.day, gesture.min, _p);
+        if (!moved && canEdit) openCreate(gesture.day, gesture.min, point);
         return;
       }
       if (!moved) {
-        openEdit(gesture.uid, _p);
+        openEdit(gesture.uid, point);
         return;
       }
       if (!canEdit) return;

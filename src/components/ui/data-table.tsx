@@ -163,11 +163,12 @@ export function DataTable({
                 key={row.key}
                 className={clsx("border-t border-tz-sand transition-colors duration-150 hover:bg-tz-bone/70", row.className)}
                 style={
-                  // Al reordenar, las filas vuelven a entrar escalonadas para que
-                  // el cambio de orden se lea. El `sortRun` en la key del tbody
-                  // rearma la animación; el estilo propio de la fila manda.
-                  sortRun > 0 && !row.style
-                    ? { animation: `tzRowIn .28s ${(Math.min(i, 10) * 0.02).toFixed(2)}s both` }
+                  // Al reordenar, todas las filas vuelven a entrar escalonadas
+                  // para que el cambio de orden se lea. El `sortRun` en la key
+                  // del `<tbody>` rearma la animación; mientras nadie ha
+                  // reordenado manda el estilo de entrada que trae la fila.
+                  sortRun > 0
+                    ? { ...row.style, animation: `tzRowIn .28s ${(Math.min(i, 10) * 0.02).toFixed(2)}s both` }
                     : row.style
                 }
               >

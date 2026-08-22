@@ -184,16 +184,16 @@ export function PostalHeatmap({
         .map((p) => p.code)
     );
 
+    const byCode = new Map(points.map((p) => [p.code, p]));
     markersRef.current.forEach((marker, code) => {
       const el = marker.getElement()?.querySelector<HTMLDivElement>(".tz-map-bubble");
       if (!el) return;
-      const p = points.find((q) => q.code === code);
+      const p = byCode.get(code);
       const v = p ? valueOf(p, metric) : 0;
       const size = v > 0 ? MIN_BUBBLE_PX + Math.sqrt(v / maxV) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX) : 0;
       el.style.setProperty("--s", (size / MAX_BUBBLE_PX).toFixed(3));
       el.style.setProperty("--o", v > 0 ? (0.45 + 0.5 * (v / maxV)).toFixed(2) : "0");
       el.classList.toggle("top", top.has(code));
-      el.style.pointerEvents = v > 0 ? "" : "none";
     });
 
     return () => {
