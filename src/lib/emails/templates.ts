@@ -221,3 +221,34 @@ export function renderOwnerActivationEmail(opts: {
     footerLine2: `Tu factura la emite Stripe y la tienes en tu correo de pago.`,
   });
 }
+
+export function renderAssessmentDueEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  assessmentLabel: string;
+  isInitial: boolean;
+  formUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: opts.assessmentLabel,
+    title: opts.isInitial
+      ? `¡Hola, ${opts.memberFirstName}!<br>Empezamos por conocerte.`
+      : `¡Hola, ${opts.memberFirstName}!<br>Toca mirar atrás.`,
+    bodyHtml: opts.isInitial
+      ? `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Antes de programar tu entrenamiento necesitamos saber de dónde partes: tu historial, tus molestias y qué te ha traído hasta aquí.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Son unos minutos y condiciona todo lo que viene después — lo que nos cuentes aquí es lo que tu entrenador tendrá delante en cada sesión.</p>`
+      : `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Te toca la <b>${opts.assessmentLabel.toLowerCase()}</b>. Las mismas preguntas de siempre: peso, descanso, energía, dolor y cómo llevas la adherencia.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Repetirlas es lo que convierte respuestas sueltas en una gráfica: sin este punto, el siguiente tramo de tu evolución queda en blanco.</p>`,
+    ctaLabel: "Rellenar mi valoración →",
+    ctaUrl: opts.formUrl,
+    noteHtml: `Tus respuestas de salud solo las ve tu entrenador y el equipo autorizado de ${opts.brandName}, y cada consulta queda registrada.`,
+    signOff: `Nos vemos en el centro,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque tienes una valoración pendiente en tu ficha de socio.`,
+    footerLine2: `Con tecnología de Apta`,
+  });
+}

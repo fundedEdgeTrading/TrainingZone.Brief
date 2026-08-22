@@ -8,13 +8,16 @@ import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
+import { runAssessmentDueRule } from "@/lib/assessment-jobs";
+import { reportJobFailures } from "@/lib/job-failure-report";
 
 /**
  * Disparador único para todas las reglas temporales del CRM (F10/F13/F14/F15):
  * 24h sin responsable, pocas sesiones EP programadas, bono bajo, estancamiento,
- * check-ins periódicos de objetivos/valoración de entrenadores. Sin worker en
- * este stack (Next.js), se invoca desde un cron externo (Vercel Cron u otro)
- * contra esta route handler, protegida por un secreto compartido.
+ * check-ins periódicos de objetivos/valoración de entrenadores y valoraciones
+ * vencidas. Sin worker en este stack (Next.js),
+ * se invoca desde un cron externo (.github/workflows/cron-jobs.yml, Vercel Cron
+ * u otro) contra esta route handler, protegida por un secreto compartido.
  */
 export async function GET(req: NextRequest) {
   // Falla cerrado: sin secreto configurado el endpoint no se atiende. Antes se
@@ -41,6 +44,7 @@ export async function GET(req: NextRequest) {
     offerSuggestions: 0,
     scheduledCancellations: 0,
     feedbackCyclePrompts: 0,
+    assessmentsDue: 0,
   };
 
 
@@ -70,7 +74,12 @@ export async function GET(req: NextRequest) {
     // `generateOfferSuggestions(org.id)` de @/lib/offers-queries aquí.
     summary.scheduledCancellations += await run(org.id, "scheduledCancellations", () => runScheduledCancellationsRule(org.id));
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
+    summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
   }
+
+  // El array de fallos no puede quedarse solo en la respuesta del cron: se
+  // convierte en tarea para la dirección de la organización afectada.
+  await reportJobFailures(failures);
 
   // 207 cuando algo falló: el cron sigue considerándose ejecutado (no tiene
   // sentido reintentar las reglas que sí pasaron) pero el fallo queda visible

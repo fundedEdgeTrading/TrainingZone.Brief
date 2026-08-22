@@ -1,0 +1,57 @@
+# Disparador diario de las reglas temporales del CRM (/api/jobs/run).
+#
+# El stack es Next.js sin worker: las reglas (valoraciones vencidas,
+# cumpleaños, cancelaciones programadas, alertas de retención...) solo corren
+# si alguien llama a esa ruta. Esto es ese alguien.
+#
+# Secretos que hay que dar de alta en el repositorio:
+#   JOBS_BASE_URL     https://… la URL pública del despliegue (sin barra final)
+#   JOBS_CRON_SECRET  el mismo valor que la variable de entorno del servidor
+#
+# Sin ellos el workflow sale sin hacer nada en vez de fallar cada mañana: un
+# job en rojo permanente deja de mirarse a la semana.
+name: Cron de reglas de negocio
+
+on:
+  schedule:
+    # 05:00 UTC = 07:00 en España en verano, 06:00 en invierno. Antes de que
+    # abra el centro y con el día del calendario español ya empezado: la regla
+    # de cumpleaños compara contra la fecha de pared del centro, y a las 00:00
+    # UTC todavía sería la víspera aquí.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cron-jobs
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ejecutar las reglas y comprobar el resultado
+        env:
+          JOBS_BASE_URL: ${{ secrets.JOBS_BASE_URL }}
+          JOBS_CRON_SECRET: ${{ secrets.JOBS_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${JOBS_BASE_URL}" ] || [ -z "${JOBS_CRON_SECRET}" ]; then
+            echo "::warning::JOBS_BASE_URL o JOBS_CRON_SECRET sin configurar — no se ejecuta nada."
+            exit 0
+          fi
+
+          status=$(curl -sS --max-time 300 --retry 3 --retry-delay 10 \
+            -o response.json -w '%{http_code}' \
+            -H "x-cron-secret: ${JOBS_CRON_SECRET}" \
+            "${JOBS_BASE_URL}/api/jobs/run")
+
+          echo "HTTP ${status}"
+          cat response.json
+
+          # 207: alguna regla falló y el resto sí corrió. Se deja el job en rojo
+          # a propósito — es la señal de que hay que mirar `failures[]`, que
+          # además ya ha abierto una tarea a la dirección de la organización.
+          if [ "${status}" != "200" ]; then
+            echo "::error::El runner de jobs respondió ${status}"
+            exit 1
+          fi

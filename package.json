@@ -11,6 +11,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "test:unit": "tsx --test \"src/**/*.test.ts\"",
     "test:e2e": "playwright test"
   },
   "prisma": {

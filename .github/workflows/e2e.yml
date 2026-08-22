@@ -52,6 +52,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Tests unitarios
+        run: npm run test:unit
+
       - name: Migraciones y datos de demo
         run: |
           npx prisma migrate deploy
