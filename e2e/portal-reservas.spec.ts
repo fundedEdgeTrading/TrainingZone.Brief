@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { dismissPortalGates, loginAs } from "./helpers";
 import { prisma } from "@/lib/prisma";
 
 // Ojo: `[role=alert]` por sí solo también engancha el "route announcer" propio
@@ -45,6 +45,7 @@ async function bookAvailable(page: Page): Promise<number> {
     await expect(message).toBeVisible({ timeout: 15_000 });
     const text = await message.innerText();
     await page.reload();
+    await dismissPortalGates(page);
     if (/no te quedan sesiones/i.test(text)) break;
   }
 
@@ -88,6 +89,7 @@ async function clearActiveBookings(page: Page): Promise<boolean> {
     await confirmForfeitIfAsked(page);
     await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
     await page.reload();
+    await dismissPortalGates(page);
   }
   return false;
 }
@@ -114,6 +116,7 @@ test.describe("RB-RES — Reservas del socio", () => {
 
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/agenda");
+    await dismissPortalGates(page);
 
     // El seed puede haberle puesto reservas futuras al azar (ver nota de
     // `clearActiveBookings`): sin este paso, una reserva previa de grupo o EP
@@ -234,6 +237,7 @@ test.describe("RB-RES — Reservas del socio", () => {
   test("el contador de próximas reservas coincide con las filas del panel", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/agenda");
+    await dismissPortalGates(page);
 
     const rows = await bookAvailable(page);
     test.skip(rows === 0, "El seed no ha dejado clases libres en la ventana de reserva de este socio.");
@@ -250,6 +254,7 @@ test.describe("RB-RES — Reservas del socio", () => {
   test("el socio ve las sesiones gastadas y las disponibles de su bono", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/agenda");
+    await dismissPortalGates(page);
 
     // Marta tiene dos bonos activos (EP + grupos, RB-AGENDA-003): una tarjeta
     // de saldo por modalidad, no una sola.
@@ -262,6 +267,7 @@ test.describe("RB-RES — Reservas del socio", () => {
 
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal/agenda");
+    await dismissPortalGates(page);
 
     // Punto de partida determinista: se cancelan las reservas que el seed haya
     // dejado, para que el panel contenga solo la que crea esta prueba.
@@ -279,6 +285,7 @@ test.describe("RB-RES — Reservas del socio", () => {
     await bookable.last().click();
     await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
     await page.reload();
+    await dismissPortalGates(page);
 
     // El saldo se comprueba contra la BASE DE DATOS y no contra el texto
     // "N sesiones gastadas de M" del portal: ese número agrega los dos bonos de

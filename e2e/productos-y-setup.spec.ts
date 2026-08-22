@@ -33,10 +33,14 @@ test.describe("F4 — Productos y puesta en marcha", () => {
     await form.getByRole("button", { name: "Crear producto" }).click();
 
     await expect(page.getByText(name)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText("120,50 €")).toBeVisible();
+    // El precio se comprueba en la fila del producto recién creado, no en la
+    // página: esta prueba archiva pero no borra, así que a la segunda vuelta
+    // sobre la misma base de datos hay más de un producto a 120,50 € y una
+    // búsqueda global rompía por ambigüedad en vez de por un fallo real.
+    const row = page.locator("tr", { hasText: name });
+    await expect(row.getByText("120,50 €")).toBeVisible();
 
     // Archivar lo saca de la lista activa pero lo mantiene disponible para reactivar.
-    const row = page.locator("tr", { hasText: name });
     await row.getByRole("button", { name: "Archivar" }).click();
     await expect(page.getByRole("heading", { name: "Archivados" })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: "Reactivar" }).first()).toBeVisible();
