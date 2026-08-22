@@ -52,13 +52,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Tests unitarios
-        run: npm run test:unit
-
       - name: Migraciones y datos de demo
         run: |
           npx prisma migrate deploy
           npm run db:seed
+
+      # Después de migrar: los tests de los reconciliadores de Stripe Billing
+      # montan su propia organización contra la base real, porque el riesgo que
+      # cubren (reentregas y dunning) solo se manifiesta en lo que queda escrito.
+      - name: Tests unitarios
+        run: npm run test:unit
 
       - name: Build
         run: npm run build

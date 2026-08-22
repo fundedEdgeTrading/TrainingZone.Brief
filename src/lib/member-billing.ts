@@ -385,8 +385,16 @@ export async function reconcileMemberSubscriptionDeleted(orgId: string, subscrip
 /** `invoice.paid`: cobro recurrente conciliado — idempotente por `Payment.stripeInvoiceId`. */
 export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.Invoice) {
   if (!invoice.id) return;
-  const already = await prisma.payment.findUnique({ where: { stripeInvoiceId: invoice.id }, select: { id: true } });
-  if (already) return;
+  const already = await prisma.payment.findUnique({
+    where: { stripeInvoiceId: invoice.id },
+    select: { id: true, status: true },
+  });
+  // Solo una fila YA COBRADA significa reentrega del mismo evento. Una fila en
+  // FAILED es lo contrario: el dunning de Stripe reintenta LA MISMA factura en
+  // vez de emitir una nueva, así que este `invoice.paid` es el cobro que por
+  // fin ha entrado. Salir aquí dejaba al socio pagando y marcado como moroso
+  // para siempre, con el recibo en FAILED y la suscripción sin reactivar.
+  if (already?.status === "PAID") return;
 
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
   if (!stripeSubscriptionId) return;
@@ -399,17 +407,31 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
 
   const periodEnd = invoice.lines?.data?.[0]?.period?.end;
 
-  await createPaymentWithReceipt({
-    orgId,
-    memberId: subscription.memberId,
-    subscriptionId: subscription.id,
-    amountCents: invoice.amount_paid,
-    method: "STRIPE",
-    status: "PAID",
-    date: new Date(),
-    stripeInvoiceId: invoice.id,
-    notes: "Factura recurrente Stripe",
-  });
+  if (already) {
+    // El recibo ya existe del intento fallido: se actualiza en vez de crear un
+    // segundo, que además chocaría con la unicidad de `stripeInvoiceId`.
+    await prisma.payment.update({
+      where: { id: already.id },
+      data: {
+        status: "PAID",
+        amountCents: invoice.amount_paid,
+        date: new Date(),
+        notes: "Factura recurrente Stripe (cobrada tras un intento fallido)",
+      },
+    });
+  } else {
+    await createPaymentWithReceipt({
+      orgId,
+      memberId: subscription.memberId,
+      subscriptionId: subscription.id,
+      amountCents: invoice.amount_paid,
+      method: "STRIPE",
+      status: "PAID",
+      date: new Date(),
+      stripeInvoiceId: invoice.id,
+      notes: "Factura recurrente Stripe",
+    });
+  }
 
   await prisma.subscription.update({
     where: { id: subscription.id },
@@ -419,6 +441,14 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
   if (subscription.member.state === "DELINQUENT") {
     await prisma.member.update({ where: { id: subscription.memberId }, data: { state: "ACTIVE" } });
   }
+
+  // El aviso a recepción lo abrió `reconcileMemberInvoicePaymentFailed` con esta
+  // misma clave. Cobrado el recibo ya no hay nada que revisar, y dejarlo abierto
+  // manda a alguien a perseguir a un socio que está al corriente.
+  await prisma.notification.updateMany({
+    where: { orgId, entityType: "Member", entityId: subscription.memberId, kind: "ALERT", resolvedAt: null },
+    data: { resolvedAt: new Date() },
+  });
 }
 
 /** `invoice.payment_failed`: marca al socio moroso y avisa a recepción/dirección — idempotente por `Payment.stripeInvoiceId`. */
