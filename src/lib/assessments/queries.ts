@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { AssessmentKind } from "@prisma/client";
+import { addMonthsClamped } from "@/lib/date-utils";
 import { isInitialAnswers, schemaForKind, type AssessmentAnswers } from "./schemas";
 
 /**
@@ -18,10 +19,12 @@ export const ASSESSMENT_KIND_MONTHS: Record<AssessmentKind, number> = {
   Y1: 12,
 };
 
+// El recorte al último día del mes NO es opcional: con `setMonth` a secas, el
+// hito de un mes de un alta el 31 de enero cae el 3 de marzo — otro mes — y la
+// valoración de febrero no existe para nadie (F4 §5.2, cubierto por
+// src/lib/date-utils.test.ts).
 export function dueDateForKind(joinedAt: Date, kind: AssessmentKind): Date {
-  const due = new Date(joinedAt);
-  due.setMonth(due.getMonth() + ASSESSMENT_KIND_MONTHS[kind]);
-  return due;
+  return addMonthsClamped(joinedAt, ASSESSMENT_KIND_MONTHS[kind]);
 }
 
 export async function listAssessmentsForMember(orgId: string, memberId: string) {
