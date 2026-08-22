@@ -58,7 +58,7 @@ export function MesocyclePanel({
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Nivel de partida" hint="Cómo llega: sedentario, ha entrenado antes, compite...">
+          <Field label="Nivel de partida" hint="Déjalo vacío para tomarlo de la valoración inicial.">
             <Input value={level} onChange={(e) => setLevel(e.target.value)} placeholder="Sin entrenar desde la lesión" />
           </Field>
           <Field label="Semanas" hint="De 4 a 12.">

@@ -55,7 +55,7 @@ export async function generateMesocycleAction(
     orgId: session.user.orgId,
     actorUserId: session.user.id,
     actorRole: session.user.role,
-    level: input.level.trim() || "no registrado",
+    level: input.level,
     weeks: input.weeks,
     availability,
   });

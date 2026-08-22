@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
-import type { Role, HealthRecordType, HealthSeverity } from "@prisma/client";
+import type { AssessmentKind, Role, HealthRecordType, HealthSeverity } from "@prisma/client";
+import { parseAnswers } from "@/lib/assessments/queries";
+import {
+  ASSESSMENT_KIND_LABEL,
+  DAYS_PER_WEEK_LABEL,
+  PAIN_ZONE_LABEL,
+  isInitialAnswers,
+} from "@/lib/assessments/schemas";
 
 /**
  * Punto único de lectura de datos de salud (A.2.4 / ADR-005 / ADR-008).
@@ -321,14 +328,9 @@ export type MesocycleBriefing = {
 };
 
 const SEX_LABEL: Record<string, string> = { MALE: "hombre", FEMALE: "mujer", OTHER: "otro" };
-
-/**
- * Claves del cuestionario de valoración que NO se envían aunque el formulario
- * evolucione y las añada. `Assessment.answers` es Json libre (F3): la lista de
- * permitidos no se puede fijar, así que se fija la de prohibidos y se
- * descartan los valores que no son escalares.
- */
-const IDENTITY_ANSWER_KEYS = /nombre|apellid|dni|nif|nie|pasaporte|tel[eé]fono|movil|m[oó]vil|email|correo|direcci[oó]n|contacto/i;
+const ASSESSMENT_SEX_LABEL: Record<string, string> = { HOMBRE: "hombre", MUJER: "mujer", OTRO: "otro" };
+const ACTIVITY_LEVEL_LABEL: Record<string, string> = { BAJO: "bajo", MEDIO: "medio", ALTO: "alto" };
+const TECHNIQUE_LABEL: Record<string, string> = { BAJA: "baja", MEDIA: "media", ALTA: "alta" };
 
 /**
  * Seudonimización en el borde (F6 §7.3): único punto por el que los datos de un
@@ -381,20 +383,25 @@ export async function getMesocycleBriefingForMember({
       : Promise.resolve([]),
   ]);
 
+  const context = assessment ? assessmentContext(assessment.kind, assessment.answers) : null;
+
   const briefing: MesocycleBriefing = {
-    age: ageFrom(member.birthDate),
-    sex: member.sex ? (SEX_LABEL[member.sex] ?? null) : null,
-    level,
+    age: ageFrom(member.birthDate) ?? context?.age ?? null,
+    sex: (member.sex ? SEX_LABEL[member.sex] : null) ?? context?.sex ?? null,
+    level: level.trim() || context?.level || "no registrado",
     weeks,
-    goals: goals.map((g) => g.label),
+    goals: [...goals.map((g) => g.label), ...(context?.goals ?? [])],
     availability,
-    metrics: latestByKey(metrics).map((m) => `${m.key}: ${m.value} ${m.unit}`),
+    metrics: [...latestByKey(metrics).map((m) => `${m.key}: ${m.value} ${m.unit}`), ...(context?.metrics ?? [])],
     clinical: member.consentAI
-      ? healthRecords.map((r) =>
-          [r.type, r.zone, r.description].filter(Boolean).join(" · ") + ` (severidad ${r.severity})`
-        )
+      ? [
+          ...healthRecords.map(
+            (r) => [r.type, r.zone, r.description].filter(Boolean).join(" · ") + ` (severidad ${r.severity})`
+          ),
+          ...(context?.clinical ?? []),
+        ]
       : null,
-    assessmentNotes: assessment ? answerNotes(assessment.answers) : [],
+    assessmentNotes: context?.notes ?? [],
   };
 
   await prisma.auditLog.create({
@@ -416,6 +423,76 @@ export async function getMesocycleBriefingForMember({
   return briefing;
 }
 
+/**
+ * Reparto de la valoración de F3 entre lo que puede salir siempre y lo que
+ * necesita `consentAI`. El corte no es "campo del bloque screening" sino "dato
+ * de salud": el dolor declarado, lo que no tolera y las notas libres del
+ * entrenador caen del lado clínico aunque el formulario los guarde en otro
+ * bloque, porque es donde acaban las lesiones cuando se escriben a mano.
+ *
+ * Las valoraciones anteriores al esquema actual devuelven `null` en
+ * `parseAnswers` y aquí simplemente no aportan nada: el mesociclo se genera con
+ * el resto de la ficha en vez de reventar.
+ */
+function assessmentContext(kind: AssessmentKind, answers: unknown) {
+  const parsed = parseAnswers(kind, answers);
+  if (!parsed) return null;
+
+  const notes: string[] = [`Valoración: ${ASSESSMENT_KIND_LABEL[kind]}`];
+  const clinical: string[] = [];
+  const metrics: string[] = [`peso: ${parsed.pesoKg} kg`];
+  const goals: string[] = [];
+  let age: number | null = null;
+  let sex: string | null = null;
+  let level: string | null = null;
+
+  notes.push(
+    `Entrena ${DAYS_PER_WEEK_LABEL[parsed.diasPorSemana] ?? parsed.diasPorSemana} por semana`,
+    `Sueño ${parsed.calidadSueno}/5, estrés ${parsed.estres}/5, energía ${parsed.energia}/5`
+  );
+  clinical.push(`Dolor actual declarado: ${parsed.dolorActual}/10`);
+
+  if (isInitialAnswers(kind, parsed)) {
+    const { perfil, experiencia, screening, cierre } = parsed;
+
+    age = perfil.edad;
+    sex = ASSESSMENT_SEX_LABEL[perfil.sexo] ?? null;
+    level = `actividad ${ACTIVITY_LEVEL_LABEL[experiencia.nivelActividad] ?? experiencia.nivelActividad}, técnica ${
+      TECHNIQUE_LABEL[experiencia.tecnicaBasicos] ?? experiencia.tecnicaBasicos
+    }, ${experiencia.haEntrenadoAntes ? `${experiencia.anosExperiencia} años de experiencia` : "sin experiencia previa"}`;
+
+    metrics.push(`altura: ${perfil.alturaCm} cm`);
+    goals.push(perfil.objetivoPrincipal);
+    if (perfil.objetivoSecundario) goals.push(perfil.objetivoSecundario);
+    if (perfil.motivacionReal) notes.push(`Motivación: ${perfil.motivacionReal}`);
+    if (perfil.queLeHariaAbandonar) notes.push(`Lo que le haría abandonar: ${perfil.queLeHariaAbandonar}`);
+
+    if (screening.cardiovascular) clinical.push("Antecedente cardiovascular declarado");
+    if (screening.hipertension) clinical.push("Hipertensión declarada");
+    if (screening.diabetes) clinical.push("Diabetes declarada");
+    if (screening.medicacion) clinical.push(`Medicación: ${screening.medicacion}`);
+    if (screening.cirugias) clinical.push(`Cirugías: ${screening.cirugias}`);
+    if (screening.lesionesActuales) clinical.push(`Lesiones actuales: ${screening.lesionesActuales}`);
+    if (screening.zonasDolor.length > 0) {
+      clinical.push(`Zonas de dolor: ${screening.zonasDolor.map((z) => PAIN_ZONE_LABEL[z]).join(", ")}`);
+    }
+    if (experiencia.ejerciciosNoTolera) clinical.push(`No tolera: ${experiencia.ejerciciosNoTolera}`);
+    if (cierre.notasEntrenador) clinical.push(`Notas del entrenador: ${cierre.notasEntrenador}`);
+  } else {
+    const { seguimiento, cierre } = parsed;
+
+    notes.push(
+      `Adherencia percibida ${seguimiento.adherenciaPercibida}/5, progreso percibido ${seguimiento.progresoPercibido}/5`
+    );
+    if (seguimiento.queHaMejorado) notes.push(`Ha mejorado: ${seguimiento.queHaMejorado}`);
+    if (seguimiento.obstaculos) notes.push(`Obstáculos: ${seguimiento.obstaculos}`);
+    if (seguimiento.objetivoProximoPeriodo) goals.push(seguimiento.objetivoProximoPeriodo);
+    if (cierre.notasEntrenador) clinical.push(`Notas del entrenador: ${cierre.notasEntrenador}`);
+  }
+
+  return { notes, clinical, metrics, goals, age, sex, level };
+}
+
 function ageFrom(birthDate: Date | null): number | null {
   if (!birthDate) return null;
   const now = new Date();
@@ -429,15 +506,4 @@ function ageFrom(birthDate: Date | null): number | null {
 function latestByKey<T extends { key: string }>(metrics: T[]): T[] {
   const seen = new Set<string>();
   return metrics.filter((m) => (seen.has(m.key) ? false : (seen.add(m.key), true)));
-}
-
-function answerNotes(answers: unknown): string[] {
-  if (!answers || typeof answers !== "object" || Array.isArray(answers)) return [];
-  return Object.entries(answers as Record<string, unknown>)
-    .filter(([key, value]) => !IDENTITY_ANSWER_KEYS.test(key) && isScalar(value))
-    .map(([key, value]) => `${key}: ${String(value)}`);
-}
-
-function isScalar(value: unknown): value is string | number | boolean {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
