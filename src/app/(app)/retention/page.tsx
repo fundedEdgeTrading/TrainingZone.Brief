@@ -105,8 +105,8 @@ export default async function RetentionPage() {
       )}
 
       <Card title="Histórico de alertas" delay={0.24}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="sm:overflow-x-auto">
+          <table className="tz-stack-table w-full text-sm">
             <thead className="text-xs text-faint text-left">
               <tr>
                 <th className="pb-2">Socio</th>
@@ -119,15 +119,15 @@ export default async function RetentionPage() {
             <tbody>
               {alerts.map((a) => (
                 <tr key={a.id} className="border-t border-tz-sand">
-                  <td className="py-2">
+                  <td data-label="" className="py-2 font-semibold">
                     <Link href={`/members/${a.member.id}`} className="text-tz-black hover:underline">
                       {a.member.firstName} {a.member.lastName}
                     </Link>
                   </td>
-                  <td className="py-2">{RISK_LABEL[a.riskLevel]}</td>
-                  <td className="py-2 tz-nums">{a.dropPct}%</td>
-                  <td className="py-2 text-muted tz-nums">{a.createdAt.toLocaleDateString("es-ES")}</td>
-                  <td className="py-2 text-muted">{a.status}</td>
+                  <td data-label="Riesgo" className="py-2">{RISK_LABEL[a.riskLevel]}</td>
+                  <td data-label="Caída" className="py-2 tz-nums">{a.dropPct}%</td>
+                  <td data-label="Creada" className="py-2 text-muted tz-nums">{a.createdAt.toLocaleDateString("es-ES")}</td>
+                  <td data-label="Estado" className="py-2 text-muted">{a.status}</td>
                 </tr>
               ))}
             </tbody>

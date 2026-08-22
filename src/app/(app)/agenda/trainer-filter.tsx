@@ -73,7 +73,7 @@ export default function TrainerFilter({
       </button>
 
       {open && (
-        <div className="tz-select-pop absolute left-0 top-[calc(100%+6px)] z-[60] w-[236px] rounded-[13px] border border-brand-border bg-white p-1.5 shadow-pop">
+        <div className="tz-select-pop absolute right-0 top-[calc(100%+6px)] z-[60] w-[236px] max-w-[calc(100vw-20px)] rounded-[13px] border border-brand-border bg-white p-1.5 shadow-pop">
           <div className="flex items-center justify-between px-2 pt-1 pb-1.5">
             <span className="text-[11px] font-bold uppercase tracking-[.14em] text-muted">Entrenadores</span>
             <button
