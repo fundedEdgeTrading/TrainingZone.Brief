@@ -14,8 +14,10 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
   });
 
   test("el panel de dirección muestra las métricas de BI (LTV, demografía, mapa de CP)", async ({ page }) => {
+    // Dirección ya aterriza en /dashboard al iniciar sesión: un `goto` aquí
+    // repetiría la navegación que acaba de ocurrir en vez de esperar a que
+    // termine (RB-E2E: no navegar a la ruta en la que ya estás).
     await loginAs(page, "sergio@trainingzone.es");
-    await page.goto("/dashboard");
 
     await expect(page.getByText("LTV medio por cliente")).toBeVisible();
     await expect(page.getByText("Ticket medio")).toBeVisible();
