@@ -8,14 +8,19 @@ import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
-const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER"] as const;
+const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"] as const;
+
+/** "HH:MM" en reloj de 24 h; nada más entra en `ClassSession.startTime`/`endTime`. */
+function isValidHHMM(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
 
 export async function saveSessionAction(formData: FormData): Promise<SessionActionResult> {
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
   const centerId = String(formData.get("centerId") ?? "");
-  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER"]);
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const id = String(formData.get("id") ?? "") || null;
   const type = String(formData.get("type") ?? "personal") === "reduced" ? "reduced" : "personal";
@@ -36,17 +41,27 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   let title = String(formData.get("title") ?? "").trim();
 
   if (!centerId || !trainerId || !dateRaw || !startTime) return { ok: false, error: "Completa entrenador, fecha y hora." };
+  // Sin validar el formato, un "HH:MM" corrupto se propagaba como "NaN:NaN"
+  // hasta la base de datos en vez de rechazarse aquí.
+  if (!isValidHHMM(startTime)) return { ok: false, error: "La hora de inicio no es válida." };
+  if (endTime && !isValidHHMM(endTime)) return { ok: false, error: "La hora de fin no es válida." };
 
   if (!endTime || endTime <= startTime) {
+    // La duración por defecto no puede desbordar el día: con `% 24`, una sesión
+    // que empezara a las 23:45 acababa a las "00:15", una hora ANTERIOR a la de
+    // inicio, y toda la aritmética de duración y solapes la leía en negativo.
     const [h, m] = startTime.split(":").map(Number);
-    const total = h * 60 + m + 30;
-    endTime = `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+    const total = Math.min(h * 60 + m + 30, 23 * 60 + 59);
+    endTime = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+    // Tan tarde que ni siquiera cabe un minuto antes de medianoche: la sesión
+    // tendría duración cero, así que se pide una hora de inicio razonable.
+    if (endTime <= startTime) return { ok: false, error: "La hora de inicio es demasiado tardía: la sesión no cabe en el día." };
   }
 
   if (!title) title = type === "reduced" ? "Grupo reducido" : "Sesión";
   if (isTrial && !title.startsWith("Prueba · ")) title = `Prueba · ${title}`;
 
-  await saveSession(session.user.orgId, {
+  const result = await saveSession(session.user.orgId, {
     id,
     centerId,
     trainerId,
@@ -62,6 +77,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     recurrence,
     recUntil: recurrence !== "NONE" && recUntilRaw ? parseDateParam(recUntilRaw) : null,
   });
+  if (!result.ok) return result;
 
   revalidateSessionViews();
   return { ok: true };
@@ -72,7 +88,7 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
   const centerId = String(formData.get("centerId") ?? "");
-  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER"]);
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, error: "Sesión no encontrada." };
@@ -109,7 +125,7 @@ export async function moveSessionAction(input: {
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
-  await requireCenterRole(input.centerId, ["CENTER_DIRECTOR", "TRAINER"]);
+  await requireCenterRole(input.centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const result = await rescheduleSession(session.user.orgId, input.id, parseDateParam(input.date), input.startTime, input.endTime);
   if (!result.ok) return result;

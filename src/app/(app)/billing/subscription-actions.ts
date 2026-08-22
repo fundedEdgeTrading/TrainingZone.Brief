@@ -60,7 +60,10 @@ export async function postponePayment(formData: FormData): Promise<SubscriptionA
 /** RB-PAGO-003 (D-2): devolución en modo registro local. Bloquea si el cobro fue vía Stripe (pendiente de PAGO-2b). */
 export async function refundPayments(formData: FormData): Promise<SubscriptionActionResult> {
   const session = await requireRole([...ALLOWED_ROLES]);
-  const paymentIds = formData.getAll("paymentId").map(String).filter(Boolean);
+  // Sin deduplicar, un id repetido en el formulario hacía que `findMany`
+  // devolviera menos filas que ids y la comprobación de abajo abortase con un
+  // "no se ha encontrado" que no era cierto.
+  const paymentIds = [...new Set(formData.getAll("paymentId").map(String).filter(Boolean))];
   const reason = String(formData.get("reason") ?? "").trim();
 
   if (paymentIds.length === 0) return { ok: false, error: "Selecciona al menos un pago." };

@@ -1,17 +1,31 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import {
   getMemberDetail,
   getMemberAttendanceStats,
   getMemberNotes,
   getMemberServiceKinds,
+  getSessionBalances,
+  getMemberSessionCalendar,
   listCentersForOrg,
   listActivePlansForOrg,
   listClientGoalTemplates,
 } from "@/lib/members-queries";
+import { getCentersForUser } from "@/lib/agenda-queries";
+import { resolveTimezoneForCenter } from "@/lib/timezone";
+import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { getHealthRecordsForMember } from "@/lib/health-access";
+import { listAssessmentsForMember } from "@/lib/assessments/queries";
+import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
-import { canDeleteMembers, canManageOrg } from "@/lib/rbac";
+import {
+  canAdjustSessionBalance,
+  canDeleteMembers,
+  canManageMesocycles,
+  canManageOrg,
+  canViewHealthData,
+} from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
@@ -37,6 +51,11 @@ import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { StaffChatThread } from "./staff-chat-thread";
 import { WorkoutProgramList } from "./workout-panel";
 import { SingleMetricChart } from "@/components/single-metric-chart";
+import { BonosPanel } from "./bonos-panel";
+import { MemberSessionsCalendar } from "./member-calendar";
+import { listMesocyclesForMember } from "@/lib/mesocycle-queries";
+import { isAiConfigured } from "@/lib/ai/anthropic";
+import { MesocyclePanel } from "./mesociclos/panel";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -77,13 +96,15 @@ export default async function MemberDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
 
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const [stats, healthRecords, notes, goalTemplates, centers, plans] = await Promise.all([
+  const canSeeMesocycles = canManageMesocycles(session.user.role);
+
+  const [stats, healthRecords, notes, goalTemplates, centers, plans, assessments, mesocycles] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -95,7 +116,13 @@ export default async function MemberDetailPage({
     listClientGoalTemplates(session.user.orgId),
     listCentersForOrg(session.user.orgId),
     listActivePlansForOrg(session.user.orgId),
+    listAssessmentsForMember(session.user.orgId, member.id),
+    canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
   ]);
+
+  // Las valoraciones son trabajo de entrenador y arrastran screening de salud:
+  // recepción ve la ficha pero no esta pestaña (mismo criterio que /salud).
+  const canSeeAssessments = canViewHealthData(session.user.role);
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
   // RB-AGENDA-003: un socio puede tener varios bonos ACTIVE/FROZEN a la vez
@@ -110,6 +137,37 @@ export default async function MemberDetailPage({
         : `${manageableSubscriptions.length} bonos activos`;
   const canManageSub = canManageBilling(session.user.role);
   const canDelete = canDeleteMembers(session.user.role);
+
+  // Pestaña "Bonos y calendario". El mes en curso sale de la zona del CENTRO y
+  // no de `new Date()` del servidor (UTC): el día 1 a medianoche en España
+  // abriría el mes anterior (mismo fallo ya corregido en /agenda).
+  const calendarTz = await resolveTimezoneForCenter(member.primaryCenterId);
+  const calendarToday = zonedToday(calendarTz);
+  const calendarMonthStart = new Date(calendarToday.getFullYear(), calendarToday.getMonth(), 1);
+  // Ventana precargada: 12 meses atrás + el actual + el siguiente. Fuera de
+  // ella el propio componente pide el mes con `fetchMemberSessionsMonth`, para
+  // no tener que cambiar la URL — eso re-renderizaría esta página y
+  // `getHealthRecordsForMember` escribe una fila de auditoría por cada lectura.
+  const calendarFrom = new Date(calendarMonthStart);
+  calendarFrom.setMonth(calendarFrom.getMonth() - 12);
+  const calendarTo = new Date(calendarMonthStart);
+  calendarTo.setMonth(calendarTo.getMonth() + 2);
+
+  const [calendarEvents, openableCenters] = await Promise.all([
+    getMemberSessionCalendar(session.user.orgId, member.id, calendarFrom, calendarTo),
+    // /agenda/session/[id] exige requireCenterRole: sin esto, el enlace echaría
+    // de la ficha a quien no esté imputado al centro del bono (RB-AGENDA-003:
+    // el bono puede ser de otro centro de la misma organización).
+    getCentersForUser(session.user),
+  ]);
+
+  const sessionBalances = getSessionBalances(
+    member.subscriptions.map((s) => ({
+      status: s.status,
+      sessionsRemaining: s.sessionsRemaining,
+      plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
+    }))
+  );
 
   const canChat = await canAccessMemberChat(session.user.orgId, member.id, session.user.id, session.user.role);
   const [chatMessages, workoutPrograms] = await Promise.all([
@@ -192,6 +250,7 @@ export default async function MemberDetailPage({
                     consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
                     consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
                     consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                    consentAIAt: member.consentAIAt ? member.consentAIAt.toISOString() : null,
                   }}
                 />
               ),
@@ -408,6 +467,41 @@ export default async function MemberDetailPage({
               ),
             },
             {
+              key: "bonos-calendario",
+              label: "Bonos y calendario",
+              content: (
+                <div className="space-y-6">
+                  <BonosPanel
+                    canAdjust={canAdjustSessionBalance(session.user.role)}
+                    balances={sessionBalances}
+                    bonos={member.subscriptions.map((s) => ({
+                      id: s.id,
+                      planName: s.plan.name,
+                      planType: s.plan.type,
+                      sessionsIncluded: s.plan.sessionsIncluded,
+                      sessionsRemaining: s.sessionsRemaining,
+                      status: s.status,
+                      centerName: s.center.name,
+                      startDateISO: formatDateParam(s.startDate),
+                      endDateISO: s.endDate ? formatDateParam(s.endDate) : null,
+                      priceCents: s.priceCents,
+                      isRecurring: s.stripeSubscriptionId != null,
+                    }))}
+                  />
+                  <MemberSessionsCalendar
+                    memberId={member.id}
+                    events={calendarEvents}
+                    loadedFromMonth={formatDateParam(calendarFrom).slice(0, 7)}
+                    loadedToMonth={formatDateParam(calendarTo).slice(0, 7)}
+                    initialMonth={formatDateParam(calendarMonthStart).slice(0, 7)}
+                    todayISO={formatDateParam(calendarToday)}
+                    minMonth={formatDateParam(member.joinedAt).slice(0, 7)}
+                    openableCenterIds={openableCenters.map((c) => c.id)}
+                  />
+                </div>
+              ),
+            },
+            {
               key: "asistencia",
               label: "Asistencia",
               content: (
@@ -439,7 +533,7 @@ export default async function MemberDetailPage({
                       <tbody>
                         {member.bookings.map((b) => (
                           <tr key={b.id} className="border-t border-tz-sand">
-                            <td className="py-2">{b.session.date.toLocaleDateString("es-ES")}</td>
+                            <td className="py-2">{b.occurrenceDate.toLocaleDateString("es-ES")}</td>
                             <td className="py-2">{b.session.name}</td>
                             <td className="py-2">{b.status}</td>
                             <td className="py-2">
@@ -500,6 +594,60 @@ export default async function MemberDetailPage({
                 </div>
               ),
             },
+            ...(canSeeAssessments
+              ? [
+                  {
+                    key: "valoraciones",
+                    label: "Valoraciones",
+                    content: (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted">
+                          La valoración inicial firma el PAR-Q y propaga el screening al Semáforo de Aptitud y al
+                          Session Brief. Las revisiones (1, 3, 6, 9 meses y aniversario) repiten las mismas
+                          constantes para poder graficarlas.
+                        </p>
+                        {assessments.length === 0 ? (
+                          <p className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
+                            Este socio todavía no tiene ninguna valoración.
+                          </p>
+                        ) : (
+                          <ul className="list-none flex flex-col gap-2">
+                            {assessments.map((a) => (
+                              <li key={a.id}>
+                                <Link
+                                  href={`/members/${member.id}/valoraciones/${a.id}`}
+                                  className="flex items-center justify-between gap-3 flex-wrap rounded-control border border-brand-border px-4 py-3 hover:border-brand-ink transition-colors duration-200"
+                                >
+                                  <span className="font-semibold text-sm">{ASSESSMENT_KIND_LABEL[a.kind]}</span>
+                                  <span className="flex items-center gap-3 text-xs text-muted">
+                                    {a.completedAt ? (
+                                      <>
+                                        <span>{a.completedAt.toLocaleDateString("es-ES")}</span>
+                                        <Badge tone="good">Completada</Badge>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span>Vence {a.dueDate.toLocaleDateString("es-ES")}</span>
+                                        <Badge tone="warning">Pendiente</Badge>
+                                      </>
+                                    )}
+                                  </span>
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <Link
+                          href={`/members/${member.id}/valoraciones`}
+                          className="inline-block text-sm font-semibold text-tz-black hover:underline"
+                        >
+                          Gestionar valoraciones →
+                        </Link>
+                      </div>
+                    ),
+                  },
+                ]
+              : []),
             {
               key: "ia-chat",
               label: "IA & Chat",
@@ -580,6 +728,19 @@ export default async function MemberDetailPage({
                 </div>
               ),
             },
+            // F6: el mesociclo es material del entrenador — no se expone en el
+            // portal del socio ni en la app móvil.
+            ...(canSeeMesocycles
+              ? [
+                  {
+                    key: "mesociclos",
+                    label: "Mesociclos",
+                    content: (
+                      <MesocyclePanel memberId={member.id} mesocycles={mesocycles} aiConfigured={isAiConfigured()} />
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
       </div>

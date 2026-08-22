@@ -5,6 +5,7 @@ import { getPageTitle } from "@/lib/rbac";
 import UserMenu, { type OrgOption } from "./user-menu";
 import { useMobileNav } from "./mobile-nav";
 import { NotificationBell } from "./notification-bell";
+import { AccountMenuTrigger, initials } from "./account-menu";
 
 export default function Header({
   nav,
@@ -15,6 +16,7 @@ export default function Header({
   notifications,
   organizations,
   activeOrgId,
+  isMember,
 }: {
   nav: { href: string; label: string }[];
   subtitle: string;
@@ -32,6 +34,8 @@ export default function Header({
   }[];
   organizations: OrgOption[];
   activeOrgId: string;
+  /** El socio usa el chip + menú de cuenta nuevo; el resto de roles conservan el UserMenu de siempre. */
+  isMember?: boolean;
 }) {
   const pathname = usePathname();
   const { setOpen } = useMobileNav();
@@ -68,12 +72,28 @@ export default function Header({
           </div>
         )}
         <NotificationBell notifications={notifications} />
-        <UserMenu
-          name={userName}
-          roleLabel={roleLabel}
-          organizations={organizations}
-          activeOrgId={activeOrgId}
-        />
+        {isMember ? (
+          <AccountMenuTrigger id="header-account" placement="down">
+            {() => (
+              <div className="flex items-center gap-2.5 border border-brand-border rounded-full py-[5px] pl-[6px] pr-3.5 transition-colors duration-150 hover:bg-brand-bg">
+                <div className="w-[30px] h-[30px] rounded-full bg-brand-ink text-tz-bone flex items-center justify-center font-display font-extrabold text-xs shrink-0">
+                  {initials(userName)}
+                </div>
+                <span className="hidden sm:inline text-[13px] font-bold text-brand-text">{userName.split(" ")[0]}</span>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a8574" strokeWidth="2.2" strokeLinecap="round">
+                  <path d="M7 10l5 5 5-5" />
+                </svg>
+              </div>
+            )}
+          </AccountMenuTrigger>
+        ) : (
+          <UserMenu
+            name={userName}
+            roleLabel={roleLabel}
+            organizations={organizations}
+            activeOrgId={activeOrgId}
+          />
+        )}
       </div>
     </header>
   );

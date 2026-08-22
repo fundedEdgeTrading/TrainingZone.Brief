@@ -60,6 +60,7 @@ export default async function PortalProfilePage() {
         </ActionForm>
       </Card>
 
+      <div id="consentimientos" className="scroll-mt-6">
       <Card title="Tus consentimientos" meta="RGPD">
         <p className="text-[13px] text-brand-muted -mt-3 mb-2">
           Puedes retirarlos en cualquier momento. Retirar datos de salud o imágenes no borra lo ya registrado, pero
@@ -80,6 +81,13 @@ export default async function PortalProfilePage() {
           grantedAt={member.consentImagesAt}
         />
         <ConsentToggle
+          kind="ai"
+          label="Propuestas con inteligencia artificial"
+          description="Tus datos, seudonimizados, se tratan con sistemas de IA de proveedores que actúan como encargados del tratamiento para preparar propuestas de programación que revisa tu entrenador. Oponerte no afecta a tu acceso al servicio."
+          granted={member.consentAI}
+          grantedAt={member.consentAIAt}
+        />
+        <ConsentToggle
           kind="marketing"
           label="Comunicaciones de marketing"
           description="Promociones y novedades del centro."
@@ -87,6 +95,7 @@ export default async function PortalProfilePage() {
           grantedAt={member.consentMarketingAt}
         />
       </Card>
+      </div>
 
       <Card title="Tus datos" meta="RGPD">
         <p className="text-[13px] text-brand-muted -mt-3 mb-3">

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [release]
+  push:
+    branches: [release]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trainingzone
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trainingzone?schema=public
+      AUTH_SECRET: ci-secret-no-usar-en-produccion
+      NEXTAUTH_URL: http://localhost:3000
+      # RB-RES-005: fijada explícitamente para que la ventana de cancelación no
+      # dependa del entorno del runner.
+      CANCELLATION_WINDOW_HOURS: "24"
+      # Las claves de Stripe se dejan SIN definir a propósito: /planes debe
+      # arrancar en modo demo, que es lo que verifica planes-gateo.spec.ts.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Migraciones y datos de demo
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+
+      # Después de migrar: los tests de los reconciliadores de Stripe Billing
+      # montan su propia organización contra la base real, porque el riesgo que
+      # cubren (reentregas y dunning) solo se manifiesta en lo que queda escrito.
+      - name: Tests unitarios
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
+
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+
+      # `npm run start` lo arranca el propio webServer de playwright.config.ts.
+      - name: Tests e2e
+        run: npm run test:e2e
+
+      - name: Guardar informe de fallos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

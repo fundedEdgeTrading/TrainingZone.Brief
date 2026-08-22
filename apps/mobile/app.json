@@ -29,6 +29,13 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 120
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Training Zone usa tus fotos para la imagen de los productos y la foto del equipo.",
+          "cameraPermission": "Training Zone usa la cámara para hacer la foto del producto o del equipo."
+        }
       ]
     ],
     "experiments": {

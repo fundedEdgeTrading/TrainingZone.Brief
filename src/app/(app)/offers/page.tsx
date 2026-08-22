@@ -27,7 +27,7 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 };
 
 export default async function OffersPage() {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const canApprove = canApproveOffers(session.user.role);
   const canPropose = canProposeOffers(session.user.role);
 
@@ -38,7 +38,10 @@ export default async function OffersPage() {
 
   return (
     <div className="tz-page space-y-4">
-      <PageHeader description="Motor de ofertas personalizadas (RB-RRHH-008/013): sugerida → propuesta → aprobación de dirección → comunicada." />
+      {/* El módulo está aparcado desde F2 (docs/MODULOS_APARCADOS.md): la regla
+          que sugería ofertas ya no corre en el cron, así que la cabecera no
+          puede seguir prometiendo un paso automático que hoy no ocurre. */}
+      <PageHeader description="Motor de ofertas personalizadas (RB-RRHH-008/013): propuesta del entrenador → aprobación de dirección → comunicada. La sugerencia automática está aparcada; las ofertas se proponen a mano." />
 
       {canPropose && (
         <Card title="Proponer oferta manual">

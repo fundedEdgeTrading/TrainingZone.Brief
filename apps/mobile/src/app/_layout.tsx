@@ -11,6 +11,8 @@ import {
   Poppins_700Bold,
 } from "@expo-google-fonts/poppins";
 import { AuthProvider } from "@/auth/auth-context";
+import { ToastProvider } from "@/components/Toast";
+import { useTheme } from "@/theme/theme";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -19,6 +21,7 @@ const queryClient = new QueryClient({
 });
 
 export default function RootLayout() {
+  const theme = useTheme();
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
@@ -35,8 +38,12 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <StatusBar style="auto" />
-        <Stack screenOptions={{ headerShown: false }} />
+        <ToastProvider>
+          {/* La piel oscura es la de por defecto: el color de la barra de
+              estado sale del tema, no del ajuste del sistema. */}
+          <StatusBar style={theme.mode === "dark" ? "light" : "dark"} />
+          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }} />
+        </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

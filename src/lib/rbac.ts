@@ -12,13 +12,18 @@ export type NavSection =
   | "Operativa del centro"
   | "Salud y aptitud"
   | "Administración"
-  | "Mi cuenta";
+  // Navegación del socio (rediseño NavBar premium, opción 1b): dos grupos con
+  // jerarquía en vez de un único "Mi cuenta" plano.
+  | "Entrenar"
+  | "Membresía";
 
 export type NavItem = {
   href: string;
   label: string;
   section: NavSection;
   badge?: number;
+  /** Texto corto a la derecha del item (p.ej. próxima reserva en "Reservar clase"). */
+  meta?: string;
   /** Si está presente, el elemento solo se muestra si el plan contratado lo incluye (RB-PLAN-003). */
   feature?: PlatformFeature;
 };
@@ -58,7 +63,6 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/dashboard", label: "Panel de control", section: "Vista general" },
     { href: "/feedback", label: "Feedback", section: "Vista general" },
     { href: "/leads", label: "Leads", section: "Comercial" },
-    { href: "/offers", label: "Ofertas", section: "Comercial" },
     { href: "/members", label: "Socios", section: "Operativa del centro" },
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
     { href: "/billing", label: "Cobros", section: "Operativa del centro" },
@@ -75,22 +79,34 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/dashboard", label: "Panel de control", section: "Vista general" },
     { href: "/feedback", label: "Feedback", section: "Vista general" },
     { href: "/leads", label: "Leads", section: "Comercial" },
-    { href: "/offers", label: "Ofertas", section: "Comercial" },
     { href: "/members", label: "Socios", section: "Operativa del centro" },
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/aforo", label: "Aforo de clases", section: "Operativa del centro" },
     { href: "/billing", label: "Cobros", section: "Operativa del centro" },
     { href: "/retention", label: "Retención", section: "Operativa del centro" },
+    { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud" },
+    { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud" },
     { href: "/anuncios", label: "Anuncios", section: "Administración" },
     { href: "/rrhh", label: "RRHH", section: "Administración" },
   ],
+  // Un entrenador no gestiona personal: RRHH fuera. Con Ofertas retirada, su
+  // sección "Comercial" se quedaba con un único enlace, así que Leads cuelga de
+  // "Mi panel" en vez de abrir una sección para él solo.
   TRAINER: [
     { href: "/trainer", label: "Mi panel", section: "Vista general" },
     { href: "/brief", label: "Session Brief", section: "Vista general" },
-    { href: "/leads", label: "Leads", section: "Comercial" },
-    { href: "/offers", label: "Ofertas", section: "Comercial" },
+    { href: "/leads", label: "Leads", section: "Vista general" },
     { href: "/members", label: "Socios", section: "Operativa del centro" },
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
-    { href: "/rrhh", label: "RRHH", section: "Administración" },
+  ],
+  // El del entrenador más lo que le da su mando sobre el centro (F1).
+  TRAINER_ADMIN: [
+    { href: "/trainer", label: "Mi panel", section: "Vista general" },
+    { href: "/brief", label: "Session Brief", section: "Vista general" },
+    { href: "/leads", label: "Leads", section: "Vista general" },
+    { href: "/members", label: "Socios", section: "Operativa del centro" },
+    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/aforo", label: "Aforo de clases", section: "Operativa del centro" },
   ],
   RECEPTION: [
     { href: "/leads", label: "Leads", section: "Comercial" },
@@ -98,13 +114,15 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
     { href: "/billing", label: "Cobros", section: "Operativa del centro" },
   ],
+  // "Mi perfil" ya no vive en el nav: se accede desde el bloque de usuario del
+  // pie del sidebar y desde el chip de usuario del header (menú de cuenta).
+  // "Mi plan" + "Comprar/renovar" se fusionan en "Mi membresía".
   MEMBER: [
-    { href: "/portal", label: "Mi actividad", section: "Mi cuenta" },
-    { href: "/portal/agenda", label: "Reservar clase", section: "Mi cuenta" },
-    { href: "/portal/evolucion", label: "Mi evolución", section: "Mi cuenta" },
-    { href: "/portal/plan", label: "Mi plan", section: "Mi cuenta" },
-    { href: "/portal/comprar", label: "Comprar / renovar", section: "Mi cuenta" },
-    { href: "/portal/perfil", label: "Mi perfil", section: "Mi cuenta" },
+    { href: "/portal", label: "Mi actividad", section: "Entrenar" },
+    { href: "/portal/agenda", label: "Reservar clase", section: "Entrenar" },
+    { href: "/portal/evolucion", label: "Mi evolución", section: "Entrenar" },
+    { href: "/portal/membresia", label: "Mi membresía", section: "Membresía" },
+    { href: "/portal/membresia/facturas", label: "Facturas y pagos", section: "Membresía" },
   ],
   HR_MANAGER: [
     { href: "/organization", label: "Organización", section: "Administración" },
@@ -125,7 +143,8 @@ export const NAV_SECTION_ORDER: NavSection[] = [
   "Operativa del centro",
   "Salud y aptitud",
   "Administración",
-  "Mi cuenta",
+  "Entrenar",
+  "Membresía",
 ];
 
 export function groupNav(nav: NavItem[]) {
@@ -137,12 +156,20 @@ export function groupNav(nav: NavItem[]) {
 
 export function canViewHealthData(role: Role): boolean {
   // Recepción, RRHH y Admin plataforma NO ven datos de salud por defecto (A.2.4/A.2.5).
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
+  // El Entrenador Admin hereda: sigue dando sesiones, y sin salud no puede prepararlas.
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "TRAINER_ADMIN";
 }
 
 export function canEditHealthData(role: Role): boolean {
   // Alta/resolución de lesiones y condiciones: mismo ámbito que la lectura
   // (entrenador asignado + dirección). Recepción y RRHH quedan fuera.
+  return canViewHealthData(role);
+}
+
+// F6 — mesociclos: los ve, los genera y los firma quien prepara la sesión.
+// Recepción y RRHH quedan fuera, y el socio no los ve en absoluto: el mesociclo
+// no se expone ni en el portal ni en la app móvil.
+export function canManageMesocycles(role: Role): boolean {
   return canViewHealthData(role);
 }
 
@@ -188,12 +215,37 @@ export function isStaffRole(role: Role): boolean {
 
 // F8 — CRM comercial de leads.
 export function canManageLeads(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "RECEPTION" || role === "TRAINER";
+  return (
+    role === "OWNER" ||
+    role === "CENTER_DIRECTOR" ||
+    role === "RECEPTION" ||
+    role === "TRAINER" ||
+    role === "TRAINER_ADMIN"
+  );
 }
 
 // F11/RB-AGENDA-006 — crear/editar/publicar franjas autorreservables de EP.
 export function canManageEpSlots(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "TRAINER_ADMIN";
+}
+
+// RB-RES-006 — ajuste manual del saldo de sesiones de un bono desde la ficha
+// del socio. A diferencia del resto de la gestión de bonos (`canManageBilling`),
+// aquí SÍ entra pista: es quien detecta que a un socio le falta o le sobra una
+// sesión (sesión regalada, o hueco de EP agendado a mano, que crea la reserva
+// con `subscriptionId` null y por tanto no descuenta bono —
+// agenda-queries.ts::createEpSlot). No mueve dinero: solo saldo, y cada ajuste
+// queda en AuditLog. Del lado del entrenador es EXCLUSIVO del Entrenador Admin:
+// si lo pudiera hacer cualquier entrenador, el rol nuevo no aportaría nada.
+export function canAdjustSessionBalance(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER_ADMIN" || role === "RECEPTION";
+}
+
+// Aforo por defecto de un centro (Center.defaultGroupCapacity). El Entrenador
+// Admin lo configura para SUS centros (los de su CenterMembership); dirección,
+// para cualquiera de la organización.
+export function canManageCenterCapacity(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER_ADMIN";
 }
 
 // F14/RB-RRHH-013 — aprobar (luz verde) ofertas personalizadas.
@@ -208,7 +260,7 @@ export function canManageAnnouncements(role: Role): boolean {
 
 // F14/RB-RRHH-013 — proponer/elevar ofertas a dirección.
 export function canProposeOffers(role: Role): boolean {
-  return role === "TRAINER" || role === "OWNER" || role === "CENTER_DIRECTOR";
+  return role === "TRAINER" || role === "TRAINER_ADMIN" || role === "OWNER" || role === "CENTER_DIRECTOR";
 }
 
 // F14/RB-RRHH-012 — valoraciones de entrenadores: EXCLUSIVO dirección, nunca el propio entrenador.
@@ -219,7 +271,10 @@ export function canViewTrainerRatings(role: Role): boolean {
 // G.1 — Debrief individual de una sesión: confidencial del entrenador asignado
 // (o quien la dirigió realmente) más dirección. Recepción y el resto de
 // entrenadores quedan fuera de la vista por sesión; dirección conserva además
-// el informe semanal agregado (getWeeklyDebriefReport).
+// el informe semanal agregado (getWeeklyDebriefReport). El Entrenador Admin NO
+// hereda por rol: manda en el aforo de su centro, no en la confidencialidad de
+// lo que otro entrenador escribe de su sesión — entra por la vía de siempre,
+// ser el entrenador de esa sesión.
 export function canViewSessionDebrief(
   role: Role,
   actorUserId: string,
@@ -250,6 +305,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   RECEPTION: "Recepción",
   MEMBER: "Socio",
   HR_MANAGER: "RRHH",
+  TRAINER_ADMIN: "Entrenador Admin",
   PLATFORM_ADMIN: "Admin plataforma",
 };
 

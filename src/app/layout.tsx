@@ -4,6 +4,7 @@ import "./globals.css";
 import { SessionProvider } from "next-auth/react";
 import { auth } from "@/auth";
 import { ToastProvider } from "@/components/ui/toast";
+import { CelebrateProvider } from "@/components/ui/celebrate";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -28,7 +29,9 @@ export default async function RootLayout({
     <html lang="es" className={`h-full antialiased ${poppins.variable}`}>
       <body className="min-h-full flex flex-col bg-brand-bg text-brand-text">
         <SessionProvider session={session}>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <CelebrateProvider>{children}</CelebrateProvider>
+          </ToastProvider>
         </SessionProvider>
       </body>
     </html>

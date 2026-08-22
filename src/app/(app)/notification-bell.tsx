@@ -56,7 +56,7 @@ export function NotificationBell({ notifications }: { notifications: Notificatio
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden="true" />
-          <div className="absolute right-0 mt-2 w-[340px] max-h-[420px] overflow-y-auto bg-white border border-brand-border rounded-2xl shadow-pop z-50">
+          <div className="fixed inset-x-4 top-[76px] max-h-[70vh] sm:absolute sm:inset-x-auto sm:top-auto sm:right-0 sm:mt-2 sm:w-[340px] sm:max-h-[420px] overflow-y-auto bg-white border border-brand-border rounded-2xl shadow-pop z-50">
             <div className="px-4 py-3 border-b border-tz-sand font-display font-bold text-xs uppercase tracking-[.08em] text-brand-muted">
               Notificaciones
             </div>

@@ -40,6 +40,19 @@ export function weekdayIdx(d: Date) {
   return (d.getDay() + 6) % 7;
 }
 
+/**
+ * ¿Opera el centro ese día? Hoy: de lunes a sábado.
+ *
+ * La regla vivía solo como un descarte de PINTADO en la rejilla de la agenda
+ * (`VISIBLE_DAYS`), y esa asimetría dejaba que el socio reservara por el portal
+ * una sesión en domingo que su entrenador no podía ni abrir ni editar. Al
+ * exponerla como predicado, rejilla y motor de reservas (portal-queries.ts)
+ * citan la MISMA fuente en vez de duplicar un `=== 0` mágico.
+ */
+export function isOperatingDay(d: Date): boolean {
+  return weekdayIdx(d) < VISIBLE_DAYS;
+}
+
 export function toMin(hhmm: string) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -68,6 +81,13 @@ export const MAX_GROUP_CAPACITY = 30;
 
 export type WeekOccurrence = {
   id: string;
+  /**
+   * Identidad de LA OCURRENCIA (`id:dayIndex`). Una serie L–V rinde varias
+   * ocurrencias en la misma semana compartiendo `id`, así que la rejilla no
+   * puede usarlo ni como clave de React ni para saber cuál se está arrastrando:
+   * con `id` a secas, mover el lunes movía también el resto de la semana.
+   */
+  uid: string;
   dayIndex: number; // 0=lunes .. 6=domingo, dentro de la semana visible
   startMin: number;
   endMin: number;
@@ -90,28 +110,38 @@ export type WeekOccurrence = {
 };
 
 /**
- * Determina si `session` tiene una ocurrencia visible en la semana [ws, we)
- * y en qué día. Recurrencia "weekly"/"weekdays": la ocurrencia cae siempre en
- * el mismo día de la semana que la fecha base, mientras `occ >= base` y
- * (sin `recUntil` o `occ <= recUntil`). "weekdays" además exige que la fecha
- * base caiga de lunes a viernes.
+ * Días de la semana [ws, we) en los que `session` tiene ocurrencia.
+ *
+ * - "NONE": su propio día, si cae dentro de la semana.
+ * - "WEEKLY": el mismo día de la semana que la fecha base.
+ * - "WEEKDAYS": TODOS los días laborables (L–V), que es lo que ofrece el
+ *   diálogo ("Todos los días laborables"). Antes compartía implementación con
+ *   "WEEKLY" y solo se comprobaba que la fecha base no cayera en fin de semana,
+ *   así que una serie L–V rendía una única sesión por semana.
+ *
+ * En los tres casos la ocurrencia debe caer en la serie: no antes de la fecha
+ * base y, si hay `recUntil`, no después.
  */
-export function instanceForWeek(
+export function instancesForWeek(
   session: { date: Date; recurrence: "NONE" | "WEEKLY" | "WEEKDAYS"; recUntil: Date | null },
   ws: Date,
   we: Date
-): number | null {
+): number[] {
   const base = session.date;
   if (session.recurrence === "NONE") {
-    if (base >= ws && base < we) return weekdayIdx(base);
-    return null;
+    return base >= ws && base < we ? [weekdayIdx(base)] : [];
   }
+
+  const inSeries = (occ: Date) => occ >= base && (!session.recUntil || occ <= session.recUntil);
+
+  if (session.recurrence === "WEEKDAYS") {
+    const out: number[] = [];
+    for (let i = 0; i <= 4; i++) if (inSeries(addDays(ws, i))) out.push(i);
+    return out;
+  }
+
   const wi = weekdayIdx(base);
-  if (session.recurrence === "WEEKDAYS" && wi > 4) return null;
-  const occ = addDays(ws, wi);
-  if (occ < base) return null;
-  if (session.recUntil && occ > session.recUntil) return null;
-  return wi;
+  return inSeries(addDays(ws, wi)) ? [wi] : [];
 }
 
 type LayoutEvent = { id: string; startMin: number; endMin: number };

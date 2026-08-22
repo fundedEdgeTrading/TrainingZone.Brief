@@ -99,12 +99,14 @@
     transform: none;
   }
 }
+/* Barra que se llena. Anima `transform`, no `width` (plan §0.6): quien la use
+   deja el ancho fijo al valor final y añade `origin-left`. */
 @keyframes tzProg {
   from {
-    width: 0%;
+    transform: scaleX(0);
   }
   to {
-    width: 100%;
+    transform: scaleX(1);
   }
 }
 @keyframes tzGrow {
@@ -581,7 +583,11 @@ textarea:focus-visible {
   place-items: center;
   position: relative;
   animation: tzMapBubbleIn 0.55s var(--ease-spring) both;
-  cursor: pointer;
+  /* La caja mide siempre lo mismo (para que el radio pueda interpolar), así que
+     quien recibe el puntero es el círculo escalado, no la caja: si no, un
+     barrio pequeño tendría un área de clic de 64 px que pisaría a sus vecinos.
+     Con `--s: 0` el círculo no tiene área y el barrio deja de ser pulsable. */
+  pointer-events: none;
 }
 .tz-map-bubble-core {
   width: 100%;
@@ -591,7 +597,13 @@ textarea:focus-visible {
   border: 1.5px solid rgba(244, 240, 232, 0.9);
   box-shadow: 0 4px 14px -4px rgba(29, 29, 28, 0.55);
   opacity: var(--o, 0.88);
-  transition: transform 0.28s var(--ease-spring), box-shadow 0.28s var(--ease-out-soft);
+  /* `--s` es el radio relativo de la métrica activa: al cambiarlo, el radio
+     interpola en vez de desmontarse y volver a entrar (plan §6.3). */
+  transform: scale(var(--s, 1));
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.28s var(--ease-spring), box-shadow 0.28s var(--ease-out-soft),
+    opacity 0.28s var(--ease-out-soft);
 }
 .tz-map-bubble.top .tz-map-bubble-core {
   background: radial-gradient(circle at 34% 28%, #e2c896, var(--color-apta-gold) 58%, #7a6231 150%);
@@ -607,7 +619,7 @@ textarea:focus-visible {
   pointer-events: none;
 }
 .tz-map-bubble-hi .tz-map-bubble-core {
-  transform: scale(1.22);
+  transform: scale(calc(var(--s, 1) * 1.22));
   box-shadow: 0 9px 24px -5px rgba(29, 29, 28, 0.7);
 }
 .leaflet-tooltip.tz-map-tip {
@@ -702,6 +714,135 @@ textarea:focus-visible {
   }
 }
 
+/* ===== Barra de progreso de ruta (RouteProgress y botón del login) ===== */
+@keyframes tzRouteBar {
+  0% {
+    transform: scaleX(0);
+  }
+  55% {
+    transform: scaleX(0.72);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+/* ===== Celebración de hitos (CelebrateProvider) ===== */
+@keyframes tzConfetti {
+  0% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--cx), var(--cy), 0) rotate(var(--cr));
+  }
+}
+
+/* ===== Check de confirmación: el círculo entra con muelle y el trazo se
+   dibuja con tzDraw (ya existente, stroke-dasharray: 30). ===== */
+@keyframes tzCheckPop {
+  0% {
+    transform: scale(0.4);
+  }
+  55% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ===== Entrada de un evento de agenda ===== */
+@keyframes tzEventIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ===== Barrido direccional al cambiar de semana en la agenda.
+   Cuatro nombres a propósito: alternar A/B retriggerea la animación aunque el
+   navegador colapse animaciones homónimas (misma técnica que wizA/wizB). ===== */
+@keyframes wkNextA {
+  from {
+    opacity: 0.3;
+    transform: translateX(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes wkNextB {
+  from {
+    opacity: 0.3;
+    transform: translateX(26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes wkPrevA {
+  from {
+    opacity: 0.3;
+    transform: translateX(-26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes wkPrevB {
+  from {
+    opacity: 0.3;
+    transform: translateX(-26px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* La pista de la barra de ruta se apaga sola cuando la animación termina. */
+@keyframes tzRouteBarOut {
+  to {
+    opacity: 0;
+  }
+}
+.tz-route-bar-track {
+  animation: tzRouteBarOut 0.28s var(--ease-out-soft) 0.62s both;
+}
+
+.tz-check-pop {
+  animation: tzCheckPop 0.35s var(--ease-spring) both;
+}
+.tz-draw {
+  stroke-dasharray: 30;
+  animation: tzDraw 0.4s var(--ease-out-soft) both;
+}
+
+/* ===== Morph del avatar del socio (lista → ficha) =====
+   El desenfoque a mitad de vuelo tapa los artefactos de interpolación entre dos
+   tamaños distintos del mismo retrato. ===== */
+::view-transition-group(*) {
+  animation-duration: 0.34s;
+  animation-timing-function: var(--ease-out-soft);
+}
+::view-transition-image-pair(*) {
+  animation-name: tzMorphBlur;
+}
+@keyframes tzMorphBlur {
+  30% {
+    filter: blur(2px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -709,5 +850,15 @@ textarea:focus-visible {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Los pseudoelementos de View Transitions no son descendientes de nada, así
+     que el `*` de arriba no los alcanza: el morph del avatar hay que apagarlo
+     por su nombre. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-image-pair(*) {
+    animation: none !important;
   }
 }

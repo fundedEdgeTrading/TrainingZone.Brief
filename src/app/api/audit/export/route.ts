@@ -5,8 +5,14 @@ import { requireFeature } from "@/lib/entitlements";
 import { getAuditLogForExport } from "@/lib/audit-queries";
 
 function csvEscape(value: string) {
-  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
+  // Excel y LibreOffice interpretan como fórmula cualquier celda que empiece
+  // por = + - @ (o por un control que quede antes al recortar). El nombre del
+  // actor lo escriben personas, así que un usuario llamado `=HYPERLINK(...)`
+  // se ejecutaba al abrir la exportación. El apóstrofo inicial la neutraliza
+  // sin alterar el texto que se ve en la celda.
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  if (/[",\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
+  return safe;
 }
 
 export async function GET(req: NextRequest) {

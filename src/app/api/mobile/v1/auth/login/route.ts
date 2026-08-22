@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticate } from "@/lib/identity";
 import { signAccessToken, issueRefreshToken } from "@/lib/mobile-auth";
 import { apiOk, apiError } from "../../_lib/response";
+import { memberSummaryFor } from "../../_lib/session-user";
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
     issueRefreshToken(membership.userId),
   ]);
 
+  // Mismo `user` que devuelve /me, gate de compra incluido: la app decide el
+  // destino del login sin una segunda petición.
+  const member = await memberSummaryFor(membership.userId, membership.orgId, membership.role);
+
   return apiOk({
     accessToken,
     refreshToken,
@@ -57,6 +62,7 @@ export async function POST(req: NextRequest) {
       role: membership.role,
       orgId: membership.orgId,
       centerId: membership.centerId,
+      member,
     },
   });
 }

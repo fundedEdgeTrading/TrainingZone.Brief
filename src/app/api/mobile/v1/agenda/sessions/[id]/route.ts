@@ -24,7 +24,7 @@ type UpdateSessionBody = {
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageEpSlots(claims.role)) return apiError("No tienes permiso para editar sesiones.", 403);
@@ -55,13 +55,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     recUntil: body.recUntil ? parseDateParam(body.recUntil) : null,
   };
 
-  const session = await saveSession(claims.orgId, input);
-  revalidateSessionViews(session.id);
-  return apiOk({ id: session.id });
+  const result = await saveSession(claims.orgId, input);
+  if (!result.ok) return apiError(result.error, 404);
+  revalidateSessionViews(result.session.id);
+  return apiOk({ id: result.session.id });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageEpSlots(claims.role)) return apiError("No tienes permiso para borrar sesiones.", 403);

@@ -6,7 +6,7 @@ import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { isSameDay } from "@/lib/session-occurrences";
-import { addDays, instanceForWeek, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
+import { addDays, instancesForWeek, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
 import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
 
@@ -15,11 +15,12 @@ export default async function AgendaPage({
 }: {
   searchParams: Promise<{ center?: string; week?: string; day?: string; view?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
 
   const centers = await getCentersForUser(session.user);
   const centerId = params.center || session.user.centerId || centers[0]?.id;
+  const currentCenter = centers.find((c) => c.id === centerId) ?? null;
 
   // `day` solo lo usa la vista móvil (un día por pantalla) al saltar de semana
   // con las flechas: marca con qué día debe abrirse la semana de destino.
@@ -44,17 +45,17 @@ export default async function AgendaPage({
 
   const [trainers, members] = centerId
     ? await Promise.all([
-        listAssignableStaff(session.user.orgId, ["TRAINER"]),
+        listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"]),
         listActiveMembersForSelect(session.user.orgId),
       ])
     : [[], []];
 
   const occurrences: WeekOccurrence[] = [];
   for (const s of sessions) {
-    const dayIndex = instanceForWeek(s, weekStart, weekEnd);
-    // De momento la agenda no opera en domingo: se descarta esa ocurrencia.
-    if (dayIndex === null || dayIndex >= VISIBLE_DAYS) continue;
     if (!s.trainerId) continue;
+    for (const dayIndex of instancesForWeek(s, weekStart, weekEnd)) {
+    // De momento la agenda no opera en domingo: se descarta esa ocurrencia.
+    if (dayIndex >= VISIBLE_DAYS) continue;
     // Reservas del día que se pinta: en una serie recurrente todas las
     // ocurrencias comparten fila, y contarlas juntas inflaba el aforo.
     const occurrenceDay = addDays(weekStart, dayIndex);
@@ -65,6 +66,7 @@ export default async function AgendaPage({
     );
     occurrences.push({
       id: s.id,
+      uid: `${s.id}:${dayIndex}`,
       dayIndex,
       startMin: toMinutes(s.startTime),
       endMin: toMinutes(s.endTime),
@@ -81,6 +83,7 @@ export default async function AgendaPage({
       bookedCount: active.length,
       status: s.status,
     });
+    }
   }
 
   return (
@@ -97,6 +100,7 @@ export default async function AgendaPage({
         trainers={trainers.map((t) => ({ id: t.id, name: t.name }))}
         members={members}
         canEdit={canEdit}
+        defaultGroupCapacity={currentCenter?.defaultGroupCapacity ?? null}
         currentUserId={session.user.id}
         isDirection={session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR"}
         centerSwitcher={

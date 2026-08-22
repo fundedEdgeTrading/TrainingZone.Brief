@@ -329,3 +329,69 @@ Prohibido: parallax, animaciones en loop infinito (salvo spinner/skeleton), dela
 6. `refactor(ui): login premium + retoques portal` (3.9–3.10)
 7. `feat(ui): skeletons de ruta (loading.tsx)` (3.11)
 8. `polish(ui): motion transversal + fixes de accesibilidad` (Fases 4–5)
+
+---
+
+## Fase 6 — Sistema de animaciones (entregado)
+
+Implementación del handoff de Claude Design "Animaciones Training Zone". La
+intensidad acordada es **expresiva**: `--ease-spring` en entradas y feedback de
+acción, `--ease-out-soft` en transiciones de color y estado, 180–520 ms. Siguen
+en pie todas las prohibiciones de la Fase 4.
+
+### 6.1 El arreglo del punto de dolor
+
+La app "se quedaba como si no hubieras hecho nada" al entrar. Dos causas:
+
+1. `login-form.tsx` apagaba su estado de carga **antes** de `router.push`, así
+   que el botón volvía a "Iniciar sesión" justo cuando empezaba la espera larga.
+   Ahora el pendiente se sostiene hasta que la navegación desmonta el
+   formulario, y el botón lleva su propia barra de progreso.
+2. `/dashboard` —destino por defecto del login— resolvía 19 consultas en un solo
+   `Promise.all` y no pintaba hasta la más lenta. Cada bloque es ahora su propio
+   Server Component tras un límite de Suspense (`dashboard/panels.tsx`), con su
+   skeleton: la fila de KPIs llega primero.
+
+Además hay `loading.tsx` en las 16 rutas principales y una barra de progreso de
+ruta (`RouteProgress`) en el shell. El punto del item de navegación pulsado pasa
+a oro y late mientras su `<Link>` está pendiente (`useLinkStatus`).
+
+### 6.2 Primitivas nuevas
+
+| Componente | Qué hace |
+|---|---|
+| `ui/route-progress.tsx` | Barra de 3 px que se rearma con el `pathname`. Sin estado ni temporizadores: el `key` remonta el nodo y la animación CSS vuelve a correr. |
+| `ui/count-up.tsx` | Cifra que cuenta desde cero. El formato es un **descriptor de datos** (`CountUpFormat`), no una función: `KpiCard` es un Server Component y una función no cruza esa frontera. |
+| `ui/celebrate.tsx` | Confeti sobrio (26 piezas, 1,2 s, sin bucle) y `CelebrateOnce` para hitos que llegan ya cumplidos del servidor. |
+| `ui/skeleton.tsx` | Añade `SkeletonKpiRow` y `SkeletonChartCard`. |
+
+Los cuatro hitos que celebran —y **solo** ellos, porque si celebra todo no
+celebra nada— son: reserva confirmada, puesta en marcha completada, objetivo
+conseguido y lead cerrado.
+
+### 6.3 Reglas que este trabajo hizo cumplir
+
+- `tzProg` animaba `width`, prohibido por la Fase 4. Pasa a `scaleX`; quien la
+  use deja el ancho fijo al valor final y añade `origin-left`. Igual en el
+  embudo de leads, el ranking por barrio, la barra de la puesta en marcha y el
+  paso del modal de valoración.
+- Cada componente cliente nuevo comprueba `prefers-reduced-motion` por su
+  cuenta: la media query neutraliza una animación CSS, pero no un bucle de JS.
+  Los pseudoelementos de View Transitions tampoco los alcanza el `*` de esa
+  media query — se apagan por su nombre.
+
+### 6.4 Morph del avatar (lista de socios → ficha)
+
+Con `experimental.viewTransition` en `next.config.ts` y el mismo
+`viewTransitionName` en los dos avatares, el navegador reconoce que es el mismo
+objeto y lo lleva de un sitio a otro. Donde no hay soporte, corte seco.
+
+### 6.5 Fuera de esta entrega
+
+Aparcado para una segunda vuelta, por decisión de negocio: FLIP del kanban de
+leads, semáforo de aptitud y panel de salud expandible, cobros y auditoría como
+timeline, y la app móvil nativa (`apps/mobile/`).
+
+`members/[id]/valoraciones/*` y `mesociclos/panel.tsx` aparecían en el handoff
+con barras de progreso que crecieran al entrar en viewport; esas barras no
+existen hoy en el código, así que no se ha inventado la interfaz para animarla.

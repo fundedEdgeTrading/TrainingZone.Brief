@@ -9,7 +9,7 @@ import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
 export async function setSessionDirectorAction(sessionId: string, directedByUserId: string): Promise<SessionActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const result = await setSessionDirector(session.user.orgId, sessionId, directedByUserId || null);
   if (!result.ok) return result;
   revalidateSessionViews(sessionId);
@@ -17,7 +17,7 @@ export async function setSessionDirectorAction(sessionId: string, directedByUser
 }
 
 export async function setSessionSelfBookableAction(sessionId: string, selfBookable: boolean): Promise<SessionActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso." };
   const result = await setSessionSelfBookable(session.user.orgId, sessionId, selfBookable);
   if (!result.ok) return result;
@@ -28,7 +28,7 @@ export async function setSessionSelfBookableAction(sessionId: string, selfBookab
 export type CheckInActionResult = { ok: true; checkedIn: boolean } | { ok: false; error: string };
 
 export async function toggleCheckIn(bookingId: string, sessionId: string): Promise<CheckInActionResult> {
-  const actor = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const actor = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   // Acotado a la sesión y a la organización del actor: `findUnique` por id
   // dejaba pasar el check-in de una reserva de cualquier otra organización.
   const booking = await prisma.booking.findFirst({

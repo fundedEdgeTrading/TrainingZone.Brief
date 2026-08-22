@@ -9,12 +9,14 @@ type AuthState =
   | { status: "signedOut" }
   | { status: "signedIn"; user: MeResponse };
 
-type LoginOutcome = { ok: true } | { ok: false; error: string };
+type LoginOutcome = { ok: true; user: MeResponse } | { ok: false; error: string };
 
 type AuthContextValue = {
   state: AuthState;
   login: (email: string, password: string) => Promise<LoginOutcome>;
   logout: () => Promise<void>;
+  /** Vuelve a leer /me: lo usa el gate de compra al volver del pago. */
+  refresh: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -55,9 +57,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       await storeTokens(data);
       setState({ status: "signedIn", user: data.user });
-      return { ok: true };
+      return { ok: true, user: data.user };
     } catch (err) {
       return { ok: false, error: err instanceof ApiError ? err.message : "No se pudo iniciar sesión." };
+    }
+  }
+
+  async function refresh() {
+    try {
+      const me = await apiRequest<MeResponse>("/me");
+      setState({ status: "signedIn", user: me });
+    } catch {
+      // Un fallo puntual de red no debe echar al usuario de la app: se
+      // conserva el estado actual y el siguiente 401 real ya lo resolverá
+      // el refresh de token del cliente de API.
     }
   }
 
@@ -70,7 +83,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setState({ status: "signedOut" });
   }
 
-  const value = useMemo(() => ({ state, login, logout }), [state]);
+  const value = useMemo(() => ({ state, login, logout, refresh }), [state]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

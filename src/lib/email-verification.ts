@@ -16,13 +16,28 @@ import crypto from "crypto";
  * generar/verificar con el nombre de campo que le corresponde, para no obligar
  * a cada caller a saber qué es un "subject" en abstracto.
  */
-type TokenPurpose = "verify-email" | "password-reset" | "member-billing";
+type TokenPurpose = "verify-email" | "password-reset" | "member-billing" | "member-billing-dunning";
 
 const VERIFY_EMAIL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 // Más corto que el reset de contraseña: es un atajo directo a gestión de pago
 // (cambiar tarjeta / cancelar cuota), no una recuperación de acceso completa.
 const MEMBER_BILLING_TTL_MS = 30 * 60 * 1000;
+/**
+ * El enlace que se envía cuando falla un cobro es un propósito APARTE, y no el
+ * de autoservicio con un TTL más largo, por dos razones:
+ *
+ *  - 30 minutos no sirven aquí. Ese plazo asume a alguien delante del teclado
+ *    que acaba de pedir el enlace; un email de impago llega de madrugada y se
+ *    lee por la mañana. Caducado, el socio ve un error y abandona: la vía de
+ *    recuperación falla en silencio, que es justo lo que veníamos a arreglar.
+ *  - Con el propósito dentro de la firma, un enlace de impago no vale como
+ *    enlace de autoservicio ni al revés, así que alargar este no alarga aquel.
+ *
+ * 72 horas cubre un fin de semana entero, que es el caso real. Más sería
+ * imprudente: estos tokens no son revocables (ver cabecera).
+ */
+const MEMBER_DUNNING_TTL_MS = 72 * 60 * 60 * 1000;
 
 type RawTokenResult =
   | { ok: true; subjectId: string }
@@ -111,6 +126,26 @@ export function generateMemberBillingToken(memberId: string) {
 export function verifyMemberBillingToken(token: string): MemberBillingTokenResult {
   const result = verify("member-billing", token);
   return result.ok ? { ok: true, memberId: result.subjectId } : result;
+}
+
+/** Enlace de recuperación tras un cobro fallido. Ver `MEMBER_DUNNING_TTL_MS`. */
+export function generateMemberDunningToken(memberId: string) {
+  return generate("member-billing-dunning", memberId, MEMBER_DUNNING_TTL_MS);
+}
+
+/**
+ * Acepta los dos propósitos porque ambos aterrizan en la misma pantalla. Se
+ * prueba el de autoservicio primero y, si el token no es de ese propósito, el
+ * de impago: un token válido de uno da `invalid` en el otro, no `expired`, así
+ * que ese error no puede enmascarar una caducidad real.
+ */
+export function verifyMemberBillingOrDunningToken(token: string): MemberBillingTokenResult {
+  const selfService = verify("member-billing", token);
+  if (selfService.ok) return { ok: true, memberId: selfService.subjectId };
+  if (selfService.error === "expired") return selfService;
+
+  const dunning = verify("member-billing-dunning", token);
+  return dunning.ok ? { ok: true, memberId: dunning.subjectId } : dunning;
 }
 
 export function memberBillingUrlFor(token: string) {

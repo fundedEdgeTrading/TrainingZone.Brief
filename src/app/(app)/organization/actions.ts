@@ -14,12 +14,13 @@ const STAFF_ROLES: Role[] = [
   "OWNER",
   "CENTER_DIRECTOR",
   "TRAINER",
+  "TRAINER_ADMIN",
   "RECEPTION",
   "HR_MANAGER",
   "PLATFORM_ADMIN",
 ];
 // Roles ligados a un centro (exigen imputación). El resto son de ámbito organización.
-const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "RECEPTION"];
+const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
 
 function slugify(s: string) {
   return s

@@ -340,6 +340,29 @@ tarjeta o domiciliación gestionada por Stripe).
 **`RB-PAGO-002`** — El cierre de un Lead (`RB-LEAD-005`) depende de la confirmación de pago de
 Stripe, no de una acción manual del entrenador.
 
+**`RB-RES-008`** — El centro **no opera en domingo**: el portal del socio no
+ofrece sesiones de domingo y `bookSessionForMember` las rechaza (también por la
+API móvil). La regla existía solo como un descarte de pintado en la rejilla de la
+agenda (lunes a sábado), y esa asimetría permitía que el socio reservara una
+sesión que su entrenador no podía abrir ni editar. Las reservas de domingo
+**anteriores** siguen visibles y cancelables, para no dejar a nadie atrapado con
+una reserva que no puede soltar. El predicado único es `isOperatingDay`
+(`agenda-utils.ts`), que comparten rejilla y motor de reservas.
+
+**`RB-PAGO-008`** — El saldo de sesiones de un bono (`Subscription.sessionsRemaining`) se puede
+**ajustar a mano** desde la pestaña "Bonos y calendario" de la ficha del socio. Es una corrección
+de contador, no un cobro: no genera `Payment` ni viaja a Stripe. Lo pueden hacer dirección de
+organización, dirección de centro, **entrenador** y recepción — el entrenador entra aquí y no en
+el resto de la gestión de bonos (`canManageBilling`) porque es quien detecta en pista que falta o
+sobra una sesión: sesión regalada, sesión dada fuera de la agenda, o hueco de EP agendado a mano,
+que crea la reserva sin bono asociado y por tanto no descuenta saldo.
+
+Condiciones: solo sobre bonos `ACTIVE` o `FROZEN` (recargar uno cancelado daría un saldo que el
+motor de reservas seguiría ignorando); nunca sobre un bono ilimitado (`sessionsRemaining` null);
+nunca por debajo de 0. El ajuste se aplica como **incremento relativo**, no como valor absoluto,
+para no pisar una reserva simultánea del socio desde el portal o la app. Cada ajuste deja una
+entrada `SUBSCRIPTION_SESSIONS_ADJUSTED` en `AuditLog` con actor, delta y saldos antes/después.
+
 ---
 
 ## 7. Vista de "Clientes activos del centro" (listado + ficha) ➕

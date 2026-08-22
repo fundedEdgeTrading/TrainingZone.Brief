@@ -35,7 +35,12 @@ const PUBLIC_PATHS = [
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // La raíz es pública a propósito (RB-ALTA-001): sin sesión aterriza en la
+  // landing comercial de /planes, así que no puede rebotar antes a /login. Se
+  // compara por igualdad exacta, no con `startsWith("/")`, porque eso abriría
+  // cualquier ruta del sitio.
   const isPublic =
+    pathname === "/" ||
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/api/auth");
 

@@ -50,6 +50,7 @@ export async function createBookingMember({
     consentHealth: false,
     consentImages: false,
     consentMarketing: false,
+    consentAI: false,
   });
   if (!result.ok) throw new Error(`No se pudo completar el onboarding del socio de prueba: ${result.error}`);
 

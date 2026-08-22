@@ -5,12 +5,35 @@ import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole, filterNavByFeatures } from
 import { featuresForOrg, isPlatformOperational } from "@/lib/entitlements";
 import { listNotificationsForUser } from "@/lib/notifications";
 import { membershipsFor } from "@/lib/identity";
-import { getPendingSessionFeedbackCountForUser } from "@/lib/portal-queries";
+import { getMemberForUser, getPendingSessionFeedbackCountForUser, getMemberUpcomingBookings, isLiveBooking } from "@/lib/portal-queries";
+import { isRecurring } from "@/lib/member-billing";
+import { planServiceKind } from "@/lib/members-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import { TimezoneSync } from "@/components/timezone-sync";
-import Sidebar from "./sidebar";
+import Sidebar, { type MemberSidebarData } from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
+import { AccountMenuProvider } from "./account-menu";
+import { RouteProgress } from "@/components/ui/route-progress";
+
+const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
+  EP: "Entrenamiento personal",
+  GROUP: "Grupos reducidos",
+  ONLINE: "Online",
+};
+
+/** "HOY 19:00" / "MAÑANA 19:00" / "MAR 19:00" para la meta de "Reservar clase" en el sidebar. */
+function shortDayTimeLabel(startsAt: Date, startTime: string, timezone: string) {
+  const today = new Date(new Date().toLocaleString("en-US", { timeZone: timezone }));
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(startsAt.toLocaleString("en-US", { timeZone: timezone }));
+  day.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  if (diffDays === 0) return `HOY ${startTime}`;
+  if (diffDays === 1) return `MAÑANA ${startTime}`;
+  const weekday = startsAt.toLocaleDateString("es-ES", { weekday: "short", timeZone: timezone });
+  return `${weekday.replace(".", "").toUpperCase()} ${startTime}`;
+}
 
 export default async function AppLayout({
   children,
@@ -27,7 +50,7 @@ export default async function AppLayout({
     : null;
   const timezone = await resolveTimezone(center?.timezone);
 
-  const [org, notifications, pendingPlanCount, memberships, features] = await Promise.all([
+  const [org, notifications, pendingPlanCount, memberships, features, member] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
       select: { name: true, logoUrl: true, platformStatus: true },
@@ -36,6 +59,7 @@ export default async function AppLayout({
     role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id, timezone) : Promise.resolve(0),
     membershipsFor(session.user.identityId),
     featuresForOrg(session.user.orgId),
+    role === "MEMBER" ? getMemberForUser(session.user.id) : Promise.resolve(null),
   ]);
 
   // RB-PLAT-001: el acceso a la app se gatea por platformStatus. PLATFORM_ADMIN
@@ -44,10 +68,20 @@ export default async function AppLayout({
     redirect(role === "MEMBER" ? "/servicio-no-disponible" : "/activar");
   }
 
-  // Badge de "pendientes" en Mi plan (F16/valoración de sesiones): solo el socio.
-  const roleNav = NAV_BY_ROLE[role].map((item) =>
-    item.href === "/portal/plan" && pendingPlanCount > 0 ? { ...item, badge: pendingPlanCount } : item
-  );
+  // Meta de "Reservar clase": próxima reserva viva del socio, si tiene alguna.
+  const nextBooking =
+    role === "MEMBER" && member
+      ? (await getMemberUpcomingBookings(member.id, timezone)).find(isLiveBooking)
+      : undefined;
+
+  // Badge de "pendientes" en Mi membresía (F16/valoración de sesiones): solo el socio.
+  const roleNav = NAV_BY_ROLE[role].map((item) => {
+    if (item.href === "/portal/membresia" && pendingPlanCount > 0) return { ...item, badge: pendingPlanCount };
+    if (item.href === "/portal/agenda" && nextBooking) {
+      return { ...item, meta: shortDayTimeLabel(nextBooking.startsAt, nextBooking.startTime, timezone) };
+    }
+    return item;
+  });
   // RB-PLAN-003: lo que el plan no incluye no se enseña. El soporte de Apta lo ve todo.
   const nav = role === "PLATFORM_ADMIN" ? roleNav : filterNavByFeatures(roleNav, features);
 
@@ -67,32 +101,60 @@ export default async function AppLayout({
 
   const showCenterChip = role === "OWNER" || role === "PLATFORM_ADMIN";
 
+  // Tarjeta de bono del sidebar premium (RB-VENTA): solo si hay suscripción activa.
+  let memberSidebar: MemberSidebarData | undefined;
+  if (role === "MEMBER" && member) {
+    const activeSub = member.subscriptions[0];
+    memberSidebar = {
+      name: name ?? email ?? "",
+      roleLabel: ROLE_LABEL.MEMBER,
+      centerName,
+      bono: activeSub
+        ? {
+            serviceLabel: SERVICE_LABEL[planServiceKind(activeSub.plan.type) ?? "GROUP"],
+            planName: activeSub.plan.name,
+            recurring: isRecurring(activeSub.plan.type),
+            sessionsRemaining: activeSub.sessionsRemaining,
+            sessionsIncluded: activeSub.plan.sessionsIncluded,
+            nextChargeLabel: activeSub.endDate
+              ? activeSub.endDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
+              : null,
+          }
+        : null,
+    };
+  }
+
   return (
     <MobileNavProvider>
-      <TimezoneSync current={timezone} />
-      <div className="flex min-h-screen bg-brand-bg">
-        <Sidebar
-          nav={nav}
-          footerLabel={footerLabelForRole(role)}
-          logoUrl={logoUrl}
-          brandName={brandName}
-        />
-        <div className="flex-1 flex flex-col min-w-0">
-          <Header
+      <AccountMenuProvider>
+        <TimezoneSync current={timezone} />
+        <div className="flex min-h-screen bg-brand-bg">
+          <Sidebar
             nav={nav}
-            subtitle={subtitle}
-            userName={name ?? email ?? ""}
-            roleLabel={ROLE_LABEL[role]}
-            centerChip={showCenterChip ? "Todos los centros" : undefined}
-            notifications={notifications}
-            organizations={memberships.map((m) => ({ orgId: m.orgId, orgName: m.orgName }))}
-            activeOrgId={session.user.orgId}
+            footerLabel={footerLabelForRole(role)}
+            logoUrl={logoUrl}
+            brandName={brandName}
+            member={memberSidebar}
           />
-          <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
-            {children}
-          </main>
+          <div className="flex-1 flex flex-col min-w-0">
+            <Header
+              nav={nav}
+              subtitle={subtitle}
+              userName={name ?? email ?? ""}
+              roleLabel={ROLE_LABEL[role]}
+              centerChip={showCenterChip ? "Todos los centros" : undefined}
+              notifications={notifications}
+              organizations={memberships.map((m) => ({ orgId: m.orgId, orgName: m.orgName }))}
+              activeOrgId={session.user.orgId}
+              isMember={role === "MEMBER"}
+            />
+            <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
+              <RouteProgress />
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </AccountMenuProvider>
     </MobileNavProvider>
   );
 }

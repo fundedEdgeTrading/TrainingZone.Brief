@@ -5,12 +5,13 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 
-// Zaragoza capital (primera puesta en preproducción — ver postal-codes-zaragoza.ts):
-// los barrios están a pocos km entre sí, así que el mapa arranca ya centrado y con
-// zoom de ciudad en vez de la vista España-wide que tenía cuando agrupaba por
-// provincia (con esa vista, todos los puntos quedaban fusionados en un único blob).
-const HOME_CENTER: [number, number] = [41.6488, -0.8891];
-const HOME_ZOOM = 12.3;
+// La vista inicial se calcula de los propios puntos (ver homeBounds): con una sola
+// ciudad encuadra sus barrios, y con varias — Zaragoza y Santander están a ~350 km —
+// encuadra todas sin dejar puntos fuera. Antes era un centro/zoom fijo de Zaragoza,
+// que con un segundo centro dejaba media organización fuera del encuadre.
+const FALLBACK_CENTER: [number, number] = [40.4168, -3.7038];
+const FALLBACK_ZOOM = 6;
+const CITY_ZOOM = 12.3;
 const SELECT_ZOOM = 14.5;
 const MIN_BUBBLE_PX = 20;
 const MAX_BUBBLE_PX = 64;
@@ -18,8 +19,16 @@ const MAX_BUBBLE_PX = 64;
 export type PostalPoint = { code: string; lat: number; lng: number; name: string; leads: number; members: number; total: number };
 export type MapMetric = "all" | "leads" | "members";
 
+const HOME_PADDING: [number, number] = [40, 40];
+
 function valueOf(p: PostalPoint, metric: MapMetric) {
   return metric === "leads" ? p.leads : metric === "members" ? p.members : p.total;
+}
+
+/** Encuadre que contiene todos los barrios con datos, sea una ciudad o varias. */
+function homeBounds(points: PostalPoint[]): L.LatLngBounds | null {
+  if (points.length === 0) return null;
+  return L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
 }
 
 export function PostalHeatmap({
@@ -45,6 +54,7 @@ export function PostalHeatmap({
   const heatRef = useRef<L.HeatLayer | null>(null);
   const groupRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const hasFramed = useRef(false);
   // Refs con los callbacks siempre al día: así el efecto que construye capas no
   // necesita depender de ellos y no recrea las burbujas (perdiendo la animación
   // de entrada escalonada) en cada render.
@@ -59,9 +69,9 @@ export function PostalHeatmap({
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
-      center: HOME_CENTER,
-      zoom: HOME_ZOOM,
-      minZoom: 10,
+      center: FALLBACK_CENTER,
+      zoom: FALLBACK_ZOOM,
+      minZoom: 5,
       maxZoom: 17,
       scrollWheelZoom: false,
     });
@@ -89,41 +99,27 @@ export function PostalHeatmap({
     };
   }, []);
 
-  // Reconstruye capa de calor + burbujas cuando cambian los datos o la métrica
-  // activa (Todos/Leads/Clientes): tamaños, opacidades y top-2 dependen de ella.
+  // Las burbujas se construyen una sola vez por juego de puntos, con la caja
+  // siempre a MAX_BUBBLE_PX: al cambiar de métrica no se desmontan y vuelven a
+  // entrar, sino que su radio interpola (efecto aparte, más abajo). El ancla
+  // del icono es constante, así que la burbuja no se mueve al cambiar de radio.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     groupRef.current?.remove();
-    heatRef.current?.remove();
 
     const group = L.layerGroup().addTo(map);
     groupRef.current = group;
     const markers = new Map<string, L.Marker>();
 
-    const maxV = Math.max(1, ...points.map((p) => valueOf(p, metric)));
-    const heatPoints: [number, number, number][] = points.map((p) => [p.lat, p.lng, valueOf(p, metric) / maxV]);
-    const heat = L.heatLayer(heatPoints, {
-      radius: 34,
-      blur: 26,
-      maxZoom: HOME_ZOOM,
-      minOpacity: 0.15,
-      gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
-    }).addTo(map);
-    heatRef.current = heat;
-
     points.forEach((p, i) => {
-      const v = valueOf(p, metric);
-      const size = Math.round(MIN_BUBBLE_PX + Math.sqrt(v / maxV) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX));
-      const opacity = (0.45 + 0.5 * (v / maxV)).toFixed(2);
-      const isTop = i < 2;
-      const html = `<div class="tz-map-bubble${isTop ? " top" : ""}" style="width:${size}px;height:${size}px;--o:${opacity};animation-delay:${(i * 0.06).toFixed(2)}s;"><span class="tz-map-bubble-core"></span></div>`;
+      const html = `<div class="tz-map-bubble" style="width:${MAX_BUBBLE_PX}px;height:${MAX_BUBBLE_PX}px;--s:0;--o:0;animation-delay:${(i * 0.06).toFixed(2)}s;"><span class="tz-map-bubble-core"></span></div>`;
       const icon = L.divIcon({
         html,
         className: "tz-map-bubble-wrap",
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
+        iconSize: [MAX_BUBBLE_PX, MAX_BUBBLE_PX],
+        iconAnchor: [MAX_BUBBLE_PX / 2, MAX_BUBBLE_PX / 2],
       });
       const marker = L.marker([p.lat, p.lng], { icon, riseOnHover: true }).addTo(group);
 
@@ -143,10 +139,65 @@ export function PostalHeatmap({
 
     markersRef.current = markers;
 
+    // Primer encuadre: en cuanto hay puntos, ajusta la vista a todos ellos. `maxZoom`
+    // evita que una sola ciudad con un único barrio se acerque hasta el nivel calle.
+    if (!hasFramed.current) {
+      const bounds = homeBounds(points);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: HOME_PADDING, maxZoom: CITY_ZOOM });
+        hasFramed.current = true;
+      }
+    }
+
     return () => {
       group.remove();
-      heat.remove();
       markers.clear();
+    };
+  }, [points]);
+
+  // Capa de calor y radios de burbuja dependen de la métrica activa
+  // (Todos/Leads/Clientes). Aquí solo se actualizan valores sobre los nodos que
+  // ya existen: el `transition: transform` de `.tz-map-bubble-core` interpola el
+  // radio y los barrios sin datos en esa métrica se encogen hasta desaparecer.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    heatRef.current?.remove();
+    const maxV = Math.max(1, ...points.map((p) => valueOf(p, metric)));
+    const heatPoints: [number, number, number][] = points.map((p) => [p.lat, p.lng, valueOf(p, metric) / maxV]);
+    const heat = L.heatLayer(heatPoints, {
+      radius: 34,
+      blur: 26,
+      maxZoom: CITY_ZOOM,
+      minOpacity: 0.15,
+      gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
+    }).addTo(map);
+    heatRef.current = heat;
+
+    // Top-2 de la métrica activa: son los que llevan el anillo dorado.
+    const top = new Set(
+      [...points]
+        .filter((p) => valueOf(p, metric) > 0)
+        .sort((a, b) => valueOf(b, metric) - valueOf(a, metric))
+        .slice(0, 2)
+        .map((p) => p.code)
+    );
+
+    const byCode = new Map(points.map((p) => [p.code, p]));
+    markersRef.current.forEach((marker, code) => {
+      const el = marker.getElement()?.querySelector<HTMLDivElement>(".tz-map-bubble");
+      if (!el) return;
+      const p = byCode.get(code);
+      const v = p ? valueOf(p, metric) : 0;
+      const size = v > 0 ? MIN_BUBBLE_PX + Math.sqrt(v / maxV) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX) : 0;
+      el.style.setProperty("--s", (size / MAX_BUBBLE_PX).toFixed(3));
+      el.style.setProperty("--o", v > 0 ? (0.45 + 0.5 * (v / maxV)).toFixed(2) : "0");
+      el.classList.toggle("top", top.has(code));
+    });
+
+    return () => {
+      heat.remove();
     };
   }, [points, metric]);
 
@@ -169,15 +220,19 @@ export function PostalHeatmap({
     if (point) map.flyTo([point.lat, point.lng], SELECT_ZOOM, { duration: 0.9 });
   }, [flyToCode, points]);
 
-  // "Vista general": vuelve al centro/zoom inicial cuando el padre pide un reset.
+  // "Vista general": reencuadra todos los puntos cuando el padre pide un reset.
   const isFirstReset = useRef(true);
   useEffect(() => {
     if (isFirstReset.current) {
       isFirstReset.current = false;
       return;
     }
-    mapRef.current?.flyTo(HOME_CENTER, HOME_ZOOM, { duration: 0.8 });
-  }, [resetSignal]);
+    const map = mapRef.current;
+    const bounds = homeBounds(points);
+    if (!map) return;
+    if (bounds) map.flyToBounds(bounds, { padding: HOME_PADDING, maxZoom: CITY_ZOOM, duration: 0.8 });
+    else map.flyTo(FALLBACK_CENTER, FALLBACK_ZOOM, { duration: 0.8 });
+  }, [resetSignal, points]);
 
   return <div ref={containerRef} className="tz-map w-full h-[452px] bg-tz-sand" />;
 }

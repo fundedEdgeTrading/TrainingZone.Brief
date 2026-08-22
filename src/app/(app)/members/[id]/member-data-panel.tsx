@@ -8,7 +8,7 @@ import { Drawer, DrawerFooter } from "@/components/ui/drawer";
 import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { MEMBER_STATE_COLOR, MEMBER_STATE_LABEL } from "@/lib/chart-colors";
-import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
+import { postalAreaLabel } from "@/lib/postal-codes";
 import { deleteMember, updateMemberData } from "./actions";
 
 export type MemberDataPanelValues = {
@@ -38,6 +38,7 @@ export type MemberDataPanelValues = {
   consentHealthAt: string | null;
   consentImagesAt: string | null;
   consentMarketingAt: string | null;
+  consentAIAt: string | null;
 };
 
 const LABEL = "block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted";
@@ -73,12 +74,6 @@ function seniority(iso: string) {
   return years > 0 ? `${years}a ${months % 12}m` : `${months}m`;
 }
 
-/** El barrio se deduce del CP (Zaragoza capital) y alimenta el mapa de calor del panel. */
-function areaFor(postalCode: string | null) {
-  if (!postalCode) return null;
-  return ZARAGOZA_POSTAL_CODES[postalCode]?.name ?? null;
-}
-
 function ReadCell({ label, value, wrap }: { label: string; value: React.ReactNode; wrap?: boolean }) {
   return (
     <div className="p-3 rounded-xl transition-colors duration-[180ms] hover:bg-tz-bone">
@@ -89,11 +84,11 @@ function ReadCell({ label, value, wrap }: { label: string; value: React.ReactNod
 }
 
 function AreaChip({ postalCode }: { postalCode: string | null }) {
-  const area = areaFor(postalCode);
+  const area = postalAreaLabel(postalCode);
   return (
     <span className="inline-flex items-center gap-1.5 rounded-pill bg-gold-bg text-gold px-[11px] py-1 text-xs font-bold">
       <span className="w-1.5 h-1.5 rounded-full bg-current" />
-      {area ?? "Fuera de Zaragoza"}
+      {area ?? "Sin código postal"}
     </span>
   );
 }
@@ -149,7 +144,7 @@ export function MemberDataPanel({
   const router = useRouter();
   const toast = useToast();
 
-  const draftArea = areaFor(postal.length === 5 ? postal : null);
+  const draftArea = postalAreaLabel(postal.length === 5 ? postal : null);
 
   function openDrawer() {
     setPostal(member.postalCode ?? "");
@@ -272,6 +267,7 @@ export function MemberDataPanel({
               <ConsentRow label="Contrato" at={member.consentContractAt} />
               <ConsentRow label="Datos de salud (Art. 9 RGPD)" at={member.consentHealthAt} />
               <ConsentRow label="Uso de imágenes (evolución)" at={member.consentImagesAt} />
+              <ConsentRow label="Tratamiento con IA" at={member.consentAIAt} />
               <ConsentRow label="Marketing" at={member.consentMarketingAt} />
             </ul>
           </section>
@@ -460,7 +456,7 @@ export function MemberDataPanel({
                       draftArea ? "text-brand-text" : "text-faint"
                     }`}
                   >
-                    {draftArea ?? (postal.length === 5 ? "Fuera de Zaragoza capital" : "Introduce el CP")}
+                    {draftArea ?? (postal.length === 5 ? "CP no reconocido" : "Introduce el CP")}
                   </div>
                 </Field>
                 <Field label="Ciudad">

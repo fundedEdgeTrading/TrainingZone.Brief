@@ -8,6 +8,7 @@ import {
   updateCenterLogo,
   assignUserToCenter,
 } from "./actions";
+import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
 import { StaffDrawer } from "./staff-drawer";
 import AptaLogo from "@/components/apta-logo";
@@ -45,12 +46,13 @@ export default async function OrganizationPage({
 
   const createRoles: Role[] = [
     "TRAINER",
+    "TRAINER_ADMIN",
     "RECEPTION",
     "CENTER_DIRECTOR",
     "HR_MANAGER",
     ...((canOrg ? ["OWNER"] : []) as Role[]),
   ];
-  const assignRoles: Role[] = ["TRAINER", "RECEPTION", "CENTER_DIRECTOR"];
+  const assignRoles: Role[] = ["TRAINER", "TRAINER_ADMIN", "RECEPTION", "CENTER_DIRECTOR"];
 
   return (
     <div className="tz-page space-y-6">
@@ -179,6 +181,29 @@ export default async function OrganizationPage({
                   </Button>
                 </ActionForm>
               )}
+              {canOrg && (
+                <ActionForm
+                  action={updateCenterCapacity}
+                  successMessage="Aforo por defecto actualizado."
+                  resetOnSuccess={false}
+                  className="mt-3 flex items-end gap-2"
+                >
+                  <input type="hidden" name="centerId" value={c.id} />
+                  <Field label="Aforo por defecto" className="flex-1" hint="Solo afecta a las sesiones nuevas">
+                    <Input
+                      name="defaultGroupCapacity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      defaultValue={c.defaultGroupCapacity ?? ""}
+                      placeholder="p.ej. 8 (vacío = sin valor fijo)"
+                    />
+                  </Field>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Guardar
+                  </Button>
+                </ActionForm>
+              )}
             </div>
           ))}
           {centers.length === 0 && <p className="text-sm text-muted">Todavía no hay centros.</p>}
@@ -191,10 +216,10 @@ export default async function OrganizationPage({
             className={`${CARD} grid grid-cols-1 md:grid-cols-4 gap-3 items-end`}
           >
             <Field label="Nombre del centro" className="md:col-span-2">
-              <Input name="name" placeholder="p.ej. Vitalia Este" required />
+              <Input name="name" placeholder="p.ej. TRAINING ZONE Delicias" required />
             </Field>
             <Field label="Slug" hint="Opcional — se genera del nombre">
-              <Input name="slug" placeholder="este" />
+              <Input name="slug" placeholder="delicias" />
             </Field>
             <Field label="Logo (URL)" hint="Opcional — si no, hereda">
               <Input name="logoUrl" placeholder="/brand/…" />

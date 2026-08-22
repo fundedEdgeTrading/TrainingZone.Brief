@@ -33,34 +33,34 @@ model Organization {
   createdAt DateTime @default(now())
 
   // ---------- Cobro de plataforma (Apta → gimnasio, Parte A) ----------
-  platformStatus      PlatformStatus @default(PENDING_PAYMENT)
-  platformStatusSince DateTime       @default(now()) // base del TTL de purga (D-5)
-  platformPlan        String? // código de PlatformPlan (src/lib/platform-plans.ts); null hasta pagar
-  trialEndsAt         DateTime?
-  currentPeriodEnd    DateTime? // fin de ciclo (espejo de la suscripción de Stripe)
+  platformStatus               PlatformStatus @default(PENDING_PAYMENT)
+  platformStatusSince          DateTime       @default(now()) // base del TTL de purga (D-5)
+  platformPlan                 String? // código de PlatformPlan (src/lib/platform-plans.ts); null hasta pagar
+  trialEndsAt                  DateTime?
+  currentPeriodEnd             DateTime? // fin de ciclo (espejo de la suscripción de Stripe)
   // Datos fiscales para la factura (D-4). No verifican "es director", son para facturar.
-  taxId        String?
-  billingEmail String?
-  billingName  String?
+  taxId                        String?
+  billingEmail                 String?
+  billingName                  String?
   // Suscripción en el Stripe DE APTA (Plano 1). Distinto de StripeAccount (Plano 2, Parte C).
-  platformStripeCustomerId     String? @unique
-  platformStripeSubscriptionId String? @unique
+  platformStripeCustomerId     String?        @unique
+  platformStripeSubscriptionId String?        @unique
   /// Idempotencia del alta (RB-ALTA-001): la sesión de checkout que dio origen a esta
   /// organización. Un reenvío del webhook la encuentra y no crea una segunda ni
   /// reenvía el email de bienvenida.
-  provisioningSessionId        String? @unique
+  provisioningSessionId        String?        @unique
 
   stripeAccount StripeAccount?
 
-  centers       Center[]
-  users         User[]
-  members       Member[]
-  plans         MembershipPlan[]
-  sessions      ClassSession[]
-  templates     SessionTemplate[]
-  payments      Payment[]
-  auditLogs     AuditLog[]
-  aptitudeRules AptitudeRule[]
+  centers           Center[]
+  users             User[]
+  members           Member[]
+  plans             MembershipPlan[]
+  sessions          ClassSession[]
+  templates         SessionTemplate[]
+  payments          Payment[]
+  auditLogs         AuditLog[]
+  aptitudeRules     AptitudeRule[]
   centerMemberships CenterMembership[]
   memberNotes       MemberNote[]
   invitations       Invitation[]
@@ -82,23 +82,30 @@ model Organization {
   referenceRanges        ReferenceRange[]
   announcements          Announcement[]
   onlineWorkouts         OnlineWorkout[]
+  assessments            Assessment[]
+  performanceMetrics     PerformanceMetric[]
+  mesocycles             Mesocycle[]
 }
 
 model Center {
-  id        String   @id @default(cuid())
-  orgId     String
-  name      String
-  slug      String
-  address   String?
-  logoUrl   String? // logo propio del centro; si es null se hereda el de la organización (y en su defecto, Apta)
-  timezone  String   @default("Europe/Madrid")
-  createdAt DateTime @default(now())
+  id                   String   @id @default(cuid())
+  orgId                String
+  name                 String
+  slug                 String
+  address              String?
+  logoUrl              String? // logo propio del centro; si es null se hereda el de la organización (y en su defecto, Apta)
+  timezone             String   @default("Europe/Madrid")
+  // Aforo por defecto de las sesiones de grupo del centro. Solo semilla del
+  // formulario de alta: cambiarlo NO altera plantillas ni sesiones ya creadas,
+  // que llevan su propia capacidad (SessionTemplate/ClassSession.capacity).
+  defaultGroupCapacity Int?
+  createdAt            DateTime @default(now())
 
-  organization Organization      @relation(fields: [orgId], references: [id])
-  users        User[]
-  members      Member[]          @relation("PrimaryCenter")
-  templates    SessionTemplate[]
-  sessions     ClassSession[]
+  organization     Organization       @relation(fields: [orgId], references: [id])
+  users            User[]
+  members          Member[]           @relation("PrimaryCenter")
+  templates        SessionTemplate[]
+  sessions         ClassSession[]
   staffMemberships CenterMembership[]
   leads            Lead[]
   timeClockEntries TimeClockEntry[]
@@ -138,6 +145,7 @@ enum Role {
   RECEPTION
   MEMBER
   HR_MANAGER // RRHH: gestiona personal e imputación a centros, sin acceso a datos de salud
+  TRAINER_ADMIN // Entrenador con mando sobre su centro: aforo por defecto y ajuste de bonos
 }
 
 /// Credencial de acceso, única GLOBAL (RB-ID-001). Está separada de la membresía
@@ -173,37 +181,43 @@ model User {
   email        String // desnormalizado desde Identity: evita un join en cada listado
   role         Role
   image        String?
+  // D7 del handoff: si está activo, su foto y su nombre acompañan a las
+  // sesiones que dirige en la app del socio.
+  visibleInApp Boolean  @default(true)
   createdAt    DateTime @default(now())
 
-  identity            Identity          @relation(fields: [identityId], references: [id], onDelete: Cascade)
-  organization        Organization      @relation(fields: [orgId], references: [id])
-  center               Center?           @relation(fields: [centerId], references: [id])
-  trainerSessions      ClassSession[]    @relation("TrainerSessions")
-  trainerTemplates     SessionTemplate[] @relation("TrainerTemplates")
-  memberProfile        Member?           @relation("MemberUser")
-  auditLogs            AuditLog[]
-  healthReported       HealthRecord[]    @relation("ReportedBy")
-  aptitudeRulesEdited  AptitudeRule[]    @relation("EditedBy")
-  referenceRangesEdited ReferenceRange[] @relation("EditedReferenceRange")
-  centerMemberships    CenterMembership[]
-  memberNotesAuthored  MemberNote[]      @relation("MemberNoteAuthor")
-  invitation           Invitation?
+  identity              Identity           @relation(fields: [identityId], references: [id], onDelete: Cascade)
+  organization          Organization       @relation(fields: [orgId], references: [id])
+  center                Center?            @relation(fields: [centerId], references: [id])
+  trainerSessions       ClassSession[]     @relation("TrainerSessions")
+  trainerTemplates      SessionTemplate[]  @relation("TrainerTemplates")
+  memberProfile         Member?            @relation("MemberUser")
+  auditLogs             AuditLog[]
+  healthReported        HealthRecord[]     @relation("ReportedBy")
+  aptitudeRulesEdited   AptitudeRule[]     @relation("EditedBy")
+  referenceRangesEdited ReferenceRange[]   @relation("EditedReferenceRange")
+  centerMemberships     CenterMembership[]
+  memberNotesAuthored   MemberNote[]       @relation("MemberNoteAuthor")
+  invitation            Invitation?
 
-  leadsOwned            Lead[]              @relation("LeadOwner")
-  leadNotesAuthored     LeadNote[]          @relation("LeadNoteAuthor")
-  directedSessions      ClassSession[]      @relation("DirectedSessions")
-  workoutProgramsConfirmed WorkoutProgram[] @relation("WorkoutConfirmedBy")
-  mobileRefreshTokens   MobileRefreshToken[]
-  notifications         Notification[]      @relation("NotificationRecipient")
-  timeClockEntries      TimeClockEntry[]
-  staffProposalsAuthored StaffProposal[]
-  offersProposed        PersonalizedOffer[] @relation("OfferProposedBy")
-  offersApproved        PersonalizedOffer[] @relation("OfferApprovedBy")
-  trainerRatingsReceived TrainerRating[]    @relation("TrainerRatingSubject")
-  paymentsSold          Payment[]           @relation("SoldBy")
-  chatMessagesSent      ChatMessage[]
-  announcementsAuthored Announcement[]      @relation("AnnouncementAuthor")
-  trainerDebriefsGiven  TrainerDebrief[]
+  leadsOwned               Lead[]               @relation("LeadOwner")
+  leadNotesAuthored        LeadNote[]           @relation("LeadNoteAuthor")
+  directedSessions         ClassSession[]       @relation("DirectedSessions")
+  workoutProgramsConfirmed WorkoutProgram[]     @relation("WorkoutConfirmedBy")
+  mobileRefreshTokens      MobileRefreshToken[]
+  notifications            Notification[]       @relation("NotificationRecipient")
+  timeClockEntries         TimeClockEntry[]
+  staffProposalsAuthored   StaffProposal[]
+  offersProposed           PersonalizedOffer[]  @relation("OfferProposedBy")
+  offersApproved           PersonalizedOffer[]  @relation("OfferApprovedBy")
+  trainerRatingsReceived   TrainerRating[]      @relation("TrainerRatingSubject")
+  paymentsSold             Payment[]            @relation("SoldBy")
+  chatMessagesSent         ChatMessage[]
+  announcementsAuthored    Announcement[]       @relation("AnnouncementAuthor")
+  trainerDebriefsGiven     TrainerDebrief[]
+  assessmentsFilled        Assessment[]         @relation("AssessmentFilledBy")
+  mesocyclesCreated        Mesocycle[]          @relation("MesocycleCreatedBy")
+  mesocyclesApproved       Mesocycle[]          @relation("MesocycleApprovedBy")
 
   // Sustituye al @unique global de email: el mismo email puede tener membresía
   // en varias organizaciones, pero solo una dentro de cada una.
@@ -317,10 +331,12 @@ model Member {
   consentHealth      Boolean     @default(false)
   consentImages      Boolean     @default(false) // uso de imágenes (fotos de evolución)
   consentMarketing   Boolean     @default(false)
+  consentAI          Boolean     @default(false) // tratamiento por IA de sus datos (valoraciones, mesociclos)
   consentContractAt  DateTime?
   consentHealthAt    DateTime?
   consentImagesAt    DateTime?
   consentMarketingAt DateTime?
+  consentAIAt        DateTime?
   consentVersion     String? // versión del texto legal firmado en el onboarding
   notes              String?
   createdAt          DateTime    @default(now())
@@ -328,13 +344,13 @@ model Member {
   // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen.
   // Ya no hay entrenador responsable fijo: el socio puede hacer EP con distintos
   // entrenadores según la sesión (ver ClassSession.trainerId/SessionTemplate.trainerId).
-  postalCode     String?
-  occupation     String?
-  hasChildren    Boolean? // BI demográfico (RB-BI-003), heredado del lead si se respondió
-  channel        String?
-  heightCm       Int? // composición corporal: base para IMC/rangos de referencia (docs/COMPOSICION_CORPORAL_*)
-  originLeadId   String? @unique
-  stripeCustomerId String? @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
+  postalCode       String?
+  occupation       String?
+  hasChildren      Boolean? // BI demográfico (RB-BI-003), heredado del lead si se respondió
+  channel          String?
+  heightCm         Int? // composición corporal: base para IMC/rangos de referencia (docs/COMPOSICION_CORPORAL_*)
+  originLeadId     String?  @unique
+  stripeCustomerId String?  @unique // F12 (RB-PAGO-001): cliente Stripe para cobros recurrentes
   stripeAccountId  String? // F5: cuenta CONECTADA del gimnasio donde vive ese cliente — si el gimnasio reconecta otra, invalida el espejo
 
   // --- Importación de socios desde export externo (F-IMPORT / RB-IMPORT) ---
@@ -359,28 +375,31 @@ model Member {
   externalSource      String? // procedencia del registro ("mywellness" | ...)
   externalRef         String? // "Identificador de la nube" — clave de idempotencia de la importación
 
-  organization    Organization           @relation(fields: [orgId], references: [id])
-  primaryCenter   Center                 @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
-  user            User?                  @relation("MemberUser", fields: [userId], references: [id])
-  originLead      Lead?                  @relation("MemberOriginLead", fields: [originLeadId], references: [id])
-  subscriptions   Subscription[]
-  bookings        Booking[]
-  payments        Payment[]
-  healthRecords   HealthRecord[]
-  retentionAlerts RetentionAlert[]
-  noteEntries     MemberNote[]
-  progressEntries MemberProgressEntry[]
-  invitation      Invitation?
-  convertedFromLead Lead?                @relation("LeadConvertedMember")
-  clientGoals     ClientGoal[]
-  workoutPrograms WorkoutProgram[]
-  selfAssessments SelfAssessment[]
-  conversation    Conversation?
-  personalizedOffers PersonalizedOffer[]
+  organization        Organization          @relation(fields: [orgId], references: [id])
+  primaryCenter       Center                @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
+  user                User?                 @relation("MemberUser", fields: [userId], references: [id])
+  originLead          Lead?                 @relation("MemberOriginLead", fields: [originLeadId], references: [id])
+  subscriptions       Subscription[]
+  bookings            Booking[]
+  payments            Payment[]
+  healthRecords       HealthRecord[]
+  retentionAlerts     RetentionAlert[]
+  noteEntries         MemberNote[]
+  progressEntries     MemberProgressEntry[]
+  invitation          Invitation?
+  convertedFromLead   Lead?                 @relation("LeadConvertedMember")
+  clientGoals         ClientGoal[]
+  workoutPrograms     WorkoutProgram[]
+  selfAssessments     SelfAssessment[]
+  conversation        Conversation?
+  personalizedOffers  PersonalizedOffer[]
   trainerRatingsGiven TrainerRating[]
-  announcementViews  AnnouncementView[]
+  announcementViews   AnnouncementView[]
   clientFeedback      ClientFeedback[]
   trainerDebriefs     TrainerDebrief[]
+  assessments         Assessment[]
+  performanceMetrics  PerformanceMetric[]
+  mesocycles          Mesocycle[]
 
   @@unique([orgId, externalRef]) // idempotencia de la importación por socio del origen
   @@index([orgId])
@@ -471,16 +490,16 @@ model MemberNote {
 // partida (sin memberId real, se clonan al asignar), las demás son objetivos
 // asignados a un socio concreto.
 model ClientGoal {
-  id String @id @default(cuid())
-  orgId String
-  memberId String? // null en filas de catálogo (isTemplate=true)
-  label String
-  isTemplate Boolean @default(false)
+  id         String    @id @default(cuid())
+  orgId      String
+  memberId   String? // null en filas de catálogo (isTemplate=true)
+  label      String
+  isTemplate Boolean   @default(false)
   achievedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id])
-  member Member? @relation(fields: [memberId], references: [id])
+  member       Member?      @relation(fields: [memberId], references: [id])
 
   @@index([orgId])
   @@index([memberId])
@@ -505,6 +524,13 @@ model MembershipPlan {
   validityDays     Int?
   active           Boolean  @default(true)
   createdAt        DateTime @default(now())
+
+  // Catálogo de la app móvil (handoff "App móvil premium", A2/D4/D5): el socio
+  // compra el bono desde el primer login, así que el plan necesita texto de
+  // venta y foto. `active` es la visibilidad: un plan oculto no aparece en el
+  // catálogo pero sigue vivo para quien ya lo tiene contratado.
+  description String?
+  imageUrl    String? // 1600 × 1000 recomendado (data URL, igual que el resto de imágenes de la demo)
 
   // F5 (RB-VENTA-002): espejo del producto/precio en la cuenta CONECTADA del
   // gimnasio. Los precios de Stripe son inmutables — cambiar el importe crea
@@ -771,28 +797,28 @@ enum PaymentStatus {
 }
 
 model Payment {
-  id             String        @id @default(cuid())
-  orgId          String
-  memberId       String
-  subscriptionId String?
-  amountCents    Int
-  method         PaymentMethod
-  status         PaymentStatus @default(PAID)
-  date           DateTime
-  receiptNumber  String?
-  notes          String?
-  soldByUserId   String? // RB-RRHH-004: venta atribuida a trabajador (ranking mensual)
-  stripeCheckoutSessionId String? @unique // F12: sesión de checkout que originó el cobro
-  stripePaymentIntentId   String? @unique // F12: PaymentIntent confirmado por el webhook
-  stripeInvoiceId         String? @unique // F5: factura de Stripe Billing que originó el cobro recurrente (idempotencia de invoice.paid/payment_failed)
-  createdAt      DateTime      @default(now())
+  id                      String        @id @default(cuid())
+  orgId                   String
+  memberId                String
+  subscriptionId          String?
+  amountCents             Int
+  method                  PaymentMethod
+  status                  PaymentStatus @default(PAID)
+  date                    DateTime
+  receiptNumber           String?
+  notes                   String?
+  soldByUserId            String? // RB-RRHH-004: venta atribuida a trabajador (ranking mensual)
+  stripeCheckoutSessionId String?       @unique // F12: sesión de checkout que originó el cobro
+  stripePaymentIntentId   String?       @unique // F12: PaymentIntent confirmado por el webhook
+  stripeInvoiceId         String?       @unique // F5: factura de Stripe Billing que originó el cobro recurrente (idempotencia de invoice.paid/payment_failed)
+  createdAt               DateTime      @default(now())
 
   // PAGO-1 (RB-PAGO-002/003): aplazamiento local y devolución (modo registro local — D-2,
   // ver PAGO-2b para el refund real vía Stripe cuando el cliente entregue credenciales).
   dueDate        DateTime? // aplazamiento: fecha límite futura que excluye el pago de morosidad
   refundReason   String?
   refundedAt     DateTime?
-  stripeRefundId String? @unique // permanece NULL hasta PAGO-2b
+  stripeRefundId String?   @unique // permanece NULL hasta PAGO-2b
 
   organization Organization  @relation(fields: [orgId], references: [id])
   member       Member        @relation(fields: [memberId], references: [id])
@@ -896,6 +922,19 @@ model SessionDebrief {
   rpe       Int?
   note      String?
   createdAt DateTime       @default(now())
+
+  // Feedback 1-10 por socio al terminar la sesión (handoff C4). `rpe` ya
+  // existía como esfuerzo percibido y sigue siendo el primer eje; el resto se
+  // añade aquí. Todos son opcionales: el entrenador puede guardar a medias
+  // (autoguardado por eje) y completar después.
+  technique Int?
+  attitude  Int?
+  energy    Int?
+  mobility  Int?
+  pain      Int?
+  adherence Int?
+  progress  Int?
+  updatedAt DateTime @updatedAt
 
   booking Booking @relation(fields: [bookingId], references: [id])
 }
@@ -1003,28 +1042,28 @@ model NoCloseReason {
 }
 
 model Lead {
-  id               String     @id @default(cuid())
-  orgId            String
-  centerId         String
-  firstName        String
-  lastName         String
-  phone            String // canal de reset por SMS (RB-LEAD-002)
-  email            String? // condicional (RB-LEAD-002): teléfono o email, al menos uno
-  postalCode       String // RB-LEAD-010: estructurado, no dirección libre
-  occupation       String // alimenta BI nicho (RB-BI-003)
-  hasChildren      Boolean? // BI demográfico (RB-BI-003), pregunta opcional
-  sex              Sex? // BI-2/RB-BI-005: se hereda al Member al convertir (RB-LEAD-007)
-  goals            String
-  hasTrainedBefore Boolean
-  hasTrainedNote   String?
-  channel          String // RB-LEAD-004: coincide con LeadChannel.label
-  status           LeadStatus @default(SIN_CONTACTAR)
-  ownerUserId      String? // responsable del contacto (RB-LEAD-003)
-  contactedAt      DateTime   @default(now()) // fecha de contacto automática (RB-LEAD-001)
-  noCloseReason    String?    // obligatorio al pasar a NO_CERRADO (RB-LEAD-011)
-  closeType        LeadCloseType? // solo para CERRADO: embudo/directo/online
-  convertedMemberId String?   @unique // enlace al Member creado si CERRADO (RB-LEAD-007)
-  createdAt        DateTime   @default(now())
+  id                String         @id @default(cuid())
+  orgId             String
+  centerId          String
+  firstName         String
+  lastName          String
+  phone             String // canal de reset por SMS (RB-LEAD-002)
+  email             String? // condicional (RB-LEAD-002): teléfono o email, al menos uno
+  postalCode        String // RB-LEAD-010: estructurado, no dirección libre
+  occupation        String // alimenta BI nicho (RB-BI-003)
+  hasChildren       Boolean? // BI demográfico (RB-BI-003), pregunta opcional
+  sex               Sex? // BI-2/RB-BI-005: se hereda al Member al convertir (RB-LEAD-007)
+  goals             String
+  hasTrainedBefore  Boolean
+  hasTrainedNote    String?
+  channel           String // RB-LEAD-004: coincide con LeadChannel.label
+  status            LeadStatus     @default(SIN_CONTACTAR)
+  ownerUserId       String? // responsable del contacto (RB-LEAD-003)
+  contactedAt       DateTime       @default(now()) // fecha de contacto automática (RB-LEAD-001)
+  noCloseReason     String? // obligatorio al pasar a NO_CERRADO (RB-LEAD-011)
+  closeType         LeadCloseType? // solo para CERRADO: embudo/directo/online
+  convertedMemberId String?        @unique // enlace al Member creado si CERRADO (RB-LEAD-007)
+  createdAt         DateTime       @default(now())
 
   organization    Organization   @relation(fields: [orgId], references: [id])
   center          Center         @relation(fields: [centerId], references: [id])
@@ -1211,14 +1250,14 @@ enum WorkoutProgramStatus {
 // el agente solo propone (createdByAI), un entrenador siempre confirma antes
 // de que pase a ACTIVE (RB-IA-002: uso solo por staff).
 model WorkoutProgram {
-  id                String                @id @default(cuid())
+  id                String               @id @default(cuid())
   orgId             String
   memberId          String
-  createdByAI       Boolean               @default(true)
+  createdByAI       Boolean              @default(true)
   confirmedByUserId String?
-  status            WorkoutProgramStatus  @default(DRAFT)
+  status            WorkoutProgramStatus @default(DRAFT)
   payload           Json
-  createdAt         DateTime              @default(now())
+  createdAt         DateTime             @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id])
   member       Member       @relation(fields: [memberId], references: [id])
@@ -1394,4 +1433,156 @@ model MobileRefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// ---------- Valoración del socio (F1 declara el esquema; F3 la lógica) ----------
+// Valoración inicial y sus revisiones periódicas. `answers` guarda el
+// cuestionario completo tal y como se respondió (Json y no columnas: el
+// formulario evoluciona y no queremos una migración por pregunta nueva); las
+// marcas medibles NO viven aquí, sino en PerformanceMetric, porque son una
+// serie temporal y no una foto puntual.
+model Assessment {
+  id             String         @id @default(cuid())
+  orgId          String
+  memberId       String
+  kind           AssessmentKind
+  dueDate        DateTime
+  completedAt    DateTime?
+  answers        Json
+  filledByUserId String? // quién la cumplimentó; null si la rellenó el propio socio
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+  filledBy     User?        @relation("AssessmentFilledBy", fields: [filledByUserId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId, kind])
+}
+
+/// Hitos de revisión desde el alta: inicial, mes 1/3/6/9 y aniversario.
+enum AssessmentKind {
+  INITIAL
+  M1
+  M3
+  M6
+  M9
+  Y1
+}
+
+// Serie temporal de marcas medibles ("simulacro dominadas: 2 reps", tiempos de
+// circuito). Separada de Assessment: una marca puede registrarse en una
+// valoración, en una sesión suelta o a mano, y lo que interesa es su evolución.
+model PerformanceMetric {
+  id         String   @id @default(cuid())
+  orgId      String
+  memberId   String
+  key        String // "dominadas_reps", "circuito_agilidad_s"
+  value      Float
+  unit       String
+  recordedAt DateTime
+  source     String // "assessment" | "session" | "manual"
+  createdAt  DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId, key, recordedAt])
+}
+
+// ---------- Mesociclo (F1 declara el esquema; F6 la lógica) ----------
+// Plan de entrenamiento por fases de un socio. Visible SOLO para el entrenador:
+// no se expone en el portal del socio ni en la app móvil.
+model Mesocycle {
+  id               String          @id @default(cuid())
+  orgId            String
+  memberId         String
+  createdByUserId  String
+  status           MesocycleStatus @default(DRAFT)
+  title            String
+  objective        String
+  safetyCriteria   Json // heredado del screening de la valoración: lo que NO se puede programar
+  weeklyLayout     Json // "Lun TZ · Mié TZ · Vie TZ · Mar Gym · Jue Gym"
+  milestones       Json // hoja de ruta: semana → hitos medibles
+  aiConversation   Json? // historial multi-turno del refinado con la IA
+  approvedAt       DateTime?
+  approvedByUserId String?
+  createdAt        DateTime        @default(now())
+
+  organization Organization     @relation(fields: [orgId], references: [id])
+  member       Member           @relation(fields: [memberId], references: [id])
+  createdBy    User             @relation("MesocycleCreatedBy", fields: [createdByUserId], references: [id])
+  approvedBy   User?            @relation("MesocycleApprovedBy", fields: [approvedByUserId], references: [id])
+  phases       MesocyclePhase[]
+
+  @@index([orgId])
+  @@index([memberId])
+}
+
+enum MesocycleStatus {
+  DRAFT
+  APPROVED
+  ARCHIVED
+}
+
+model MesocyclePhase {
+  id          String  @id @default(cuid())
+  mesocycleId String
+  order       Int
+  name        String
+  weekFrom    Int
+  weekTo      Int
+  notes       String?
+
+  mesocycle Mesocycle      @relation(fields: [mesocycleId], references: [id], onDelete: Cascade)
+  days      MesocycleDay[]
+
+  @@index([mesocycleId])
+}
+
+model MesocycleDay {
+  id      String @id @default(cuid())
+  phaseId String
+  order   Int
+  label   String // "Lunes", "Día 1"...
+  venue   String // dónde se entrena ese día: "TZ" | "Gym" | ...
+  focus   String
+  warmup  Json
+
+  phase  MesocyclePhase   @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  blocks MesocycleBlock[]
+
+  @@index([phaseId])
+}
+
+model MesocycleBlock {
+  id          String @id @default(cuid())
+  dayId       String
+  order       Int
+  name        String
+  durationMin Int
+
+  day       MesocycleDay        @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  exercises MesocycleExercise[]
+
+  @@index([dayId])
+}
+
+model MesocycleExercise {
+  id          String  @id @default(cuid())
+  blockId     String
+  order       Int
+  name        String
+  sets        Int
+  reps        String // "8-10", "AMRAP 30s": no siempre es un número
+  load        String?
+  description String
+  /// El "porqué" del ejercicio (con su referencia bibliográfica). Es lo que
+  /// separa el mesociclo de una plantilla de Excel: no se omite.
+  rationale   String
+
+  block MesocycleBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
+
+  @@index([blockId])
 }

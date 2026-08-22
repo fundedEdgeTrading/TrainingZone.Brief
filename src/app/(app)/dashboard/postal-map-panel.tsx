@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Card } from "@/components/kpi-card";
+import { postalCityLabel } from "@/lib/postal-codes";
 import PostalHeatmap, { type MapMetric } from "./postal-heatmap-loader";
 
 type PostalCodeStat = { code: string; name: string; lat: number; lng: number; leads: number; members: number; total: number };
@@ -16,8 +17,9 @@ const SEGMENTS: { key: MapMetric; label: string }[] = [
  * (sustituye a la antigua pareja "Mapa de calor" / "Distribución por provincia"):
  * comparten estado (barrio resaltado/seleccionado) para el cruce mapa↔lista, y
  * ambos leen del mismo dataset (getPostalCodeStats) así que sus totales nunca
- * pueden divergir entre sí. Granularidad de CP completo (no provincia): la
- * primera puesta en preproducción solo tiene clientes de Zaragoza capital. */
+ * pueden divergir entre sí. Granularidad de CP completo (no provincia): a escala
+ * de ciudad la provincia no distingue nada, y el encuadre del mapa ya se adapta
+ * solo a las ciudades que haya en los datos. */
 export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   const [metric, setMetric] = useState<MapMetric>("all");
   const [hovered, setHovered] = useState<string | null>(null);
@@ -41,6 +43,12 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   const totalMembers = points.reduce((s, p) => s + p.members, 0);
   const totalLeads = points.reduce((s, p) => s + p.leads, 0);
   const topName = rows[0]?.name ?? "—";
+  // Las ciudades presentes salen de los propios datos: la tarjeta no puede
+  // prometer "Zaragoza" cuando la organización ya tiene un centro en Santander.
+  const cities = useMemo(
+    () => [...new Set(points.map((p) => postalCityLabel(p.code)).filter((c): c is string => !!c))].join(" · "),
+    [points]
+  );
 
   const select = (code: string) => {
     setHovered(code);
@@ -50,7 +58,7 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   return (
     <Card
       title="Mapa de calor"
-      meta="leads + clientes por barrio (Zaragoza)"
+      meta={`leads + clientes por barrio${cities ? ` (${cities})` : ""}`}
       delay={0.64}
       action={
         <div className="flex gap-[5px] bg-tz-bone border border-tz-sand rounded-full p-1">
@@ -93,8 +101,13 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
 
           <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-[18px]">
             <div className="relative rounded-2xl overflow-hidden border border-tz-linen">
+              {/*
+                Se le pasa la lista completa y estable: el mapa filtra y
+                dimensiona por métrica sin rehacer los marcadores, para que el
+                radio de la burbuja interpole al cambiar de métrica.
+              */}
               <PostalHeatmap
-                points={rows}
+                points={points}
                 metric={metric}
                 hoveredCode={hovered}
                 onHoverProvince={setHovered}
@@ -153,8 +166,11 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                       <div className="flex items-center gap-2 mt-[5px]">
                         <div className="flex-1 h-[5px] rounded-full bg-tz-sand overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-tz-black transition-[width] duration-500"
-                            style={{ width: `${(metricValue(p) / maxValue) * 100}%` }}
+                            className="h-full rounded-full bg-tz-black origin-left"
+                            style={{
+                              width: `${(metricValue(p) / maxValue) * 100}%`,
+                              animation: `tzGrow .8s var(--ease-out-soft) ${(0.1 + Math.min(i, 8) * 0.04).toFixed(2)}s both`,
+                            }}
                           />
                         </div>
                         <span className="text-[10px] text-brand-muted whitespace-nowrap shrink-0 tz-nums">

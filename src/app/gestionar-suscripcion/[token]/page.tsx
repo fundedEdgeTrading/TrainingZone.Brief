@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { verifyMemberBillingToken } from "@/lib/email-verification";
+import { verifyMemberBillingOrDunningToken } from "@/lib/email-verification";
 import { createMemberBillingPortalSession } from "@/lib/member-billing";
 
 // El token expira y es de un solo enlace: la página no puede quedar cacheada
@@ -27,13 +27,13 @@ function InfoScreen({ title, body }: { title: string; body: string }) {
 /** A.1: enlace mágico "gestionar mi suscripción" — sin login, redirige directo al Billing Portal de Stripe del socio. */
 export default async function ManageMemberBillingPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const result = verifyMemberBillingToken(token);
+  const result = verifyMemberBillingOrDunningToken(token);
 
   if (!result.ok) {
     return (
       <InfoScreen
         title={result.error === "expired" ? "Enlace caducado" : "Enlace no válido"}
-        body="Este enlace para gestionar tu suscripción ya no es válido. Pide uno nuevo desde la página de alta de tu centro."
+        body="Este enlace para gestionar tu suscripción ya no es válido. Entra en tu portal de socio para actualizar tu método de pago, o contacta con tu centro."
       />
     );
   }

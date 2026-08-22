@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { requireRole } from "@/lib/guard";
+import { canEditAptitudeRules } from "@/lib/rbac";
 import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,7 +12,10 @@ const LIGHT_DOT: Record<string, string> = { RED: "bg-critical", AMBER: "bg-warni
 const LIGHT_LABEL: Record<string, string> = { RED: "Evitar", AMBER: "Adaptar", GREEN: "Libre" };
 
 export default async function AptitudeRulesPage() {
-  const session = await requireRole(["OWNER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // La dirección de centro LEE las reglas (las aplica a diario en su centro);
+  // mantenerlas sigue siendo del director de la organización (G.2).
+  const canEdit = canEditAptitudeRules(session.user.role);
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("salud_aptitud");
@@ -26,9 +30,13 @@ export default async function AptitudeRulesPage() {
     <div className="tz-page space-y-4">
       <PageHeader description="Reglas deterministas mantenidas por Sergio, no por un modelo de IA (G.2). Cada zona de lesión se traduce en un bloque de trabajo con semáforo y adaptación. El entrenador ve el resultado en el Session Brief; la IA (fuera de esta entrega) solo redactaría, nunca decidiría el color." />
 
-      <CreateRuleForm />
+      {canEdit && <CreateRuleForm />}
 
-      <DataTable columns={ruleColumns} rows={rules.map(ruleToRow)} emptyTitle="Sin reglas" />
+      <DataTable
+        columns={canEdit ? ruleColumns : ruleColumns.filter((c) => c.key !== "actions")}
+        rows={rules.map((r) => ruleToRow(r, canEdit))}
+        emptyTitle="Sin reglas"
+      />
     </div>
   );
 }
@@ -44,7 +52,7 @@ const ruleColumns: DataTableColumn[] = [
   { key: "actions", header: "" },
 ];
 
-function ruleToRow(r: Rule): DataTableRow {
+function ruleToRow(r: Rule, canEdit: boolean): DataTableRow {
   return {
     key: r.id,
     sortValues: {
@@ -69,7 +77,7 @@ function ruleToRow(r: Rule): DataTableRow {
           {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
         </>
       ),
-      actions: <DeleteButton id={r.id} />,
+      actions: canEdit ? <DeleteButton id={r.id} /> : null,
     },
   };
 }

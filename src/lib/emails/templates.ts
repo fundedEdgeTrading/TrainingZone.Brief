@@ -172,6 +172,36 @@ export function renderMemberBillingLinkEmail(opts: {
   });
 }
 
+/**
+ * Cobro fallido. El tono importa más de lo habitual: casi siempre es una
+ * tarjeta caducada, no alguien que no quiere pagar, y tratar al socio de moroso
+ * en el primer email es la forma más rápida de perderlo. Se explica qué ha
+ * pasado, se da el botón que lo arregla en un minuto y no se amenaza con nada.
+ */
+export function renderPaymentFailedEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  amountLabel: string;
+  portalUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Cobro no completado",
+    title: `Hola, ${opts.memberFirstName}.<br>No hemos podido cobrar tu cuota.`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">El cobro de <b>${opts.amountLabel}</b> no ha salido adelante. Casi siempre es una tarjeta caducada o un límite del banco, y se resuelve en un minuto desde el botón de abajo.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Mientras tanto sigues teniendo tu acceso y tus reservas: no hemos tocado nada.</p>`,
+    ctaLabel: "Actualizar mi método de pago →",
+    ctaUrl: opts.portalUrl,
+    noteHtml: `El enlace caduca en <b style="color:${TEXT2}">72 horas</b>. Si ya lo has arreglado por tu cuenta, ignora este email.`,
+    signOff: `Cualquier duda, aquí estamos,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque un cobro de tu cuota no se ha completado.`,
+    footerLine2: `Con tecnología de Apta`,
+  });
+}
+
 export function renderSessionVacancyEmail(opts: {
   recipientFirstName: string;
   brandName: string;
@@ -219,5 +249,63 @@ export function renderOwnerActivationEmail(opts: {
     signOff: `Encantados de tenerte,<br><b>El equipo de Apta</b>`,
     footerLine1: `Recibes este email porque has contratado Apta para ${opts.orgName}.`,
     footerLine2: `Tu factura la emite Stripe y la tienes en tu correo de pago.`,
+  });
+}
+
+export function renderAssessmentDueEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  assessmentLabel: string;
+  isInitial: boolean;
+  assessmentUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: opts.assessmentLabel,
+    title: opts.isInitial
+      ? `¡Hola, ${opts.memberFirstName}!<br>Empezamos por conocerte.`
+      : `¡Hola, ${opts.memberFirstName}!<br>Toca mirar atrás.`,
+    bodyHtml: opts.isInitial
+      ? `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Antes de programar tu entrenamiento necesitamos saber de dónde partes: tu historial, tus molestias y qué te ha traído hasta aquí.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">La pasa tu entrenador contigo, en la próxima sesión: son unos minutos y condiciona todo lo que viene después.</p>`
+      : `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Te toca la <b>${opts.assessmentLabel.toLowerCase()}</b>. Las mismas preguntas de siempre —peso, descanso, energía, dolor y cómo llevas la adherencia—, y las repasas con tu entrenador en la próxima sesión.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Repetirlas es lo que convierte respuestas sueltas en una gráfica: sin este punto, el siguiente tramo de tu evolución queda en blanco.</p>`,
+    ctaLabel: "Ver mi valoración →",
+    ctaUrl: opts.assessmentUrl,
+    noteHtml: `Tus respuestas de salud solo las ve tu entrenador y el equipo autorizado de ${opts.brandName}, y cada consulta queda registrada.`,
+    signOff: `Nos vemos en el centro,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque tienes una valoración pendiente en tu ficha de socio.`,
+    footerLine2: `Con tecnología de Apta`,
+  });
+}
+
+/**
+ * RB-MARCA-001 y decisión de F5: la felicitación va sola. Un descuento pegado
+ * al «feliz cumpleaños» lo convierte en publicidad, y se nota.
+ */
+export function renderBirthdayEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  portalUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Hoy es tu día",
+    title: `¡Felicidades,<br>${opts.memberFirstName}!`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Gracias por estar con nosotros. Esperamos felicitarte muchos más.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Disfruta del día — y si te apetece pasarte a entrenar, aquí estamos.</p>`,
+    ctaLabel: "Entrar a mi portal →",
+    ctaUrl: opts.portalUrl,
+    noteHtml: `Hoy invitamos nosotros a las felicitaciones. El resto del equipo te lo dirá en persona.`,
+    signOff: `Un abrazo,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque tienes tu fecha de nacimiento en tu ficha de socio.`,
+    footerLine2: `Con tecnología de Apta`,
   });
 }

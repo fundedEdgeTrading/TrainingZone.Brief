@@ -8,7 +8,7 @@ import { apiOk } from "../../_lib/response";
 
 // Espejo de src/app/(app)/trainer/page.tsx ("Mi panel").
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRole(req, ["TRAINER"]);
+  const auth = await requireApiRole(req, ["TRAINER", "TRAINER_ADMIN"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
 

@@ -133,7 +133,13 @@ export function ConvertLeadForm({
   const [closeType, setCloseType] = useState<LeadCloseType>("EMBUDO");
 
   return (
-    <ActionForm action={convertLeadAction} successMessage="Alta iniciada: socio creado en periodo de prueba" className="space-y-3">
+    <ActionForm
+      action={convertLeadAction}
+      successMessage="Alta iniciada: socio creado en periodo de prueba"
+      // Lead cerrado: uno de los cuatro hitos que se celebran.
+      celebrateOnSuccess
+      className="space-y-3"
+    >
       <input type="hidden" name="leadId" value={leadId} />
       <input type="hidden" name="closeType" value={closeType} />
       <div>

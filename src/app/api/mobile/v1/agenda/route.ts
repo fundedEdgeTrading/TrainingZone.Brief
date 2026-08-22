@@ -10,7 +10,7 @@ import { expandOccurrences, isSameDay, sessionsInRangeWhere } from "@/lib/sessio
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk } from "../_lib/response";
 
-const STAFF_AGENDA_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"] as const;
+const STAFF_AGENDA_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"] as const;
 
 // Agenda operativa (día) para entrenador/dirección: espejo simplificado de
 // src/app/(app)/agenda/page.tsx, pensado para crear/editar sesiones desde el móvil.
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
         prisma.classSession.findMany({
           where: { orgId: claims.orgId, centerId, ...sessionsInRangeWhere(day, dayEnd) },
           include: {
-            trainer: { select: { id: true, name: true } },
+            trainer: { select: { id: true, name: true, image: true } },
             bookings: {
               where: { status: { not: "CANCELLED" } },
               select: { id: true, status: true, occurrenceDate: true, member: { select: { id: true, firstName: true, lastName: true } } },
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { startTime: "asc" },
         }),
-        listAssignableStaff(claims.orgId, ["TRAINER"]),
+        listAssignableStaff(claims.orgId, ["TRAINER", "TRAINER_ADMIN"]),
         listActiveMembersForSelect(claims.orgId),
       ])
     : [[], [], []];
@@ -56,11 +56,13 @@ export async function GET(req: NextRequest) {
     startTime: s.startTime,
     endTime: s.endTime,
     capacity: s.capacity,
+    room: s.room,
     isTrial: s.isTrial,
     recurrence: s.recurrence,
     selfBookable: s.selfBookable,
     trainerId: s.trainerId,
     trainerName: s.trainer?.name ?? null,
+    trainerImage: s.trainer?.image ?? null,
     // Roster del día pedido: una serie recurrente comparte fila entre ocurrencias.
     bookings: s.bookings
       .filter((b) => isSameDay(b.occurrenceDate, date))
@@ -72,7 +74,7 @@ export async function GET(req: NextRequest) {
     centers: centers.map((c) => ({ id: c.id, name: c.name })),
     centerId,
     canEdit,
-    trainers: trainers.map((t) => ({ id: t.id, name: t.name })),
+    trainers: trainers.map((t) => ({ id: t.id, name: t.name, image: t.image })),
     members,
     sessions,
   });

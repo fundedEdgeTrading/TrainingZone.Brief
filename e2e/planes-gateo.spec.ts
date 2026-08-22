@@ -12,10 +12,25 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
     await expect(page.getByText(/Apta no cobra comisión sobre tus ingresos/)).toBeVisible();
   });
 
-  test("sin precios en el entorno no se muestran botones muertos", async ({ page }) => {
+  /**
+   * La intención original ("ningún botón muerto") sigue viva, pero cambió cómo
+   * se cumple: sin STRIPE_SECRET_KEY se activa el modo demo
+   * (lib/platform-plans.ts::isDemoModeActive), así que `listPurchasablePlans`
+   * devuelve el catálogo ENTERO en vez de ninguno y "Contratar" lleva a
+   * /demo-checkout en lugar de a un checkout de Stripe imposible. El aviso
+   * "Todavía no hay precios configurados" sigue en app/planes/page.tsx, pero
+   * ahora solo es alcanzable con Stripe activo y sin STRIPE_PRICE_* — una mala
+   * configuración de producción, no este entorno.
+   */
+  test("sin Stripe configurado el catálogo se ve en modo demo y ningún botón está muerto", async ({ page }) => {
     await page.goto("/planes");
-    await expect(page.getByText(/Todavía no hay precios configurados/)).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Contratar/ })).toHaveCount(0);
+
+    const contratar = page.getByRole("button", { name: /^Contratar/ });
+    await expect(contratar.first()).toBeVisible();
+
+    await contratar.first().click();
+    await expect(page).toHaveURL(/\/demo-checkout\?plan=/);
+    await expect(page.getByText(/Stripe no está configurado en este entorno/)).toBeVisible();
   });
 
   test("con plan Élite, dirección ve los módulos premium en el menú", async ({ page }) => {

@@ -35,7 +35,7 @@ export default function NotificationsScreen() {
               <Text style={[styles.date, { color: theme.textMuted }]}>{formatShortDate(n.createdAt)}</Text>
               <Button
                 title="Marcar como leído"
-                variant="secondary"
+                variant="outline"
                 onPress={() => markRead.mutate(n.id)}
                 loading={markRead.isPending && markRead.variables === n.id}
               />

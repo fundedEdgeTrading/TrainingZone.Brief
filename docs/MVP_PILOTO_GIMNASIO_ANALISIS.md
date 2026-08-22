@@ -1,5 +1,11 @@
 # Evaluación de madurez para un piloto en un gimnasio real
 
+> **Desfasado en su bloqueante P0 nº 1 (22-08-2026, F9).** El cobro recurrente
+> de Stripe está construido: `src/lib/member-billing.ts` usa `mode:"subscription"`
+> con `card + sepa_debit`, portal de facturación y los cuatro reconciliadores de
+> webhook. No volver a planificar sobre él: lo que falta es ejecutarlo contra
+> Stripe real, no escribirlo. El cron de P0-4 también está encendido desde F4.
+
 > Análisis crítico del estado del producto (frontend + funcionalidad) de cara a
 > ponerlo delante de un **gimnasio real que lo use en su operación diaria**, no
 > en una demo. Lectura de mercado incluida. Fecha: 2026-07.

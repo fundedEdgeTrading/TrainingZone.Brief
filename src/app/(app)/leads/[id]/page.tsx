@@ -29,7 +29,7 @@ const CLOSE_TYPE_LABEL: Record<string, string> = { EMBUDO: "Embudo", DIRECTO: "D
 const CLOSE_TYPE_TONE: Record<string, "neutral" | "trial" | "gold"> = { EMBUDO: "neutral", DIRECTO: "trial", ONLINE: "gold" };
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
 
   const lead = await getLeadDetail(session.user.orgId, id);
@@ -41,7 +41,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       ? getHealthRecordsForLead({ leadId: id, orgId: session.user.orgId, actorUserId: session.user.id, actorRole: session.user.role })
       : Promise.resolve(null),
     listNoCloseReasons(session.user.orgId),
-    listAssignableStaff(session.user.orgId, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]),
+    listAssignableStaff(session.user.orgId, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]),
     listActivePlansForOrg(session.user.orgId),
   ]);
 

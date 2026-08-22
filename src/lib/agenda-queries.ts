@@ -39,7 +39,7 @@ export async function getCentersForUser(user: {
  * caen literalmente en el rango, más las series recurrentes nacidas antes de
  * la semana y aún no finalizadas (`recUntil` nulo o posterior a weekStart).
  * La proyección exacta día/semana (¿le toca ocurrencia esta semana?) se
- * resuelve en el llamador con `instanceForWeek` (agenda-utils.ts).
+ * resuelve en el llamador con `instancesForWeek` (agenda-utils.ts).
  */
 export async function getWeekSessions(orgId: string, centerId: string, weekStart: Date, weekEnd: Date) {
   const sessions = await prisma.classSession.findMany({
@@ -84,11 +84,31 @@ export type SaveSessionInput = {
 
 /** Crea o actualiza una sesión de la agenda (rediseño estilo Google Calendar). */
 export async function saveSession(orgId: string, input: SaveSessionInput) {
+  // Centro, entrenador y socio llegan tal cual del formulario. Sin contrastarlos
+  // contra la organización, quien pudiera tocar la agenda de su propio centro
+  // podía crear una sesión apuntando al centro o al entrenador de otra
+  // organización, y sobre todo colar una reserva a nombre de un socio ajeno sin
+  // más que conocer su id.
+  const [center, trainer] = await Promise.all([
+    prisma.center.findFirst({ where: { id: input.centerId, orgId }, select: { id: true, defaultGroupCapacity: true } }),
+    prisma.user.findFirst({ where: { id: input.trainerId, orgId }, select: { id: true } }),
+  ]);
+  if (!center) return { ok: false as const, error: "Centro no encontrado." };
+  if (!trainer) return { ok: false as const, error: "Entrenador no encontrado." };
+
+  if (input.memberId) {
+    const member = await prisma.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
+    if (!member) return { ok: false as const, error: "Socio no encontrado." };
+  }
+
   const isPersonal = input.type === "personal";
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
   const capacity = isPersonal
     ? 1
-    : Math.min(MAX_GROUP_CAPACITY, Math.max(1, Math.round(input.capacity || DEFAULT_GROUP_CAPACITY)));
+    : Math.min(
+        MAX_GROUP_CAPACITY,
+        Math.max(1, Math.round(input.capacity || center.defaultGroupCapacity || DEFAULT_GROUP_CAPACITY))
+      );
   const data = {
     centerId: input.centerId,
     trainerId: input.trainerId,
@@ -140,7 +160,7 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
     }
   }
 
-  return session;
+  return { ok: true as const, session };
 }
 
 /**
@@ -169,11 +189,16 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.booking.update({
-      where: { id: booking.id },
+  // Igual que en la cancelación del socio (portal-queries.ts): la condición de
+  // "sigue activa" va dentro del UPDATE, para que dos cancelaciones simultáneas
+  // no devuelvan el bono dos veces.
+  const cancelled = await prisma.$transaction(async (tx) => {
+    const applied = await tx.booking.updateMany({
+      where: { id: booking.id, status: { in: ["BOOKED", "WAITLISTED"] } },
       data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
     });
+    if (applied.count === 0) return false;
+
     // RB-RES-006: la lista de espera nunca descontó bono, así que no se devuelve.
     if (booking.status === "BOOKED" && booking.subscriptionId) {
       await tx.subscription.update({
@@ -181,7 +206,9 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
         data: { sessionsRemaining: { increment: 1 } },
       });
     }
+    return true;
   });
+  if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
   if (booking.status === "BOOKED" && wasFull) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
@@ -224,10 +251,15 @@ export async function rescheduleSession(orgId: string, sessionId: string, date: 
   return { ok: true as const };
 }
 
+/**
+ * Suma minutos a un "HH:MM" SIN cruzar la medianoche: se topa en 23:59. Con el
+ * `% 24` anterior, una franja que empezara a las 23:45 acababa a las "00:15",
+ * anterior a su propia hora de inicio, y la duración salía negativa.
+ */
 function addMinutesToTime(time: string, minutes: number) {
   const [h, m] = time.split(":").map(Number);
-  const total = h * 60 + m + minutes;
-  return `${String(Math.floor(total / 60) % 24).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  const total = Math.min(h * 60 + m + minutes, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /**

@@ -92,7 +92,7 @@ export function RevenueByMonthChart({
         <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={44} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ingresos" unit="€" />} />
-        <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={52} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={52} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((r, i) => (
             <Cell
               key={i}
@@ -134,7 +134,7 @@ export function MemberStateChart({
         <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={80} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="socios" unit="" />} />
-        <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((r, i) => (
             <Cell
               key={r.state}
@@ -173,7 +173,7 @@ export function OccupancyByCenterChart({
         <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ocupación" unit="%" />} />
-        <Bar dataKey="occupancyPct" radius={[6, 6, 0, 0]} maxBarSize={64} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="occupancyPct" radius={[6, 6, 0, 0]} maxBarSize={64} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((_, i) => (
             <Cell
               key={i}
@@ -211,7 +211,7 @@ export function OccupancyByWeekdayChart({
         <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ocupación" unit="%" />} />
-        <Bar dataKey="occupancyPct" radius={[6, 6, 0, 0]} maxBarSize={30} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="occupancyPct" radius={[6, 6, 0, 0]} maxBarSize={30} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {short.map((_, i) => (
             <Cell
               key={i}
@@ -321,7 +321,7 @@ export function AgeBracketsChart({
         <XAxis dataKey="bracket" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={32} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="socios" unit="" />} />
-        <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {data.map((_, i) => (
             <Cell
               key={i}
@@ -370,6 +370,9 @@ export function DonutChart({
             strokeWidth={2}
             isAnimationActive
             animationDuration={700}
+            animationBegin={150}
+            startAngle={90}
+            endAngle={-270}
           >
             {rows.map((r, i) => (
               <Cell
@@ -430,7 +433,7 @@ export function MemberRankingChart({
         <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={120} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric={metric} unit={unit as "€" | "%" | ""} />} />
-        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((_, i) => (
             <Cell
               key={i}
@@ -478,7 +481,7 @@ export function TopServicesChart({
           cursor={false}
           content={(props: TooltipContentProps) => <TzTooltip {...props} metric={orderBy === "revenue" ? "ingresos" : "altas"} unit={unit} />}
         />
-        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((_, i) => (
             <Cell
               key={i}
@@ -518,7 +521,7 @@ export function RevenueByMethodChart({
         <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={100} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ingresos" unit="€" />} />
-        <Bar dataKey="total" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationEasing="ease-out">
+        <Bar dataKey="total" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((r, i) => (
             <Cell
               key={r.method}

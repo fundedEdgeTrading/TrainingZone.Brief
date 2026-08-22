@@ -16,7 +16,7 @@ export default async function SessionBriefPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ d?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
   const { d } = await searchParams;
 
@@ -74,8 +74,8 @@ export default async function SessionBriefPage({
           <div className="text-xs text-faint">debriefs registrados</div>
           <div className="w-28 h-1.5 bg-tz-sand rounded-pill mt-1.5 ml-auto overflow-hidden">
             <div
-              className="h-full bg-tz-black rounded-pill transition-[width] duration-300"
-              style={{ width: `${pct}%` }}
+              className="h-full bg-tz-black rounded-pill origin-left"
+              style={{ width: `${pct}%`, animation: "tzGrow .6s var(--ease-out-soft) .18s both" }}
             />
           </div>
         </div>

@@ -1,6 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
-import type { Role, HealthRecordType, HealthSeverity } from "@prisma/client";
+import type { AssessmentKind, Role, HealthRecordType, HealthSeverity } from "@prisma/client";
+import { parseAnswers } from "@/lib/assessments/queries";
+import {
+  ASSESSMENT_KIND_LABEL,
+  DAYS_PER_WEEK_LABEL,
+  PAIN_ZONE_LABEL,
+  isInitialAnswers,
+} from "@/lib/assessments/schemas";
 
 /**
  * Punto único de lectura de datos de salud (A.2.4 / ADR-005 / ADR-008).
@@ -236,3 +243,267 @@ export async function resolveHealthRecord({
   return { ok: true };
 }
 
+/**
+ * Propagación del screening de una valoración (F3 §4.3). Si las lesiones
+ * declaradas se quedaran dentro de `Assessment.answers`, el Semáforo de Aptitud
+ * y el Session Brief no se enterarían de ellas — y son justo las dos cosas para
+ * las que se pregunta. Entra por el mismo punto único que el resto: permisos,
+ * consentimiento de salud y rastro append-only en AuditLog.
+ */
+export async function createHealthRecordsFromAssessment({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+  assessmentId,
+  records,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  assessmentId: string;
+  records: {
+    type: HealthRecordType;
+    zone: string | null;
+    description: string;
+    severity: HealthSeverity;
+  }[];
+}): Promise<HealthWriteResult> {
+  if (!canEditHealthData(actorRole)) return { ok: false, error: "forbidden" };
+  if (!records.length) return { ok: true };
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { id: true, consentHealth: true },
+  });
+  if (!member) return { ok: false, error: "not_found" };
+  if (!member.consentHealth) return { ok: false, error: "no_consent" };
+
+  const now = new Date();
+  await prisma.healthRecord.createMany({
+    data: records.map((r) => ({
+      memberId,
+      type: r.type,
+      zone: r.zone,
+      description: r.description,
+      severity: r.severity,
+      status: "ACTIVE" as const,
+      reportedByUserId: actorUserId,
+      consentSignedAt: now,
+    })),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "HEALTH_RECORD_CREATED_FROM_ASSESSMENT",
+      entityType: "Assessment",
+      entityId: assessmentId,
+      memberId,
+      metadata: { count: records.length, zones: records.map((r) => r.zone) },
+    },
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Datos que salen del centro hacia la API de Claude para generar un mesociclo
+ * (F6). Solo esto: edad, sexo, métricas, objetivos y criterios clínicos.
+ * NUNCA nombre, DNI, teléfono ni email.
+ */
+export type MesocycleBriefing = {
+  age: number | null;
+  sex: string | null;
+  level: string;
+  weeks: number;
+  goals: string[];
+  availability: string[];
+  metrics: string[];
+  /** `null` = el socio no ha consentido el tratamiento por IA (vía sin datos clínicos). */
+  clinical: string[] | null;
+  assessmentNotes: string[];
+};
+
+const SEX_LABEL: Record<string, string> = { MALE: "hombre", FEMALE: "mujer", OTHER: "otro" };
+const ASSESSMENT_SEX_LABEL: Record<string, string> = { HOMBRE: "hombre", MUJER: "mujer", OTRO: "otro" };
+const ACTIVITY_LEVEL_LABEL: Record<string, string> = { BAJO: "bajo", MEDIO: "medio", ALTO: "alto" };
+const TECHNIQUE_LABEL: Record<string, string> = { BAJA: "baja", MEDIA: "media", ALTA: "alta" };
+
+/**
+ * Seudonimización en el borde (F6 §7.3): único punto por el que los datos de un
+ * socio salen hacia la IA, con el mismo registro append-only en `AuditLog` que
+ * cualquier otra lectura de salud. Generar un mesociclo se audita igual que
+ * abrir un Session Brief.
+ */
+export async function getMesocycleBriefingForMember({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+  level,
+  weeks,
+  availability,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  level: string;
+  weeks: number;
+  availability: string[];
+}): Promise<MesocycleBriefing | null> {
+  if (!canViewHealthData(actorRole)) return null;
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { birthDate: true, sex: true, consentAI: true },
+  });
+  if (!member) return null;
+
+  const [goals, metrics, assessment, healthRecords] = await Promise.all([
+    prisma.clientGoal.findMany({ where: { memberId, isTemplate: false }, select: { label: true } }),
+    prisma.performanceMetric.findMany({
+      where: { memberId },
+      orderBy: { recordedAt: "desc" },
+      select: { key: true, value: true, unit: true, recordedAt: true },
+    }),
+    prisma.assessment.findFirst({
+      where: { memberId, completedAt: { not: null } },
+      orderBy: { completedAt: "desc" },
+      select: { kind: true, answers: true },
+    }),
+    member.consentAI
+      ? prisma.healthRecord.findMany({
+          where: { memberId, status: "ACTIVE" },
+          select: { type: true, zone: true, description: true, severity: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const context = assessment ? assessmentContext(assessment.kind, assessment.answers) : null;
+
+  const briefing: MesocycleBriefing = {
+    age: ageFrom(member.birthDate) ?? context?.age ?? null,
+    sex: (member.sex ? SEX_LABEL[member.sex] : null) ?? context?.sex ?? null,
+    level: level.trim() || context?.level || "no registrado",
+    weeks,
+    goals: [...goals.map((g) => g.label), ...(context?.goals ?? [])],
+    availability,
+    metrics: [...latestByKey(metrics).map((m) => `${m.key}: ${m.value} ${m.unit}`), ...(context?.metrics ?? [])],
+    clinical: member.consentAI
+      ? [
+          ...healthRecords.map(
+            (r) => [r.type, r.zone, r.description].filter(Boolean).join(" · ") + ` (severidad ${r.severity})`
+          ),
+          ...(context?.clinical ?? []),
+        ]
+      : null,
+    assessmentNotes: context?.notes ?? [],
+  };
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "MESOCYCLE_AI_INPUT_READ",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: {
+        consentAI: member.consentAI,
+        clinicalItems: briefing.clinical?.length ?? 0,
+        weeks,
+      },
+    },
+  });
+
+  return briefing;
+}
+
+/**
+ * Reparto de la valoración de F3 entre lo que puede salir siempre y lo que
+ * necesita `consentAI`. El corte no es "campo del bloque screening" sino "dato
+ * de salud": el dolor declarado, lo que no tolera y las notas libres del
+ * entrenador caen del lado clínico aunque el formulario los guarde en otro
+ * bloque, porque es donde acaban las lesiones cuando se escriben a mano.
+ *
+ * Las valoraciones anteriores al esquema actual devuelven `null` en
+ * `parseAnswers` y aquí simplemente no aportan nada: el mesociclo se genera con
+ * el resto de la ficha en vez de reventar.
+ */
+function assessmentContext(kind: AssessmentKind, answers: unknown) {
+  const parsed = parseAnswers(kind, answers);
+  if (!parsed) return null;
+
+  const notes: string[] = [`Valoración: ${ASSESSMENT_KIND_LABEL[kind]}`];
+  const clinical: string[] = [];
+  const metrics: string[] = [`peso: ${parsed.pesoKg} kg`];
+  const goals: string[] = [];
+  let age: number | null = null;
+  let sex: string | null = null;
+  let level: string | null = null;
+
+  notes.push(
+    `Entrena ${DAYS_PER_WEEK_LABEL[parsed.diasPorSemana] ?? parsed.diasPorSemana} por semana`,
+    `Sueño ${parsed.calidadSueno}/5, estrés ${parsed.estres}/5, energía ${parsed.energia}/5`
+  );
+  clinical.push(`Dolor actual declarado: ${parsed.dolorActual}/10`);
+
+  if (isInitialAnswers(kind, parsed)) {
+    const { perfil, experiencia, screening, cierre } = parsed;
+
+    age = perfil.edad;
+    sex = ASSESSMENT_SEX_LABEL[perfil.sexo] ?? null;
+    level = `actividad ${ACTIVITY_LEVEL_LABEL[experiencia.nivelActividad] ?? experiencia.nivelActividad}, técnica ${
+      TECHNIQUE_LABEL[experiencia.tecnicaBasicos] ?? experiencia.tecnicaBasicos
+    }, ${experiencia.haEntrenadoAntes ? `${experiencia.anosExperiencia} años de experiencia` : "sin experiencia previa"}`;
+
+    metrics.push(`altura: ${perfil.alturaCm} cm`);
+    goals.push(perfil.objetivoPrincipal);
+    if (perfil.objetivoSecundario) goals.push(perfil.objetivoSecundario);
+    if (perfil.motivacionReal) notes.push(`Motivación: ${perfil.motivacionReal}`);
+    if (perfil.queLeHariaAbandonar) notes.push(`Lo que le haría abandonar: ${perfil.queLeHariaAbandonar}`);
+
+    if (screening.cardiovascular) clinical.push("Antecedente cardiovascular declarado");
+    if (screening.hipertension) clinical.push("Hipertensión declarada");
+    if (screening.diabetes) clinical.push("Diabetes declarada");
+    if (screening.medicacion) clinical.push(`Medicación: ${screening.medicacion}`);
+    if (screening.cirugias) clinical.push(`Cirugías: ${screening.cirugias}`);
+    if (screening.lesionesActuales) clinical.push(`Lesiones actuales: ${screening.lesionesActuales}`);
+    if (screening.zonasDolor.length > 0) {
+      clinical.push(`Zonas de dolor: ${screening.zonasDolor.map((z) => PAIN_ZONE_LABEL[z]).join(", ")}`);
+    }
+    if (experiencia.ejerciciosNoTolera) clinical.push(`No tolera: ${experiencia.ejerciciosNoTolera}`);
+    if (cierre.notasEntrenador) clinical.push(`Notas del entrenador: ${cierre.notasEntrenador}`);
+  } else {
+    const { seguimiento, cierre } = parsed;
+
+    notes.push(
+      `Adherencia percibida ${seguimiento.adherenciaPercibida}/5, progreso percibido ${seguimiento.progresoPercibido}/5`
+    );
+    if (seguimiento.queHaMejorado) notes.push(`Ha mejorado: ${seguimiento.queHaMejorado}`);
+    if (seguimiento.obstaculos) notes.push(`Obstáculos: ${seguimiento.obstaculos}`);
+    if (seguimiento.objetivoProximoPeriodo) goals.push(seguimiento.objetivoProximoPeriodo);
+    if (cierre.notasEntrenador) clinical.push(`Notas del entrenador: ${cierre.notasEntrenador}`);
+  }
+
+  return { notes, clinical, metrics, goals, age, sex, level };
+}
+
+function ageFrom(birthDate: Date | null): number | null {
+  if (!birthDate) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birthDate.getFullYear();
+  const monthDiff = now.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) age -= 1;
+  return age;
+}
+
+/** La serie temporal completa no aporta al plan: solo la marca más reciente de cada clave. */
+function latestByKey<T extends { key: string }>(metrics: T[]): T[] {
+  const seen = new Set<string>();
+  return metrics.filter((m) => (seen.has(m.key) ? false : (seen.add(m.key), true)));
+}

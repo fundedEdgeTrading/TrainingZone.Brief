@@ -11,6 +11,7 @@ const ACTION_LABEL: Record<string, string> = {
   SESSION_BRIEF_OPENED: "Session Brief abierto",
   MEMBER_UPDATED: "Ficha de socio actualizada",
   MEMBER_SELF_UPDATED_CONTACT: "Socio actualizó su contacto",
+  SUBSCRIPTION_SESSIONS_ADJUSTED: "Saldo de bono ajustado a mano",
   CONSENT_GRANTED: "Consentimiento otorgado",
   CONSENT_REVOKED: "Consentimiento retirado",
 };
