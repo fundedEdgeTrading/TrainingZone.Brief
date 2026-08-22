@@ -32,10 +32,34 @@ export type ParsedMemberData = {
   externalRef: string | null;
 };
 
+/**
+ * La cuota que el socio ya venía pagando en la plataforma anterior. Sin esto la
+ * importación traía a la persona pero no su dinero: quedaba sin suscripción, no
+ * entraba en previsiones de ingresos y el semáforo de retención lo leía como un
+ * socio inactivo. El plan se resuelve por nombre en el server action, porque el
+ * parser es puro y no habla con la base de datos.
+ */
+export type ParsedSubscriptionData = {
+  /** Nombre del plan tal cual viene en el CSV; se casa contra MembershipPlan. */
+  planName: string;
+  /**
+   * Precio realmente pactado, que a menudo NO es el de tarifa: en una migración
+   * hay socios con precios históricos que hay que respetar o se les sube la
+   * cuota sin avisar. Null = usar el precio del plan.
+   */
+  priceCents: number | null;
+  /** Alta de la cuota. Null = cae a la fecha de inscripción del socio. */
+  startDate: Date | null;
+  /** Solo para bonos de sesiones: lo que le queda por consumir. */
+  sessionsRemaining: number | null;
+};
+
 export type ParsedMemberRow = {
   /** 1-based, referido a la fila de datos (sin contar la cabecera). */
   rowNumber: number;
   data: ParsedMemberData;
+  /** Null si el CSV no trae columna de plan o la fila la deja vacía. */
+  subscription: ParsedSubscriptionData | null;
   errors: string[];
 };
 
@@ -138,7 +162,10 @@ function normalizeHeader(h: string): string {
 }
 
 // Cabecera normalizada -> clave interna.
-const HEADER_MAP: Record<string, keyof ParsedMemberData | "mobile" | "ignore"> = {
+/** Claves que no van a `Member` sino a su suscripción. */
+type SubscriptionKey = "planName" | "priceCents" | "subscriptionStartDate" | "sessionsRemaining";
+
+const HEADER_MAP: Record<string, keyof ParsedMemberData | "mobile" | "ignore" | SubscriptionKey> = {
   nombre: "firstName",
   apellidos: "lastName",
   email: "email",
@@ -164,6 +191,18 @@ const HEADER_MAP: Record<string, keyof ParsedMemberData | "mobile" | "ignore"> =
   "fecha de creacion de la cuenta": "accountCreatedAt",
   "id externo": "externalId",
   "identificador de la nube": "externalRef",
+  // Cuota que el socio ya pagaba. Se aceptan varios rótulos porque cada
+  // plataforma de origen los llama distinto y el CSV lo prepara el gimnasio a
+  // mano: obligar a un nombre exacto solo genera importaciones fallidas.
+  plan: "planName",
+  tarifa: "planName",
+  "plan actual": "planName",
+  cuota: "priceCents",
+  precio: "priceCents",
+  "importe cuota": "priceCents",
+  "fecha de alta de la cuota": "subscriptionStartDate",
+  "alta de la cuota": "subscriptionStartDate",
+  "sesiones restantes": "sessionsRemaining",
   // Columnas conocidas del export que no mapeamos (por ahora) — se ignoran sin ruido.
   "instructor fitness": "ignore",
   "entrenador personal": "ignore",
@@ -217,6 +256,36 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ---------- Mapeo de fichero a filas ----------
 
+/**
+ * Importe a céntimos. El CSV lo prepara el gimnasio desde su hoja de cálculo,
+ * así que llega en formato español («45,00 €», «1.234,56») tanto como en el
+ * anglosajón («45.00»). Distinguir uno de otro es el único punto delicado: en
+ * «1.234,56» el punto es separador de millar y en «1234.56» es decimal, y
+ * confundirlos cobra mil veces de más.
+ */
+export function parseImportPriceCents(raw: string | null): number | null {
+  if (!raw) return null;
+  const t = raw.replace(/[^\d.,-]/g, "").trim();
+  if (!t) return null;
+
+  const lastComma = t.lastIndexOf(",");
+  const lastDot = t.lastIndexOf(".");
+  let normalized: string;
+  if (lastComma === -1 && lastDot === -1) {
+    normalized = t;
+  } else {
+    // El separador decimal es el que aparece MÁS A LA DERECHA; el otro, si lo
+    // hay, es de millares y sobra.
+    const decimalSep = lastComma > lastDot ? "," : ".";
+    const thousandSep = decimalSep === "," ? "." : ",";
+    normalized = t.split(thousandSep).join("").replace(decimalSep, ".");
+  }
+
+  const value = Number(normalized);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.round(value * 100);
+}
+
 export function parseMembersCsv(text: string): ParsedCsv {
   const records = parseCsvRecords(text).filter((r) => r.some((c) => c.trim().length));
   if (records.length === 0) {
@@ -238,7 +307,7 @@ export function parseMembersCsv(text: string): ParsedCsv {
 
   for (let r = 1; r < records.length; r++) {
     const cells = records[r];
-    const raw: Partial<Record<keyof ParsedMemberData | "mobile", string | null>> = {};
+    const raw: Partial<Record<keyof ParsedMemberData | "mobile" | SubscriptionKey, string | null>> = {};
     for (let c = 0; c < keys.length; c++) {
       const key = keys[c];
       if (!key || key === "ignore") continue;
@@ -298,7 +367,37 @@ export function parseMembersCsv(text: string): ParsedCsv {
       externalRef,
     };
 
-    rows.push({ rowNumber: r, data, errors });
+    // El plan es lo que decide si esta fila trae cuota: sin nombre de plan no
+    // hay nada que suscribir, y un precio suelto sin plan no significa nada.
+    let subscription: ParsedSubscriptionData | null = null;
+    const planName = raw.planName ?? null;
+    if (planName) {
+      const priceRaw = raw.priceCents ?? null;
+      const priceCents = parseImportPriceCents(priceRaw);
+      if (priceRaw && priceCents === null) {
+        errors.push(`Importe de cuota no válido: «${priceRaw}».`);
+      }
+
+      const sessionsRaw = raw.sessionsRemaining ?? null;
+      let sessionsRemaining: number | null = null;
+      if (sessionsRaw) {
+        const n = Number(sessionsRaw.replace(",", "."));
+        if (!Number.isInteger(n) || n < 0) {
+          errors.push(`Sesiones restantes no válidas: «${sessionsRaw}».`);
+        } else {
+          sessionsRemaining = n;
+        }
+      }
+
+      subscription = {
+        planName,
+        priceCents,
+        startDate: parseImportDate(raw.subscriptionStartDate ?? null),
+        sessionsRemaining,
+      };
+    }
+
+    rows.push({ rowNumber: r, data, subscription, errors });
   }
 
   return { rows, fatalError: null };
