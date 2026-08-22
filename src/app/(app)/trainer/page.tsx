@@ -31,6 +31,10 @@ function agendaCardTitle(selectedDay: Date, today: Date) {
   return `Agenda · ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
+/** Rejilla de "Mis clientes de EP" de `sm` en adelante (en móvil se apila). */
+const SM_GRID =
+  "sm:grid-cols-[minmax(170px,1.7fr)_minmax(96px,.9fr)_68px_minmax(90px,.85fr)_minmax(76px,.7fr)]";
+
 const APTITUDE_DOT: Record<string, string> = { GREEN: "#4B5A22", AMBER: "#8A5A12", RED: "#8A3420" };
 const ADHERENCE_COLOR = (pct: number) => (pct >= 85 ? "#4B5A22" : pct >= 70 ? "#8A5A12" : "#8A3420");
 
@@ -401,7 +405,10 @@ export default async function TrainerPanelPage({
                     <Link
                       key={s.id}
                       href={s.status === "past" ? `/agenda/session/${s.id}` : `/brief/${s.id}`}
-                      className={`relative grid grid-cols-[84px_minmax(0,1fr)_auto] items-center gap-4 p-[13px_14px] rounded-xl transition-[transform,background-color] duration-200 hover:translate-x-[3px] hover:bg-brand-bg tz-fade-up ${
+                      // En móvil el chip baja a su propia línea: compartiendo fila
+                      // con el título dejaba a este unos 60 px y todas las
+                      // sesiones se leían "Fun…", "Pers…".
+                      className={`relative grid grid-cols-[64px_minmax(0,1fr)] sm:grid-cols-[84px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 sm:gap-4 p-[13px_14px] rounded-xl transition-[transform,background-color] duration-200 hover:translate-x-[3px] hover:bg-brand-bg tz-fade-up ${
                         s.status === "current" ? "bg-brand-bg" : s.status === "past" ? "opacity-60 hover:opacity-100" : ""
                       }`}
                       style={{ animationDelay: `${0.34 + i * 0.04}s` }}
@@ -418,7 +425,9 @@ export default async function TrainerPanelPage({
                         <div className={`text-[15px] font-bold text-brand-text truncate ${s.status === "current" ? "font-extrabold" : ""}`}>{s.title}</div>
                         <div className="text-xs text-brand-muted truncate">{s.meta}</div>
                       </div>
-                      <Badge tone={s.chipTone}>{s.chipLabel}</Badge>
+                      <span className="col-start-2 justify-self-start sm:col-auto sm:justify-self-auto">
+                        <Badge tone={s.chipTone}>{s.chipLabel}</Badge>
+                      </span>
                     </Link>
                   ))}
                   </div>
@@ -441,11 +450,12 @@ export default async function TrainerPanelPage({
             {data.epClients.length === 0 ? (
               <EmptyState title="Sin clientes de EP" description="Todavía no tienes clientes de Personal Training asignados." />
             ) : (
-              <div className="overflow-x-auto">
-                <div className="min-w-[540px]">
+              // Móvil: cada cliente se apila en dos columnas; a partir de `sm`
+              // vuelve la rejilla de cinco columnas con su cabecera.
+              <div className="sm:overflow-x-auto">
+                <div className="sm:min-w-[540px]">
                   <div
-                    className="grid gap-3 text-[11px] font-bold uppercase tracking-[.06em] text-brand-muted-2 pb-2"
-                    style={{ gridTemplateColumns: "minmax(170px,1.7fr) minmax(96px,.9fr) 68px minmax(90px,.85fr) minmax(76px,.7fr)" }}
+                    className={`hidden sm:grid gap-3 text-[11px] font-bold uppercase tracking-[.06em] text-brand-muted-2 pb-2 ${SM_GRID}`}
                   >
                     <span>Cliente</span>
                     <span>Servicio</span>
@@ -457,10 +467,9 @@ export default async function TrainerPanelPage({
                     <Link
                       key={c.id}
                       href={`/members/${c.id}`}
-                      className="grid gap-3 items-center border-t border-tz-sand p-3 rounded-[10px] transition-[transform,background-color] duration-200 hover:bg-brand-bg hover:translate-x-[3px]"
-                      style={{ gridTemplateColumns: "minmax(170px,1.7fr) minmax(96px,.9fr) 68px minmax(90px,.85fr) minmax(76px,.7fr)" }}
+                      className={`grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 sm:gap-3 items-center border-t border-tz-sand p-3 rounded-[10px] transition-[transform,background-color] duration-200 hover:bg-brand-bg hover:translate-x-[3px] ${SM_GRID}`}
                     >
-                      <span className="flex items-center gap-2.5 min-w-0">
+                      <span className="col-span-2 sm:col-span-1 flex items-center gap-2.5 min-w-0">
                         <span className="relative shrink-0">
                           <span className="w-[34px] h-[34px] rounded-full bg-tz-sand text-brand-text-2 flex items-center justify-center text-xs font-extrabold">
                             {initials(c.firstName, c.lastName)}
@@ -478,7 +487,12 @@ export default async function TrainerPanelPage({
                         </span>
                       </span>
                       <span className="text-xs text-brand-text-2 truncate">{c.planNames || "—"}</span>
-                      <span className="text-sm font-bold tabular-nums text-right">{c.attendedCount}</span>
+                      <span className="text-sm font-bold tabular-nums text-right whitespace-nowrap">
+                        <span className="sm:hidden text-[11px] font-semibold uppercase tracking-[.06em] text-brand-muted-2 mr-1.5">
+                          Sesiones
+                        </span>
+                        {c.attendedCount}
+                      </span>
                       <span className="flex items-center gap-2">
                         <span className="flex-1 h-[5px] rounded-full bg-tz-sand overflow-hidden">
                           <span className="block h-full rounded-full" style={{ width: `${c.adherencePct}%`, background: ADHERENCE_COLOR(c.adherencePct) }} />

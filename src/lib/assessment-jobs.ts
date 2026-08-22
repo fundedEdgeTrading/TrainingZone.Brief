@@ -5,6 +5,8 @@ import { absoluteUrl } from "@/lib/invitations";
 import { zonedToday, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { ASSESSMENT_KIND_ORDER, dueDateForKind } from "@/lib/assessments/queries";
 import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
+import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 
 /**
  * La escalera y sus vencimientos son los de F3 (`assessments/queries.ts`): si
@@ -42,7 +44,8 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
         firstName: true,
         email: true,
         joinedAt: true,
-        primaryCenter: { select: { timezone: true } },
+        ...MEMBER_EMAIL_PREFERENCES_SELECT,
+        primaryCenter: { select: { address: true, timezone: true } },
         user: { select: { email: true } },
         assessments: { select: { kind: true } },
       },
@@ -65,14 +68,20 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
     const alreadyExists = member.assessments.some((a) => a.kind === kind);
     if (alreadyExists) continue;
 
+    const dueDate = dueDateForKind(joinedDay, kind);
     const assessment = await prisma.assessment.create({
-      data: { orgId, memberId: member.id, kind, dueDate: dueDateForKind(joinedDay, kind), answers: {} },
+      data: { orgId, memberId: member.id, kind, dueDate, answers: {} },
       select: { id: true },
     });
     created++;
 
     const to = member.user?.email ?? member.email;
     if (!to) continue;
+    // La valoración se crea siempre (el entrenador la ve en la ficha); lo que
+    // el socio puede desactivar es el recordatorio por correo.
+    if (!canSendMemberEmail("assessment", member)) continue;
+
+    const footer = memberEmailFooterLinks(member.id);
     // Fire-and-forget, como el resto de transaccionales: un proveedor de email
     // lento no debe abortar la pasada del cron para el resto de socios.
     void sendMail({
@@ -86,7 +95,11 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
         assessmentLabel: ASSESSMENT_KIND_LABEL[kind],
         isInitial: kind === "INITIAL",
         assessmentUrl: absoluteUrl(assessmentPortalPath(assessment.id)),
+        dueDateLabel: dueDate.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" }),
+        postalAddress: member.primaryCenter.address ?? undefined,
+        prefsToken: footer.token,
       }),
+      unsubscribeUrl: footer.oneClickUnsubscribeUrl,
     });
   }
 

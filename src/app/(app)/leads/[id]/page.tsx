@@ -69,7 +69,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
           <Card title={`${lead.firstName} ${lead.lastName}`} meta={lead.channel}>
-            <dl className="grid grid-cols-2 gap-3 text-sm">
+            {/* En móvil, una columna: un email largo no parte por espacios y
+                desbordaba la mitad de la rejilla. */}
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm [&_dd]:break-words">
               <div>
                 <dt className="text-xs text-brand-muted">Teléfono</dt>
                 <dd className="text-brand-text">{lead.phone}</dd>
@@ -86,16 +88,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <dt className="text-xs text-brand-muted">Ocupación</dt>
                 <dd className="text-brand-text">{lead.occupation}</dd>
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <dt className="text-xs text-brand-muted">Objetivos</dt>
                 <dd className="text-brand-text">{lead.goals}</dd>
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <dt className="text-xs text-brand-muted">¿Ha entrenado antes?</dt>
                 <dd className="text-brand-text">{lead.hasTrainedBefore ? "Sí" : "No"}{lead.hasTrainedNote ? ` — ${lead.hasTrainedNote}` : ""}</dd>
               </div>
               {lead.noCloseReason && (
-                <div className="col-span-2">
+                <div className="sm:col-span-2">
                   <dt className="text-xs text-brand-muted">Motivo de no cierre</dt>
                   <dd className="text-critical">{lead.noCloseReason}</dd>
                 </div>

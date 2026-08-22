@@ -27,9 +27,18 @@ export type MailOptions = {
    */
   fromName?: string;
   replyTo?: string;
+  /**
+   * Enlace de baja del destinatario (`/api/email/baja/<token>`). Añade las
+   * cabeceras `List-Unsubscribe` y `List-Unsubscribe-Post` (RFC 8058): Gmail y
+   * Outlook pintan con ellas su propio botón "Cancelar suscripción" arriba del
+   * correo, y su ausencia es uno de los motivos por los que un remitente acaba
+   * en spam. Solo se pasa en el correo prescindible: en el transaccional puro
+   * (contraseña, cobro fallido) no hay nada de lo que darse de baja.
+   */
+  unsubscribeUrl?: string;
 };
 
-export async function sendMail({ to, subject, html, fromName, replyTo }: MailOptions) {
+export async function sendMail({ to, subject, html, fromName, replyTo, unsubscribeUrl }: MailOptions) {
   const apiKey = process.env.BREVO_API_KEY;
 
   if (!apiKey) {
@@ -56,6 +65,14 @@ export async function sendMail({ to, subject, html, fromName, replyTo }: MailOpt
         },
         to: [{ email: to }],
         ...(replyTo ? { replyTo: { email: replyTo } } : {}),
+        ...(unsubscribeUrl
+          ? {
+              headers: {
+                "List-Unsubscribe": `<${unsubscribeUrl}>`,
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+              },
+            }
+          : {}),
         subject,
         htmlContent: html,
       }),

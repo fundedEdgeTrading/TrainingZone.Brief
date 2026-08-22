@@ -95,8 +95,8 @@ export default async function DebriefsSemanalesPage({
         {allSessions.length === 0 ? (
           <EmptyState title="Sin debriefs esta semana" description="No se han registrado Debriefs de sesión en el rango seleccionado." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="sm:overflow-x-auto">
+            <table className="tz-stack-table w-full text-sm">
               <thead className="text-xs text-faint text-left">
                 <tr>
                   <th className="pb-2">Sesión</th>
@@ -114,16 +114,16 @@ export default async function DebriefsSemanalesPage({
                   const feedback = clientFeedback.get(s.sessionId) ?? [];
                   return (
                     <tr key={s.sessionId} className="border-t border-tz-sand align-top">
-                      <td className="py-2">{s.sessionName}</td>
-                      <td className="py-2 text-text-2">{s.trainerName}</td>
-                      <td className="py-2 tz-nums text-text-2">{s.sessionDate.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}</td>
-                      <td className="py-2 tz-nums">{s.greenCount || ""}</td>
-                      <td className="py-2 tz-nums">{s.yellowCount || ""}</td>
-                      <td className="py-2 tz-nums">{s.redCount || ""}</td>
-                      <td className="py-2 text-xs text-muted max-w-[280px]">
+                      <td data-label="" className="py-2 font-semibold">{s.sessionName}</td>
+                      <td data-label="Entrenador" className="py-2 text-text-2">{s.trainerName}</td>
+                      <td data-label="Fecha" className="py-2 tz-nums text-text-2">{s.sessionDate.toLocaleDateString("es-ES", { weekday: "short", day: "numeric" })}</td>
+                      <td data-label="🟢" className="py-2 tz-nums">{s.greenCount || ""}</td>
+                      <td data-label="🟡" className="py-2 tz-nums">{s.yellowCount || ""}</td>
+                      <td data-label="🔴" className="py-2 tz-nums">{s.redCount || ""}</td>
+                      <td data-label="Notas" className="py-2 text-xs text-muted sm:max-w-[280px]">
                         {s.notes.length === 0 ? "—" : s.notes.join(" · ")}
                       </td>
-                      <td className="py-2 text-xs text-muted max-w-[240px]">
+                      <td data-label="Feedback" className="py-2 text-xs text-muted sm:max-w-[240px]">
                         {feedback.length === 0
                           ? "—"
                           : feedback

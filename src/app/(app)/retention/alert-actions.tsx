@@ -36,7 +36,7 @@ export default function AlertActions({ alertId, status }: { alertId: string; sta
   }
 
   return (
-    <div className="flex gap-1.5">
+    <div className="flex flex-wrap gap-1.5">
       <Button variant="secondary" size="sm" disabled={pending} onClick={() => set("CONTACTED")}>
         {pending && <ButtonSpinner />} Marcar contactada
       </Button>

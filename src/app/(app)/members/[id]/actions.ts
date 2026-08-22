@@ -9,6 +9,7 @@ import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
 import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type Sex } from "@prisma/client";
 
 const HEALTH_TYPES: HealthRecordType[] = [
@@ -476,7 +477,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId: session.user.orgId },
-    include: { primaryCenter: { select: { name: true } } },
+    include: { primaryCenter: { select: { name: true, address: true } } },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
   if (member.userId) return { ok: false, error: "Este socio ya completó su acceso." };
@@ -490,6 +491,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
   });
 
   const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
+  const footer = memberEmailFooterLinks(member.id);
   // Email de bienvenida no bloqueante: la invitación ya está guardada, un SMTP lento no debe colgar la acción.
   void sendMail({
     to: member.email,
@@ -501,7 +503,11 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
       orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       centerName: member.primaryCenter.name,
       onboardingUrl: onboardingUrlFor(token),
+      memberFullName: `${member.firstName} ${member.lastName}`,
+      postalAddress: member.primaryCenter.address ?? undefined,
+      prefsToken: footer.token,
     }),
+    unsubscribeUrl: footer.oneClickUnsubscribeUrl,
   });
 
   revalidatePath(`/members/${memberId}`);

@@ -20,6 +20,13 @@ const PUBLIC_PATHS = [
   "/verificar-email",
   "/recuperar-clave",
   "/gestionar-suscripcion",
+  // Preferencias de correo, baja y privacidad: son el pie de todos los emails
+  // y tienen que abrirse sin sesión. Exigir login para dejar de recibir correo
+  // es, literalmente, no ofrecer un medio sencillo de oposición (Art. 21 RGPD).
+  "/preferencias",
+  "/baja",
+  "/privacidad",
+  "/api/email",
   "/servicio-no-disponible",
   "/api/jobs",
   "/api/stripe",

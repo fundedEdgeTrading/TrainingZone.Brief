@@ -85,8 +85,13 @@ export function ProductsSection({ plans }: { plans: MembershipPlan[] }) {
           <h3 className="text-sm font-bold text-brand-text mb-3">Archivados</h3>
           <div className="flex flex-wrap gap-2">
             {archived.map((plan) => (
-              <div key={plan.id} className="flex items-center gap-2 border border-brand-border rounded-control px-3 py-1.5">
-                <Badge tone="neutral">{plan.name}</Badge>
+              <div
+                key={plan.id}
+                className="flex min-w-0 max-w-full flex-wrap items-center gap-2 border border-brand-border rounded-control px-3 py-1.5"
+              >
+                <span className="min-w-0 max-w-full truncate">
+                  <Badge tone="neutral">{plan.name}</Badge>
+                </span>
                 <span className="text-xs text-muted">{euros(plan.priceCents)}</span>
                 <ActionForm action={setMembershipPlanActive} successMessage="Producto reactivado.">
                   <input type="hidden" name="planId" value={plan.id} />
