@@ -252,3 +252,30 @@ export function renderAssessmentDueEmail(opts: {
     footerLine2: `Con tecnología de Apta`,
   });
 }
+
+/**
+ * RB-MARCA-001 y decisión de F5: la felicitación va sola. Un descuento pegado
+ * al «feliz cumpleaños» lo convierte en publicidad, y se nota.
+ */
+export function renderBirthdayEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  portalUrl: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    eyebrow: "Hoy es tu día",
+    title: `¡Felicidades,<br>${opts.memberFirstName}!`,
+    bodyHtml: `
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Gracias por estar con nosotros. Esperamos felicitarte muchos más.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Disfruta del día — y si te apetece pasarte a entrenar, aquí estamos.</p>`,
+    ctaLabel: "Entrar a mi portal →",
+    ctaUrl: opts.portalUrl,
+    noteHtml: `Hoy invitamos nosotros a las felicitaciones. El resto del equipo te lo dirá en persona.`,
+    signOff: `Un abrazo,<br><b>El equipo de ${opts.brandName}</b>`,
+    footerLine1: `${opts.brandName} · Recibes este email porque tienes tu fecha de nacimiento en tu ficha de socio.`,
+    footerLine2: `Con tecnología de Apta`,
+  });
+}

@@ -149,3 +149,29 @@ export function addMonthsClamped(date: Date, months: number): Date {
   result.setFullYear(date.getFullYear(), targetMonth, Math.min(date.getDate(), lastDayOfTarget));
   return result;
 }
+
+/**
+ * ¿Hoy es el cumpleaños del socio? (F5)
+ *
+ * `birthDate` es una fecha sin hora guardada a medianoche UTC (viene de un
+ * `<input type="date">`, ver members/actions.ts), así que se lee con getters
+ * UTC; `today` es el día de pared del centro (`zonedToday`), que sí usa
+ * componentes locales. Mezclar convenciones aquí desplazaría el cumpleaños un
+ * día en los servidores al oeste de Greenwich.
+ *
+ * **29 de febrero:** en años no bisiestos se felicita el 28. Sin esto, quien
+ * nació ese día recibiría felicitación una vez cada cuatro años.
+ */
+export function isBirthdayOn(birthDate: Date, today: Date): boolean {
+  const birthMonth = birthDate.getUTCMonth();
+  const birthDay = birthDate.getUTCDate();
+  if (today.getMonth() === birthMonth && today.getDate() === birthDay) return true;
+  if (birthMonth === 1 && birthDay === 29 && today.getMonth() === 1 && today.getDate() === 28) {
+    return !isLeapYear(today.getFullYear());
+  }
+  return false;
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}

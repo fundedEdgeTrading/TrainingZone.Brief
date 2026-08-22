@@ -9,13 +9,14 @@ import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 import { runAssessmentDueRule } from "@/lib/assessment-jobs";
+import { runBirthdayRule } from "@/lib/birthday-jobs";
 import { reportJobFailures } from "@/lib/job-failure-report";
 
 /**
  * Disparador único para todas las reglas temporales del CRM (F10/F13/F14/F15):
  * 24h sin responsable, pocas sesiones EP programadas, bono bajo, estancamiento,
- * check-ins periódicos de objetivos/valoración de entrenadores y valoraciones
- * vencidas. Sin worker en este stack (Next.js),
+ * check-ins periódicos de objetivos/valoración de entrenadores, valoraciones
+ * vencidas y felicitaciones de cumpleaños. Sin worker en este stack (Next.js),
  * se invoca desde un cron externo (.github/workflows/cron-jobs.yml, Vercel Cron
  * u otro) contra esta route handler, protegida por un secreto compartido.
  */
@@ -45,6 +46,7 @@ export async function GET(req: NextRequest) {
     scheduledCancellations: 0,
     feedbackCyclePrompts: 0,
     assessmentsDue: 0,
+    birthdayGreetings: 0,
   };
 
 
@@ -75,6 +77,7 @@ export async function GET(req: NextRequest) {
     summary.scheduledCancellations += await run(org.id, "scheduledCancellations", () => runScheduledCancellationsRule(org.id));
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
     summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
+    summary.birthdayGreetings += await run(org.id, "birthdayGreetings", () => runBirthdayRule(org.id));
   }
 
   // El array de fallos no puede quedarse solo en la respuesta del cron: se
