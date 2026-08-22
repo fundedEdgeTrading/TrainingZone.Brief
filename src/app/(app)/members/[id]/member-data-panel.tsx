@@ -38,6 +38,7 @@ export type MemberDataPanelValues = {
   consentHealthAt: string | null;
   consentImagesAt: string | null;
   consentMarketingAt: string | null;
+  consentAIAt: string | null;
 };
 
 const LABEL = "block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted";
@@ -272,6 +273,7 @@ export function MemberDataPanel({
               <ConsentRow label="Contrato" at={member.consentContractAt} />
               <ConsentRow label="Datos de salud (Art. 9 RGPD)" at={member.consentHealthAt} />
               <ConsentRow label="Uso de imágenes (evolución)" at={member.consentImagesAt} />
+              <ConsentRow label="Tratamiento con IA" at={member.consentAIAt} />
               <ConsentRow label="Marketing" at={member.consentMarketingAt} />
             </ul>
           </section>

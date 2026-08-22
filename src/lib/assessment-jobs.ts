@@ -1,35 +1,22 @@
 import { prisma } from "@/lib/prisma";
-import type { AssessmentKind } from "@prisma/client";
 import { sendMail } from "@/lib/mailer";
 import { renderAssessmentDueEmail } from "@/lib/emails/templates";
 import { absoluteUrl } from "@/lib/invitations";
-import { addMonthsClamped, zonedToday, DEFAULT_TIMEZONE } from "@/lib/date-utils";
+import { zonedToday, DEFAULT_TIMEZONE } from "@/lib/date-utils";
+import { ASSESSMENT_KIND_ORDER, dueDateForKind } from "@/lib/assessments/queries";
+import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
 
 /**
- * Escalera de revisiones desde el alta (F4): inicial el mismo día, y después
- * mes 1, 3, 6, 9 y aniversario. Ordenada de más reciente a más antigua porque
- * la regla solo mira el hito vigente (ver `runAssessmentDueRule`).
+ * La escalera y sus vencimientos son los de F3 (`assessments/queries.ts`): si
+ * el cron calculara los suyos, la fecha que ve el socio en el email y la que
+ * ve el entrenador en la ficha podrían dejar de coincidir. Aquí solo se
+ * recorre al revés, del hito más lejano al más cercano, porque la regla mira
+ * el vigente (ver `runAssessmentDueRule`).
  */
-const LADDER: { kind: AssessmentKind; months: number }[] = [
-  { kind: "Y1", months: 12 },
-  { kind: "M9", months: 9 },
-  { kind: "M6", months: 6 },
-  { kind: "M3", months: 3 },
-  { kind: "M1", months: 1 },
-  { kind: "INITIAL", months: 0 },
-];
+const LADDER = [...ASSESSMENT_KIND_ORDER].reverse();
 
-const KIND_LABEL: Record<AssessmentKind, string> = {
-  INITIAL: "Valoración inicial",
-  M1: "Revisión del primer mes",
-  M3: "Revisión de los tres meses",
-  M6: "Revisión de los seis meses",
-  M9: "Revisión de los nueve meses",
-  Y1: "Revisión del año",
-};
-
-/** Ruta del formulario de valoración en el portal del socio. */
-export function assessmentFormPath(assessmentId: string): string {
+/** Ruta de la valoración en el portal del socio. */
+export function assessmentPortalPath(assessmentId: string): string {
   return `/portal/valoracion/${assessmentId}`;
 }
 
@@ -72,15 +59,14 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
     const today = zonedToday(member.primaryCenter.timezone || DEFAULT_TIMEZONE);
     const joinedDay = new Date(member.joinedAt.getFullYear(), member.joinedAt.getMonth(), member.joinedAt.getDate());
 
-    const due = LADDER.find(({ months }) => addMonthsClamped(joinedDay, months) <= today);
-    if (!due) continue;
+    const kind = LADDER.find((k) => dueDateForKind(joinedDay, k) <= today);
+    if (!kind) continue;
 
-    const alreadyExists = member.assessments.some((a) => a.kind === due.kind);
+    const alreadyExists = member.assessments.some((a) => a.kind === kind);
     if (alreadyExists) continue;
 
-    const dueDate = addMonthsClamped(joinedDay, due.months);
     const assessment = await prisma.assessment.create({
-      data: { orgId, memberId: member.id, kind: due.kind, dueDate, answers: {} },
+      data: { orgId, memberId: member.id, kind, dueDate: dueDateForKind(joinedDay, kind), answers: {} },
       select: { id: true },
     });
     created++;
@@ -92,14 +78,14 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
     void sendMail({
       to,
       fromName: brandName,
-      subject: `${KIND_LABEL[due.kind]} · ${brandName}`,
+      subject: `${ASSESSMENT_KIND_LABEL[kind]} · ${brandName}`,
       html: renderAssessmentDueEmail({
         memberFirstName: member.firstName,
         brandName,
         brandLogoUrl,
-        assessmentLabel: KIND_LABEL[due.kind],
-        isInitial: due.kind === "INITIAL",
-        formUrl: absoluteUrl(assessmentFormPath(assessment.id)),
+        assessmentLabel: ASSESSMENT_KIND_LABEL[kind],
+        isInitial: kind === "INITIAL",
+        assessmentUrl: absoluteUrl(assessmentPortalPath(assessment.id)),
       }),
     });
   }
@@ -119,5 +105,5 @@ export async function getDueAssessmentForMember(memberId: string) {
     select: { id: true, kind: true, dueDate: true },
   });
   if (!assessment) return null;
-  return { ...assessment, label: KIND_LABEL[assessment.kind], formPath: assessmentFormPath(assessment.id) };
+  return { ...assessment, label: ASSESSMENT_KIND_LABEL[assessment.kind], portalPath: assessmentPortalPath(assessment.id) };
 }

@@ -2,14 +2,15 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
+import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
 
 /**
- * Destino del aviso de valoración vencida (F4 §5.3).
+ * Destino del aviso de valoración vencida (F4 §5.3): la vista del socio.
  *
- * **El formulario en sí es de F3**, que sustituye el cuerpo de esta página por
- * los campos reales (`vitalsSchema` + el bloque que corresponda al tipo). Aquí
- * solo vive lo que F4 necesita para que el aviso no apunte al vacío: la
- * comprobación de que la valoración es de quien la abre y sigue pendiente.
+ * El cuestionario en sí NO se rellena aquí. F3 lo dejó del lado del
+ * entrenador (`/members/[id]/valoraciones/...`) porque es él quien firma el
+ * PAR-Q con el socio delante y quien interpreta el screening. Lo que el socio
+ * necesita saber al entrar es que la tiene pendiente y cómo se cierra.
  */
 export default async function PortalAssessmentPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireRole(["MEMBER"]);
@@ -28,15 +29,15 @@ export default async function PortalAssessmentPage({ params }: { params: Promise
     <div className="max-w-[720px] mx-auto flex flex-col gap-[18px]">
       <div className="bg-white border border-brand-border rounded-[18px] p-7">
         <div className="text-[11px] font-bold tracking-[.12em] uppercase text-brand-muted">
-          Valoración · {assessment.kind}
+          {ASSESSMENT_KIND_LABEL[assessment.kind]}
         </div>
         <h1 className="font-display font-extrabold text-[24px] text-brand-text mt-1.5 tracking-[-.01em]">
-          {assessment.completedAt ? "Valoración ya entregada" : "Tu valoración está preparada"}
+          {assessment.completedAt ? "Valoración ya entregada" : "Tienes una valoración pendiente"}
         </h1>
         <p className="text-[14.5px] text-brand-text-2 leading-[1.6] mt-3">
           {assessment.completedAt
-            ? "Ya la tenemos. Tu entrenador la verá en tu ficha junto al resto de tu evolución."
-            : "El cuestionario se rellena con tu entrenador en tu próxima sesión. Si prefieres adelantarlo, díselo por el chat del portal y te lo abre."}
+            ? "Ya la tenemos. Queda en tu ficha junto al resto de tu evolución."
+            : "La repasáis tu entrenador y tú en la próxima sesión: él la va rellenando contigo delante. Si quieres adelantarla, díselo por el chat del portal."}
         </p>
       </div>
     </div>

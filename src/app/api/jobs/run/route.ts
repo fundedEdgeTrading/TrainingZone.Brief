@@ -17,8 +17,8 @@ import { reportJobFailures } from "@/lib/job-failure-report";
  * 24h sin responsable, pocas sesiones EP programadas, bono bajo, estancamiento,
  * check-ins periódicos de objetivos/valoración de entrenadores, valoraciones
  * vencidas y felicitaciones de cumpleaños. Sin worker en este stack (Next.js),
- * se invoca desde un cron externo (.github/workflows/cron-jobs.yml, Vercel Cron
- * u otro) contra esta route handler, protegida por un secreto compartido.
+ * se invoca desde un cron externo (.github/workflows/jobs-cron.yml,
+ * render.yaml u otro) contra esta route handler, protegida por un secreto compartido.
  */
 export async function GET(req: NextRequest) {
   // Falla cerrado: sin secreto configurado el endpoint no se atiende. Antes se

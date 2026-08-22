@@ -228,7 +228,7 @@ export function renderAssessmentDueEmail(opts: {
   brandLogoUrl: string;
   assessmentLabel: string;
   isInitial: boolean;
-  formUrl: string;
+  assessmentUrl: string;
 }) {
   return shell({
     logoUrl: opts.brandLogoUrl,
@@ -240,12 +240,12 @@ export function renderAssessmentDueEmail(opts: {
     bodyHtml: opts.isInitial
       ? `
 <p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Antes de programar tu entrenamiento necesitamos saber de dónde partes: tu historial, tus molestias y qué te ha traído hasta aquí.</p>
-<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Son unos minutos y condiciona todo lo que viene después — lo que nos cuentes aquí es lo que tu entrenador tendrá delante en cada sesión.</p>`
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">La pasa tu entrenador contigo, en la próxima sesión: son unos minutos y condiciona todo lo que viene después.</p>`
       : `
-<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Te toca la <b>${opts.assessmentLabel.toLowerCase()}</b>. Las mismas preguntas de siempre: peso, descanso, energía, dolor y cómo llevas la adherencia.</p>
+<p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:18px 0 0;">Te toca la <b>${opts.assessmentLabel.toLowerCase()}</b>. Las mismas preguntas de siempre —peso, descanso, energía, dolor y cómo llevas la adherencia—, y las repasas con tu entrenador en la próxima sesión.</p>
 <p style="font-size:15px;line-height:1.65;color:${TEXT2};margin:14px 0 0;">Repetirlas es lo que convierte respuestas sueltas en una gráfica: sin este punto, el siguiente tramo de tu evolución queda en blanco.</p>`,
-    ctaLabel: "Rellenar mi valoración →",
-    ctaUrl: opts.formUrl,
+    ctaLabel: "Ver mi valoración →",
+    ctaUrl: opts.assessmentUrl,
     noteHtml: `Tus respuestas de salud solo las ve tu entrenador y el equipo autorizado de ${opts.brandName}, y cada consulta queda registrada.`,
     signOff: `Nos vemos en el centro,<br><b>El equipo de ${opts.brandName}</b>`,
     footerLine1: `${opts.brandName} · Recibes este email porque tienes una valoración pendiente en tu ficha de socio.`,
