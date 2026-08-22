@@ -6,7 +6,6 @@ import { runLeadOwnerAlertRule } from "@/lib/leads-queries";
 import { runFewSessionsScheduledRule, runLowPackBalanceRule } from "@/lib/trainer-alerts";
 import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
-import { generateOfferSuggestions } from "@/lib/offers-queries";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 
@@ -37,6 +36,8 @@ export async function GET(req: NextRequest) {
     lowPackAlerts: 0,
     stallAlerts: 0,
     checkins: 0,
+    // Ofertas aparcadas (F2): la clave se mantiene a 0 para no cambiar la forma
+    // de la respuesta que consume el cron externo.
     offerSuggestions: 0,
     scheduledCancellations: 0,
     feedbackCyclePrompts: 0,
@@ -64,7 +65,9 @@ export async function GET(req: NextRequest) {
     summary.lowPackAlerts += await run(org.id, "lowPackAlerts", () => runLowPackBalanceRule(org.id));
     summary.stallAlerts += await run(org.id, "stallAlerts", () => runStallDetectionRule(org.id));
     summary.checkins += await run(org.id, "checkins", () => runPeriodicCheckinRule(org.id));
-    summary.offerSuggestions += await run(org.id, "offerSuggestions", () => generateOfferSuggestions(org.id));
+    // Sugerencias de oferta desactivadas mientras el módulo de Ofertas está
+    // aparcado (docs/MODULOS_APARCADOS.md). Para reactivarlas: volver a llamar a
+    // `generateOfferSuggestions(org.id)` de @/lib/offers-queries aquí.
     summary.scheduledCancellations += await run(org.id, "scheduledCancellations", () => runScheduledCancellationsRule(org.id));
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
   }

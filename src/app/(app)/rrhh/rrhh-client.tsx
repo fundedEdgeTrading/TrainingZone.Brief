@@ -16,6 +16,9 @@ import {
 
 type Entry = { id: string; workDate: Date; clockIn: string; clockOut: string | null; signedAt: Date | null };
 
+// Fichaje aparcado (F2, docs/MODULOS_APARCADOS.md): este widget ya no se
+// monta en /rrhh. Se conserva —igual que `TimeClockEntry` y sus queries— para
+// poder devolverlo al panel sin reescribirlo.
 export function TimeClockWidget({ todayEntry, recent }: { todayEntry: Entry | null; recent: Entry[] }) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
