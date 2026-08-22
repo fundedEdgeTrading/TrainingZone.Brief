@@ -783,15 +783,35 @@ nuevo en schema.prisma, PARA y dilo en vez de migrar por tu cuenta.
    siembra los modelos de F3 y F6, y con uno solo a medias el seed queda inconsistente.
 5. F9 cierra con los e2e sobre todo el conjunto.
 
-### 11.6 Antes de empezar — dos cosas que confirmar
+### 11.6 Antes de empezar
 
-- **Rama base.** `origin/HEAD` apunta a `main`, pero también existe `release` y el
-  flujo mencionado es «mergear a release». Decide cuál es la base de los PR de hoy y
-  ponla en `{BASE}` en todos los prompts. Mezclar las dos a mitad de jornada es la
-  forma más rápida de perder trabajo.
+- **Rama base: `release`.** Confirmado por el PR #123 de este mismo documento, abierto
+  contra `release`. Ese es el valor de `{BASE}` en los cinco prompts. (`origin/HEAD`
+  apunta a `main`, pero el flujo real del repo va por `release`.)
 - **Entorno.** F4, F5 y F8 necesitan cosas encendidas de verdad: `BREVO_API_KEY` con
   remitente verificado, `JOBS_CRON_SECRET`, y un despliegue accesible desde el
   emulador. Sin eso, esas fases se validan a medias.
+
+### 11.7 Un e2e frágil que va a molestar
+
+`e2e/billing-dashboard.spec.ts:20` falla de forma intermitente con
+`strict mode violation: getByText('LTV medio por cliente') resolved to 2 elements`.
+
+**No es un bug de producto.** El label se renderiza una sola vez
+(`dashboard/page.tsx:172`, un único `KpiCard`). Son dos cosas sumadas:
+
+1. `KpiCard` entra con `tz-fade-up` y `animationDelay: 0.5s`: durante medio segundo el
+   elemento existe pero no es visible (de ahí el `unexpected value "hidden"` del log).
+2. El test hace `loginAs()` —que ya aterriza en `/dashboard`— y **luego** un
+   `page.goto("/dashboard")` redundante. Durante esa transición conviven en el DOM el
+   árbol saliente y el entrante, y el locator encuentra dos.
+
+Es una carrera, no un fallo determinista: el mismo commit base pasó en verde el 20 de
+agosto. La última aserción de ese mismo test ya usa `.first()` para el mapa de calor —
+alguien se topó con esto antes y lo parcheó solo ahí.
+
+Arreglo (pertenece a F9): quitar el `goto` redundante, o acotar las aserciones con
+`.first()` como ya se hizo en la última línea. **No lo tapes con un `waitForTimeout`.**
 
 ---
 
