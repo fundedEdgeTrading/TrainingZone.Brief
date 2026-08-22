@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import clsx from "clsx";
 import { Button, ButtonSpinner } from "@/components/ui/button";
+import { CONSENT_TEXT } from "@/lib/consent";
 import { completeMemberOnboarding, completeStaffOnboarding } from "./actions";
 
 type Props = {
@@ -51,6 +52,15 @@ const CONSENT_DEFS = [
     desc: "Fotos de evolución física, visibles solo para ti y tu entrenador. Sin esto no podremos guardar tu galería de progreso.",
   },
   {
+    // F3 §4.4: separado del de salud a propósito. El socio puede entrenar con
+    // nosotros y aun así oponerse a que su caso pase por un sistema de IA.
+    key: "ai" as const,
+    title: "Propuestas con inteligencia artificial",
+    tag: "Opcional",
+    tagClass: "bg-tz-sand text-text-2",
+    desc: "Tus datos, seudonimizados (sin nombre, DNI ni contacto), se tratan con sistemas de IA de proveedores que actúan como encargados del tratamiento, para preparar propuestas de programación que revisa y aprueba siempre tu entrenador. Puedes oponerte sin que afecte a tu acceso al servicio.",
+  },
+  {
     key: "marketing" as const,
     title: "Comunicaciones",
     tag: "Opcional",
@@ -64,7 +74,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
   const [phase, setPhase] = useState<"pass" | "consent" | "done">("pass");
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
-  const [consents, setConsents] = useState({ health: false, contract: false, images: false, marketing: false });
+  const [consents, setConsents] = useState({ health: false, contract: false, images: false, marketing: false, ai: false });
   const [sex, setSex] = useState<"" | "FEMALE" | "MALE" | "OTHER">("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -90,6 +100,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
             consentHealth: consents.health,
             consentImages: consents.images,
             consentMarketing: consents.marketing,
+            consentAI: consents.ai,
             sex,
           });
 
@@ -265,11 +276,11 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
                   );
                 })}
               </div>
-              <p className="text-[11.5px] text-faint leading-relaxed mt-3.5">
-                Responsable: {orgName} · Finalidad: prestación del servicio de entrenamiento y seguimiento físico ·
-                Base legal: consentimiento explícito (Art. 9.2.a RGPD) · Derechos: acceso, rectificación, supresión
-                y portabilidad en privacidad@{orgName.toLowerCase().replace(/\s+/g, "")}.es.
-              </p>
+              <div className="text-[11.5px] text-faint leading-relaxed mt-3.5 flex flex-col gap-2">
+                {CONSENT_TEXT.map((paragraph, i) => (
+                  <p key={i}>{paragraph}</p>
+                ))}
+              </div>
               {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2 mt-3">{error}</p>}
               <div className="flex justify-between items-center mt-5">
                 <button
