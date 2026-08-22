@@ -97,7 +97,7 @@ export function Card({
       }`}
       style={{ animationDelay: `${delay}s` }}
     >
-      <div className="flex items-baseline justify-between mb-5 gap-2">
+      <div className="flex flex-wrap items-baseline justify-between mb-5 gap-2">
         <h3
           className={`font-display font-extrabold text-base uppercase tracking-[.01em] ${
             dark ? "text-white" : "text-brand-text"

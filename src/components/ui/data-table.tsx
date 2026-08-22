@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import clsx from "clsx";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -14,6 +14,11 @@ export type DataTableColumn = {
   className?: string;
   thClassName?: string;
   align?: "left" | "right" | "center";
+  /**
+   * Oculta la columna en la vista de tarjetas (móvil). Útil para columnas que
+   * solo tienen sentido junto al resto de la fila (un índice, un separador).
+   */
+  hideOnCard?: boolean;
 };
 
 export type DataTableRow = {
@@ -35,6 +40,29 @@ const ALIGN_CLASS: Record<"left" | "right" | "center", string> = {
   right: "text-right",
   center: "text-center",
 };
+
+/** Punto en el que la tabla deja paso a las tarjetas (el `sm` de Tailwind). */
+const CARD_QUERY = "(max-width: 639px)";
+
+/**
+ * `true` mientras la ventana sea estrecha. Se resuelve en cliente: en el
+ * servidor no hay ventana, así que el HTML inicial es siempre la tabla y el
+ * navegador cambia a tarjetas al hidratar si toca. Se hace así —y no con
+ * `hidden`/`sm:hidden`— para no meter cada fila dos veces en el DOM, que
+ * duplicaría cada enlace y cada celda de cara a un lector de pantalla.
+ */
+function useIsNarrow() {
+  const subscribe = useCallback((onChange: () => void) => {
+    const mql = window.matchMedia(CARD_QUERY);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(CARD_QUERY).matches,
+    () => false,
+  );
+}
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   return (
@@ -64,6 +92,7 @@ export function DataTable({
   emptyDescription,
   pagination = true,
   maxBodyHeight = "560px",
+  cardTitleKey,
   className,
 }: {
   columns: DataTableColumn[];
@@ -75,8 +104,14 @@ export function DataTable({
   /** Poner a false cuando quien llama ya pagina (p.ej. servidor). */
   pagination?: boolean;
   maxBodyHeight?: string;
+  /**
+   * Columna que hace de título en la vista de tarjetas de móvil. Por defecto la
+   * primera, que en todas las tablas de la app es la que identifica la fila.
+   */
+  cardTitleKey?: string;
   className?: string;
 }) {
+  const isNarrow = useIsNarrow();
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(defaultSort ?? null);
   /** Sube en cada reordenación: se usa como `key` del `<tbody>` para rearmar la entrada. */
   const [sortRun, setSortRun] = useState(0);
@@ -130,14 +165,75 @@ export function DataTable({
     );
   }
 
+  const titleKey = cardTitleKey ?? columns[0]?.key;
+  const cardColumns = columns.filter((c) => c.key !== titleKey && !c.hideOnCard);
+  const titleColumn = columns.find((c) => c.key === titleKey);
+  const sortableColumns = columns.filter((c) => c.sortable);
+
   return (
     <div className={clsx("bg-brand-card border border-brand-border rounded-card overflow-hidden shadow-card", className)}>
+      {/* Móvil: una tarjeta por fila. Una tabla de 5 columnas no cabe en 375 px
+          y obligaba a arrastrar en horizontal para leer cada registro. */}
+      {isNarrow ? (
+      <div>
+        {sortableColumns.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-tz-sand px-4 py-2.5">
+            <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">Ordenar</span>
+            {sortableColumns.map((col) => (
+              <button
+                key={col.key}
+                type="button"
+                onClick={() => handleSort(col.key)}
+                className={clsx(
+                  "inline-flex items-center gap-1 rounded-pill border px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+                  sort?.key === col.key
+                    ? "border-brand-ink bg-tz-black text-tz-bone"
+                    : "border-brand-border text-brand-text-2 hover:bg-tz-bone",
+                )}
+              >
+                {col.header}
+                {sort?.key === col.key && <SortIcon active dir={sort.dir} />}
+              </button>
+            ))}
+          </div>
+        )}
+        <ul key={sortRun}>
+          {pageRows.map((row, i) => (
+            <li
+              key={row.key}
+              className={clsx("border-t border-tz-sand px-4 py-3.5 first:border-t-0", row.className)}
+              style={
+                sortRun > 0
+                  ? { ...row.style, animation: `tzRowIn .28s ${(Math.min(i, 10) * 0.02).toFixed(2)}s both` }
+                  : row.style
+              }
+            >
+              {titleColumn && <div className="min-w-0 text-sm">{row.cells[titleColumn.key]}</div>}
+              {cardColumns.length > 0 && (
+                <dl className="mt-2.5 grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-sm">
+                  {cardColumns.map((col) => (
+                    <Fragment key={col.key}>
+                      <dt className="min-w-0 text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted leading-[1.7]">
+                        {col.header}
+                      </dt>
+                      <dd className={clsx("min-w-0 break-words", col.className)}>{row.cells[col.key]}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      ) : (
+      /* Tablet en adelante: la tabla de siempre. */
       <div className="overflow-auto" style={{ maxHeight: maxBodyHeight }}>
         <table className="w-full text-sm border-collapse">
           <thead className="sticky top-0 z-10 bg-tz-bone text-brand-muted text-[11px] font-bold uppercase tracking-[0.08em] shadow-[0_1px_0_var(--color-tz-sand)]">
             <tr>
               {columns.map((col) => (
-                <th key={col.key} className={clsx("text-left px-5 py-3 whitespace-nowrap", ALIGN_CLASS[col.align ?? "left"], col.thClassName)}>
+                <th key={col.key} className={clsx("text-left px-3 lg:px-5 py-3 whitespace-nowrap", ALIGN_CLASS[col.align ?? "left"], col.thClassName)}>
                   {col.sortable ? (
                     <button
                       type="button"
@@ -173,7 +269,7 @@ export function DataTable({
                 }
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={clsx("px-5 py-3.5", ALIGN_CLASS[col.align ?? "left"], col.className)}>
+                  <td key={col.key} className={clsx("px-3 lg:px-5 py-3.5", ALIGN_CLASS[col.align ?? "left"], col.className)}>
                     {row.cells[col.key]}
                   </td>
                 ))}
@@ -182,6 +278,7 @@ export function DataTable({
           </tbody>
         </table>
       </div>
+      )}
 
       {pagination && pageCount > 1 && (
         <div className="flex items-center justify-between gap-3 flex-wrap px-5 py-3 border-t border-tz-sand text-[12.5px] text-brand-muted">

@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { getAuditLogPage, getDistinctAuditActions, type AuditFilters } from "@/lib/audit-queries";
+import { Select } from "@/components/ui/field";
 
 const ACTION_LABEL: Record<string, string> = {
   HEALTH_RECORD_READ: "Lectura de dato de salud",
@@ -72,14 +73,14 @@ export default async function AuditPage({
       <form className="bg-brand-card border border-brand-border rounded-card p-4 flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
           <label className="text-[11px] font-bold uppercase tracking-[.08em] text-brand-muted">Acción</label>
-          <select name="action" defaultValue={filters.action || "all"} className={CONTROL}>
+          <Select name="action" defaultValue={filters.action || "all"} searchable className="sm:w-[220px]">
             <option value="all">Todas</option>
             {actions.map((a) => (
               <option key={a} value={a}>
                 {ACTION_LABEL[a] ?? a}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-[11px] font-bold uppercase tracking-[.08em] text-brand-muted">Desde</label>

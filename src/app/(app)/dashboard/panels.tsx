@@ -368,7 +368,7 @@ export async function TopServicesPanel({
       meta="RB-BI-010"
       delay={0.82}
       action={
-        <div className="flex gap-1 text-xs">
+        <div className="flex flex-wrap gap-1 text-xs">
           {(
             [
               ["count", "Altas"],
@@ -419,7 +419,7 @@ export async function RankingPanel({
       meta="RB-BI-011 — LTV, adherencia y antigüedad"
       delay={0.86}
       action={
-        <div className="flex gap-1 text-xs">
+        <div className="flex flex-wrap gap-1 text-xs">
           {(Object.keys(RANKING_DIMENSION_LABEL) as (keyof typeof RANKING_DIMENSION_LABEL)[]).map((dim) => (
             <Link
               key={dim}
@@ -440,8 +440,8 @@ export async function RankingPanel({
       ) : (
         <div className="space-y-5">
           <MemberRankingChart data={memberRanking.items} dimension={rankingDimension} />
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="sm:overflow-x-auto">
+            <table className="tz-stack-table w-full text-sm">
               <thead className="text-xs text-faint text-left">
                 <tr>
                   <th className="pb-2">Socio</th>
@@ -458,11 +458,11 @@ export async function RankingPanel({
                     className="border-t border-tz-sand"
                     style={{ animation: `tzRowIn .28s ${Math.min(i, 10) * 0.02}s both` }}
                   >
-                    <td className="py-2">{m.memberName}</td>
-                    <td className="py-2 tz-nums">{eur(m.ltvEuros * 100)}</td>
-                    <td className="py-2 tz-nums">{m.adherencePct}%</td>
-                    <td className="py-2 tz-nums text-text-2">{m.tenureDays} d</td>
-                    <td className="py-2 tz-nums font-semibold">{m.mixedScore}</td>
+                    <td data-label="" className="py-2 font-semibold">{m.memberName}</td>
+                    <td data-label="LTV" className="py-2 tz-nums">{eur(m.ltvEuros * 100)}</td>
+                    <td data-label="Adherencia" className="py-2 tz-nums">{m.adherencePct}%</td>
+                    <td data-label="Antigüedad" className="py-2 tz-nums text-text-2">{m.tenureDays} d</td>
+                    <td data-label="Score mixto" className="py-2 tz-nums font-semibold">{m.mixedScore}</td>
                   </tr>
                 ))}
               </tbody>

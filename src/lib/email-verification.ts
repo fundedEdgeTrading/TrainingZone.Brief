@@ -16,7 +16,12 @@ import crypto from "crypto";
  * generar/verificar con el nombre de campo que le corresponde, para no obligar
  * a cada caller a saber qué es un "subject" en abstracto.
  */
-type TokenPurpose = "verify-email" | "password-reset" | "member-billing" | "member-billing-dunning";
+type TokenPurpose =
+  | "verify-email"
+  | "password-reset"
+  | "member-billing"
+  | "member-billing-dunning"
+  | "email-preferences";
 
 const VERIFY_EMAIL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -38,6 +43,15 @@ const MEMBER_BILLING_TTL_MS = 30 * 60 * 1000;
  * imprudente: estos tokens no son revocables (ver cabecera).
  */
 const MEMBER_DUNNING_TTL_MS = 72 * 60 * 60 * 1000;
+/**
+ * El enlace de preferencias/baja del pie de cada correo. TTL largo a propósito:
+ * un enlace de baja que caduca es una baja que no se puede ejercer, y la
+ * normativa exige que el medio siga siendo válido mientras se siga enviando
+ * (Art. 21 RGPD / Art. 21 LSSI). Un año cubre de sobra la vida de un correo en
+ * la bandeja de quien lo recibió, y el token solo permite dejar de recibir
+ * correo: no abre sesión, no toca credenciales y no expone datos de salud.
+ */
+const EMAIL_PREFERENCES_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 type RawTokenResult =
   | { ok: true; subjectId: string }
@@ -150,4 +164,38 @@ export function verifyMemberBillingOrDunningToken(token: string): MemberBillingT
 
 export function memberBillingUrlFor(token: string) {
   return `${appBaseUrl()}/gestionar-suscripcion/${token}`;
+}
+
+/**
+ * Enlaces de "Preferencias de correo" y "Darme de baja" del pie de cada email.
+ * Sujeto = `Member.id`: quien recibe estos correos es el socio, y las
+ * preferencias viven en su ficha (no en la credencial de acceso, que puede no
+ * existir: hay socios sin portal).
+ */
+export type EmailPreferencesTokenResult = { ok: true; memberId: string } | { ok: false; error: "invalid" | "expired" };
+
+export function generateEmailPreferencesToken(memberId: string) {
+  return generate("email-preferences", memberId, EMAIL_PREFERENCES_TTL_MS);
+}
+
+export function verifyEmailPreferencesToken(token: string): EmailPreferencesTokenResult {
+  const result = verify("email-preferences", token);
+  return result.ok ? { ok: true, memberId: result.subjectId } : result;
+}
+
+export function emailPreferencesUrlFor(token: string) {
+  return `${appBaseUrl()}/preferencias/${token}`;
+}
+
+export function emailUnsubscribeUrlFor(token: string) {
+  return `${appBaseUrl()}/baja/${token}`;
+}
+
+/**
+ * Destino de la cabecera `List-Unsubscribe` (RFC 8058). Es un endpoint, no la
+ * página: el cliente de correo manda un POST sin que nadie mire, así que tiene
+ * que dar de baja y responder 200, no devolver HTML.
+ */
+export function emailUnsubscribePostUrlFor(token: string) {
+  return `${appBaseUrl()}/api/email/baja/${token}`;
 }

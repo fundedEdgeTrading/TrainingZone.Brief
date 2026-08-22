@@ -8,6 +8,7 @@ import { canManageMembers, canManageOrg } from "@/lib/rbac";
 import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import {
   assignClientGoal,
   markClientGoalAchieved,
@@ -45,7 +46,10 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
     .safeParse(bonoPlanIds.map((planId, i) => ({ planId, centerId: bonoCenterIds[i] ?? "" })));
   if (!bonosParsed.success) return { ok: false, error: "Cada bono necesita un plan y un centro." };
 
-  const center = await prisma.center.findFirst({ where: { id: centerId, orgId: session.user.orgId }, select: { id: true, name: true } });
+  const center = await prisma.center.findFirst({
+    where: { id: centerId, orgId: session.user.orgId },
+    select: { id: true, name: true, address: true },
+  });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
 
   const dup = await prisma.member.findFirst({ where: { orgId: session.user.orgId, email }, select: { id: true } });
@@ -71,6 +75,7 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   }
 
   const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
+  const footer = memberEmailFooterLinks(member.id);
   // Email de bienvenida no bloqueante: el socio ya está guardado, un SMTP lento no debe colgar el alta.
   void sendMail({
     to: email,
@@ -83,7 +88,11 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
       orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       centerName: center.name,
       onboardingUrl: onboardingUrlFor(invitation.token),
+      memberFullName: `${firstName} ${lastName}`,
+      postalAddress: center.address ?? undefined,
+      prefsToken: footer.token,
     }),
+    unsubscribeUrl: footer.oneClickUnsubscribeUrl,
   });
 
   revalidatePath("/members");

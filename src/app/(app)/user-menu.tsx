@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { Select } from "@/components/ui/field";
 
 export type OrgOption = { orgId: string; orgName: string };
 
@@ -35,11 +36,29 @@ export default function UserMenu({
         </div>
       </div>
       {organizations.length > 1 && <OrgSwitcher organizations={organizations} activeOrgId={activeOrgId} />}
+      {/* En móvil el rótulo se queda en un icono: con el texto completo, la
+          cabecera no dejaba sitio al título de la página, que salía cortado. */}
       <button
         onClick={() => signOut({ callbackUrl: "/login" })}
-        className="text-[13px] font-semibold text-brand-footer border border-brand-border bg-white rounded-lg px-3 py-2 sm:px-3.5 whitespace-nowrap transition-colors duration-[180ms] hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+        aria-label="Cerrar sesión"
+        title="Cerrar sesión"
+        className="flex items-center justify-center h-[38px] w-[38px] sm:w-auto sm:px-3.5 text-[13px] font-semibold text-brand-footer border border-brand-border bg-white rounded-lg whitespace-nowrap transition-colors duration-[180ms] hover:bg-brand-ink hover:text-white hover:border-brand-ink"
       >
-        Cerrar sesión
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="sm:hidden"
+          aria-hidden="true"
+        >
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+        </svg>
+        <span className="hidden sm:inline">Cerrar sesión</span>
       </button>
     </div>
   );
@@ -68,18 +87,17 @@ function OrgSwitcher({ organizations, activeOrgId }: { organizations: OrgOption[
   }
 
   return (
-    <select
-      aria-label="Cambiar de organización"
+    <Select
       disabled={switching || pending}
       value={activeOrgId}
       onChange={(e) => switchTo(e.target.value)}
-      className="hidden md:block text-[13px] font-semibold text-brand-text-2 border border-brand-border bg-white rounded-lg px-2.5 py-2 max-w-[180px] truncate disabled:opacity-60"
+      className="hidden md:block w-[180px]"
     >
       {organizations.map((o) => (
         <option key={o.orgId} value={o.orgId}>
           {o.orgName}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
