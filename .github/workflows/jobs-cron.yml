@@ -1,0 +1,112 @@
+# Disparador programado de /api/jobs/run.
+#
+# El stack (Next.js sobre Render) no tiene worker, así que las reglas temporales
+# del CRM viven en una route handler y necesitan que alguien de fuera la llame.
+# Este workflow es ese alguien. Una sola llamada recorre TODAS las
+# organizaciones y TODAS las reglas, así que no hace falta un cron por regla:
+# las que se añadan a `/api/jobs/run` quedan cubiertas sin tocar este fichero.
+#
+# Por qué GitHub Actions y no un Cron Job de Render: los cron de Render son un
+# servicio de pago aparte, y para avisos diarios esto sale gratis. El precio es
+# la puntualidad — ver la nota del `schedule`. Si algún día hace falta una hora
+# exacta, `render.yaml` en la raíz ya tiene el equivalente listo.
+name: Jobs programados
+
+on:
+  schedule:
+    # 05:00 UTC = 07:00 en Madrid en horario de verano, 06:00 en invierno.
+    # GitHub evalúa el cron en UTC y no conoce el cambio de hora, así que se
+    # elige una hora de madrugada con margen suficiente para que el desfase
+    # estacional nunca empuje la ejecución al día anterior — que en reglas que
+    # miran "¿es hoy su cumpleaños?" sería un fallo silencioso de un día.
+    #
+    # Aviso: los cron de Actions se retrasan con frecuencia (5-30 min) y en
+    # picos de carga GitHub llega a saltarse ejecuciones. Aceptable para avisos
+    # diarios; no lo es para nada que deba ocurrir a una hora concreta.
+    - cron: "0 5 * * *"
+  # Para dispararlo a mano al validar una regla nueva.
+  workflow_dispatch:
+
+# Dos ejecuciones simultáneas harían el trabajo dos veces. Las reglas usan
+# `createNotificationOnce` y son idempotentes, pero los envíos de email no
+# tienen por qué serlo: mejor no darles la oportunidad.
+concurrency:
+  group: jobs-cron
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Comprobar configuración
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          JOBS_CRON_SECRET: ${{ secrets.JOBS_CRON_SECRET }}
+        run: |
+          # Sin esto el curl saldría contra una URL vacía y el fallo se leería
+          # como un problema de red en vez de como lo que es: falta configurar.
+          [ -n "$APP_URL" ] || { echo "::error::Falta la variable APP_URL (Settings → Secrets and variables → Actions → Variables)."; exit 1; }
+          [ -n "$JOBS_CRON_SECRET" ] || { echo "::error::Falta el secreto JOBS_CRON_SECRET. Debe ser el mismo valor que la variable de entorno del servicio web."; exit 1; }
+
+      - name: Ejecutar las reglas
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          JOBS_CRON_SECRET: ${{ secrets.JOBS_CRON_SECRET }}
+        run: |
+          set -uo pipefail
+
+          # El secreto va en cabecera y no como `?secret=`: la query string
+          # acaba en los logs de acceso del proveedor y en el historial de
+          # cualquier proxy por el que pase.
+          #
+          # `--max-time 300` porque un servicio web dormido (plan gratuito de
+          # Render) tarda cerca de un minuto en arrancar en frío.
+          code=$(curl -sS -o respuesta.json -w '%{http_code}' \
+            --max-time 300 --retry 2 --retry-delay 30 --retry-connrefused \
+            -H "x-cron-secret: ${JOBS_CRON_SECRET}" \
+            "${APP_URL%/}/api/jobs/run") || {
+              echo "::error::La llamada no llegó a completarse (red o timeout)."
+              exit 1
+            }
+
+          echo "Código HTTP: $code"
+          cat respuesta.json
+          echo
+
+          {
+            echo "### Jobs programados"
+            echo
+            echo "**HTTP $code**"
+            echo
+            echo '```json'
+            cat respuesta.json
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          case "$code" in
+            200)
+              echo "Todas las reglas pasaron."
+              ;;
+            207)
+              # El endpoint devuelve 207 cuando alguna regla revienta pero las
+              # demás siguen. `curl -f` lo daría por bueno (solo falla con 400+)
+              # y el fallo se perdería: aquí se trata como rojo a propósito.
+              echo "::error::Alguna regla falló. El detalle está en el campo 'failures' de la respuesta."
+              exit 1
+              ;;
+            401)
+              echo "::error::401: JOBS_CRON_SECRET no coincide con el del servicio web."
+              exit 1
+              ;;
+            503)
+              echo "::error::503: el servicio web no tiene JOBS_CRON_SECRET definido, así que el endpoint falla cerrado."
+              exit 1
+              ;;
+            *)
+              echo "::error::Respuesta inesperada ($code)."
+              exit 1
+              ;;
+          esac

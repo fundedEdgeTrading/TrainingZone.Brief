@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import {
   getMemberDetail,
@@ -15,8 +16,16 @@ import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { getHealthRecordsForMember } from "@/lib/health-access";
+import { listAssessmentsForMember } from "@/lib/assessments/queries";
+import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
-import { canAdjustSessionBalance, canDeleteMembers, canManageMesocycles, canManageOrg } from "@/lib/rbac";
+import {
+  canAdjustSessionBalance,
+  canDeleteMembers,
+  canManageMesocycles,
+  canManageOrg,
+  canViewHealthData,
+} from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
@@ -95,7 +104,7 @@ export default async function MemberDetailPage({
 
   const canSeeMesocycles = canManageMesocycles(session.user.role);
 
-  const [stats, healthRecords, notes, goalTemplates, centers, plans, mesocycles] = await Promise.all([
+  const [stats, healthRecords, notes, goalTemplates, centers, plans, assessments, mesocycles] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -107,8 +116,13 @@ export default async function MemberDetailPage({
     listClientGoalTemplates(session.user.orgId),
     listCentersForOrg(session.user.orgId),
     listActivePlansForOrg(session.user.orgId),
+    listAssessmentsForMember(session.user.orgId, member.id),
     canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
   ]);
+
+  // Las valoraciones son trabajo de entrenador y arrastran screening de salud:
+  // recepción ve la ficha pero no esta pestaña (mismo criterio que /salud).
+  const canSeeAssessments = canViewHealthData(session.user.role);
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
   // RB-AGENDA-003: un socio puede tener varios bonos ACTIVE/FROZEN a la vez
@@ -236,6 +250,7 @@ export default async function MemberDetailPage({
                     consentHealthAt: member.consentHealthAt ? member.consentHealthAt.toISOString() : null,
                     consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
                     consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                    consentAIAt: member.consentAIAt ? member.consentAIAt.toISOString() : null,
                   }}
                 />
               ),
@@ -579,6 +594,60 @@ export default async function MemberDetailPage({
                 </div>
               ),
             },
+            ...(canSeeAssessments
+              ? [
+                  {
+                    key: "valoraciones",
+                    label: "Valoraciones",
+                    content: (
+                      <div className="space-y-3">
+                        <p className="text-sm text-muted">
+                          La valoración inicial firma el PAR-Q y propaga el screening al Semáforo de Aptitud y al
+                          Session Brief. Las revisiones (1, 3, 6, 9 meses y aniversario) repiten las mismas
+                          constantes para poder graficarlas.
+                        </p>
+                        {assessments.length === 0 ? (
+                          <p className="text-sm text-muted bg-tz-bone border border-tz-linen rounded-lg p-4">
+                            Este socio todavía no tiene ninguna valoración.
+                          </p>
+                        ) : (
+                          <ul className="list-none flex flex-col gap-2">
+                            {assessments.map((a) => (
+                              <li key={a.id}>
+                                <Link
+                                  href={`/members/${member.id}/valoraciones/${a.id}`}
+                                  className="flex items-center justify-between gap-3 flex-wrap rounded-control border border-brand-border px-4 py-3 hover:border-brand-ink transition-colors duration-200"
+                                >
+                                  <span className="font-semibold text-sm">{ASSESSMENT_KIND_LABEL[a.kind]}</span>
+                                  <span className="flex items-center gap-3 text-xs text-muted">
+                                    {a.completedAt ? (
+                                      <>
+                                        <span>{a.completedAt.toLocaleDateString("es-ES")}</span>
+                                        <Badge tone="good">Completada</Badge>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span>Vence {a.dueDate.toLocaleDateString("es-ES")}</span>
+                                        <Badge tone="warning">Pendiente</Badge>
+                                      </>
+                                    )}
+                                  </span>
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <Link
+                          href={`/members/${member.id}/valoraciones`}
+                          className="inline-block text-sm font-semibold text-tz-black hover:underline"
+                        >
+                          Gestionar valoraciones →
+                        </Link>
+                      </div>
+                    ),
+                  },
+                ]
+              : []),
             {
               key: "ia-chat",
               label: "IA & Chat",

@@ -81,6 +81,13 @@ export default async function PortalProfilePage() {
           grantedAt={member.consentImagesAt}
         />
         <ConsentToggle
+          kind="ai"
+          label="Propuestas con inteligencia artificial"
+          description="Tus datos, seudonimizados, se tratan con sistemas de IA de proveedores que actúan como encargados del tratamiento para preparar propuestas de programación que revisa tu entrenador. Oponerte no afecta a tu acceso al servicio."
+          granted={member.consentAI}
+          grantedAt={member.consentAIAt}
+        />
+        <ConsentToggle
           kind="marketing"
           label="Comunicaciones de marketing"
           description="Promociones y novedades del centro."
