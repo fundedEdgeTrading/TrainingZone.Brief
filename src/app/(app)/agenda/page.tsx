@@ -15,11 +15,12 @@ export default async function AgendaPage({
 }: {
   searchParams: Promise<{ center?: string; week?: string; day?: string; view?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
 
   const centers = await getCentersForUser(session.user);
   const centerId = params.center || session.user.centerId || centers[0]?.id;
+  const currentCenter = centers.find((c) => c.id === centerId) ?? null;
 
   // `day` solo lo usa la vista móvil (un día por pantalla) al saltar de semana
   // con las flechas: marca con qué día debe abrirse la semana de destino.
@@ -44,7 +45,7 @@ export default async function AgendaPage({
 
   const [trainers, members] = centerId
     ? await Promise.all([
-        listAssignableStaff(session.user.orgId, ["TRAINER"]),
+        listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"]),
         listActiveMembersForSelect(session.user.orgId),
       ])
     : [[], []];
@@ -99,6 +100,7 @@ export default async function AgendaPage({
         trainers={trainers.map((t) => ({ id: t.id, name: t.name }))}
         members={members}
         canEdit={canEdit}
+        defaultGroupCapacity={currentCenter?.defaultGroupCapacity ?? null}
         currentUserId={session.user.id}
         isDirection={session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR"}
         centerSwitcher={

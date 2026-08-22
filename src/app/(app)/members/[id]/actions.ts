@@ -26,7 +26,7 @@ export type MemberActionResult = { ok: true } | { ok: false; error: string };
 // Alta de lesión / condición. El acceso real (permiso + consentimiento +
 // auditoría) lo aplica lib/health-access.ts; aquí solo se validan las entradas.
 export async function addHealthRecord(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const memberId = String(formData.get("memberId") ?? "");
   const typeRaw = String(formData.get("type") ?? "");
@@ -53,7 +53,7 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
 }
 
 export async function resolveHealthRecordAction(recordId: string, memberId: string): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   await resolveHealthRecord({
     recordId,
@@ -68,7 +68,7 @@ export async function resolveHealthRecordAction(recordId: string, memberId: stri
 
 // Bitácora (observaciones no clínicas): cualquier rol de staff puede anotar.
 export async function addMemberNote(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
 
   const memberId = String(formData.get("memberId") ?? "");
   const body = String(formData.get("body") ?? "").trim();
@@ -97,7 +97,7 @@ const SEXES: Sex[] = ["FEMALE", "MALE", "OTHER"];
 const POSTAL_CODE_RE = /^\d{5}$/; // CP español, 5 dígitos (mismo criterio que RB-LEAD-010)
 
 export async function updateMemberData(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const text = (key: string) => String(formData.get(key) ?? "").trim();
   const optional = (key: string) => text(key) || null;
 
@@ -337,7 +337,7 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
 }
 
 export async function updateMemberPhoto(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const memberId = String(formData.get("memberId") ?? "");
   const photoUrl = String(formData.get("photoUrl") ?? "").trim() || null;
   if (!memberId) return { ok: false, error: "Falta el socio." };
@@ -368,7 +368,7 @@ const COMPOSITION_NUM_FIELDS = [
 const COMPOSITION_INT_FIELDS = ["visceralFatRating", "muscleQuality", "bmrKcal", "metabolicAge"] as const;
 
 export async function createProgressEntry(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const memberId = String(formData.get("memberId") ?? "");
   if (!memberId) return { ok: false, error: "Falta el socio." };
 
@@ -428,7 +428,7 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
 // texto que comparte tras cada medición. En vez de un parser de fichero, el entrenador pega ese
 // texto y aquí se interpreta (src/lib/tanita-parse.ts) para crear la toma con source "TANITA".
 export async function importTanitaText(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const memberId = String(formData.get("memberId") ?? "");
   const rawText = String(formData.get("rawText") ?? "");
   if (!memberId || !rawText.trim()) return { ok: false, error: "Pega el texto de la medición." };
@@ -471,7 +471,7 @@ export async function importTanitaText(formData: FormData): Promise<MemberAction
 // vuelve a mandar. Solo tiene sentido si el socio aún no ha completado el
 // onboarding (member.userId sigue null).
 export async function resendMemberWelcome(memberId: string): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!canManageMembers(session.user.role)) return { ok: false, error: "No tienes permiso para reenviar la bienvenida." };
 
   const member = await prisma.member.findFirst({

@@ -10,7 +10,7 @@ const FEELINGS: DebriefFeeling[] = ["GREEN", "AMBER", "RED"];
 
 // Espejo de src/app/(app)/brief/[id]/actions.ts (setDebrief).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id: sessionId } = await params;

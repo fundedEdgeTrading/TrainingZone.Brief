@@ -10,7 +10,7 @@ import { expandOccurrences, isSameDay, sessionsInRangeWhere } from "@/lib/sessio
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk } from "../_lib/response";
 
-const STAFF_AGENDA_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"] as const;
+const STAFF_AGENDA_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"] as const;
 
 // Agenda operativa (día) para entrenador/dirección: espejo simplificado de
 // src/app/(app)/agenda/page.tsx, pensado para crear/editar sesiones desde el móvil.
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { startTime: "asc" },
         }),
-        listAssignableStaff(claims.orgId, ["TRAINER"]),
+        listAssignableStaff(claims.orgId, ["TRAINER", "TRAINER_ADMIN"]),
         listActiveMembersForSelect(claims.orgId),
       ])
     : [[], [], []];

@@ -24,7 +24,7 @@ type UpdateSessionBody = {
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageEpSlots(claims.role)) return apiError("No tienes permiso para editar sesiones.", 403);
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageEpSlots(claims.role)) return apiError("No tienes permiso para borrar sesiones.", 403);

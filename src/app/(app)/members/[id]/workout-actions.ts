@@ -7,7 +7,7 @@ import { confirmWorkoutProgram, completeWorkoutProgram } from "@/lib/workout-pro
 export type WorkoutActionResult = { ok: true } | { ok: false; error: string };
 
 export async function confirmWorkoutProgramAction(programId: string, memberId: string): Promise<WorkoutActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const result = await confirmWorkoutProgram(session.user.orgId, programId, session.user.id);
   if (!result.ok) return result;
   revalidatePath(`/members/${memberId}`);
@@ -15,7 +15,7 @@ export async function confirmWorkoutProgramAction(programId: string, memberId: s
 }
 
 export async function completeWorkoutProgramAction(programId: string, memberId: string): Promise<WorkoutActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const result = await completeWorkoutProgram(session.user.orgId, programId);
   if (!result.ok) return result;
   revalidatePath(`/members/${memberId}`);

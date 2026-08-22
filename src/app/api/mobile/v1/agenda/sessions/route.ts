@@ -25,7 +25,7 @@ type CreateSessionBody = {
 
 // Crea una sesión de agenda desde el móvil (espejo de saveSession, sin `id`).
 export async function POST(req: NextRequest) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageEpSlots(claims.role)) return apiError("No tienes permiso para crear sesiones.", 403);

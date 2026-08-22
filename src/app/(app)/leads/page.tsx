@@ -41,7 +41,7 @@ export default async function LeadsPage({
 }: {
   searchParams: Promise<{ q?: string; centerId?: string; closeType?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
   const canCreate = canManageLeads(session.user.role);
   const closeTypeFilter = (params.closeType || "") as LeadCloseType | "";

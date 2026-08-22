@@ -8,7 +8,7 @@ import { apiOk } from "../../_lib/response";
 
 // Espejo de src/app/(app)/brief/page.tsx (índice de Session Brief).
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
 

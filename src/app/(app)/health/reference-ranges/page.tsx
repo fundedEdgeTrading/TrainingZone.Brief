@@ -15,7 +15,10 @@ const METRIC_LABEL: Record<string, string> = {
 const SEX_LABEL: Record<string, string> = { M: "Hombre", F: "Mujer" };
 
 export default async function ReferenceRangesPage() {
-  const session = await requireRole(["OWNER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // Igual que las reglas de aptitud: la dirección de centro consulta, el
+  // director de la organización mantiene (es el ámbito de `actions.ts`).
+  const canEdit = session.user.role === "OWNER";
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("salud_aptitud");
@@ -25,9 +28,13 @@ export default async function ReferenceRangesPage() {
     <div className="tz-page space-y-4">
       <PageHeader description="Rangos de referencia de composición corporal (docs/COMPOSICION_CORPORAL_TANITA.md §3). Alimentan el semáforo de la ficha del socio. Si no hay fila para una métrica, se usan los valores por defecto del propio informe Tanita." />
 
-      <CreateRangeForm />
+      {canEdit && <CreateRangeForm />}
 
-      <DataTable columns={rangeColumns} rows={ranges.map(rangeToRow)} emptyTitle="Sin rangos" />
+      <DataTable
+        columns={canEdit ? rangeColumns : rangeColumns.filter((c) => c.key !== "actions")}
+        rows={ranges.map((r) => rangeToRow(r, canEdit))}
+        emptyTitle="Sin rangos"
+      />
     </div>
   );
 }
@@ -43,7 +50,7 @@ const rangeColumns: DataTableColumn[] = [
   { key: "actions", header: "" },
 ];
 
-function rangeToRow(r: Range): DataTableRow {
+function rangeToRow(r: Range, canEdit: boolean): DataTableRow {
   return {
     key: r.id,
     sortValues: {
@@ -71,7 +78,7 @@ function rangeToRow(r: Range): DataTableRow {
           {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
         </>
       ),
-      actions: <DeleteButton id={r.id} />,
+      actions: canEdit ? <DeleteButton id={r.id} /> : null,
     },
   };
 }

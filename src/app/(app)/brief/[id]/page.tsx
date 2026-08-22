@@ -16,7 +16,7 @@ export default async function SessionBriefPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ d?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
   const { d } = await searchParams;
 

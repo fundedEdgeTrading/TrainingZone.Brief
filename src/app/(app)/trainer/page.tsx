@@ -39,7 +39,7 @@ export default async function TrainerPanelPage({
 }: {
   searchParams: Promise<{ day?: string }>;
 }) {
-  const session = await requireRole(["TRAINER"]);
+  const session = await requireRole(["TRAINER", "TRAINER_ADMIN"]);
   const [params, center] = await Promise.all([
     searchParams,
     session.user.centerId

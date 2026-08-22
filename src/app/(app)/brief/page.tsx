@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function BriefIndexPage() {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("salud_aptitud");
@@ -27,7 +27,9 @@ export default async function BriefIndexPage() {
       ...sessionsInRangeWhere(today, endRange),
       // El entrenador ve también las que dirigió sin tenerlas asignadas: es el
       // mismo criterio con el que `canViewSessionDebrief` le deja abrirlas.
-      ...(session.user.role === "TRAINER" ? ownSessionsWhere(session.user.id) : {}),
+      ...(session.user.role === "TRAINER" || session.user.role === "TRAINER_ADMIN"
+        ? ownSessionsWhere(session.user.id)
+        : {}),
     },
     include: {
       center: true,

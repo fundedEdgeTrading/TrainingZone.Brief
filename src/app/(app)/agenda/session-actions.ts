@@ -8,7 +8,7 @@ import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
-const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER"] as const;
+const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"] as const;
 
 /** "HH:MM" en reloj de 24 h; nada más entra en `ClassSession.startTime`/`endTime`. */
 function isValidHHMM(value: string): boolean {
@@ -20,7 +20,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
   const centerId = String(formData.get("centerId") ?? "");
-  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER"]);
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const id = String(formData.get("id") ?? "") || null;
   const type = String(formData.get("type") ?? "personal") === "reduced" ? "reduced" : "personal";
@@ -88,7 +88,7 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
   const centerId = String(formData.get("centerId") ?? "");
-  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER"]);
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, error: "Sesión no encontrada." };
@@ -125,7 +125,7 @@ export async function moveSessionAction(input: {
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
-  await requireCenterRole(input.centerId, ["CENTER_DIRECTOR", "TRAINER"]);
+  await requireCenterRole(input.centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const result = await rescheduleSession(session.user.orgId, input.id, parseDateParam(input.date), input.startTime, input.endTime);
   if (!result.ok) return result;

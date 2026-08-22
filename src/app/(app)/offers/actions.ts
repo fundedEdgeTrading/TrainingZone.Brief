@@ -8,7 +8,7 @@ import { createManualOffer, elevateOffer, decideOffer, markOfferCommunicated } f
 export type OfferActionResult = { ok: true } | { ok: false; error: string };
 
 export async function createManualOfferAction(formData: FormData): Promise<OfferActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   if (!canProposeOffers(session.user.role)) return { ok: false, error: "No tienes permiso." };
   const memberId = String(formData.get("memberId") ?? "");
   const description = String(formData.get("description") ?? "");
@@ -19,7 +19,7 @@ export async function createManualOfferAction(formData: FormData): Promise<Offer
 }
 
 export async function elevateOfferAction(offerId: string): Promise<OfferActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   if (!canProposeOffers(session.user.role)) return { ok: false, error: "No tienes permiso." };
   const result = await elevateOffer(session.user.orgId, offerId, session.user.id);
   if (!result.ok) return result;
@@ -37,7 +37,7 @@ export async function decideOfferAction(offerId: string, approve: boolean): Prom
 }
 
 export async function markOfferCommunicatedAction(offerId: string): Promise<OfferActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const result = await markOfferCommunicated(session.user.orgId, offerId);
   if (!result.ok) return result;
   revalidatePath("/offers");

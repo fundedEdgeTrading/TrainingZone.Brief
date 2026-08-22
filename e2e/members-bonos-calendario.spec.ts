@@ -6,8 +6,9 @@ import { prisma } from "@/lib/prisma";
 /**
  * RB-PAGO-008: ajuste manual del saldo de un bono desde la pestaña "Bonos y
  * calendario" de la ficha del socio, y calendario mensual de sus
- * entrenamientos. El entrenador entra en este permiso (a diferencia del resto
- * de la gestión de bonos), así que el caso principal se prueba con su cuenta.
+ * entrenamientos. Del lado de pista el permiso es del Entrenador Admin (F1),
+ * no de cualquier entrenador, así que el caso principal se prueba con su
+ * cuenta y el entrenador normal se comprueba en negativo.
  */
 
 const fixtures: Fixture[] = [];
@@ -58,11 +59,11 @@ function balanceInput(page: Page) {
 }
 
 test.describe("Bonos y calendario en la ficha del socio", () => {
-  test("un entrenador ajusta el saldo de un bono y persiste", async ({ page }) => {
+  test("un Entrenador Admin ajusta el saldo de un bono y persiste", async ({ page }) => {
     const fixture = await createBookingMember({ tag: `bonos${Date.now()}`, service: "EP" });
     fixtures.push(fixture);
 
-    await loginAs(page, "entrenador@trainingzone.es");
+    await loginAs(page, "marcos.iglesias@trainingzone.es");
     await openBonosTab(page, fixture.memberId);
 
     const input = balanceInput(page);
@@ -79,6 +80,18 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     await page.reload();
     await page.getByRole("button", { name: "Bonos y calendario" }).click();
     await expect(balanceInput(page)).toHaveValue(String(before + 2));
+  });
+
+  test("un entrenador normal ve el saldo pero no puede ajustarlo", async ({ page }) => {
+    const fixture = await createBookingMember({ tag: `bonosro${Date.now()}`, service: "EP" });
+    fixtures.push(fixture);
+
+    await loginAs(page, "entrenador@trainingzone.es");
+    await openBonosTab(page, fixture.memberId);
+
+    await expect(page.getByText("Sesiones restantes").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sumar una sesión" })).toHaveCount(0);
+    await expect(balanceInput(page)).toHaveCount(0);
   });
 
   test("el saldo no puede bajar de cero", async ({ page }) => {
@@ -103,7 +116,7 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
 
     // Contratación lee el mismo campo y debe coincidir. Ese bloque solo lo ve
     // quien pasa `canManageBilling`, de ahí que se compruebe con dirección y no
-    // con el entrenador del test anterior.
+    // con el Entrenador Admin del primer test.
     await page.getByRole("button", { name: "Contratación" }).click();
     await expect(page.getByText("0 sesiones")).toBeVisible();
   });

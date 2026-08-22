@@ -8,6 +8,7 @@ import {
   updateCenterLogo,
   assignUserToCenter,
 } from "./actions";
+import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
 import { StaffDrawer } from "./staff-drawer";
 import AptaLogo from "@/components/apta-logo";
@@ -45,12 +46,13 @@ export default async function OrganizationPage({
 
   const createRoles: Role[] = [
     "TRAINER",
+    "TRAINER_ADMIN",
     "RECEPTION",
     "CENTER_DIRECTOR",
     "HR_MANAGER",
     ...((canOrg ? ["OWNER"] : []) as Role[]),
   ];
-  const assignRoles: Role[] = ["TRAINER", "RECEPTION", "CENTER_DIRECTOR"];
+  const assignRoles: Role[] = ["TRAINER", "TRAINER_ADMIN", "RECEPTION", "CENTER_DIRECTOR"];
 
   return (
     <div className="tz-page space-y-6">
@@ -173,6 +175,29 @@ export default async function OrganizationPage({
                   <input type="hidden" name="centerId" value={c.id} />
                   <Field label="Logo (URL)" className="flex-1">
                     <Input name="logoUrl" defaultValue={c.logoUrl ?? ""} placeholder="/brand/… (vacío = hereda)" />
+                  </Field>
+                  <Button type="submit" variant="secondary" size="sm">
+                    Guardar
+                  </Button>
+                </ActionForm>
+              )}
+              {canOrg && (
+                <ActionForm
+                  action={updateCenterCapacity}
+                  successMessage="Aforo por defecto actualizado."
+                  resetOnSuccess={false}
+                  className="mt-3 flex items-end gap-2"
+                >
+                  <input type="hidden" name="centerId" value={c.id} />
+                  <Field label="Aforo por defecto" className="flex-1" hint="Solo afecta a las sesiones nuevas">
+                    <Input
+                      name="defaultGroupCapacity"
+                      type="number"
+                      min="1"
+                      step="1"
+                      defaultValue={c.defaultGroupCapacity ?? ""}
+                      placeholder="p.ej. 8 (vacío = sin valor fijo)"
+                    />
                   </Field>
                   <Button type="submit" variant="secondary" size="sm">
                     Guardar
