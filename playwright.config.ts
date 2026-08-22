@@ -1,3 +1,11 @@
+// Los specs que preparan datos (e2e/fixtures/*) abren su propia conexión con
+// Prisma desde el proceso de Playwright, no desde el servidor Next. Ese
+// proceso no carga `.env` por su cuenta: en CI `DATABASE_URL` llega como
+// variable del job, pero en local vive en `.env` y sin esto Prisma caía a las
+// credenciales por defecto de libpq y Postgres respondía "User was denied
+// access on the database", un error que se leía como si faltaran los datos de
+// demo. Mismo `import` que ya usa prisma/seed.ts.
+import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({

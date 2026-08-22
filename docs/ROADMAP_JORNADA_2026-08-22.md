@@ -821,21 +821,35 @@ espera correctamente.
 visible — ataca la causa común, no solo este test —, y fuera el `goto` redundante.
 CI en verde. **No hay nada que hacer aquí en F9.**
 
-### 11.8 Lo que sigue pendiente: la suite depende de su propio estado
+### 11.8 Los 9 rojos en local eran del entorno, no de la suite — RESUELTO
 
-Ejecutando el suite completo en local fallan **9 tests** que en CI pasan, con y sin el
-arreglo anterior: cuatro de `members-bonos-calendario`, uno de `portal-reservas` y
-cuatro de `reservas-e2e`. El primero revienta en
-`prisma.user.findFirstOrThrow({ email: "entrenador@trainingzone.es" })`.
+Una versión anterior de esta sección decía que 9 tests fallaban en local por depender
+del estado que dejan los anteriores. **Era un diagnóstico equivocado y se corrige aquí**
+para que nadie salga a perseguirlo.
 
-Apunta a que los tests **dependen del estado que dejan los anteriores** y no son
-idempotentes: repetir el suite sin volver a sembrar cambia el resultado. Encaja con que
-en CI el conjunto de fallos variase entre ejecuciones.
+El error real no era el `findFirstOrThrow` que se veía en la traza, sino la línea de
+Prisma inmediatamente debajo:
 
-No bloquea la jornada, pero conviene tenerlo presente: con varias sesiones escribiendo
-tests nuevos sobre esa base, los rojos ajenos van a confundir a todo el mundo. Merece
-su propio PR — con `ae243b1` y `c13b132`, sería la tercera vez que este repo arregla
-e2e frágiles, y la causa de fondo sigue ahí.
+```
+User was denied access on the database `(not available)`
+```
+
+Los specs que preparan datos (`e2e/fixtures/booking-members.ts`) abren su propia
+conexión con Prisma **desde el proceso de Playwright**, no desde el servidor Next. Ese
+proceso no carga `.env`: en CI da igual, porque `DATABASE_URL` llega como variable del
+job (`.github/workflows/e2e.yml`), pero en local vive en `.env` y solo la lee Next. Sin
+ella, `PrismaPg` se construye con `connectionString: undefined` y libpq cae a sus
+credenciales por defecto, que Postgres rechaza. El `findFirstOrThrow` era simplemente la
+primera línea que tocaba la base, no la causa.
+
+Arreglo: `import "dotenv/config"` en `playwright.config.ts`, la misma convención que ya
+usaba `prisma/seed.ts`. `dotenv` no pisa variables ya definidas, así que en CI el job
+sigue mandando.
+
+Comprobado en local sin exportar nada a mano: **43 pasan, 16 se saltan, 0 fallan.**
+
+Conclusión para las sesiones siguientes: **la suite no arrastra estado y es fiable.** Un
+rojo en e2e es un rojo de verdad — trátalo como tal.
 
 ---
 
