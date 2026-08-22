@@ -166,6 +166,13 @@ export function canEditHealthData(role: Role): boolean {
   return canViewHealthData(role);
 }
 
+// F6 — mesociclos: los ve, los genera y los firma quien prepara la sesión.
+// Recepción y RRHH quedan fuera, y el socio no los ve en absoluto: el mesociclo
+// no se expone ni en el portal ni en la app móvil.
+export function canManageMesocycles(role: Role): boolean {
+  return canViewHealthData(role);
+}
+
 // Gestión de personal e imputación a centros (RRHH además de dirección/plataforma).
 export function canManageStaff(role: Role): boolean {
   return role === "OWNER" || role === "PLATFORM_ADMIN" || role === "HR_MANAGER";
