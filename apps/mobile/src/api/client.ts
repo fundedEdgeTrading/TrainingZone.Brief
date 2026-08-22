@@ -5,8 +5,14 @@ import type { RefreshResponse } from "./types";
 // F1 (docs/APP_MOVIL_NATIVA_PLAN.md §5.2): wrapper fetch con inyección de
 // Bearer, refresh automático en 401, y tokens SIEMPRE en SecureStore
 // (Keychain/Keystore) — nunca AsyncStorage.
+// F8: el emulador se prueba contra el entorno desplegado, no contra localhost —
+// es ahí donde aparecen los fallos de URL absoluta y de certificado. Manda
+// `EXPO_PUBLIC_API_URL` (Expo la inlinea en el bundle) para no tener que editar
+// `app.json`; sin ella se cae al valor de siempre para el desarrollo en local.
 const API_URL =
-  (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ?? "http://localhost:3000/api/mobile/v1";
+  process.env.EXPO_PUBLIC_API_URL ??
+  (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ??
+  "http://localhost:3000/api/mobile/v1";
 
 const ACCESS_TOKEN_KEY = "tz_access_token";
 const REFRESH_TOKEN_KEY = "tz_refresh_token";
