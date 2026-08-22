@@ -14,6 +14,7 @@ import Sidebar, { type MemberSidebarData } from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
 import { AccountMenuProvider } from "./account-menu";
+import { RouteProgress } from "@/components/ui/route-progress";
 
 const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
   EP: "Entrenamiento personal",
@@ -148,6 +149,7 @@ export default async function AppLayout({
               isMember={role === "MEMBER"}
             />
             <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
+              <RouteProgress />
               {children}
             </main>
           </div>

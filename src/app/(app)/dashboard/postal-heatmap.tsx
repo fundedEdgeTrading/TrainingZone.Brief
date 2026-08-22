@@ -99,41 +99,27 @@ export function PostalHeatmap({
     };
   }, []);
 
-  // Reconstruye capa de calor + burbujas cuando cambian los datos o la métrica
-  // activa (Todos/Leads/Clientes): tamaños, opacidades y top-2 dependen de ella.
+  // Las burbujas se construyen una sola vez por juego de puntos, con la caja
+  // siempre a MAX_BUBBLE_PX: al cambiar de métrica no se desmontan y vuelven a
+  // entrar, sino que su radio interpola (efecto aparte, más abajo). El ancla
+  // del icono es constante, así que la burbuja no se mueve al cambiar de radio.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     groupRef.current?.remove();
-    heatRef.current?.remove();
 
     const group = L.layerGroup().addTo(map);
     groupRef.current = group;
     const markers = new Map<string, L.Marker>();
 
-    const maxV = Math.max(1, ...points.map((p) => valueOf(p, metric)));
-    const heatPoints: [number, number, number][] = points.map((p) => [p.lat, p.lng, valueOf(p, metric) / maxV]);
-    const heat = L.heatLayer(heatPoints, {
-      radius: 34,
-      blur: 26,
-      maxZoom: CITY_ZOOM,
-      minOpacity: 0.15,
-      gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
-    }).addTo(map);
-    heatRef.current = heat;
-
     points.forEach((p, i) => {
-      const v = valueOf(p, metric);
-      const size = Math.round(MIN_BUBBLE_PX + Math.sqrt(v / maxV) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX));
-      const opacity = (0.45 + 0.5 * (v / maxV)).toFixed(2);
-      const isTop = i < 2;
-      const html = `<div class="tz-map-bubble${isTop ? " top" : ""}" style="width:${size}px;height:${size}px;--o:${opacity};animation-delay:${(i * 0.06).toFixed(2)}s;"><span class="tz-map-bubble-core"></span></div>`;
+      const html = `<div class="tz-map-bubble" style="width:${MAX_BUBBLE_PX}px;height:${MAX_BUBBLE_PX}px;--s:0;--o:0;animation-delay:${(i * 0.06).toFixed(2)}s;"><span class="tz-map-bubble-core"></span></div>`;
       const icon = L.divIcon({
         html,
         className: "tz-map-bubble-wrap",
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
+        iconSize: [MAX_BUBBLE_PX, MAX_BUBBLE_PX],
+        iconAnchor: [MAX_BUBBLE_PX / 2, MAX_BUBBLE_PX / 2],
       });
       const marker = L.marker([p.lat, p.lng], { icon, riseOnHover: true }).addTo(group);
 
@@ -165,8 +151,53 @@ export function PostalHeatmap({
 
     return () => {
       group.remove();
-      heat.remove();
       markers.clear();
+    };
+  }, [points]);
+
+  // Capa de calor y radios de burbuja dependen de la métrica activa
+  // (Todos/Leads/Clientes). Aquí solo se actualizan valores sobre los nodos que
+  // ya existen: el `transition: transform` de `.tz-map-bubble-core` interpola el
+  // radio y los barrios sin datos en esa métrica se encogen hasta desaparecer.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    heatRef.current?.remove();
+    const maxV = Math.max(1, ...points.map((p) => valueOf(p, metric)));
+    const heatPoints: [number, number, number][] = points.map((p) => [p.lat, p.lng, valueOf(p, metric) / maxV]);
+    const heat = L.heatLayer(heatPoints, {
+      radius: 34,
+      blur: 26,
+      maxZoom: CITY_ZOOM,
+      minOpacity: 0.15,
+      gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
+    }).addTo(map);
+    heatRef.current = heat;
+
+    // Top-2 de la métrica activa: son los que llevan el anillo dorado.
+    const top = new Set(
+      [...points]
+        .filter((p) => valueOf(p, metric) > 0)
+        .sort((a, b) => valueOf(b, metric) - valueOf(a, metric))
+        .slice(0, 2)
+        .map((p) => p.code)
+    );
+
+    const byCode = new Map(points.map((p) => [p.code, p]));
+    markersRef.current.forEach((marker, code) => {
+      const el = marker.getElement()?.querySelector<HTMLDivElement>(".tz-map-bubble");
+      if (!el) return;
+      const p = byCode.get(code);
+      const v = p ? valueOf(p, metric) : 0;
+      const size = v > 0 ? MIN_BUBBLE_PX + Math.sqrt(v / maxV) * (MAX_BUBBLE_PX - MIN_BUBBLE_PX) : 0;
+      el.style.setProperty("--s", (size / MAX_BUBBLE_PX).toFixed(3));
+      el.style.setProperty("--o", v > 0 ? (0.45 + 0.5 * (v / maxV)).toFixed(2) : "0");
+      el.classList.toggle("top", top.has(code));
+    });
+
+    return () => {
+      heat.remove();
     };
   }, [points, metric]);
 

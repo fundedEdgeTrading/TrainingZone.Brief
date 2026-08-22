@@ -158,9 +158,13 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
               {step < 2 && (
                 <div className="flex items-center gap-2.5 mt-4">
                   <div className="flex-1 h-[5px] rounded-full bg-[#eee7d8] overflow-hidden">
+                    {/* El paso se marca con `scaleX`, no con `width` (plan §0.6). */}
                     <div
-                      className="h-full rounded-full transition-[width] duration-300"
-                      style={{ width: step === 0 ? "50%" : "100%", background: "linear-gradient(90deg,#4b5a22,#c8ab72)" }}
+                      className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-out-soft"
+                      style={{
+                        transform: `scaleX(${step === 0 ? 0.5 : 1})`,
+                        background: "linear-gradient(90deg,#4b5a22,#c8ab72)",
+                      }}
                     />
                   </div>
                   <span className="text-xs font-bold text-brand-muted whitespace-nowrap">Paso {step + 1} de 2</span>

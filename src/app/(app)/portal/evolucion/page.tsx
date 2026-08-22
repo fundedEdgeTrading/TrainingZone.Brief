@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { getMemberForUser, getMemberEvolution, getMemberGoals, getMemberRatingSummary } from "@/lib/portal-queries";
+import { CelebrateOnce } from "@/components/ui/celebrate";
 import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { CompositionSummary } from "@/app/(app)/members/[id]/composition-summary";
 import { BodyCompositionChart } from "@/app/(app)/members/[id]/composition-chart";
@@ -30,6 +31,10 @@ export default async function PortalEvolutionPage() {
   const { consentHealth, consentImages, progressEntries, compositionTiles, compositionChartPoints, bodyFatChartPoints, measuredAt } =
     evolution;
   const hasPendingProgram = programs.some((p) => p.status === "DRAFT" || p.status === "PENDING_TRAINER");
+  // Objetivo conseguido más reciente: es lo que decide si hay hito que celebrar.
+  const lastAchievedGoalId = goals
+    .filter((g) => g.achievedAt)
+    .sort((a, b) => (b.achievedAt as Date).getTime() - (a.achievedAt as Date).getTime())[0]?.id;
 
   if (!consentHealth && !consentImages) {
     return (
@@ -153,6 +158,18 @@ export default async function PortalEvolutionPage() {
           <div className="text-[12.5px] text-brand-muted mt-2">energía y esfuerzo percibido</div>
         </div>
       </div>
+
+      {/* Objetivo cumplido: uno de los cuatro hitos que se celebran. La clave
+          incluye el id del último objetivo conseguido, así que un objetivo
+          nuevo vuelve a celebrarse y el mismo no se celebra dos veces. */}
+      {lastAchievedGoalId && (
+        <CelebrateOnce
+          storageKey={`tz.goal-celebrated.${lastAchievedGoalId}`}
+          active
+          toastTitle="¡Objetivo conseguido!"
+          toastDescription="Tu entrenador ha dado uno de tus objetivos por cumplido."
+        />
+      )}
 
       <Card title="Tus objetivos" meta={`${goals.length} activos`}>
         {goals.length === 0 ? (

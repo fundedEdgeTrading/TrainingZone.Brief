@@ -183,6 +183,7 @@ export default async function TrainerPanelPage({
         <KpiCard
           label="Clientes de EP activos"
           value={`${data.epClients.length}`}
+          numericValue={data.epClients.length}
           delay={0.16}
           footer={
             <div className="flex items-center gap-2 mt-2">
@@ -198,11 +199,16 @@ export default async function TrainerPanelPage({
         <KpiCard
           label="Adherencia de tus clientes"
           value={`${data.adherenceAvg}%`}
+          numericValue={data.adherenceAvg}
+          format={{ suffix: "%" }}
           tone="good"
           delay={0.22}
           footer={
             <div className="h-[5px] rounded-full bg-tz-sand overflow-hidden mt-2.5">
-              <div className="h-full rounded-full bg-good" style={{ width: `${data.adherenceAvg}%`, animation: "tzProg 1.1s .5s both" }} />
+              <div
+                className="h-full rounded-full bg-good origin-left"
+                style={{ width: `${data.adherenceAvg}%`, animation: "tzProg 1.1s .5s both" }}
+              />
             </div>
           }
         />

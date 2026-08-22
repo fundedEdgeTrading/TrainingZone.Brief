@@ -1,3 +1,5 @@
+import { CountUp, type CountUpFormat } from "@/components/ui/count-up";
+
 type Tone = "default" | "good" | "warning" | "critical" | "accent" | "gold";
 
 const STRIPE_COLOR: Record<Tone, string> = {
@@ -21,6 +23,8 @@ const TEXT_CLASS: Record<Tone, string> = {
 export function KpiCard({
   label,
   value,
+  numericValue,
+  format,
   hint,
   footer,
   tone = "default",
@@ -28,7 +32,15 @@ export function KpiCard({
   delay = 0,
 }: {
   label: string;
+  /** Valor ya formateado. Se usa tal cual si no se pasa `numericValue`. */
   value: string;
+  /**
+   * Si se pasa, la cifra cuenta de 0 a este número al montar. La card sigue
+   * siendo un Server Component: solo la cifra es cliente (`CountUp`).
+   */
+  numericValue?: number;
+  /** Cómo se pinta la cifra en curso (ver `CountUpFormat`). */
+  format?: CountUpFormat;
   hint?: string;
   footer?: React.ReactNode;
   tone?: Tone;
@@ -52,7 +64,11 @@ export function KpiCard({
           size === "lg" ? "text-[28px]" : "text-[22px]"
         }`}
       >
-        {value}
+        {numericValue != null ? (
+          <CountUp value={numericValue} delay={delay * 1000} format={format} />
+        ) : (
+          value
+        )}
       </div>
       {footer ?? <div className="text-[11px] text-brand-muted-2 mt-1 min-h-[14px]">{hint}</div>}
     </div>

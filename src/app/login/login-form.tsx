@@ -91,11 +91,14 @@ export default function LoginForm() {
       ...(orgId ? { orgId } : {}),
       redirect: false,
     });
-    setLoading(false);
     if (res?.error) {
+      setLoading(false);
       reportBadCredentials();
       return;
     }
+    // `loading` se deja en true a propósito: la parte lenta es la navegación,
+    // no el signIn. Si se apagara aquí el botón volvería a "Iniciar sesión"
+    // justo cuando empieza la espera. El componente se desmonta al llegar.
     router.push(callbackUrl);
     router.refresh();
   }
@@ -137,6 +140,7 @@ export default function LoginForm() {
               key={t.orgId}
               type="button"
               disabled={loading}
+              aria-busy={loading}
               onClick={() => doSignIn(email, password, t.orgId)}
               className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone px-3 py-2.5 transition-colors duration-150"
             >
@@ -219,9 +223,25 @@ export default function LoginForm() {
             />
           </Field>
           {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
-          <Button type="submit" size="lg" disabled={loading} className="w-full">
+          <Button
+            type="submit"
+            size="lg"
+            disabled={loading}
+            aria-busy={loading}
+            className="w-full relative overflow-hidden"
+          >
             {loading && <ButtonSpinner />}
             {loading ? "Entrando..." : "Iniciar sesión"}
+            {loading && (
+              <span
+                aria-hidden="true"
+                className="absolute left-0 bottom-0 h-[3px] w-full origin-left"
+                style={{
+                  background: "linear-gradient(90deg,var(--color-apta-gold),var(--color-tz-sand))",
+                  animation: "tzRouteBar 1.1s var(--ease-out-soft) both",
+                }}
+              />
+            )}
           </Button>
           <p className="text-center">
             <Link href="/recuperar-clave" className="text-xs text-muted underline">
@@ -244,6 +264,7 @@ export default function LoginForm() {
               key={u.email}
               type="button"
               disabled={loading}
+              aria-busy={loading}
               onClick={() => doSignIn(u.email, DEMO_PASSWORD)}
               className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone hover:-translate-y-0.5 hover:shadow-card px-3 py-2 short:py-1.5 transition-[transform,box-shadow,border-color,background-color] duration-150 tz-fade-up"
               style={{ animationDelay: `${0.1 + i * 0.05}s` }}

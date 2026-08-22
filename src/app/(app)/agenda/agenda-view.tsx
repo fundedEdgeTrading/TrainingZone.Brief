@@ -30,6 +30,17 @@ import TrainerFilter from "./trainer-filter";
 import { usePointerDrag } from "@/lib/use-pointer-drag";
 import { useIsMobile } from "@/lib/use-media-query";
 
+/**
+ * Dirección del último salto de semana y contador A/B para el barrido.
+ *
+ * `AgendaView` se remonta en cada salto (`key={weekStartISO}` en page.tsx), así
+ * que la dirección no cabe en el estado del componente: vive en el módulo, que
+ * sí sobrevive al remontaje. Alternar A/B fuerza el retrigger de la animación
+ * aunque el navegador colapse dos animaciones homónimas seguidas (misma técnica
+ * que wizA/wizB).
+ */
+let weekSweep: { dir: -1 | 0 | 1; ab: number } = { dir: 0, ab: 0 };
+
 type Trainer = { id: string; name: string };
 type Member = { id: string; firstName: string; lastName: string };
 
@@ -174,14 +185,14 @@ export default function AgendaView({
         evs.map((ev) => (ev.uid === gesture.uid ? { ...ev, dayIndex: g.day, startMin: ns, endMin: ns + gesture.dur } : ev))
       );
     },
-    onEnd: (gesture, _p, moved) => {
+    onEnd: (gesture, point, moved) => {
       setDraggingId(null);
       if (gesture.kind === "column") {
-        if (!moved && canEdit) openCreate(gesture.day, gesture.min);
+        if (!moved && canEdit) openCreate(gesture.day, gesture.min, point);
         return;
       }
       if (!moved) {
-        openEdit(gesture.uid);
+        openEdit(gesture.uid, point);
         return;
       }
       if (!canEdit) return;
@@ -199,6 +210,10 @@ export default function AgendaView({
   });
 
   function navigate(newWeekStart: Date, day?: number) {
+    weekSweep = {
+      dir: newWeekStart.getTime() === weekStart.getTime() ? 0 : newWeekStart > weekStart ? 1 : -1,
+      ab: weekSweep.ab ^ 1,
+    };
     const dayParam = day != null ? `&day=${day}` : "";
     // AgendaView se remonta al navegar (cambia `weekStartISO`, ver `key` en
     // page.tsx), así que el modo semana de móvil se reenvía por la URL o se
@@ -230,7 +245,7 @@ export default function AgendaView({
     navigate(parseDateParam(formatDateParam(today)), weekdayIdx(today));
   }
 
-  function openCreate(day: number, minRaw: number) {
+  function openCreate(day: number, minRaw: number, origin?: { x: number; y: number }) {
     const min = Math.max(START_HOUR * 60, Math.min(END_HOUR * 60 - 30, snap(minRaw, 30)));
     const dateISO = formatDateParam(addDays(weekStart, day));
     setDlg({
@@ -252,10 +267,11 @@ export default function AgendaView({
       recurrence: "NONE",
       recEnd: "forever",
       recUntil: formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
+      origin,
     });
   }
 
-  function openEdit(uid: string) {
+  function openEdit(uid: string, origin?: { x: number; y: number }) {
     const ev = events.find((e) => e.uid === uid);
     if (!ev || !canEdit) return;
     const dateISO = formatDateParam(addDays(weekStart, ev.dayIndex));
@@ -278,6 +294,7 @@ export default function AgendaView({
       recurrence: ev.recurrence,
       recEnd: ev.recUntilISO ? "until" : "forever",
       recUntil: ev.recUntilISO ?? formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
+      origin,
     });
   }
 
@@ -295,6 +312,13 @@ export default function AgendaView({
   }, [events, visible]);
 
   const gridHeight = (END_HOUR - START_HOUR) * rowHeight;
+  // Barrido direccional al cambiar de semana: entra desde la derecha al avanzar
+  // y desde la izquierda al retroceder. En la primera carga no hay dirección y
+  // la rejilla se pinta sin barrido.
+  const sweepAnimation =
+    weekSweep.dir === 0
+      ? null
+      : `wk${weekSweep.dir > 0 ? "Next" : "Prev"}${weekSweep.ab ? "B" : "A"} .34s var(--ease-out-soft) both`;
   const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
   const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
@@ -498,6 +522,7 @@ export default function AgendaView({
                 style={{
                   height: gridHeight,
                   background: `repeating-linear-gradient(to bottom, var(--color-tz-sand) 0, var(--color-tz-sand) 1px, transparent 1px, transparent ${rowHeight}px)`,
+                  ...(sweepAnimation ? { animation: sweepAnimation } : null),
                 }}
               >
                 {viewDays.map((dayIndex, col) => {
@@ -521,10 +546,19 @@ export default function AgendaView({
                           className="absolute left-0 right-0 z-[4]"
                           style={{ top: ((nowMin - START_HOUR * 60) / 60) * rowHeight, height: 2, background: "var(--color-critical)" }}
                         >
-                          <span className="absolute -left-[5px] -top-1 w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-critical)" }} />
+                          <span className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full" style={{ background: "var(--color-critical)" }} />
+                          {/* Anillo que late: marca "ahora" sin robar atención. */}
+                          <span
+                            aria-hidden="true"
+                            className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full pointer-events-none"
+                            style={{
+                              border: "2px solid var(--color-critical)",
+                              animation: "tzPulseRing 2.4s ease-out infinite",
+                            }}
+                          />
                         </div>
                       )}
-                      {perDay[dayIndex].map((ev) => {
+                      {perDay[dayIndex].map((ev, evIndex) => {
                         const top = ((ev.startMin - START_HOUR * 60) / 60) * rowHeight;
                         const height = Math.max(22, ((ev.endMin - ev.startMin) / 60) * rowHeight - 2);
                         const widthPct = 100 / ev.total;
@@ -547,10 +581,17 @@ export default function AgendaView({
                                 dur: ev.endMin - ev.startMin,
                               });
                             }}
-                            className="absolute rounded-md text-white select-none [-webkit-touch-callout:none]"
+                            className="absolute rounded-md text-white select-none [-webkit-touch-callout:none] transition-[transform,box-shadow] duration-150 ease-out-soft hover:-translate-y-px hover:shadow-hover"
                             style={{
                               top,
                               height,
+                              // Cascada de entrada: tope de 6 columnas × 2 eventos
+                              // escalonados para no pasar de 0,5 s (plan §0).
+                              animation: `tzEventIn .42s var(--ease-spring) ${(
+                                0.12 +
+                                Math.min(col, 5) * 0.04 +
+                                Math.min(evIndex, 1) * 0.03
+                              ).toFixed(2)}s both`,
                               left: `calc(${ev.col * widthPct}% + 1px)`,
                               width: `calc(${widthPct}% - 3px)`,
                               background: color,

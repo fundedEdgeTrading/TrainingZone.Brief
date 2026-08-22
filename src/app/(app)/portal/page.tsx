@@ -78,12 +78,13 @@ export default async function PortalHomePage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <KpiCard label="Sesiones este mes" value={String(progress.totalThisMonth)} size="lg" delay={0.06} />
-        <KpiCard label="Sesiones este año" value={String(progress.totalThisYear)} tone="good" size="lg" delay={0.1} />
-        <KpiCard label="Total histórico" value={String(progress.totalAllTime)} hint="¡sigue así!" size="lg" delay={0.14} />
+        <KpiCard label="Sesiones este mes" value={String(progress.totalThisMonth)} numericValue={progress.totalThisMonth} size="lg" delay={0.06} />
+        <KpiCard label="Sesiones este año" value={String(progress.totalThisYear)} numericValue={progress.totalThisYear} tone="good" size="lg" delay={0.1} />
+        <KpiCard label="Total histórico" value={String(progress.totalAllTime)} numericValue={progress.totalAllTime} hint="¡sigue así!" size="lg" delay={0.14} />
         <KpiCard
           label="Tu mejor mes"
           value={progress.bestMonthCount ? String(progress.bestMonthCount) : "—"}
+          numericValue={progress.bestMonthCount || undefined}
           hint={progress.bestMonthLabel || undefined}
           tone="accent"
           size="lg"

@@ -78,6 +78,8 @@ export function DataTable({
   className?: string;
 }) {
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(defaultSort ?? null);
+  /** Sube en cada reordenación: se usa como `key` del `<tbody>` para rearmar la entrada. */
+  const [sortRun, setSortRun] = useState(0);
   const [page, setPage] = useState(1);
 
   // `rows` solo cambia de referencia cuando el server component padre vuelve a
@@ -113,6 +115,7 @@ export function DataTable({
 
   function handleSort(key: string) {
     setPage(1);
+    setSortRun((n) => n + 1);
     setSort((prev) => {
       if (prev?.key === key) return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
       return { key, dir: "asc" };
@@ -154,9 +157,21 @@ export function DataTable({
               ))}
             </tr>
           </thead>
-          <tbody>
-            {pageRows.map((row) => (
-              <tr key={row.key} className={clsx("border-t border-tz-sand transition-colors duration-150 hover:bg-tz-bone/70", row.className)} style={row.style}>
+          <tbody key={sortRun}>
+            {pageRows.map((row, i) => (
+              <tr
+                key={row.key}
+                className={clsx("border-t border-tz-sand transition-colors duration-150 hover:bg-tz-bone/70", row.className)}
+                style={
+                  // Al reordenar, todas las filas vuelven a entrar escalonadas
+                  // para que el cambio de orden se lea. El `sortRun` en la key
+                  // del `<tbody>` rearma la animación; mientras nadie ha
+                  // reordenado manda el estilo de entrada que trae la fila.
+                  sortRun > 0
+                    ? { ...row.style, animation: `tzRowIn .28s ${(Math.min(i, 10) * 0.02).toFixed(2)}s both` }
+                    : row.style
+                }
+              >
                 {columns.map((col) => (
                   <td key={col.key} className={clsx("px-5 py-3.5", ALIGN_CLASS[col.align ?? "left"], col.className)}>
                     {row.cells[col.key]}

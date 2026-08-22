@@ -5,6 +5,7 @@ import Link from "next/link";
 import { bookSession, cancelMyBooking } from "./actions";
 import { ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { useCelebrate } from "@/components/ui/celebrate";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 export default function BookingButton({
@@ -38,7 +39,12 @@ export default function BookingButton({
   // pierde la sesión del bono (no se devuelve). Se avisa con un modal antes de
   // confirmar — la lista de espera nunca tuvo coste, así que sale sin aviso.
   const [confirmingForfeit, setConfirmingForfeit] = useState(false);
+  // Ciclo completo de feedback de acción: pendiente → check dibujado + pastilla
+  // tonal `good` → toast. El estado se sostiene 1,5 s; para entonces el
+  // servidor ya ha revalidado y el botón pasa por sí solo a "Cancelar".
+  const [confirmed, setConfirmed] = useState(false);
   const toast = useToast();
+  const celebrate = useCelebrate();
 
   const baseClass = `${
     variant === "row" ? "shrink-0" : "flex-1"
@@ -70,18 +76,40 @@ export default function BookingButton({
     handleCancel(id);
   };
 
-  const handleBook = () => {
+  const handleBook = (origin?: { x: number; y: number }) => {
     startTransition(async () => {
       const result = await bookSession(sessionId, occurrenceDate);
       if (result.ok) {
         setNeedsTopUp(false);
-        toast.success(result.waitlisted ? "Te has unido a la lista de espera." : "¡Reserva confirmada!");
+        if (result.waitlisted) {
+          toast.success("Te has unido a la lista de espera.");
+        } else {
+          setConfirmed(true);
+          setTimeout(() => setConfirmed(false), 1500);
+          // Reserva confirmada: uno de los cuatro hitos que se celebran.
+          celebrate(origin);
+          toast.success("¡Reserva confirmada!");
+        }
       } else {
         setNeedsTopUp(Boolean(result.needsTopUp));
         toast.error(result.error);
       }
     });
   };
+
+  /** Coordenadas del punto pulsado, para que el confeti salga del botón. */
+  const originOf = (e: React.MouseEvent) => ({ x: e.clientX, y: e.clientY });
+
+  const ConfirmedCheck = (
+    <>
+      <span className="tz-check-pop inline-flex">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 13l4 4L19 7" className="tz-draw" />
+        </svg>
+      </span>
+      Reservado
+    </>
+  );
 
   if (myBookingId) {
     // Sin promoción automática de lista de espera (decisión de negocio): si se
@@ -93,7 +121,8 @@ export default function BookingButton({
         <div className={variant === "card" ? "flex-1 flex flex-col items-stretch gap-1.5" : "flex flex-col items-end gap-1.5"}>
           <button
             disabled={pending}
-            onClick={handleBook}
+            aria-busy={pending}
+            onClick={(e) => handleBook(originOf(e))}
             className={`${
               variant === "row" ? "shrink-0" : "w-full"
             } min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97] bg-tz-black text-tz-bone border border-tz-black hover:-translate-y-0.5 hover:shadow-[0_10px_22px_-10px_rgba(29,29,28,.35)]`}
@@ -150,7 +179,8 @@ export default function BookingButton({
     return (
       <button
         disabled={pending}
-        onClick={handleBook}
+        aria-busy={pending}
+        onClick={() => handleBook()}
         className={`${baseClass} bg-brand-ink-soft text-white border border-brand-ink-soft hover:bg-brand-ink`}
       >
         {pending && <ButtonSpinner />}
@@ -162,14 +192,19 @@ export default function BookingButton({
   return (
     <div className={variant === "card" ? "flex-1 flex flex-col items-stretch gap-1.5" : "flex flex-col items-end gap-1.5"}>
       <button
-        disabled={pending}
-        onClick={handleBook}
+        disabled={pending || confirmed}
+        aria-busy={pending}
+        onClick={(e) => handleBook(originOf(e))}
         className={`${
           variant === "row" ? "shrink-0" : "w-full"
-        } min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-60 inline-flex items-center justify-center gap-2 active:scale-[0.97] bg-tz-black text-tz-bone border border-tz-black hover:-translate-y-0.5 hover:shadow-[0_10px_22px_-10px_rgba(29,29,28,.35)]`}
+        } min-h-[40px] text-center whitespace-nowrap rounded-[9px] px-4 py-[9px] font-display font-bold text-[13px] uppercase tracking-[.03em] transition-all duration-[180ms] disabled:opacity-100 inline-flex items-center justify-center gap-2 active:scale-[0.97] ${
+          confirmed
+            ? "bg-good-bg text-good border border-good"
+            : "bg-tz-black text-tz-bone border border-tz-black hover:-translate-y-0.5 hover:shadow-[0_10px_22px_-10px_rgba(29,29,28,.35)]"
+        }`}
       >
         {pending && <ButtonSpinner />}
-        Reservar
+        {confirmed ? ConfirmedCheck : pending ? "Reservando…" : "Reservar"}
       </button>
       {needsTopUp && (
         <Link

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
 import { groupNav, type NavItem } from "@/lib/rbac";
@@ -23,6 +23,25 @@ export type MemberSidebarData = {
   centerName: string;
   bono: MemberBonoCard;
 };
+
+/**
+ * Punto de 7×7 px del item de navegación. Mientras el `<Link>` que lo contiene
+ * está pendiente pasa a oro y pulsa con `tzLiveDot`: el usuario ve *qué* item
+ * ha pulsado mientras la ruta carga. `useLinkStatus` exige vivir dentro del
+ * `<Link>`, de ahí el componente aparte.
+ */
+function NavDot({ activeClass }: { activeClass: string }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden="true"
+      className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
+        pending ? "bg-apta-gold" : activeClass
+      }`}
+      style={pending ? { animation: "tzLiveDot 1.1s ease-in-out infinite" } : undefined}
+    />
+  );
+}
 
 export default function Sidebar({
   nav,
@@ -119,11 +138,7 @@ export default function Sidebar({
                           style={{ background: "linear-gradient(180deg,#e3cfa2,#b58e52)" }}
                         />
                       )}
-                      <span
-                        className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
-                          active ? "bg-apta-gold" : "bg-faint"
-                        }`}
-                      />
+                      <NavDot activeClass={active ? "bg-apta-gold" : "bg-faint"} />
                       <span className="flex-1">{item.label}</span>
                       {item.meta && <span className="text-[11px] font-bold tracking-[.06em] text-muted">{item.meta}</span>}
                       {!!item.badge && (
@@ -162,11 +177,7 @@ export default function Sidebar({
                       }`}
                       style={{ animation: `tzNavIn .45s ${(0.1 + i * 0.04).toFixed(2)}s both` }}
                     >
-                      <span
-                        className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
-                          active ? "bg-tz-bone" : "bg-faint"
-                        }`}
-                      />
+                      <NavDot activeClass={active ? "bg-tz-bone" : "bg-faint"} />
                       <span className="flex-1">{item.label}</span>
                       {!!item.badge && (
                         <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-critical text-white text-[11px] font-extrabold flex items-center justify-center">
@@ -218,6 +229,9 @@ export default function Sidebar({
   );
 }
 
+/** 2·π·r con r = 40, el radio del anillo del bono. */
+const RING_CIRCUMFERENCE = 2 * Math.PI * 40;
+
 function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
   const pct =
     !bono.recurring && bono.sessionsIncluded
@@ -241,17 +255,42 @@ function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
         </div>
       ) : (
         <>
-          <div className="h-1.5 rounded-full bg-tz-sand overflow-hidden mt-3">
-            <div
-              className="h-full rounded-full origin-left [animation:tzGrow_.8s_ease-out_both]"
-              style={{ width: `${pct}%`, background: "linear-gradient(90deg,#4b5a22,#c8ab72)" }}
-            />
-          </div>
-          <div className="text-[11.5px] text-muted mt-2">
-            Te quedan <b className="text-tz-black">
-              {bono.sessionsRemaining ?? 0} de {bono.sessionsIncluded ?? 0}
-            </b>{" "}
-            sesiones
+          {/*
+            Anillo en vez de barra: el bono es una reserva que se agota, y un
+            círculo que se vacía lo cuenta mejor que una línea que se llena. Se
+            anima `stroke-dashoffset` —no una geometría— así que la transición
+            no provoca layout. Al gastar una sesión, baja una muesca en la misma
+            transición.
+          */}
+          <div className="flex items-center gap-3.5 mt-3">
+            <div className="relative w-[76px] h-[76px] shrink-0">
+              <svg width="76" height="76" viewBox="0 0 96 96" aria-hidden="true" className="-rotate-90">
+                <circle cx="48" cy="48" r="40" fill="none" stroke="var(--color-tz-sand)" strokeWidth="10" />
+                <circle
+                  cx="48"
+                  cy="48"
+                  r="40"
+                  fill="none"
+                  stroke="var(--color-apta-gold)"
+                  strokeWidth="10"
+                  strokeLinecap="round"
+                  strokeDasharray={RING_CIRCUMFERENCE}
+                  strokeDashoffset={RING_CIRCUMFERENCE * (1 - pct / 100)}
+                  style={{ transition: "stroke-dashoffset 1s var(--ease-out-soft)" }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="font-display font-extrabold text-[19px] leading-none text-tz-black tz-nums">
+                  {bono.sessionsRemaining ?? 0}
+                </span>
+                <span className="text-[9.5px] font-bold uppercase tracking-[.08em] text-muted mt-0.5">
+                  de {bono.sessionsIncluded ?? 0}
+                </span>
+              </div>
+            </div>
+            <div className="text-[11.5px] text-muted leading-[1.45] min-w-0">
+              Sesiones que <b className="text-tz-black">te quedan</b> en este bono
+            </div>
           </div>
         </>
       )}
