@@ -236,3 +236,143 @@ export async function resolveHealthRecord({
   return { ok: true };
 }
 
+
+/**
+ * Datos que salen del centro hacia la API de Claude para generar un mesociclo
+ * (F6). Solo esto: edad, sexo, métricas, objetivos y criterios clínicos.
+ * NUNCA nombre, DNI, teléfono ni email.
+ */
+export type MesocycleBriefing = {
+  age: number | null;
+  sex: string | null;
+  level: string;
+  weeks: number;
+  goals: string[];
+  availability: string[];
+  metrics: string[];
+  /** `null` = el socio no ha consentido el tratamiento por IA (vía sin datos clínicos). */
+  clinical: string[] | null;
+  assessmentNotes: string[];
+};
+
+const SEX_LABEL: Record<string, string> = { MALE: "hombre", FEMALE: "mujer", OTHER: "otro" };
+
+/**
+ * Claves del cuestionario de valoración que NO se envían aunque el formulario
+ * evolucione y las añada. `Assessment.answers` es Json libre (F3): la lista de
+ * permitidos no se puede fijar, así que se fija la de prohibidos y se
+ * descartan los valores que no son escalares.
+ */
+const IDENTITY_ANSWER_KEYS = /nombre|apellid|dni|nif|nie|pasaporte|tel[eé]fono|movil|m[oó]vil|email|correo|direcci[oó]n|contacto/i;
+
+/**
+ * Seudonimización en el borde (F6 §7.3): único punto por el que los datos de un
+ * socio salen hacia la IA, con el mismo registro append-only en `AuditLog` que
+ * cualquier otra lectura de salud. Generar un mesociclo se audita igual que
+ * abrir un Session Brief.
+ */
+export async function getMesocycleBriefingForMember({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+  level,
+  weeks,
+  availability,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  level: string;
+  weeks: number;
+  availability: string[];
+}): Promise<MesocycleBriefing | null> {
+  if (!canViewHealthData(actorRole)) return null;
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { birthDate: true, sex: true, consentAI: true },
+  });
+  if (!member) return null;
+
+  const [goals, metrics, assessment, healthRecords] = await Promise.all([
+    prisma.clientGoal.findMany({ where: { memberId, isTemplate: false }, select: { label: true } }),
+    prisma.performanceMetric.findMany({
+      where: { memberId },
+      orderBy: { recordedAt: "desc" },
+      select: { key: true, value: true, unit: true, recordedAt: true },
+    }),
+    prisma.assessment.findFirst({
+      where: { memberId, completedAt: { not: null } },
+      orderBy: { completedAt: "desc" },
+      select: { kind: true, answers: true },
+    }),
+    member.consentAI
+      ? prisma.healthRecord.findMany({
+          where: { memberId, status: "ACTIVE" },
+          select: { type: true, zone: true, description: true, severity: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const briefing: MesocycleBriefing = {
+    age: ageFrom(member.birthDate),
+    sex: member.sex ? (SEX_LABEL[member.sex] ?? null) : null,
+    level,
+    weeks,
+    goals: goals.map((g) => g.label),
+    availability,
+    metrics: latestByKey(metrics).map((m) => `${m.key}: ${m.value} ${m.unit}`),
+    clinical: member.consentAI
+      ? healthRecords.map((r) =>
+          [r.type, r.zone, r.description].filter(Boolean).join(" · ") + ` (severidad ${r.severity})`
+        )
+      : null,
+    assessmentNotes: assessment ? answerNotes(assessment.answers) : [],
+  };
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "MESOCYCLE_AI_INPUT_READ",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: {
+        consentAI: member.consentAI,
+        clinicalItems: briefing.clinical?.length ?? 0,
+        weeks,
+      },
+    },
+  });
+
+  return briefing;
+}
+
+function ageFrom(birthDate: Date | null): number | null {
+  if (!birthDate) return null;
+  const now = new Date();
+  let age = now.getFullYear() - birthDate.getFullYear();
+  const monthDiff = now.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < birthDate.getDate())) age -= 1;
+  return age;
+}
+
+/** La serie temporal completa no aporta al plan: solo la marca más reciente de cada clave. */
+function latestByKey<T extends { key: string }>(metrics: T[]): T[] {
+  const seen = new Set<string>();
+  return metrics.filter((m) => (seen.has(m.key) ? false : (seen.add(m.key), true)));
+}
+
+function answerNotes(answers: unknown): string[] {
+  if (!answers || typeof answers !== "object" || Array.isArray(answers)) return [];
+  return Object.entries(answers as Record<string, unknown>)
+    .filter(([key, value]) => !IDENTITY_ANSWER_KEYS.test(key) && isScalar(value))
+    .map(([key, value]) => `${key}: ${String(value)}`);
+}
+
+function isScalar(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}

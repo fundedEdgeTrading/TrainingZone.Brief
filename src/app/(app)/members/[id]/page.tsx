@@ -16,7 +16,7 @@ import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
-import { canAdjustSessionBalance, canDeleteMembers, canManageOrg } from "@/lib/rbac";
+import { canAdjustSessionBalance, canDeleteMembers, canManageMesocycles, canManageOrg } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import Tabs from "./tabs";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
@@ -44,6 +44,9 @@ import { WorkoutProgramList } from "./workout-panel";
 import { SingleMetricChart } from "@/components/single-metric-chart";
 import { BonosPanel } from "./bonos-panel";
 import { MemberSessionsCalendar } from "./member-calendar";
+import { listMesocyclesForMember } from "@/lib/mesocycle-queries";
+import { isAiConfigured } from "@/lib/ai/anthropic";
+import { MesocyclePanel } from "./mesociclos/panel";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -90,7 +93,9 @@ export default async function MemberDetailPage({
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
 
-  const [stats, healthRecords, notes, goalTemplates, centers, plans] = await Promise.all([
+  const canSeeMesocycles = canManageMesocycles(session.user.role);
+
+  const [stats, healthRecords, notes, goalTemplates, centers, plans, mesocycles] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
       memberId: member.id,
@@ -102,6 +107,7 @@ export default async function MemberDetailPage({
     listClientGoalTemplates(session.user.orgId),
     listCentersForOrg(session.user.orgId),
     listActivePlansForOrg(session.user.orgId),
+    canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
   ]);
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
@@ -653,6 +659,19 @@ export default async function MemberDetailPage({
                 </div>
               ),
             },
+            // F6: el mesociclo es material del entrenador — no se expone en el
+            // portal del socio ni en la app móvil.
+            ...(canSeeMesocycles
+              ? [
+                  {
+                    key: "mesociclos",
+                    label: "Mesociclos",
+                    content: (
+                      <MesocyclePanel memberId={member.id} mesocycles={mesocycles} aiConfigured={isAiConfigured()} />
+                    ),
+                  },
+                ]
+              : []),
           ]}
         />
       </div>
