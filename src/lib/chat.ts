@@ -11,7 +11,7 @@ const CHAT_RECENT_WINDOW_DAYS = 90;
  */
 export async function canAccessMemberChat(orgId: string, memberId: string, actorUserId: string, actorRole: Role) {
   if (actorRole === "OWNER" || actorRole === "CENTER_DIRECTOR" || actorRole === "RECEPTION") return true;
-  if (actorRole !== "TRAINER") return false;
+  if (actorRole !== "TRAINER" && actorRole !== "TRAINER_ADMIN") return false;
 
   const since = new Date(Date.now() - CHAT_RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const recentBooking = await prisma.booking.findFirst({

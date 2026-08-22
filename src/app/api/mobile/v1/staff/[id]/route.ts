@@ -12,7 +12,7 @@ const READ_ROLES: Role[] = ["OWNER", "PLATFORM_ADMIN", "HR_MANAGER", "CENTER_DIR
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).optional(),
-  role: z.enum(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"]).optional(),
+  role: z.enum(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"]).optional(),
   image: z.string().trim().nullable().optional(),
   visibleInApp: z.boolean().optional(),
   allocations: z.array(z.object({ centerId: z.string().trim().min(1), pct: z.number().int().min(0).max(100) })).optional(),

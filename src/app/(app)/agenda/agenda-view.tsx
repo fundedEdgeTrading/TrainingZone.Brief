@@ -40,6 +40,7 @@ export default function AgendaView({
   trainers,
   members,
   canEdit,
+  defaultGroupCapacity,
   currentUserId,
   isDirection,
   initialDayIndex,
@@ -52,6 +53,8 @@ export default function AgendaView({
   trainers: Trainer[];
   members: Member[];
   canEdit: boolean;
+  /** Aforo por defecto del centro (Center.defaultGroupCapacity); null si no lo tiene fijado. */
+  defaultGroupCapacity: number | null;
   currentUserId: string;
   isDirection: boolean;
   initialDayIndex?: number | null;
@@ -241,7 +244,7 @@ export default function AgendaView({
       trainerId: trainers[0]?.id ?? "",
       memberId: null,
       memberQuery: "",
-      capacity: DEFAULT_GROUP_CAPACITY,
+      capacity: defaultGroupCapacity ?? DEFAULT_GROUP_CAPACITY,
       // Una franja nueva nace abierta al socio: es lo que espera el entrenador
       // al crearla desde la agenda (RB-AGENDA-001/002).
       selfBookable: true,

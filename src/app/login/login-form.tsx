@@ -25,6 +25,11 @@ const DEMO_USERS = [
     desc: "Agenda, Session Brief y Debrief",
   },
   {
+    email: "marcos.iglesias@trainingzone.es",
+    label: "Marcos — Entrenador Admin",
+    desc: "Entrenador con aforo del centro y ajuste de bonos",
+  },
+  {
     email: "laura.gimeno@trainingzone.es",
     label: "Laura — Entrenadora",
     desc: "Otro entrenador, misma centro (La Jota)",

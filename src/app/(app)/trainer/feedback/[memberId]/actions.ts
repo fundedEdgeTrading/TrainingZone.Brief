@@ -10,7 +10,7 @@ export async function submitTrainerDebriefAction(
   memberId: string,
   input: FeedbackDimsInput & { note: string }
 ): Promise<TrainerFeedbackResult> {
-  const session = await requireRole(["TRAINER", "OWNER", "CENTER_DIRECTOR"]);
+  const session = await requireRole(["TRAINER", "TRAINER_ADMIN", "OWNER", "CENTER_DIRECTOR"]);
   const result = await submitTrainerDebrief(session.user.orgId, session.user.id, memberId, input);
   if (!result.ok) return result;
   revalidatePath("/trainer");

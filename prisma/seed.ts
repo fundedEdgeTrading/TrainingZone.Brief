@@ -2454,16 +2454,17 @@ const ORGS: OrgSeedConfig[] = [
       { key: "puertacarmen", name: "TRAINING ZONE Puerta del Carmen", slug: "puerta-del-carmen", address: "Paseo Pamplona 15, Zaragoza", capacityRange: [8, 12], memberCount: 10 },
     ],
     // Un único director de organización (OWNER, rol más alto), un director por
-    // centro y tres entrenadores por centro. Recepción, RRHH y admin de
-    // plataforma se mantienen porque sin ellos esos módulos no tienen con quién
-    // demostrarse.
+    // centro y tres entrenadores por centro — uno de ellos, Entrenador Admin
+    // (manda en el aforo de su centro y ajusta bonos). Recepción, RRHH y admin
+    // de plataforma se mantienen porque sin ellos esos módulos no tienen con
+    // quién demostrarse.
     staff: [
       { name: "Sergio Martín", email: "sergio@trainingzone.es", role: "OWNER", centerKey: null },
       { name: "Beatriz Ruiz", email: "direccion.lajota@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "lajota" },
       { name: "Rubén Castillo", email: "direccion.puertacarmen@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "puertacarmen" },
       { name: "Dani Herrero", email: "entrenador@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
       { name: "Laura Gimeno", email: "laura.gimeno@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
-      { name: "Marcos Iglesias", email: "marcos.iglesias@trainingzone.es", role: "TRAINER", centerKey: "lajota" },
+      { name: "Marcos Iglesias", email: "marcos.iglesias@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "lajota" },
       { name: "Elena Vidal", email: "elena.vidal@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
       { name: "Javier Soto", email: "javier.soto@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
       { name: "Sara Ortiz", email: "sara.ortiz@trainingzone.es", role: "TRAINER", centerKey: "puertacarmen" },
@@ -2566,7 +2567,7 @@ async function main() {
   console.log("    direccion.lajota@trainingzone.es          Dirección de centro");
   console.log("    entrenador@trainingzone.es                Entrenador (Dani Herrero · panel /trainer)");
   console.log("    laura.gimeno@trainingzone.es              Entrenadora");
-  console.log("    marcos.iglesias@trainingzone.es           Entrenador");
+  console.log("    marcos.iglesias@trainingzone.es           Entrenador Admin (aforo del centro y ajuste de bonos)");
   console.log("    recepcion.lajota@trainingzone.es          Recepción");
   console.log("    socio@trainingzone.es                     Socio (Marta García López · bono 12 grupos en La Jota + bono 4 EP en Puerta del Carmen)");
   console.log("    socio.grupos@trainingzone.es              Socio (Nuria Peña Soler · solo bono de grupos reducidos)");

@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { TrainerDebriefForm } from "./debrief-form";
 
 export default async function TrainerDebriefPage({ params }: { params: Promise<{ memberId: string }> }) {
-  const session = await requireRole(["TRAINER", "OWNER", "CENTER_DIRECTOR"]);
+  const session = await requireRole(["TRAINER", "TRAINER_ADMIN", "OWNER", "CENTER_DIRECTOR"]);
   const { memberId } = await params;
 
   const member = await prisma.member.findFirst({

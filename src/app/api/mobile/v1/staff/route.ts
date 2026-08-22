@@ -12,13 +12,13 @@ import { apiOk, apiError } from "../_lib/response";
 // D6/D7 del handoff: equipo de la organización con foto, rol e imputación a
 // centros (`CenterMembership.allocationPct`).
 const READ_ROLES: Role[] = ["OWNER", "PLATFORM_ADMIN", "HR_MANAGER", "CENTER_DIRECTOR"];
-const STAFF_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"];
-const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "RECEPTION"];
+const STAFF_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"];
+const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Completa el nombre."),
   email: z.string().trim().toLowerCase().email("El email no es válido."),
-  role: z.enum(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"]),
+  role: z.enum(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"]),
   centerId: z.string().trim().nullable().optional(),
 });
 

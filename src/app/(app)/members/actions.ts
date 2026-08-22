@@ -23,7 +23,7 @@ export type MembersActionResult = { ok: true } | { ok: false; error: string };
 const bonoSchema = z.object({ planId: z.string().min(1), centerId: z.string().min(1) });
 
 export async function createMember(formData: FormData): Promise<MembersActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!canManageMembers(session.user.role)) return { ok: false, error: "No tienes permiso para dar de alta socios." };
 
   const firstName = String(formData.get("firstName") ?? "").trim();
@@ -92,7 +92,7 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
 
 // F9 — objetivos concretos (RB-PERFIL-003) y entrenador responsable (RB-PERFIL-002).
 export async function assignClientGoalAction(formData: FormData): Promise<MembersActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const memberId = String(formData.get("memberId") ?? "");
   const label = String(formData.get("label") ?? "");
   const result = await assignClientGoal(session.user.orgId, memberId, label);
@@ -102,7 +102,7 @@ export async function assignClientGoalAction(formData: FormData): Promise<Member
 }
 
 export async function markClientGoalAchievedAction(goalId: string, memberId: string): Promise<MembersActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const result = await markClientGoalAchieved(session.user.orgId, goalId);
   if (!result.ok) return result;
   revalidatePath(`/members/${memberId}`);

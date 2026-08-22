@@ -97,6 +97,15 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
     { href: "/rrhh", label: "RRHH", section: "Administración" },
   ],
+  TRAINER_ADMIN: [
+    { href: "/trainer", label: "Mi panel", section: "Vista general" },
+    { href: "/brief", label: "Session Brief", section: "Vista general" },
+    { href: "/leads", label: "Leads", section: "Comercial" },
+    { href: "/offers", label: "Ofertas", section: "Comercial" },
+    { href: "/members", label: "Socios", section: "Operativa del centro" },
+    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/aforo", label: "Aforo de clases", section: "Operativa del centro" },
+  ],
   RECEPTION: [
     { href: "/leads", label: "Leads", section: "Comercial" },
     { href: "/members", label: "Socios", section: "Operativa del centro" },
@@ -145,7 +154,8 @@ export function groupNav(nav: NavItem[]) {
 
 export function canViewHealthData(role: Role): boolean {
   // Recepción, RRHH y Admin plataforma NO ven datos de salud por defecto (A.2.4/A.2.5).
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
+  // El Entrenador Admin hereda: sigue dando sesiones, y sin salud no puede prepararlas.
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "TRAINER_ADMIN";
 }
 
 export function canEditHealthData(role: Role): boolean {
@@ -196,23 +206,37 @@ export function isStaffRole(role: Role): boolean {
 
 // F8 — CRM comercial de leads.
 export function canManageLeads(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "RECEPTION" || role === "TRAINER";
+  return (
+    role === "OWNER" ||
+    role === "CENTER_DIRECTOR" ||
+    role === "RECEPTION" ||
+    role === "TRAINER" ||
+    role === "TRAINER_ADMIN"
+  );
 }
 
 // F11/RB-AGENDA-006 — crear/editar/publicar franjas autorreservables de EP.
 export function canManageEpSlots(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER";
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "TRAINER_ADMIN";
 }
 
 // RB-RES-006 — ajuste manual del saldo de sesiones de un bono desde la ficha
 // del socio. A diferencia del resto de la gestión de bonos (`canManageBilling`),
-// aquí SÍ entra el ENTRENADOR: es quien detecta en pista que a un socio le falta
-// o le sobra una sesión (sesión regalada, o hueco de EP agendado a mano, que
-// crea la reserva con `subscriptionId` null y por tanto no descuenta bono —
+// aquí SÍ entra pista: es quien detecta que a un socio le falta o le sobra una
+// sesión (sesión regalada, o hueco de EP agendado a mano, que crea la reserva
+// con `subscriptionId` null y por tanto no descuenta bono —
 // agenda-queries.ts::createEpSlot). No mueve dinero: solo saldo, y cada ajuste
-// queda en AuditLog.
+// queda en AuditLog. Del lado del entrenador es EXCLUSIVO del Entrenador Admin:
+// si lo pudiera hacer cualquier entrenador, el rol nuevo no aportaría nada.
 export function canAdjustSessionBalance(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "RECEPTION";
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER_ADMIN" || role === "RECEPTION";
+}
+
+// Aforo por defecto de un centro (Center.defaultGroupCapacity). El Entrenador
+// Admin lo configura para SUS centros (los de su CenterMembership); dirección,
+// para cualquiera de la organización.
+export function canManageCenterCapacity(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER_ADMIN";
 }
 
 // F14/RB-RRHH-013 — aprobar (luz verde) ofertas personalizadas.
@@ -227,7 +251,7 @@ export function canManageAnnouncements(role: Role): boolean {
 
 // F14/RB-RRHH-013 — proponer/elevar ofertas a dirección.
 export function canProposeOffers(role: Role): boolean {
-  return role === "TRAINER" || role === "OWNER" || role === "CENTER_DIRECTOR";
+  return role === "TRAINER" || role === "TRAINER_ADMIN" || role === "OWNER" || role === "CENTER_DIRECTOR";
 }
 
 // F14/RB-RRHH-012 — valoraciones de entrenadores: EXCLUSIVO dirección, nunca el propio entrenador.
@@ -238,7 +262,10 @@ export function canViewTrainerRatings(role: Role): boolean {
 // G.1 — Debrief individual de una sesión: confidencial del entrenador asignado
 // (o quien la dirigió realmente) más dirección. Recepción y el resto de
 // entrenadores quedan fuera de la vista por sesión; dirección conserva además
-// el informe semanal agregado (getWeeklyDebriefReport).
+// el informe semanal agregado (getWeeklyDebriefReport). El Entrenador Admin NO
+// hereda por rol: manda en el aforo de su centro, no en la confidencialidad de
+// lo que otro entrenador escribe de su sesión — entra por la vía de siempre,
+// ser el entrenador de esa sesión.
 export function canViewSessionDebrief(
   role: Role,
   actorUserId: string,
@@ -269,6 +296,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   RECEPTION: "Recepción",
   MEMBER: "Socio",
   HR_MANAGER: "RRHH",
+  TRAINER_ADMIN: "Entrenador Admin",
   PLATFORM_ADMIN: "Admin plataforma",
 };
 

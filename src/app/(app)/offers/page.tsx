@@ -27,7 +27,7 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 };
 
 export default async function OffersPage() {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const canApprove = canApproveOffers(session.user.role);
   const canPropose = canProposeOffers(session.user.role);
 

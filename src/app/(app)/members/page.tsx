@@ -22,7 +22,7 @@ export default async function MembersPage({
 }: {
   searchParams: Promise<{ q?: string; state?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
   const canCreate = canManageMembers(session.user.role);
   const canImport = canImportMembers(session.user.role);

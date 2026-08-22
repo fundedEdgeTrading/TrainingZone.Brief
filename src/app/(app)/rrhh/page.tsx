@@ -20,7 +20,7 @@ function fmtEuros(cents: number) {
 }
 
 export default async function RrhhPage() {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
   const isReviewer = canReviewStaffProposals(session.user.role);
   const isDirection = canManageOrg(session.user.role) || session.user.role === "CENTER_DIRECTOR";
 

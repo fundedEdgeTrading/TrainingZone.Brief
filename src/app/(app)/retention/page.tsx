@@ -16,7 +16,7 @@ const RISK_TONE: Record<string, BadgeTone> = { HIGH: "critical", MEDIUM: "warnin
 const RISK_LABEL: Record<string, string> = { HIGH: "ALTA", MEDIUM: "MEDIA", LOW: "BAJA" };
 
 export default async function RetentionPage() {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("retencion");

@@ -84,7 +84,7 @@ export default async function MemberDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
 
   const member = await getMemberDetail(session.user.orgId, id);

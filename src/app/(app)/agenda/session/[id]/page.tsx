@@ -27,7 +27,7 @@ export default async function SessionDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ d?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
   const { d } = await searchParams;
   // `cls.date` es la fecha base de la serie recurrente; el día concreto que se
@@ -39,10 +39,10 @@ export default async function SessionDetailPage({
 
   // Ámbito de centro: el staff no organizacional solo abre sesiones de centros
   // a los que está imputado (su centro base o vía CenterMembership).
-  await requireCenterRole(cls.centerId, ["CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  await requireCenterRole(cls.centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
 
   const isEpSession = cls.classType === "Personal Training";
-  const trainers = isEpSession ? await listAssignableStaff(session.user.orgId, ["TRAINER"]) : [];
+  const trainers = isEpSession ? await listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"]) : [];
 
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");

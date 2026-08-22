@@ -8,7 +8,7 @@ const LIGHT_ORDER: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
 
 // Espejo de src/app/(app)/brief/[id]/page.tsx (detalle de Session Brief).
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"]);
+  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id } = await params;

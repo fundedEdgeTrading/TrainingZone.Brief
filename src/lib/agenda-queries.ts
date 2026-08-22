@@ -90,7 +90,7 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   // organización, y sobre todo colar una reserva a nombre de un socio ajeno sin
   // más que conocer su id.
   const [center, trainer] = await Promise.all([
-    prisma.center.findFirst({ where: { id: input.centerId, orgId }, select: { id: true } }),
+    prisma.center.findFirst({ where: { id: input.centerId, orgId }, select: { id: true, defaultGroupCapacity: true } }),
     prisma.user.findFirst({ where: { id: input.trainerId, orgId }, select: { id: true } }),
   ]);
   if (!center) return { ok: false as const, error: "Centro no encontrado." };
@@ -105,7 +105,10 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
   const capacity = isPersonal
     ? 1
-    : Math.min(MAX_GROUP_CAPACITY, Math.max(1, Math.round(input.capacity || DEFAULT_GROUP_CAPACITY)));
+    : Math.min(
+        MAX_GROUP_CAPACITY,
+        Math.max(1, Math.round(input.capacity || center.defaultGroupCapacity || DEFAULT_GROUP_CAPACITY))
+      );
   const data = {
     centerId: input.centerId,
     trainerId: input.trainerId,

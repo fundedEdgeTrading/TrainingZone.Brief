@@ -12,7 +12,7 @@ import type { ServiceKind } from "@prisma/client";
 export type RrhhActionResult = { ok: true } | { ok: false; error: string };
 
 export async function clockInAction(): Promise<RrhhActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
   if (!session.user.centerId) return { ok: false, error: "Tu usuario no tiene centro base asignado." };
   const timezone = await resolveTimezoneForCenter(session.user.centerId);
   const result = await clockIn(session.user.orgId, session.user.id, session.user.centerId, timezone);
@@ -22,7 +22,7 @@ export async function clockInAction(): Promise<RrhhActionResult> {
 }
 
 export async function clockOutAction(): Promise<RrhhActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
   const result = await clockOut(session.user.orgId, session.user.id, await resolveTimezoneForCenter(session.user.centerId));
   if (!result.ok) return result;
   revalidatePath("/rrhh");
@@ -30,7 +30,7 @@ export async function clockOutAction(): Promise<RrhhActionResult> {
 }
 
 export async function signEntryAction(entryId: string): Promise<RrhhActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
   const result = await signEntry(session.user.orgId, session.user.id, entryId);
   if (!result.ok) return result;
   revalidatePath("/rrhh");
@@ -38,7 +38,7 @@ export async function signEntryAction(entryId: string): Promise<RrhhActionResult
 }
 
 export async function submitProposalAction(formData: FormData): Promise<RrhhActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION", "HR_MANAGER"]);
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
   const result = await submitStaffProposal(session.user.orgId, session.user.id, String(formData.get("body") ?? ""));
   if (!result.ok) return result;
   revalidatePath("/rrhh");

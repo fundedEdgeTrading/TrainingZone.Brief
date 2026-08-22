@@ -18,7 +18,7 @@ import { parseDateParam } from "@/lib/date-utils";
  * ENTRENADOR entra. Meter allí un conjunto de roles divergente es una trampa
  * para quien luego reutilice la constante.
  */
-const STAFF = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "RECEPTION"] as const;
+const STAFF = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"] as const;
 
 /** Tope defensivo: un dedo pegado al "+" no debe poder dejar un bono en 10.000. */
 const MAX_SESSIONS_REMAINING = 999;

@@ -45,12 +45,13 @@ export default async function OrganizationPage({
 
   const createRoles: Role[] = [
     "TRAINER",
+    "TRAINER_ADMIN",
     "RECEPTION",
     "CENTER_DIRECTOR",
     "HR_MANAGER",
     ...((canOrg ? ["OWNER"] : []) as Role[]),
   ];
-  const assignRoles: Role[] = ["TRAINER", "RECEPTION", "CENTER_DIRECTOR"];
+  const assignRoles: Role[] = ["TRAINER", "TRAINER_ADMIN", "RECEPTION", "CENTER_DIRECTOR"];
 
   return (
     <div className="tz-page space-y-6">
