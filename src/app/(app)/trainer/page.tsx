@@ -205,7 +205,10 @@ export default async function TrainerPanelPage({
           delay={0.22}
           footer={
             <div className="h-[5px] rounded-full bg-tz-sand overflow-hidden mt-2.5">
-              <div className="h-full rounded-full bg-good" style={{ width: `${data.adherenceAvg}%`, animation: "tzProg 1.1s .5s both" }} />
+              <div
+                className="h-full rounded-full bg-good origin-left"
+                style={{ width: `${data.adherenceAvg}%`, animation: "tzProg 1.1s .5s both" }}
+              />
             </div>
           }
         />

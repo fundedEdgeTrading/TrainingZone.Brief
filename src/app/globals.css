@@ -99,12 +99,14 @@
     transform: none;
   }
 }
+/* Barra que se llena. Anima `transform`, no `width` (plan §0.6): quien la use
+   deja el ancho fijo al valor final y añade `origin-left`. */
 @keyframes tzProg {
   from {
-    width: 0%;
+    transform: scaleX(0);
   }
   to {
-    width: 100%;
+    transform: scaleX(1);
   }
 }
 @keyframes tzGrow {

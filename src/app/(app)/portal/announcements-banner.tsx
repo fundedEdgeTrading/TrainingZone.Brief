@@ -13,7 +13,7 @@ const CATEGORY_TONE: Record<string, string> = {
 
 export function AnnouncementsBanner({
   announcements,
-  autoplaySeconds = 5,
+  autoplaySeconds = 6,
   pauseOnHover = true,
   accentColor = "#c8ab72",
 }: {
@@ -45,6 +45,12 @@ export function AnnouncementsBanner({
       className="relative overflow-hidden rounded-[18px] sm:min-h-[272px] bg-brand-ink border border-brand-border-dark tz-fade-up"
       onMouseEnter={() => pauseOnHover && setPaused(true)}
       onMouseLeave={() => pauseOnHover && setPaused(false)}
+      // El avance automático también se detiene al entrar con el teclado: si no,
+      // el carrusel cambia de diapositiva bajo el foco de quien está tabulando.
+      onFocus={() => setPaused(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setPaused(false);
+      }}
     >
       <div
         className="flex items-stretch transition-transform duration-[600ms] ease-[cubic-bezier(.2,.8,.2,1)]"
@@ -124,9 +130,8 @@ export function AnnouncementsBanner({
         <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/[.12] z-20">
           <div
             key={current}
-            className="h-full rounded-full"
+            className="h-full w-full rounded-full origin-left"
             style={{
-              width: 0,
               background: accentColor,
               animation: `tzProg ${autoplaySeconds}s linear both`,
               animationPlayState: paused ? "paused" : "running",

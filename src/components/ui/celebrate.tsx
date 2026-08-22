@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useToast } from "./toast";
 
 const COLORS = ["#1d1d1c", "#c8ab72", "#d8ccb8", "#4b5a22", "#5b5748"];
 
@@ -87,4 +88,44 @@ export function useCelebrate(): Fire {
   const fire = useContext(Ctx);
   if (!fire) throw new Error("useCelebrate debe usarse dentro de <CelebrateProvider>");
   return fire;
+}
+
+/**
+ * Celebra una sola vez un hito que llega ya cumplido del servidor.
+ *
+ * Los hitos de esta clase —la puesta en marcha terminada, un objetivo que el
+ * entrenador marca como conseguido— no se cumplen con un clic en esta pantalla:
+ * la página vuelve del servidor con el hito ya hecho. Así que el momento a
+ * celebrar es "la primera vez que este navegador lo ve", y eso se recuerda en
+ * `localStorage`. Si el navegador lo bloquea, simplemente no se celebra.
+ */
+export function CelebrateOnce({
+  storageKey,
+  active,
+  toastTitle,
+  toastDescription,
+}: {
+  storageKey: string;
+  active: boolean;
+  toastTitle?: string;
+  toastDescription?: string;
+}) {
+  const celebrate = useCelebrate();
+  const toast = useToast();
+  const fired = useRef(false);
+
+  useEffect(() => {
+    if (!active || fired.current) return;
+    try {
+      if (localStorage.getItem(storageKey)) return;
+      localStorage.setItem(storageKey, "1");
+    } catch {
+      return;
+    }
+    fired.current = true;
+    celebrate();
+    if (toastTitle) toast.success({ title: toastTitle, description: toastDescription });
+  }, [active, storageKey, celebrate, toast, toastTitle, toastDescription]);
+
+  return null;
 }

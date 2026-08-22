@@ -14,8 +14,6 @@ import Sidebar, { type MemberSidebarData } from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
 import { AccountMenuProvider } from "./account-menu";
-import { ToastProvider } from "@/components/ui/toast";
-import { CelebrateProvider } from "@/components/ui/celebrate";
 import { RouteProgress } from "@/components/ui/route-progress";
 
 const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
@@ -129,37 +127,33 @@ export default async function AppLayout({
   return (
     <MobileNavProvider>
       <AccountMenuProvider>
-        <ToastProvider>
-          <CelebrateProvider>
-            <TimezoneSync current={timezone} />
-            <div className="flex min-h-screen bg-brand-bg">
-              <Sidebar
-                nav={nav}
-                footerLabel={footerLabelForRole(role)}
-                logoUrl={logoUrl}
-                brandName={brandName}
-                member={memberSidebar}
-              />
-              <div className="flex-1 flex flex-col min-w-0">
-                <Header
-                  nav={nav}
-                  subtitle={subtitle}
-                  userName={name ?? email ?? ""}
-                  roleLabel={ROLE_LABEL[role]}
-                  centerChip={showCenterChip ? "Todos los centros" : undefined}
-                  notifications={notifications}
-                  organizations={memberships.map((m) => ({ orgId: m.orgId, orgName: m.orgName }))}
-                  activeOrgId={session.user.orgId}
-                  isMember={role === "MEMBER"}
-                />
-                <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
-                  <RouteProgress />
-                  {children}
-                </main>
-              </div>
-            </div>
-          </CelebrateProvider>
-        </ToastProvider>
+        <TimezoneSync current={timezone} />
+        <div className="flex min-h-screen bg-brand-bg">
+          <Sidebar
+            nav={nav}
+            footerLabel={footerLabelForRole(role)}
+            logoUrl={logoUrl}
+            brandName={brandName}
+            member={memberSidebar}
+          />
+          <div className="flex-1 flex flex-col min-w-0">
+            <Header
+              nav={nav}
+              subtitle={subtitle}
+              userName={name ?? email ?? ""}
+              roleLabel={ROLE_LABEL[role]}
+              centerChip={showCenterChip ? "Todos los centros" : undefined}
+              notifications={notifications}
+              organizations={memberships.map((m) => ({ orgId: m.orgId, orgName: m.orgName }))}
+              activeOrgId={session.user.orgId}
+              isMember={role === "MEMBER"}
+            />
+            <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
+              <RouteProgress />
+              {children}
+            </main>
+          </div>
+        </div>
       </AccountMenuProvider>
     </MobileNavProvider>
   );
