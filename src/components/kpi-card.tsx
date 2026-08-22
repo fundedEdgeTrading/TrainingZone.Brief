@@ -1,4 +1,4 @@
-import { CountUp } from "@/components/ui/count-up";
+import { CountUp, type CountUpFormat } from "@/components/ui/count-up";
 
 type Tone = "default" | "good" | "warning" | "critical" | "accent" | "gold";
 
@@ -39,8 +39,8 @@ export function KpiCard({
    * siendo un Server Component: solo la cifra es cliente (`CountUp`).
    */
   numericValue?: number;
-  /** Formateador de la cifra en curso (p. ej. el helper `eur` del dashboard). */
-  format?: (n: number) => string;
+  /** Cómo se pinta la cifra en curso (ver `CountUpFormat`). */
+  format?: CountUpFormat;
   hint?: string;
   footer?: React.ReactNode;
   tone?: Tone;

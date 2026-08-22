@@ -50,6 +50,7 @@ export function EditableMemberPhoto({
       onClick={() => fileRef.current?.click()}
       disabled={pending}
       title="Cambiar foto"
+      aria-label="Cambiar foto de perfil"
       // El mismo `viewTransitionName` que el avatar de la fila en la lista: el
       // navegador reconoce que es el mismo objeto y lo lleva de un sitio a otro
       // en vez de hacerlo desaparecer y aparecer.

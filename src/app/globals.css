@@ -845,4 +845,14 @@ textarea:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* Los pseudoelementos de View Transitions no son descendientes de nada, así
+     que el `*` de arriba no los alcanza: el morph del avatar hay que apagarlo
+     por su nombre. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-image-pair(*) {
+    animation: none !important;
+  }
 }

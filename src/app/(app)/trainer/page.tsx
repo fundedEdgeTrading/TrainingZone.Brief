@@ -200,7 +200,7 @@ export default async function TrainerPanelPage({
           label="Adherencia de tus clientes"
           value={`${data.adherenceAvg}%`}
           numericValue={data.adherenceAvg}
-          format={(n) => `${n}%`}
+          format={{ suffix: "%" }}
           tone="good"
           delay={0.22}
           footer={

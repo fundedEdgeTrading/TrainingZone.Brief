@@ -33,6 +33,7 @@ import {
 } from "@/lib/dashboard-queries";
 import PostalMapPanel from "./postal-map-panel";
 import { KpiCard, Card } from "@/components/kpi-card";
+import { EUR_FORMAT } from "@/components/ui/count-up";
 import {
   RevenueByMonthChart,
   MemberStateChart,
@@ -86,7 +87,7 @@ export async function KpiRow({ orgId }: PanelProps) {
         label="Ingresos del mes"
         value={eur(kpis.monthRevenueCents)}
         numericValue={kpis.monthRevenueCents}
-        format={eur}
+        format={EUR_FORMAT}
         tone="good"
         delay={0.22}
       />
@@ -183,7 +184,7 @@ export async function LtvRow({ orgId }: PanelProps) {
         label="LTV medio por cliente"
         value={eur(ltvTicket.ltvEuros * 100)}
         numericValue={Math.round(ltvTicket.ltvEuros * 100)}
-        format={eur}
+        format={EUR_FORMAT}
         hint={`${ltvTicket.payingMembers} clientes con cobros`}
         tone="good"
         delay={0.5}
@@ -192,14 +193,14 @@ export async function LtvRow({ orgId }: PanelProps) {
         label="Ticket medio"
         value={eur(ltvTicket.avgTicketEuros * 100)}
         numericValue={Math.round(ltvTicket.avgTicketEuros * 100)}
-        format={eur}
+        format={EUR_FORMAT}
         delay={0.54}
       />
       <KpiCard
         label="Edad media"
         value={demographics.avgAge ? `${demographics.avgAge} años` : "—"}
         numericValue={demographics.avgAge ?? undefined}
-        format={(n) => `${n} años`}
+        format={{ suffix: " años" }}
         delay={0.58}
       />
       <KpiCard
