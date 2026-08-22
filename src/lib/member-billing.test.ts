@@ -90,6 +90,7 @@ async function cleanup() {
     select: { id: true },
   });
   for (const org of orgs) {
+    await prisma.auditLog.deleteMany({ where: { orgId: org.id } });
     await prisma.notification.deleteMany({ where: { orgId: org.id } });
     await prisma.payment.deleteMany({ where: { orgId: org.id } });
     await prisma.subscription.deleteMany({ where: { member: { orgId: org.id } } });
@@ -160,6 +161,34 @@ test("una factura impagada que Stripe acaba cobrando deja al socio al corriente"
     where: { orgId: f.orgId, entityId: f.memberId, kind: "ALERT", resolvedAt: null },
   });
   assert.equal(pendientes, 0, "cobrado el recibo, nadie debe seguir persiguiendo a este socio");
+});
+
+test("un ciclo de reintentos avisa al socio una sola vez", async () => {
+  const f = await createFixture("aviso");
+  const inv = invoice(`in_${SUFFIX}-aviso`, f.stripeSubscriptionId, 4900);
+
+  // Tres entregas del mismo `invoice.payment_failed`: es lo que hace el dunning
+  // de Stripe a lo largo de un ciclo. Tres emails al socio por un solo recibo
+  // fallido es la forma más rápida de que marque el remitente como spam.
+  await reconcileMemberInvoicePaymentFailed(f.orgId, inv);
+  await reconcileMemberInvoicePaymentFailed(f.orgId, inv);
+  await reconcileMemberInvoicePaymentFailed(f.orgId, inv);
+
+  const avisos = await prisma.auditLog.count({
+    where: { orgId: f.orgId, entityType: "DunningNotice", entityId: inv.id! },
+  });
+  assert.equal(avisos, 1, "un aviso por factura, no por reintento");
+});
+
+test("cada factura impagada tiene su propio aviso", async () => {
+  const f = await createFixture("dos-facturas");
+
+  // Dos ciclos distintos (dos meses): el socio sí debe enterarse de los dos.
+  await reconcileMemberInvoicePaymentFailed(f.orgId, invoice(`in_${SUFFIX}-mes1`, f.stripeSubscriptionId, 4900));
+  await reconcileMemberInvoicePaymentFailed(f.orgId, invoice(`in_${SUFFIX}-mes2`, f.stripeSubscriptionId, 4900));
+
+  const avisos = await prisma.auditLog.count({ where: { orgId: f.orgId, entityType: "DunningNotice" } });
+  assert.equal(avisos, 2);
 });
 
 test("un evento de otra organización no toca la suscripción", async () => {
