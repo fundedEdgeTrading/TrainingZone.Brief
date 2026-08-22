@@ -35,7 +35,9 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
                 setSummary(result.summary);
                 toast.success({
                   title: "Importación completada",
-                  description: `${result.summary.created} altas · ${result.summary.updated} actualizados · ${result.summary.skipped} omitidos.`,
+                  description:
+                    `${result.summary.created} altas · ${result.summary.updated} actualizados · ` +
+                    `${result.summary.subscriptionsCreated} cuotas · ${result.summary.skipped} omitidos.`,
                 });
               } else {
                 toast.error(result.error);
@@ -50,8 +52,11 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
               Sube el CSV exportado de tu plataforma anterior (p.ej. MyWellness/Technogym). Se reconocen las
               columnas <strong>Nombre, Apellidos, Email, Móvil, Fecha de nacimiento, Sexo, Dirección, C.P.,
               Fecha de inscripción, Tipo de contacto, Riesgo de abandono</strong> y el{" "}
-              <strong>Identificador de la nube</strong>. Reimportar el mismo archivo{" "}
-              <strong>actualiza</strong> los socios, no los duplica. No se envían emails de bienvenida.
+              <strong>Identificador de la nube</strong>. Para traer también la cuota que ya pagaban, añade{" "}
+              <strong>Plan, Cuota, Fecha de alta de la cuota</strong> y, en bonos,{" "}
+              <strong>Sesiones restantes</strong>: el plan debe existir en Productos con ese mismo nombre.
+              Reimportar el mismo archivo <strong>actualiza</strong> los socios y sus cuotas, no los duplica.
+              No se envían emails de bienvenida.
             </span>
           </div>
 
@@ -80,9 +85,10 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
 
           {summary && (
             <div className="rounded-xl border border-brand-border overflow-hidden text-sm">
-              <div className="grid grid-cols-3 divide-x divide-brand-border bg-tz-bone">
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-brand-border bg-tz-bone">
                 <ResultStat label="Altas" value={summary.created} />
                 <ResultStat label="Actualizados" value={summary.updated} />
+                <ResultStat label="Cuotas dadas de alta" value={summary.subscriptionsCreated} />
                 <ResultStat label="Omitidos" value={summary.skipped} />
               </div>
               {summary.errors.length > 0 && (
