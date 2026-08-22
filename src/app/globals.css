@@ -149,6 +149,14 @@
     transform: none;
   }
 }
+@keyframes tzSheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
 .tz-wiz-a {
   animation: wizA 0.45s var(--ease-out-soft) both;
 }
@@ -431,6 +439,9 @@
 }
 .tz-select-pop {
   animation: tzSelectPop 0.16s var(--ease-out-soft) both;
+}
+.tz-select-sheet {
+  animation: tzSheetUp 0.26s var(--ease-out-soft) both;
 }
 
 .tz-logo-shine {
