@@ -32,6 +32,11 @@ export type DialogState = {
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recEnd: "forever" | "until";
   recUntil: string;
+  /**
+   * Coordenadas de cliente del punto pulsado. El diálogo escala desde ahí, de
+   * modo que el usuario ve de dónde sale. Sin origen, escala desde el centro.
+   */
+  origin?: { x: number; y: number };
 };
 
 type Trainer = { id: string; name: string };
@@ -148,8 +153,19 @@ export default function SessionDialog({
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-[480px] max-w-full max-h-[min(90vh,90dvh)] overflow-y-auto bg-white rounded-2xl tz-fade-up"
-        style={{ boxShadow: "var(--shadow-pop)" }}
+        className="w-[480px] max-w-full max-h-[min(90vh,90dvh)] overflow-y-auto bg-white rounded-2xl"
+        style={{
+          boxShadow: "var(--shadow-pop)",
+          // El diálogo está centrado en el viewport, así que su centro cae en
+          // (50vw, 50vh) y el punto pulsado, en coordenadas propias del cuadro,
+          // es (x - 50vw + 50%). Escalar desde ahí enseña de dónde sale.
+          ...(dlg.origin
+            ? {
+                transformOrigin: `calc(${dlg.origin.x}px - 50vw + 50%) calc(${dlg.origin.y}px - 50vh + 50%)`,
+                animation: "tzSelectPop .26s var(--ease-spring) both",
+              }
+            : { animation: "tzFadeUp .26s var(--ease-out-soft) both" }),
+        }}
       >
         <div className="flex justify-between items-center pt-4.5 px-4 pl-6">
           <span className="text-[11px] font-bold uppercase tracking-[.16em] text-muted">

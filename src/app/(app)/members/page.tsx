@@ -87,7 +87,9 @@ function memberToRow(m: Member, i: number): DataTableRow {
   return {
     key: m.id,
     className: "group",
-    style: i < 6 ? { animation: `tzFadeUp .4s ${(i * 0.03).toFixed(2)}s both` } : undefined,
+    // tzRowIn (7 px) en vez de tzFadeUp (16 px): en una tabla densa un salto de
+    // 16 px se lee como un brinco, no como una entrada.
+    style: i < 8 ? { animation: `tzRowIn .4s ${(i * 0.045).toFixed(3)}s both` } : undefined,
     sortValues: {
       name: `${m.lastName} ${m.firstName}`,
       center: m.primaryCenter.name,
@@ -100,9 +102,17 @@ function memberToRow(m: Member, i: number): DataTableRow {
         <Link href={`/members/${m.id}`} className="flex items-center gap-3">
           {m.photoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- foto subida por el usuario (data URL)
-            <img src={m.photoUrl} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+            <img
+              src={m.photoUrl}
+              alt=""
+              className="w-9 h-9 rounded-full object-cover shrink-0"
+              style={{ viewTransitionName: `member-avatar-${m.id}` }}
+            />
           ) : (
-            <span className="w-9 h-9 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-xs flex items-center justify-center shrink-0">
+            <span
+              className="w-9 h-9 rounded-full bg-tz-sand text-brand-text-2 font-display font-bold text-xs flex items-center justify-center shrink-0"
+              style={{ viewTransitionName: `member-avatar-${m.id}` }}
+            >
               {initials(m.firstName, m.lastName)}
             </span>
           )}

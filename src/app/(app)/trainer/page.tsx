@@ -183,6 +183,7 @@ export default async function TrainerPanelPage({
         <KpiCard
           label="Clientes de EP activos"
           value={`${data.epClients.length}`}
+          numericValue={data.epClients.length}
           delay={0.16}
           footer={
             <div className="flex items-center gap-2 mt-2">
@@ -198,6 +199,8 @@ export default async function TrainerPanelPage({
         <KpiCard
           label="Adherencia de tus clientes"
           value={`${data.adherenceAvg}%`}
+          numericValue={data.adherenceAvg}
+          format={(n) => `${n}%`}
           tone="good"
           delay={0.22}
           footer={

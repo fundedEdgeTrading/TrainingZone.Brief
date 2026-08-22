@@ -819,6 +819,22 @@ textarea:focus-visible {
   animation: tzDraw 0.4s var(--ease-out-soft) both;
 }
 
+/* ===== Morph del avatar del socio (lista → ficha) =====
+   El desenfoque a mitad de vuelo tapa los artefactos de interpolación entre dos
+   tamaños distintos del mismo retrato. ===== */
+::view-transition-group(*) {
+  animation-duration: 0.34s;
+  animation-timing-function: var(--ease-out-soft);
+}
+::view-transition-image-pair(*) {
+  animation-name: tzMorphBlur;
+}
+@keyframes tzMorphBlur {
+  30% {
+    filter: blur(2px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

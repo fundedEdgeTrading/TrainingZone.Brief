@@ -50,6 +50,10 @@ export function EditableMemberPhoto({
       onClick={() => fileRef.current?.click()}
       disabled={pending}
       title="Cambiar foto"
+      // El mismo `viewTransitionName` que el avatar de la fila en la lista: el
+      // navegador reconoce que es el mismo objeto y lo lleva de un sitio a otro
+      // en vez de hacerlo desaparecer y aparecer.
+      style={{ viewTransitionName: `member-avatar-${memberId}` }}
       className="relative w-14 h-14 rounded-full bg-tz-sand text-brand-text-2 font-display font-extrabold text-lg flex items-center justify-center shrink-0 overflow-hidden group"
     >
       {preview ? (
