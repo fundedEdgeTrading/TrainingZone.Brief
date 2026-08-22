@@ -7,6 +7,7 @@ import { Field, Input } from "@/components/ui/field";
 import { ImageDropzone } from "@/components/ui/dropzone";
 import { ActionForm } from "@/components/ui/action-form";
 import { ConsentToggle } from "./consent-toggle";
+import { EmailPreferenceToggle } from "./email-preference-toggle";
 import { updateMyProfileAction } from "./actions";
 
 export default async function PortalProfilePage() {
@@ -96,6 +97,38 @@ export default async function PortalProfilePage() {
         />
       </Card>
       </div>
+
+      <Card title="Correos que recibes">
+        <p className="text-[13px] text-brand-muted -mt-3 mb-2">
+          Los correos de tu cuenta y de tu cuota —acceso, contraseña y cobros— no se pueden desactivar: son parte del
+          servicio. Estos otros los eliges tú, aquí o desde el pie de cualquiera de nuestros correos.
+        </p>
+        <EmailPreferenceToggle
+          kind="vacancy"
+          label="Avisos de plaza liberada"
+          description="Cuando alguien cancela y queda un hueco en una sesión para la que tienes bono activo."
+          enabled={member.notifyVacancies}
+        />
+        <EmailPreferenceToggle
+          kind="assessment"
+          label="Recordatorios de valoración"
+          description="Cuando te toca una valoración periódica con tu entrenador."
+          enabled={member.notifyAssessments}
+        />
+        <EmailPreferenceToggle
+          kind="birthday"
+          label="Felicitación de cumpleaños"
+          description="Un correo al año, el día de tu cumpleaños."
+          enabled={member.notifyBirthday}
+        />
+        {member.emailOptOutAt && (
+          <p className="text-[12px] text-brand-muted border-t border-tz-sand pt-3 mt-3">
+            Te diste de baja de todos los correos prescindibles el{" "}
+            {member.emailOptOutAt.toLocaleDateString("es-ES")}. Activa cualquiera de los de arriba para volver a
+            recibirlo.
+          </p>
+        )}
+      </Card>
 
       <Card title="Tus datos" meta="RGPD">
         <p className="text-[13px] text-brand-muted -mt-3 mb-3">

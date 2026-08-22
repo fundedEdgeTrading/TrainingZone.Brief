@@ -166,8 +166,9 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
   try {
     await sendMail({
       to: email,
-      // RB-MARCA-001: email de plataforma — aquí el cliente es el director, va con marca Apta.
-      fromName: "Apta",
+      // RB-MARCA-001: email de plataforma — aquí el cliente es el director, y
+      // la plataforma firma como Training Zone (el rediseño retiró la marca Apta).
+      fromName: "Training Zone",
       subject: `Tu plataforma está lista — ${orgName}`,
       html: renderOwnerActivationEmail({
         orgName,
@@ -273,11 +274,11 @@ export async function resendOwnerActivation(
   const plan = getPlatformPlan(org.platformPlan);
   await sendMail({
     to: refreshed.email,
-    fromName: "Apta",
+    fromName: "Training Zone",
     subject: `Tu plataforma está lista — ${org.name}`,
     html: renderOwnerActivationEmail({
       orgName: org.name,
-      planName: plan?.name ?? "Apta",
+      planName: plan?.name ?? "Training Zone",
       aptaLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
       activationUrl: onboardingUrlFor(refreshed.token),
     }),

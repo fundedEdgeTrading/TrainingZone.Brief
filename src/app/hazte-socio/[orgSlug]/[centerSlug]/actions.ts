@@ -7,6 +7,7 @@ import { generateMemberBillingToken, memberBillingUrlFor } from "@/lib/email-ver
 import { sendMail } from "@/lib/mailer";
 import { renderMemberBillingLinkEmail } from "@/lib/emails/templates";
 import { absoluteUrl } from "@/lib/invitations";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 
 export type RequestMemberBillingLinkResult = { ok: true } | { ok: false; error: string };
 
@@ -34,10 +35,27 @@ export async function requestMemberBillingLink(
 
   const member = await prisma.member.findFirst({
     where: { orgId: ctx.organization.id, email: parsed.data.email },
-    select: { id: true, firstName: true, email: true },
+    select: {
+      id: true,
+      firstName: true,
+      email: true,
+      primaryCenter: { select: { address: true } },
+      // La cuota que va a gestionar: la recurrente activa, que es la única que
+      // el Billing Portal deja cambiar o cancelar.
+      subscriptions: {
+        where: { status: "ACTIVE", plan: { type: { in: ["MONTHLY", "ONLINE"] } } },
+        orderBy: { startDate: "desc" },
+        take: 1,
+        // `priceCents` de la suscripción, no del plan: es lo que se le cobra a
+        // ESTE socio (el plan pudo cambiar de precio después de la venta).
+        select: { priceCents: true, plan: { select: { name: true } } },
+      },
+    },
   });
 
   if (member) {
+    const subscription = member.subscriptions[0];
+    const links = memberEmailFooterLinks(member.id);
     try {
       await sendMail({
         to: member.email,
@@ -49,7 +67,19 @@ export async function requestMemberBillingLink(
           brandName: ctx.organization.name,
           brandLogoUrl: absoluteUrl(ctx.organization.logoUrl ?? "/brand/tz-logo-white.png"),
           portalRequestUrl: memberBillingUrlFor(generateMemberBillingToken(member.id)),
+          planName: subscription?.plan.name,
+          amountLabel: subscription
+            ? `${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(
+                subscription.priceCents / 100
+              )} / mes`
+            : undefined,
+          // `nextChargeLabel` se queda sin rellenar a propósito: la fecha del
+          // próximo cobro la lleva Stripe, no la BD, y una fecha inventada en
+          // un correo de cuota es peor que una fila menos en la ficha.
+          postalAddress: member.primaryCenter.address ?? undefined,
+          prefsToken: links.token,
         }),
+        unsubscribeUrl: links.oneClickUnsubscribeUrl,
       });
     } catch (error) {
       // Best-effort (RB-SMTP-001): un fallo de SMTP no debe revelar al

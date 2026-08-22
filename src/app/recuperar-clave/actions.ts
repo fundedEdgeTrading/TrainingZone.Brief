@@ -27,7 +27,11 @@ export async function requestPasswordReset(email: string): Promise<RequestResetR
       id: true,
       email: true,
       memberships: {
-        select: { name: true, organization: { select: { name: true, logoUrl: true } } },
+        select: {
+          name: true,
+          organization: { select: { name: true, logoUrl: true } },
+          center: { select: { address: true } },
+        },
         orderBy: { createdAt: "asc" },
         take: 1,
       },
@@ -36,7 +40,8 @@ export async function requestPasswordReset(email: string): Promise<RequestResetR
 
   if (identity) {
     const membership = identity.memberships[0];
-    const brandName = membership?.organization.name ?? "Apta";
+    // Sin organización asociada todavía, firma la plataforma: Training Zone.
+    const brandName = membership?.organization.name ?? "Training Zone";
     try {
       await sendMail({
         to: identity.email,
@@ -48,6 +53,14 @@ export async function requestPasswordReset(email: string): Promise<RequestResetR
           brandName,
           brandLogoUrl: absoluteUrl(membership?.organization.logoUrl ?? "/brand/tz-logo-white.png"),
           resetUrl: passwordResetUrlFor(generatePasswordResetToken(identity.id)),
+          accountEmail: identity.email,
+          requestedAtLabel: new Date().toLocaleString("es-ES", {
+            day: "numeric",
+            month: "long",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          postalAddress: membership?.center?.address ?? undefined,
         }),
       });
     } catch (error) {

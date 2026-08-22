@@ -7,6 +7,7 @@ import { sendMail } from "@/lib/mailer";
 import { renderPaymentFailedEmail } from "@/lib/emails/templates";
 import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-verification";
 import { absoluteUrl } from "@/lib/invitations";
+import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import type { PlanType, SubscriptionStatus } from "@prisma/client";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
@@ -484,7 +485,18 @@ async function sendDunningNoticeOnce(
     prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
     prisma.member.findUnique({
       where: { id: memberId },
-      select: { firstName: true, email: true, user: { select: { email: true } } },
+      select: {
+        firstName: true,
+        email: true,
+        user: { select: { email: true } },
+        primaryCenter: { select: { address: true } },
+        subscriptions: {
+          where: { status: { in: ["ACTIVE", "FROZEN"] }, plan: { type: { in: ["MONTHLY", "ONLINE"] } } },
+          orderBy: { startDate: "desc" },
+          take: 1,
+          select: { plan: { select: { name: true } } },
+        },
+      },
     }),
   ]);
   const to = member?.user?.email ?? member?.email;
@@ -505,6 +517,10 @@ async function sendDunningNoticeOnce(
   });
 
   const brandName = org?.name ?? "Training Zone";
+  // Correo de servicio: NO lleva `unsubscribeUrl`. Un socio no puede darse de
+  // baja de enterarse de que su cuota no se ha cobrado — sin este aviso pierde
+  // el acceso sin saber por qué. El pie sí enlaza sus preferencias.
+  const footer = memberEmailFooterLinks(memberId);
   void sendMail({
     to,
     fromName: brandName,
@@ -515,6 +531,9 @@ async function sendDunningNoticeOnce(
       brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
       amountLabel: new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(amountCents / 100),
       portalUrl: memberBillingUrlFor(generateMemberDunningToken(memberId)),
+      planName: member.subscriptions[0]?.plan.name,
+      postalAddress: member.primaryCenter.address ?? undefined,
+      prefsToken: footer.token,
     }),
   });
 }
