@@ -29,3 +29,19 @@ export function isoDay(offset: number) {
   if (d.getDay() === 0) d.setDate(d.getDate() + 1); // domingo → lunes
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+/**
+ * Cierra los dos avisos de entrada del portal (F4 §5.3 y F5 §6.3) si están.
+ *
+ * Con el cron diario de F4 encendido, cualquier socio acaba teniendo una
+ * valoración vencida, y su aviso tapa el portal entero: sin esto, la suite se
+ * cae sola con el paso de los días en vez de por un fallo real. Ambos avisos
+ * son opcionales a propósito — no se espera por ellos, se descartan si están.
+ */
+export async function dismissPortalGates(page: Page) {
+  const greeting = page.getByRole("button", { name: "¡Gracias!" });
+  if (await greeting.isVisible().catch(() => false)) await greeting.click();
+
+  const gate = page.getByRole("button", { name: "Ahora no, seguir a mi portal" });
+  if (await gate.isVisible().catch(() => false)) await gate.click();
+}

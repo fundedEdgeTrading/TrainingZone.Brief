@@ -32,6 +32,21 @@ Abre la app en un simulador/dispositivo o en Expo Go. Por defecto apunta a
 pruebas desde un dispositivo físico o emulador Android, cambia esa URL a la IP
 de tu máquina en la red local (Android emulator: `10.0.2.2`).
 
+### Contra el entorno desplegado (emulador de Android Studio)
+
+Probar solo contra `localhost` esconde justo los fallos que luego aparecen en
+producción (URL absolutas, certificado, dominio). Para apuntar al despliegue no
+hace falta tocar `app.json`:
+
+```bash
+EXPO_PUBLIC_API_URL="https://<host-desplegado>/api/mobile/v1" npx expo start
+```
+
+La variable se inlinea en el bundle, así que hay que reiniciar el bundler al
+cambiarla. La API móvil no depende de CORS (una app nativa no es un navegador),
+pero sí de que el host sirva HTTPS con certificado válido: Android bloquea el
+tráfico en claro por defecto.
+
 **Login de prueba** (sembrado por `prisma/seed.ts`, rol `MEMBER`):
 `socio@trainingzone.es` / `demo1234`. Socio, entrenador y dirección tienen ya
 su propio subconjunto de la app; recepción y RRHH entran con una versión
@@ -72,6 +87,27 @@ mínima (avisos y perfil).
 | D2 Socios · D3 Ficha | `app/(tabs)/socios/` | `GET /members`, `/members/:id`, `/members/:id/calendar` |
 | D4 Productos · D5 Ficha | `app/(tabs)/productos/` | `GET`/`POST /products`, `PATCH`/`DELETE /products/:id` |
 | D6 Equipo · D7 Ficha | `app/(tabs)/organizacion/` | `GET`/`POST /staff`, `PATCH`/`DELETE /staff/:id` |
+| Cumpleaños · valoración vencida | `src/components/PortalGate.tsx` | `GET`/`POST /portal/greeting`, `GET /portal/valoracion` |
+
+### Paridad con el portal web (F8)
+
+`src/app/api/mobile/v1/**` es una capa aparte de la web, así que lo de la
+jornada hay que comprobarlo también aquí — es donde estas cosas se olvidan:
+
+- **Entrenador Admin** (`TRAINER_ADMIN`): rol nuevo en `TABS_BY_ROLE` y en el
+  índice de Perfil, y ya aceptado por los endpoints de agenda, brief y panel.
+  En la app ve lo mismo que el entrenador: su mando sobre el centro (aforo,
+  ajuste de bonos) vive solo en la web, que es donde están esas pantallas.
+- **Valoración vencida**: `PortalGate` la reclama al entrar, igual que el
+  layout del portal, contra la misma consulta (`getDueAssessmentForMember`).
+  Con salida siempre: el aviso se cierra y vuelve en la siguiente entrada
+  mientras siga pendiente. El cuestionario no se rellena en la app — lo firma
+  el entrenador con el socio delante (F3).
+- **Cumpleaños**: mismo endpoint que la web (`/portal/greeting`), mismo
+  descarte persistente en servidor, y misma prioridad (felicitar antes que
+  reclamar la valoración).
+- **Módulos retirados en F2** (Ofertas, Fichajes): la app nunca tuvo pantalla
+  de ninguno de los dos, y la API móvil tampoco los expone. Nada que ocultar.
 
 ### Gate de compra y pago
 

@@ -3,7 +3,15 @@
 // (evita acoplar el bundler de Expo al workspace de Next para el MVP); si el
 // contrato crece, extraerlo a un paquete compartido tal como describe el plan.
 
-export type Role = "OWNER" | "CENTER_DIRECTOR" | "TRAINER" | "RECEPTION" | "MEMBER" | "HR_MANAGER" | "PLATFORM_ADMIN";
+export type Role =
+  | "OWNER"
+  | "CENTER_DIRECTOR"
+  | "TRAINER"
+  | "TRAINER_ADMIN"
+  | "RECEPTION"
+  | "MEMBER"
+  | "HR_MANAGER"
+  | "PLATFORM_ADMIN";
 
 export type MeResponse = {
   id: string;
@@ -610,4 +618,14 @@ export type SaveFeedbackInput = {
   bookingId: string;
   scores: Partial<FeedbackScores>;
   note?: string | null;
+};
+
+/** F5 §6.3: la felicitación de cumpleaños, del mismo endpoint que consume la web. */
+export type BirthdayGreetingResponse = {
+  greeting: { id: string; title: string; body: string } | null;
+};
+
+/** F4 §5.3: valoración vencida del socio — el gate de la app, espejo del portal. */
+export type PendingAssessmentResponse = {
+  assessment: { id: string; kind: string; label: string; dueDate: string } | null;
 };

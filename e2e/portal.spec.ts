@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { loginAs } from "./helpers";
+import { dismissPortalGates, loginAs } from "./helpers";
 
 test.describe("F16 — Portal del socio: IA, objetivos y chat", () => {
   test("el socio ve su plan (objetivos, rutina)", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
+    await dismissPortalGates(page);
     // "Mi plan" se fusionó en "Mi membresía" (producto/facturación); objetivos
     // y rutina de casa viven ahora en "Mi evolución" (handoff NavBar premium 1b).
     await page.goto("/portal/evolucion");
@@ -15,6 +16,7 @@ test.describe("F16 — Portal del socio: IA, objetivos y chat", () => {
   test("el socio puede escribir en su chat con el centro", async ({ page }) => {
     await loginAs(page, "socio@trainingzone.es");
     await page.goto("/portal");
+    await dismissPortalGates(page);
 
     // El chat dejó de tener ruta propia: es un panel flotante disponible en todo
     // el portal (`portal/floating-chat.tsx`).

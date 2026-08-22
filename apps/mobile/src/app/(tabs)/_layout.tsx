@@ -6,6 +6,7 @@ import { needsMembershipGate } from "@/auth/routes";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
 import { Icon, type IconName } from "@/components/Icon";
+import { PortalGate } from "@/components/PortalGate";
 import type { Role } from "@/api/types";
 
 // Navegación por rol (F1 §5.6 → F3): cada rol ve solo su subconjunto de tabs,
@@ -21,6 +22,11 @@ import type { Role } from "@/api/types";
 const TABS_BY_ROLE: Record<Role, string[]> = {
   MEMBER: ["index", "agenda", "sesiones", "bonos", "perfil"],
   TRAINER: ["panel", "staff-agenda", "feedback", "brief", "perfil"],
+  // El Entrenador Admin (F1) sigue dando sesiones, así que en la app ve lo mismo
+  // que el entrenador. Lo que le da su mando sobre el centro (aforo, ajuste de
+  // bonos) vive solo en la web: la app no tiene esas pantallas, y el listado de
+  // socios de D2 es de gestión (`canManageMembers`), que su rol no incluye.
+  TRAINER_ADMIN: ["panel", "staff-agenda", "feedback", "brief", "perfil"],
   OWNER: ["dashboard", "socios", "productos", "organizacion", "perfil"],
   CENTER_DIRECTOR: ["dashboard", "socios", "staff-agenda", "productos", "perfil"],
   PLATFORM_ADMIN: ["dashboard", "socios", "productos", "organizacion", "perfil"],
@@ -69,51 +75,54 @@ export default function TabsLayout() {
   const visible = new Set(TABS_BY_ROLE[state.user.role] ?? []);
 
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: theme.gold,
-        tabBarInactiveTintColor: theme.textFaint,
-        // La barra flota sobre el contenido (ScreenContainer le deja hueco).
-        tabBarStyle: {
-          position: "absolute",
-          left: 12,
-          right: 12,
-          bottom: insets.bottom > 0 ? insets.bottom - 4 : 10,
-          height: layout.tabBarHeight,
-          paddingTop: 10,
-          paddingBottom: 12,
-          borderRadius: radii.hero,
-          borderTopWidth: 0,
-          borderWidth: 1,
-          borderColor: theme.border,
-          backgroundColor: theme.sheet,
-          shadowColor: theme.shadowColor,
-          shadowOpacity: 1,
-          shadowRadius: 18,
-          shadowOffset: { width: 0, height: 10 },
-          elevation: 8,
-        },
-        tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 9.5, letterSpacing: 0.3 },
-        tabBarItemStyle: { paddingVertical: 2 },
-      }}
-    >
-      {ALL_TABS.map((name) => (
-        <Tabs.Screen
-          key={name}
-          name={name}
-          options={{
-            title: TAB_META[name].label,
-            href: visible.has(name) ? undefined : null,
-            tabBarIcon: ({ color, focused }) => (
-              <View style={styles.iconWrapper}>
-                <Icon name={TAB_META[name].icon} size={19} color={color as string} strokeWidth={focused ? 2 : 1.6} />
-              </View>
-            ),
-          }}
-        />
-      ))}
-    </Tabs>
+    <>
+      <PortalGate isMember={state.user.role === "MEMBER"} />
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: theme.gold,
+          tabBarInactiveTintColor: theme.textFaint,
+          // La barra flota sobre el contenido (ScreenContainer le deja hueco).
+          tabBarStyle: {
+            position: "absolute",
+            left: 12,
+            right: 12,
+            bottom: insets.bottom > 0 ? insets.bottom - 4 : 10,
+            height: layout.tabBarHeight,
+            paddingTop: 10,
+            paddingBottom: 12,
+            borderRadius: radii.hero,
+            borderTopWidth: 0,
+            borderWidth: 1,
+            borderColor: theme.border,
+            backgroundColor: theme.sheet,
+            shadowColor: theme.shadowColor,
+            shadowOpacity: 1,
+            shadowRadius: 18,
+            shadowOffset: { width: 0, height: 10 },
+            elevation: 8,
+          },
+          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 9.5, letterSpacing: 0.3 },
+          tabBarItemStyle: { paddingVertical: 2 },
+        }}
+      >
+        {ALL_TABS.map((name) => (
+          <Tabs.Screen
+            key={name}
+            name={name}
+            options={{
+              title: TAB_META[name].label,
+              href: visible.has(name) ? undefined : null,
+              tabBarIcon: ({ color, focused }) => (
+                <View style={styles.iconWrapper}>
+                  <Icon name={TAB_META[name].icon} size={19} color={color as string} strokeWidth={focused ? 2 : 1.6} />
+                </View>
+              ),
+            }}
+          />
+        ))}
+      </Tabs>
+    </>
   );
 }
 

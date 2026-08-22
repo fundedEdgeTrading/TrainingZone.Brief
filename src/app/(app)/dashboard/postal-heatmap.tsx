@@ -5,12 +5,13 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 
-// Zaragoza capital (primera puesta en preproducción — ver postal-codes-zaragoza.ts):
-// los barrios están a pocos km entre sí, así que el mapa arranca ya centrado y con
-// zoom de ciudad en vez de la vista España-wide que tenía cuando agrupaba por
-// provincia (con esa vista, todos los puntos quedaban fusionados en un único blob).
-const HOME_CENTER: [number, number] = [41.6488, -0.8891];
-const HOME_ZOOM = 12.3;
+// La vista inicial se calcula de los propios puntos (ver homeBounds): con una sola
+// ciudad encuadra sus barrios, y con varias — Zaragoza y Santander están a ~350 km —
+// encuadra todas sin dejar puntos fuera. Antes era un centro/zoom fijo de Zaragoza,
+// que con un segundo centro dejaba media organización fuera del encuadre.
+const FALLBACK_CENTER: [number, number] = [40.4168, -3.7038];
+const FALLBACK_ZOOM = 6;
+const CITY_ZOOM = 12.3;
 const SELECT_ZOOM = 14.5;
 const MIN_BUBBLE_PX = 20;
 const MAX_BUBBLE_PX = 64;
@@ -18,8 +19,16 @@ const MAX_BUBBLE_PX = 64;
 export type PostalPoint = { code: string; lat: number; lng: number; name: string; leads: number; members: number; total: number };
 export type MapMetric = "all" | "leads" | "members";
 
+const HOME_PADDING: [number, number] = [40, 40];
+
 function valueOf(p: PostalPoint, metric: MapMetric) {
   return metric === "leads" ? p.leads : metric === "members" ? p.members : p.total;
+}
+
+/** Encuadre que contiene todos los barrios con datos, sea una ciudad o varias. */
+function homeBounds(points: PostalPoint[]): L.LatLngBounds | null {
+  if (points.length === 0) return null;
+  return L.latLngBounds(points.map((p) => [p.lat, p.lng] as [number, number]));
 }
 
 export function PostalHeatmap({
@@ -45,6 +54,7 @@ export function PostalHeatmap({
   const heatRef = useRef<L.HeatLayer | null>(null);
   const groupRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const hasFramed = useRef(false);
   // Refs con los callbacks siempre al día: así el efecto que construye capas no
   // necesita depender de ellos y no recrea las burbujas (perdiendo la animación
   // de entrada escalonada) en cada render.
@@ -59,9 +69,9 @@ export function PostalHeatmap({
     if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
-      center: HOME_CENTER,
-      zoom: HOME_ZOOM,
-      minZoom: 10,
+      center: FALLBACK_CENTER,
+      zoom: FALLBACK_ZOOM,
+      minZoom: 5,
       maxZoom: 17,
       scrollWheelZoom: false,
     });
@@ -107,7 +117,7 @@ export function PostalHeatmap({
     const heat = L.heatLayer(heatPoints, {
       radius: 34,
       blur: 26,
-      maxZoom: HOME_ZOOM,
+      maxZoom: CITY_ZOOM,
       minOpacity: 0.15,
       gradient: { 0.2: "#d8ccb8", 0.45: "#8a8574", 0.7: "#5b5748", 1.0: "#1d1d1c" },
     }).addTo(map);
@@ -143,6 +153,16 @@ export function PostalHeatmap({
 
     markersRef.current = markers;
 
+    // Primer encuadre: en cuanto hay puntos, ajusta la vista a todos ellos. `maxZoom`
+    // evita que una sola ciudad con un único barrio se acerque hasta el nivel calle.
+    if (!hasFramed.current) {
+      const bounds = homeBounds(points);
+      if (bounds) {
+        map.fitBounds(bounds, { padding: HOME_PADDING, maxZoom: CITY_ZOOM });
+        hasFramed.current = true;
+      }
+    }
+
     return () => {
       group.remove();
       heat.remove();
@@ -169,15 +189,19 @@ export function PostalHeatmap({
     if (point) map.flyTo([point.lat, point.lng], SELECT_ZOOM, { duration: 0.9 });
   }, [flyToCode, points]);
 
-  // "Vista general": vuelve al centro/zoom inicial cuando el padre pide un reset.
+  // "Vista general": reencuadra todos los puntos cuando el padre pide un reset.
   const isFirstReset = useRef(true);
   useEffect(() => {
     if (isFirstReset.current) {
       isFirstReset.current = false;
       return;
     }
-    mapRef.current?.flyTo(HOME_CENTER, HOME_ZOOM, { duration: 0.8 });
-  }, [resetSignal]);
+    const map = mapRef.current;
+    const bounds = homeBounds(points);
+    if (!map) return;
+    if (bounds) map.flyToBounds(bounds, { padding: HOME_PADDING, maxZoom: CITY_ZOOM, duration: 0.8 });
+    else map.flyTo(FALLBACK_CENTER, FALLBACK_ZOOM, { duration: 0.8 });
+  }, [resetSignal, points]);
 
   return <div ref={containerRef} className="tz-map w-full h-[452px] bg-tz-sand" />;
 }

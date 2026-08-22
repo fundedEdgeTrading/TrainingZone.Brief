@@ -25,6 +25,7 @@ const EXTRA_BY_ROLE: Record<Role, { href: string; label: string; meta: string }[
     { href: "/notificaciones", label: "Avisos", meta: "Novedades de tu centro" },
   ],
   TRAINER: [{ href: "/notificaciones", label: "Avisos", meta: "Alertas y recordatorios" }],
+  TRAINER_ADMIN: [{ href: "/notificaciones", label: "Avisos", meta: "Alertas y recordatorios" }],
   OWNER: [
     { href: "/staff-agenda", label: "Agenda del centro", meta: "Timeline diaria y creación de sesiones" },
     { href: "/anuncios", label: "Anuncios", meta: "Comunicaciones a socios" },
@@ -46,6 +47,7 @@ const ROLE_LABEL: Record<Role, string> = {
   OWNER: "Dirección",
   CENTER_DIRECTOR: "Dirección de centro",
   TRAINER: "Entrenador",
+  TRAINER_ADMIN: "Entrenador Admin",
   RECEPTION: "Recepción",
   MEMBER: "Socio",
   HR_MANAGER: "RRHH",

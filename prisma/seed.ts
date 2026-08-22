@@ -11,6 +11,7 @@ import {
   AptitudeLight,
   DebriefFeeling,
   RetentionRiskLevel,
+  MesocycleStatus,
   SubscriptionStatus,
   Role,
   Sex,
@@ -20,7 +21,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import { ZARAGOZA_POSTAL_CODES } from "@/lib/postal-codes-zaragoza";
+import { POSTAL_CODES } from "@/lib/postal-codes";
+import { CONSENT_VERSION } from "@/lib/consent";
+import { dueDateForKind } from "@/lib/assessments/queries";
 import { startOfWeekMonday } from "@/lib/date-utils";
 import type { FeedbackDims } from "@/lib/feedback-queries";
 import { currentPeriodKey } from "@/lib/feedback-capture";
@@ -52,6 +55,10 @@ function randInt(min: number, max: number) {
 }
 function addDays(d: Date, n: number) {
   return new Date(d.getTime() + n * DAY);
+}
+/** Fecha de nacimiento que cae hoy (día y mes de TODAY), con la edad pedida. */
+function birthdayTodayFor(age: number) {
+  return new Date(Date.UTC(TODAY.getFullYear() - age, TODAY.getMonth(), TODAY.getDate()));
 }
 function fmtTime(h: number, m = 0) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -156,6 +163,12 @@ type CenterCfg = {
   logoUrl?: string | null;
   capacityRange: [number, number];
   memberCount: number;
+  /** F7: CP de los socios y leads del centro, ponderado hacia los barrios más
+   *  poblados. Es por centro y no global porque cada uno siembra gente de su
+   *  propia ciudad: un pool único dejaba a Santander con CP de Zaragoza. */
+  postalPool: [string, number][];
+  /** Leads generados para el embudo de este centro (además de los de guion). */
+  leadCount?: number;
 };
 type StaffCfg = {
   name: string;
@@ -179,6 +192,14 @@ type DemoMemberCfg = {
   planKey?: DemoPlanKey;
   /** Posición dentro de los `memberCount` del centro (por defecto 0, como el ancla principal). */
   slotIndex?: number;
+  /** F7: socios de contraste del centro nuevo. `complete` = historial entero y
+   *  consentimiento de IA; `atRisk` = el caso incómodo (revisión vencida, impago,
+   *  asistencia en caída). Un demo donde todo va bien no prueba nada. */
+  showcase?: "complete" | "atRisk";
+  /** Antigüedad fija en días (los showcase la necesitan para que sus hitos cuadren). */
+  joinedDaysAgo?: number;
+  /** F5: cumpleaños hoy, para probar la felicitación sin tocar la base a mano. */
+  birthdayToday?: boolean;
 };
 type OrgSeedConfig = {
   name: string;
@@ -218,16 +239,12 @@ const NOTE_BODIES = [
   "Vuelve tras una temporada parado, ir progresivo las primeras semanas.",
   "Contento con el seguimiento, mantener al entrenador actual.",
 ];
-// F9/BI-3: primera puesta en preproducción — el centro solo tiene socios/leads
-// de Zaragoza capital, así que todo el pool de CP se restringe a los barrios
-// de ZARAGOZA_POSTAL_CODES (ver postal-codes-zaragoza.ts), contra el que
-// dashboard-queries.ts hace el join por CP completo (ya no por provincia).
-const LEAD_POSTAL_CODES = Object.keys(ZARAGOZA_POSTAL_CODES);
-// Pool de CP de socios para poblar el mapa de calor, ponderado hacia los
-// barrios más poblados (Delicias, Casco Histórico, Universidad, Actur...) con
-// una cola larga hacia los barrios periféricos — para que el mapa muestre
+// F7/BI-3: pool de CP por ciudad. Cada centro elige el suyo (CenterCfg.postalPool)
+// y de ahí salen los CP de sus socios y leads, contra los que dashboard-queries.ts
+// hace el join por CP completo (ya no por provincia). Ponderado hacia los barrios
+// más poblados con una cola larga hacia la periferia, para que el mapa muestre
 // tanto puntos grandes como pequeños repartidos por toda la ciudad.
-const MEMBER_POSTAL_CODES: [string, number][] = [
+const ZARAGOZA_POSTAL_POOL: [string, number][] = [
   ["50005", 8], // Delicias
   ["50017", 5], // Delicias (Miralbueno)
   ["50001", 6], // Casco Histórico
@@ -247,6 +264,20 @@ const MEMBER_POSTAL_CODES: [string, number][] = [
   ["50012", 2], // Valdefierro
   ["50016", 2], // Santa Isabel
   ["50019", 2], // Valdespartera
+];
+const SANTANDER_POSTAL_POOL: [string, number][] = [
+  ["39008", 7], // Cazoña
+  ["39011", 6], // Peñacastillo
+  ["39006", 6], // General Dávila
+  ["39007", 6], // Castilla - Hermida
+  ["39012", 6], // Monte - Cueto - San Román
+  ["39001", 5], // Centro
+  ["39004", 5], // Cuatro Caminos
+  ["39002", 4], // Centro - Numancia
+  ["39005", 4], // El Sardinero
+  ["39003", 3], // Puertochico
+  ["39010", 2], // Barrio Pesquero - Castilla
+  ["39009", 2], // Nueva Montaña
 ];
 const OCCUPATIONS = [
   "Administrativo/a",
@@ -307,6 +338,12 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     })),
   });
   const centerIdByKey = new Map(centersData.map((c) => [c.key, c.id]));
+
+  // F7: el CP de un socio o un lead sale del pool de su centro, no de una
+  // constante global — así el mapa de calor reparte cada ciudad en sus barrios.
+  const postalPoolByCenterId = new Map<string, [string, number][]>(centersData.map((c) => [c.id, c.postalPool]));
+  const memberPostalFor = (centerId: string) => weightedPick(postalPoolByCenterId.get(centerId) ?? ZARAGOZA_POSTAL_POOL);
+  const leadPostalFor = (centerId: string) => pick((postalPoolByCenterId.get(centerId) ?? ZARAGOZA_POSTAL_POOL).map(([code]) => code));
 
   // ---------- Usuarios (staff) ----------
   type StaffUser = StaffCfg & { id: string; centerId: string | null };
@@ -518,6 +555,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     preferredTemplates: Tpl[];
     planKey: DemoPlanKey;
     atRisk: boolean;
+    showcase: "complete" | "atRisk" | null;
+    birthdayToday: boolean;
     isDemoAnchor: boolean;
     /** Marta o cualquiera de los `extraDemoMembers` — todos reciben ficha completa (foto, consentimientos). */
     isAnyDemoAnchor: boolean;
@@ -557,7 +596,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             [MemberState.TRIAL, 5],
           ]);
 
-      const joinedDaysAgo = state === MemberState.TRIAL ? randInt(1, 13) : randInt(20, 720);
+      const joinedDaysAgo = anchor?.joinedDaysAgo ?? (state === MemberState.TRIAL ? randInt(1, 13) : randInt(20, 720));
       const joinedAt = addDays(TODAY, -joinedDaysAgo);
       const cancelledAt = state === MemberState.CANCELLED ? addDays(joinedAt, randInt(30, joinedDaysAgo)) : null;
 
@@ -593,7 +632,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         }
       }
 
-      const atRisk = state === MemberState.ACTIVE && !anchor && Math.random() < 0.14;
+      // El socio de contraste "atRisk" cae a propósito: su asistencia se desploma
+      // en las dos últimas semanas y con eso dispara la alerta de retención.
+      const atRisk =
+        state === MemberState.ACTIVE && (anchor ? anchor.showcase === "atRisk" : Math.random() < 0.14);
 
       members.push({
         id: anchor ? anchorIds!.id : id(),
@@ -608,6 +650,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         preferredTemplates,
         planKey,
         atRisk,
+        showcase: anchor?.showcase ?? null,
+        birthdayToday: !!anchor?.birthdayToday,
         isDemoAnchor,
         isAnyDemoAnchor: !!anchor,
       });
@@ -666,7 +710,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         lastName: m.lastName,
         email: m.email,
         phone: faker.phone.number({ style: "national" }),
-        birthDate: faker.date.birthdate({ min: 18, max: 65, mode: "age" }),
+        birthDate: m.birthdayToday ? birthdayTodayFor(randInt(24, 58)) : faker.date.birthdate({ min: 18, max: 65, mode: "age" }),
         state: m.state,
         joinedAt: m.joinedAt,
         cancelledAt: m.cancelledAt,
@@ -679,8 +723,18 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         consentHealthAt: consentHealth ? m.joinedAt : null,
         consentImagesAt: consentImages ? m.joinedAt : null,
         consentMarketingAt: consentMarketing ? m.joinedAt : null,
+        // F3/F6: sin `consentAI` el generador de mesociclos no puede usar dato
+        // clínico. El socio de contraste "atRisk" lo tiene a false a propósito,
+        // para poder enseñar la vía sin datos de salud.
+        ...(m.showcase
+          ? {
+              consentAI: m.showcase === "complete",
+              consentAIAt: m.showcase === "complete" ? m.joinedAt : null,
+              consentVersion: CONSENT_VERSION,
+            }
+          : {}),
         // F9 (RB-PERFIL): perfil extendido para poder enseñar BI demográfico (RB-BI-003).
-        postalCode: m.state === MemberState.PROSPECT ? null : weightedPick(MEMBER_POSTAL_CODES),
+        postalCode: m.state === MemberState.PROSPECT ? null : memberPostalFor(m.centerId),
         occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
         hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
         // BI-2 (RB-BI-005): ~80% responde, el resto se queda "sin especificar" (sex=null).
@@ -959,7 +1013,14 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       const date = addDays(sub.startDate, k * 30 + randInt(0, 3));
       if (date > TODAY) break;
       const isLastPeriod = k === monthsElapsed - 1;
-      const status = member.state === MemberState.DELINQUENT && isLastPeriod ? (Math.random() < 0.5 ? "FAILED" : "PENDING") : "PAID";
+      const status =
+        isLastPeriod && (member.state === MemberState.DELINQUENT || member.showcase === "atRisk")
+          ? member.showcase === "atRisk"
+            ? "FAILED"
+            : Math.random() < 0.5
+            ? "FAILED"
+            : "PENDING"
+          : "PAID";
       payments.push({
         id: id(),
         orgId,
@@ -1041,6 +1102,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     consentSignedAt: Date;
   }[] = [];
   for (const m of members.filter((m) => m.state !== MemberState.PROSPECT)) {
+    // Los socios de contraste (F7) no entran en el sorteo: su historial clínico
+    // se construye a mano justo debajo para que el semáforo salga como debe.
+    if (m.showcase) continue;
     if (Math.random() > 0.28) continue;
     const reportedAt = addDays(m.joinedAt, randInt(5, Math.max(6, Math.floor((TODAY.getTime() - m.joinedAt.getTime()) / DAY))));
     if (Math.random() < 0.6) {
@@ -1072,6 +1136,24 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         consentSignedAt: reportedAt,
       });
     }
+  }
+  // F7: la lesión del socio de historial completo enciende el semáforo en ámbar.
+  // Zona "cervicales" a propósito: es la única del catálogo (APTITUDE_RULES) que
+  // solo tiene reglas AMBER — con "zona lumbar" o un hombro saldría en rojo.
+  for (const m of members.filter((m) => m.showcase === "complete")) {
+    const reportedAt = addDays(m.joinedAt, 24);
+    healthRecords.push({
+      id: id(),
+      memberId: m.id,
+      type: HealthRecordType.INJURY,
+      zone: "cervicales",
+      description: "Lesión: cervicales, contractura recurrente por trabajo de oficina",
+      severity: HealthSeverity.MEDIUM,
+      status: HealthStatus.ACTIVE,
+      reportedByUserId: trainerAndOwnerIds.length ? pick(trainerAndOwnerIds) : ownerId,
+      reportedAt,
+      consentSignedAt: reportedAt,
+    });
   }
   await prisma.healthRecord.createMany({ data: healthRecords });
 
@@ -1190,6 +1272,25 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           : null,
       });
     }
+  }
+  // F7: el socio de contraste "atRisk" tiene que disparar la alerta sí o sí —
+  // media demo consiste en enseñar que el motor de retención avisa. Si su caída
+  // real no llegó al umbral (la agenda es aleatoria), se añade la fila a mano.
+  for (const m of members.filter((m) => m.showcase === "atRisk")) {
+    if (retentionAlerts.some((a) => a.memberId === m.id)) continue;
+    const dates = attendanceByMember.get(m.id) ?? [];
+    const lastDate = dates.length ? dates[dates.length - 1] : null;
+    retentionAlerts.push({
+      id: id(),
+      memberId: m.id,
+      baselineFreq: 2.1,
+      recentFreq: 0.5,
+      dropPct: -76,
+      riskLevel: RetentionRiskLevel.HIGH,
+      context: lastDate
+        ? `Última clase hace ${Math.round((TODAY.getTime() - lastDate.getTime()) / DAY)} días.`
+        : "Sin asistencias registradas en las últimas semanas.",
+    });
   }
   await prisma.retentionAlert.createMany({ data: retentionAlerts });
 
@@ -1407,7 +1508,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             consentHealthAt: spec.joinedAt,
             consentImagesAt: spec.withProgress ? spec.joinedAt : null,
             consentMarketingAt: spec.joinedAt,
-            postalCode: weightedPick(MEMBER_POSTAL_CODES),
+            postalCode: memberPostalFor(daniCenterId),
             occupation: pick(OCCUPATIONS),
             sex: pick([Sex.FEMALE, Sex.MALE]),
           },
@@ -1676,7 +1777,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Castillo",
       phone: faker.phone.number({ style: "national" }),
       email: faker.internet.email({ firstName: "Marina", lastName: "Castillo" }).toLowerCase(),
-      postalCode: pick(LEAD_POSTAL_CODES),
+      postalCode: leadPostalFor(anyCenter.id),
       occupation: pick(OCCUPATIONS),
       hasChildren: null,
       goals: "Perder peso y ganar energía en el día a día",
@@ -1695,7 +1796,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Salinas",
       phone: faker.phone.number({ style: "national" }),
       email: null,
-      postalCode: pick(LEAD_POSTAL_CODES),
+      postalCode: leadPostalFor(anyCenter.id),
       occupation: pick(OCCUPATIONS),
       hasChildren: true,
       goals: "Prepararse para una carrera popular",
@@ -1714,7 +1815,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Roldán",
       phone: faker.phone.number({ style: "national" }),
       email: faker.internet.email({ firstName: "Aitana", lastName: "Roldan" }).toLowerCase(),
-      postalCode: pick(LEAD_POSTAL_CODES),
+      postalCode: leadPostalFor(anyCenter.id),
       occupation: pick(OCCUPATIONS),
       hasChildren: false,
       goals: "Tonificar y mejorar movilidad",
@@ -1733,7 +1834,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       lastName: "Aparicio",
       phone: faker.phone.number({ style: "national" }),
       email: faker.internet.email({ firstName: "Ruben", lastName: "Aparicio" }).toLowerCase(),
-      postalCode: pick(LEAD_POSTAL_CODES),
+      postalCode: leadPostalFor(anyCenter.id),
       occupation: pick(OCCUPATIONS),
       hasChildren: null,
       goals: "Ganar fuerza general",
@@ -1754,7 +1855,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             lastName: "Convertido",
             phone: faker.phone.number({ style: "national" }),
             email: faker.internet.email({ firstName: "historial", lastName: "convertido" }).toLowerCase(),
-            postalCode: pick(LEAD_POSTAL_CODES),
+            postalCode: leadPostalFor(anyCenter.id),
             occupation: pick(OCCUPATIONS),
             hasChildren: false,
             goals: "Ponerse en forma para el verano",
@@ -1769,10 +1870,49 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         ]
       : []),
   ];
+  // El lead convertido de guion cierra el array de arriba: se guarda antes de
+  // ampliarlo, porque es el que enlaza con `Member.originLeadId`.
+  const convertedLead = leads[leads.length - 1];
+
+  // F7: embudo propio para los centros que lo piden (el nuevo). Los de guion de
+  // arriba cuelgan todos del primer centro; sin esto, un centro recién abierto
+  // aparecería sin un solo lead y su mapa solo tendría socios.
+  for (const c of centersData) {
+    for (let i = 0; i < (c.leadCount ?? 0); i++) {
+      const firstName = faker.person.firstName();
+      const lastName = `${faker.person.lastName()} ${faker.person.lastName()}`;
+      const status = weightedPick<SeedLead["status"]>([
+        ["SIN_CONTACTAR", 18],
+        ["SEGUIMIENTO", 30],
+        ["CON_FECHA_VALORACION", 18],
+        ["CERRADO", 20],
+        ["NO_CERRADO", 14],
+      ]);
+      leads.push({
+        id: id(),
+        centerId: c.id,
+        firstName,
+        lastName,
+        phone: faker.phone.number({ style: "national" }),
+        email: Math.random() < 0.8 ? faker.internet.email({ firstName, lastName: lastName.split(" ")[0] }).toLowerCase() : null,
+        postalCode: leadPostalFor(c.id),
+        occupation: pick(OCCUPATIONS),
+        hasChildren: Math.random() < 0.85 ? Math.random() < 0.5 : null,
+        goals: pick(["Perder peso", "Ganar fuerza", "Quitarme el dolor de espalda", "Retomar el deporte tras una lesión", "Preparar una carrera popular"]),
+        hasTrainedBefore: Math.random() < 0.5,
+        channel: pick(leadChannels).label,
+        status,
+        ownerUserId: status === "SIN_CONTACTAR" || !receptionOrOwner.length ? null : pick(receptionOrOwner).id,
+        contactedAt: addDays(TODAY, -randInt(1, 90)),
+        noCloseReason: status === "NO_CERRADO" ? pick(noCloseReasons).label : null,
+        convertedMemberId: null,
+      });
+    }
+  }
   await prisma.lead.createMany({ data: leads.map((l) => ({ ...l, orgId })) });
 
   if (activeNonAnchorMembers.length) {
-    await prisma.member.update({ where: { id: activeNonAnchorMembers[0].id }, data: { originLeadId: leads[leads.length - 1].id } });
+    await prisma.member.update({ where: { id: activeNonAnchorMembers[0].id }, data: { originLeadId: convertedLead.id } });
   }
 
   const leadNoteRows = leads
@@ -1812,6 +1952,396 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
   if (goalAssignments.length) await prisma.clientGoal.createMany({ data: goalAssignments });
+
+  // ---------- F7: socios de contraste del centro nuevo ----------
+  // Dos historiales opuestos a propósito: uno con todo relleno y otro con la
+  // revisión vencida, un impago y la asistencia cayendo. Un demo donde todo va
+  // bien no prueba nada — lo que hay que poder enseñar es el semáforo en ámbar
+  // y la alerta saltando.
+  const showcaseMembers = members.filter((m) => m.showcase);
+  if (showcaseMembers.length) {
+    const assessmentRows: Prisma.AssessmentCreateManyInput[] = [];
+    const metricRows: Prisma.PerformanceMetricCreateManyInput[] = [];
+    const showcaseGoals: { id: string; orgId: string; memberId: string; label: string; isTemplate: boolean; achievedAt: Date | null }[] = [];
+
+    for (const m of showcaseMembers) {
+      const trainer =
+        staffUsers.find((u) => u.role === "TRAINER" && u.centerId === m.centerId) ??
+        staffUsers.find((u) => u.role === "TRAINER_ADMIN" && u.centerId === m.centerId) ??
+        staffUsers.find((u) => u.role === "CENTER_DIRECTOR" && u.centerId === m.centerId)!;
+      const complete = m.showcase === "complete";
+      const initialDue = dueDateForKind(m.joinedAt, "INITIAL");
+
+      assessmentRows.push({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        kind: "INITIAL",
+        dueDate: initialDue,
+        completedAt: addDays(initialDue, 1),
+        filledByUserId: trainer.id,
+        answers: {
+          pesoKg: complete ? 78.4 : 91.2,
+          dolorActual: complete ? 3 : 5,
+          calidadSueno: complete ? 3 : 2,
+          estres: complete ? 3 : 4,
+          energia: complete ? 3 : 2,
+          diasPorSemana: complete ? "3" : "2",
+          perfil: {
+            edad: complete ? 38 : 45,
+            sexo: complete ? "MUJER" : "HOMBRE",
+            alturaCm: complete ? 168 : 179,
+            objetivoPrincipal: complete ? "Recuperar fuerza y quitarme las molestias de cuello" : "Bajar de peso",
+            objetivoSecundario: complete ? "Volver a correr 5 km seguidos" : "",
+            motivacionReal: complete ? "Poder jugar con mis hijos sin acabar dolorida" : "Me lo ha dicho el médico",
+            queLeHariaAbandonar: complete ? "Que los horarios dejen de encajarme" : "Aburrirme",
+          },
+          experiencia: {
+            nivelActividad: complete ? "MEDIO" : "BAJO",
+            haEntrenadoAntes: complete,
+            anosExperiencia: complete ? 4 : 0,
+            tecnicaBasicos: complete ? "MEDIA" : "BAJA",
+            ejerciciosNoTolera: complete ? "Press militar con barra" : "",
+          },
+          screening: {
+            cardiovascular: false,
+            hipertension: !complete,
+            diabetes: false,
+            medicacion: complete ? "" : "Antihipertensivo diario",
+            cirugias: "",
+            lesionesActuales: complete ? "Contractura cervical recurrente, activa" : "",
+            zonasDolor: complete ? ["CUELLO"] : [],
+          },
+          marcas: complete
+            ? [
+                { key: "flexiones_reps", value: 8 },
+                { key: "plancha_s", value: 35 },
+              ]
+            : [{ key: "flexiones_reps", value: 3 }],
+          cierre: {
+            notasEntrenador: complete
+              ? "Cervicales a vigilar: nada de carga sobre cabeza hasta revisión."
+              : "Arranque progresivo, sin impacto las primeras semanas.",
+            consentimientoParq: true,
+            autorizacionImagen: complete,
+          },
+        },
+      });
+
+      if (complete) {
+        // Revisiones de 1 y 3 meses con progresión visible en las mismas marcas.
+        const reviews: { kind: "M1" | "M3"; pesoKg: number; flexiones: number; plancha: number }[] = [
+          { kind: "M1", pesoKg: 77.1, flexiones: 12, plancha: 48 },
+          { kind: "M3", pesoKg: 75.2, flexiones: 18, plancha: 65 },
+        ];
+        for (const r of reviews) {
+          const due = dueDateForKind(m.joinedAt, r.kind);
+          assessmentRows.push({
+            id: id(),
+            orgId,
+            memberId: m.id,
+            kind: r.kind,
+            dueDate: due,
+            completedAt: addDays(due, 2),
+            filledByUserId: trainer.id,
+            answers: {
+              pesoKg: r.pesoKg,
+              dolorActual: r.kind === "M1" ? 2 : 1,
+              calidadSueno: r.kind === "M1" ? 4 : 4,
+              estres: 3,
+              energia: r.kind === "M1" ? 4 : 5,
+              diasPorSemana: "3",
+              seguimiento: {
+                adherenciaPercibida: r.kind === "M1" ? 4 : 5,
+                progresoPercibido: r.kind === "M1" ? 3 : 4,
+                queHaMejorado: r.kind === "M1" ? "Duermo mejor y el cuello molesta menos" : "Fuerza en empuje y menos dolor cervical",
+                obstaculos: r.kind === "M1" ? "Semanas de viaje de trabajo" : "",
+                objetivoProximoPeriodo: r.kind === "M1" ? "Sumar un cuarto día" : "Empezar a correr suave",
+              },
+              marcas: [
+                { key: "flexiones_reps", value: r.flexiones },
+                { key: "plancha_s", value: r.plancha },
+              ],
+              cierre: { notasEntrenador: "Progresión sostenida, mantener el trabajo de core anti-extensión." },
+            },
+          });
+        }
+
+        // La serie de marcas es lo que se grafica: se propaga a PerformanceMetric
+        // igual que hace save.ts cuando la valoración se rellena desde la app.
+        const marks: [string, string, [number, number, number]][] = [
+          ["flexiones_reps", "reps", [8, 12, 18]],
+          ["plancha_s", "s", [35, 48, 65]],
+        ];
+        const marksAt = [initialDue, dueDateForKind(m.joinedAt, "M1"), dueDateForKind(m.joinedAt, "M3")];
+        for (const [key, unit, values] of marks) {
+          values.forEach((value, k) => {
+            metricRows.push({ id: id(), orgId, memberId: m.id, key, value, unit, recordedAt: addDays(marksAt[k], 1), source: "assessment" });
+          });
+        }
+
+        showcaseGoals.push(
+          { id: id(), orgId, memberId: m.id, label: "Mejorar el dolor de espalda", isTemplate: false, achievedAt: addDays(TODAY, -12) },
+          { id: id(), orgId, memberId: m.id, label: "Correr 5 km seguidos", isTemplate: false, achievedAt: null }
+        );
+      } else {
+        // Caso incómodo: la revisión de 1 mes venció hace tiempo y sigue sin
+        // rellenarse — es lo que tiene que bloquear al socio en el portal y en
+        // la app móvil (gating de F4).
+        const dueM1 = dueDateForKind(m.joinedAt, "M1");
+        assessmentRows.push({
+          id: id(),
+          orgId,
+          memberId: m.id,
+          kind: "M1",
+          dueDate: dueM1,
+          completedAt: null,
+          filledByUserId: null,
+          answers: {},
+        });
+        showcaseGoals.push({ id: id(), orgId, memberId: m.id, label: "Sentir más energía en el día a día", isTemplate: false, achievedAt: null });
+      }
+    }
+
+    await prisma.assessment.createMany({ data: assessmentRows });
+    if (metricRows.length) await prisma.performanceMetric.createMany({ data: metricRows });
+    if (showcaseGoals.length) await prisma.clientGoal.createMany({ data: showcaseGoals });
+
+    // Mesociclo aprobado del socio de historial completo. Se siembra escrito a
+    // mano (no llamando a la IA: el seed no debe depender de una API externa),
+    // pero con la misma forma que produce el generador de F6.
+    const withMesocycle = showcaseMembers.find((m) => m.showcase === "complete");
+    if (withMesocycle) {
+      const trainer =
+        staffUsers.find((u) => u.role === "TRAINER_ADMIN" && u.centerId === withMesocycle.centerId) ??
+        staffUsers.find((u) => u.role === "TRAINER" && u.centerId === withMesocycle.centerId)!;
+      const director =
+        staffUsers.find((u) => u.role === "CENTER_DIRECTOR" && u.centerId === withMesocycle.centerId) ?? trainer;
+      const mesocycleId = id();
+      await prisma.mesocycle.create({
+        data: {
+          id: mesocycleId,
+          orgId,
+          memberId: withMesocycle.id,
+          createdByUserId: trainer.id,
+          status: MesocycleStatus.APPROVED,
+          title: "Mesociclo 12 semanas · fuerza base sin carga cervical",
+          objective: "Recuperar fuerza general y reducir la molestia cervical hasta poder retomar carrera continua.",
+          safetyCriteria: {
+            lesionesActivas: ["cervicales — contractura recurrente"],
+            prohibido: ["Carga sobre cabeza", "Press militar con barra"],
+            adaptaciones: ["Empuje en plano horizontal o landmine", "Core anti-extensión antes que flexión cargada"],
+          },
+          weeklyLayout: "Lun TZ · Mié TZ · Vie TZ · Sáb movilidad en casa",
+          milestones: [
+            { week: 4, target: "12 flexiones completas" },
+            { week: 8, target: "Plancha 60 s sin dolor cervical" },
+            { week: 12, target: "5 km continuos por debajo de 7:00/km" },
+          ],
+          approvedAt: addDays(TODAY, -21),
+          approvedByUserId: director.id,
+          phases: {
+            create: [
+              {
+                order: 1,
+                name: "Adaptación",
+                weekFrom: 1,
+                weekTo: 4,
+                notes: "Técnica y tolerancia. Nada por encima de la cabeza.",
+                days: {
+                  create: [
+                    {
+                      order: 1,
+                      label: "Lunes",
+                      venue: "TZ",
+                      focus: "Empuje horizontal y core",
+                      warmup: { min: 10, items: ["Movilidad torácica", "Activación escapular", "Bicicleta suave"] },
+                      blocks: {
+                        create: [
+                          {
+                            order: 1,
+                            name: "Fuerza",
+                            durationMin: 30,
+                            exercises: {
+                              create: [
+                                {
+                                  order: 1,
+                                  name: "Press banca con mancuernas",
+                                  sets: 3,
+                                  reps: "8-10",
+                                  load: "RPE 7",
+                                  description: "Escápulas retraídas, recorrido completo sin rebote.",
+                                  rationale: "El plano horizontal carga el empuje sin comprometer la cervical (ACSM, guías de progresión en dolor cervical inespecífico).",
+                                },
+                                {
+                                  order: 2,
+                                  name: "Remo en anillas",
+                                  sets: 3,
+                                  reps: "10-12",
+                                  load: "Peso corporal",
+                                  description: "Cuerpo alineado, sin adelantar la cabeza.",
+                                  rationale: "El trabajo de tracción equilibra la postura y reduce la sobrecarga cervical (evidencia en programas de fortalecimiento escapular).",
+                                },
+                              ],
+                            },
+                          },
+                          {
+                            order: 2,
+                            name: "Core anti-extensión",
+                            durationMin: 12,
+                            exercises: {
+                              create: [
+                                {
+                                  order: 1,
+                                  name: "Plancha frontal",
+                                  sets: 4,
+                                  reps: "30-40 s",
+                                  load: null,
+                                  description: "Pelvis en retroversión, mirada al suelo.",
+                                  rationale: "Anti-extensión antes que flexión cargada: mismo estímulo de core sin comprimir la columna (McGill).",
+                                },
+                              ],
+                            },
+                          },
+                        ],
+                      },
+                    },
+                    {
+                      order: 2,
+                      label: "Miércoles",
+                      venue: "TZ",
+                      focus: "Tren inferior",
+                      warmup: { min: 10, items: ["Movilidad de cadera", "Sentadilla goblet ligera"] },
+                      blocks: {
+                        create: [
+                          {
+                            order: 1,
+                            name: "Fuerza",
+                            durationMin: 32,
+                            exercises: {
+                              create: [
+                                {
+                                  order: 1,
+                                  name: "Sentadilla goblet",
+                                  sets: 4,
+                                  reps: "8",
+                                  load: "16-20 kg",
+                                  description: "Tronco erguido, talones en el suelo.",
+                                  rationale: "La carga frontal permite dosificar sin barra sobre los trapecios, que es donde aparece la molestia.",
+                                },
+                                {
+                                  order: 2,
+                                  name: "Peso muerto rumano con mancuernas",
+                                  sets: 3,
+                                  reps: "10",
+                                  load: "RPE 7",
+                                  description: "Bisagra de cadera, espalda neutra.",
+                                  rationale: "Cadena posterior con recorrido corto: fuerza sin la exigencia técnica del peso muerto convencional.",
+                                },
+                              ],
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+              {
+                order: 2,
+                name: "Acumulación",
+                weekFrom: 5,
+                weekTo: 9,
+                notes: "Sube volumen manteniendo la restricción cervical.",
+                days: {
+                  create: [
+                    {
+                      order: 1,
+                      label: "Viernes",
+                      venue: "TZ",
+                      focus: "Full body + carrera suave",
+                      warmup: { min: 8, items: ["Movilidad general", "Trote 5 min"] },
+                      blocks: {
+                        create: [
+                          {
+                            order: 1,
+                            name: "Circuito",
+                            durationMin: 28,
+                            exercises: {
+                              create: [
+                                {
+                                  order: 1,
+                                  name: "Zancadas alternas",
+                                  sets: 3,
+                                  reps: "12 por pierna",
+                                  load: "Mancuernas 8 kg",
+                                  description: "Paso largo, rodilla estable.",
+                                  rationale: "Unilateral: corrige asimetrías antes de subir kilómetros de carrera.",
+                                },
+                                {
+                                  order: 2,
+                                  name: "Pallof press",
+                                  sets: 3,
+                                  reps: "10 por lado",
+                                  load: "Banda media",
+                                  description: "Sin rotar el tronco.",
+                                  rationale: "Anti-rotación: transfiere directamente a la estabilidad del tronco durante la carrera.",
+                                },
+                              ],
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+              {
+                order: 3,
+                name: "Realización",
+                weekFrom: 10,
+                weekTo: 12,
+                notes: "Bajar volumen, mantener intensidad y medir marcas.",
+                days: {
+                  create: [
+                    {
+                      order: 1,
+                      label: "Lunes",
+                      venue: "TZ",
+                      focus: "Test de marcas",
+                      warmup: { min: 12, items: ["Movilidad completa", "Series progresivas"] },
+                      blocks: {
+                        create: [
+                          {
+                            order: 1,
+                            name: "Test",
+                            durationMin: 25,
+                            exercises: {
+                              create: [
+                                {
+                                  order: 1,
+                                  name: "Flexiones máximas",
+                                  sets: 1,
+                                  reps: "AMRAP",
+                                  load: "Peso corporal",
+                                  description: "Serie única hasta el fallo técnico.",
+                                  rationale: "Cierra el ciclo con la misma marca que abrió la valoración inicial: es lo que hace comparable el progreso.",
+                                },
+                              ],
+                            },
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      });
+    }
+  }
 
   // ---------- F11: Franjas de EP (autorreserva + director de sesión) ----------
   const epSessionIds = sessions.filter((s) => s.classType === "Personal Training");
@@ -2450,8 +2980,21 @@ const ORGS: OrgSeedConfig[] = [
       // La Jota genera 5 socios aleatorios porque recibe además los 5 clientes
       // de EP construidos a medida para el panel del entrenador demo (ver
       // RB-RRHH-005 más abajo): 5 + 5 = los 10 socios del centro.
-      { key: "lajota", name: "TRAINING ZONE La Jota", slug: "la-jota", address: "Av. de Cataluña 42, Zaragoza", capacityRange: [8, 12], memberCount: 5 },
-      { key: "puertacarmen", name: "TRAINING ZONE Puerta del Carmen", slug: "puerta-del-carmen", address: "Paseo Pamplona 15, Zaragoza", capacityRange: [8, 12], memberCount: 10 },
+      { key: "lajota", name: "TRAINING ZONE La Jota", slug: "la-jota", address: "Av. de Cataluña 42, Zaragoza", capacityRange: [8, 12], memberCount: 5, postalPool: ZARAGOZA_POSTAL_POOL },
+      { key: "puertacarmen", name: "TRAINING ZONE Puerta del Carmen", slug: "puerta-del-carmen", address: "Paseo Pamplona 15, Zaragoza", capacityRange: [8, 12], memberCount: 10, postalPool: ZARAGOZA_POSTAL_POOL },
+      // F7: segundo centro y segunda ciudad. Sus socios y leads salen del pool de
+      // CP de Santander, así que el mapa de calor pasa a tener dos ciudades con
+      // sus barrios en vez de una.
+      {
+        key: "santander",
+        name: "TRAINING ZONE Santander",
+        slug: "santander",
+        address: "C/ Castilla 28, Santander",
+        capacityRange: [8, 12],
+        memberCount: 50,
+        postalPool: SANTANDER_POSTAL_POOL,
+        leadCount: 14,
+      },
     ],
     // Un único director de organización (OWNER, rol más alto), un director por
     // centro y tres entrenadores por centro — uno de ellos, Entrenador Admin
@@ -2471,10 +3014,26 @@ const ORGS: OrgSeedConfig[] = [
       { name: "Ana Cabrera", email: "recepcion.lajota@trainingzone.es", role: "RECEPTION", centerKey: "lajota" },
       { name: "Óscar Bravo", email: "recepcion.puertacarmen@trainingzone.es", role: "RECEPTION", centerKey: "puertacarmen" },
       { name: "Cristina Molina", email: "rrhh@trainingzone.es", role: "HR_MANAGER", centerKey: null },
+      // F7 · Santander: dos usuarios por rol para poder probar el alcance de cada
+      // uno (y que dos personas del mismo rol no se pisen). OWNER no se repite:
+      // es de organización, no de centro.
+      { name: "Iría Lastra", email: "director1.santander@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "santander" },
+      { name: "Nacho Puente", email: "director2.santander@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "santander" },
+      { name: "Sonia Gándara", email: "entrenadoradmin1.santander@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "santander" },
+      { name: "Álex Quijano", email: "entrenadoradmin2.santander@trainingzone.es", role: "TRAINER_ADMIN", centerKey: "santander" },
+      { name: "Paula Cobo", email: "entrenador1.santander@trainingzone.es", role: "TRAINER", centerKey: "santander" },
+      { name: "Diego Ceballos", email: "entrenador2.santander@trainingzone.es", role: "TRAINER", centerKey: "santander" },
+      { name: "Lucía Trueba", email: "recepcion1.santander@trainingzone.es", role: "RECEPTION", centerKey: "santander" },
+      { name: "Mateo Bolado", email: "recepcion2.santander@trainingzone.es", role: "RECEPTION", centerKey: "santander" },
+      { name: "Rosa Sainz", email: "rrhh1.santander@trainingzone.es", role: "HR_MANAGER", centerKey: null },
+      { name: "Tomás Riancho", email: "rrhh2.santander@trainingzone.es", role: "HR_MANAGER", centerKey: null },
       { name: "Piensaenweb Admin", email: "admin@piensaenweb.dev", role: "PLATFORM_ADMIN", centerKey: null },
     ],
     extraImputaciones: [
       { email: "entrenador@trainingzone.es", centerKey: "puertacarmen", role: "TRAINER", allocationPct: 40, primaryAllocationPct: 60 },
+      // Un Entrenador Admin de Santander imputado también a Zaragoza: es el caso
+      // multi-centro, el que rompe cuando el alcance se resuelve por centro único.
+      { email: "entrenadoradmin2.santander@trainingzone.es", centerKey: "lajota", role: "TRAINER_ADMIN", allocationPct: 30, primaryAllocationPct: 70 },
     ],
     demoMember: { email: "socio@trainingzone.es", firstName: "Marta", lastName: "García López", centerKey: "lajota", planKey: "group12" },
     // Login directo (ver login-form.tsx): un socio con cada tipo de bono
@@ -2482,6 +3041,29 @@ const ORGS: OrgSeedConfig[] = [
     extraDemoMembers: [
       { email: "socio.grupos@trainingzone.es", firstName: "Nuria", lastName: "Peña Soler", centerKey: "lajota", planKey: "group8", slotIndex: 1 },
       { email: "socio.ep@trainingzone.es", firstName: "Álvaro", lastName: "Mateos Duque", centerKey: "lajota", planKey: "ep8", slotIndex: 2 },
+      // F7 · los dos socios de contraste de Santander. El primero cumple años hoy,
+      // que es lo que permite probar la felicitación de F5 sin tocar la base.
+      {
+        email: "socio1.santander@trainingzone.es",
+        firstName: "Amaia",
+        lastName: "Roiz Peña",
+        centerKey: "santander",
+        planKey: "group12",
+        slotIndex: 0,
+        showcase: "complete",
+        joinedDaysAgo: 140,
+        birthdayToday: true,
+      },
+      {
+        email: "socio2.santander@trainingzone.es",
+        firstName: "Rubén",
+        lastName: "Setién Colsa",
+        centerKey: "santander",
+        planKey: "group8",
+        slotIndex: 1,
+        showcase: "atRisk",
+        joinedDaysAgo: 260,
+      },
     ],
   },
 ];
@@ -2544,11 +3126,11 @@ async function main() {
     prisma.postalCodeArea.deleteMany(),
   ], { timeout: 30000, maxWait: 30000 });
 
-  // Referencia CP completo→barrio (BI-3): no depende de ninguna org. De momento
-  // solo cubre Zaragoza capital (primera puesta en preproducción); ver
-  // postal-codes-zaragoza.ts para ampliar a otras ciudades.
+  // Referencia CP completo→barrio (BI-3): no depende de ninguna org. Cubre todas
+  // las ciudades de postal-codes.ts (hoy Zaragoza y Santander); dar de alta otra
+  // ciudad allí basta para que su mapa de calor tenga barrios.
   await prisma.postalCodeArea.createMany({
-    data: Object.entries(ZARAGOZA_POSTAL_CODES).map(([code, v]) => ({ code, name: v.name, lat: v.lat, lng: v.lng })),
+    data: Object.entries(POSTAL_CODES).map(([code, v]) => ({ code, name: v.name, lat: v.lat, lng: v.lng })),
   });
 
   const passwordHash = await bcrypt.hash("demo1234", 10);
@@ -2557,7 +3139,7 @@ async function main() {
   }
 
   console.log("\nSeed completado.");
-  console.log("TRAINING ZONE · centros: La Jota y Puerta del Carmen");
+  console.log("TRAINING ZONE · centros: La Jota, Puerta del Carmen y Santander");
   console.log("Usuarios demo (contraseña: demo1234):");
   console.log("  Organización");
   console.log("    sergio@trainingzone.es                    Dirección de organización (Owner)");
@@ -2578,6 +3160,19 @@ async function main() {
   console.log("    javier.soto@trainingzone.es               Entrenador");
   console.log("    sara.ortiz@trainingzone.es                Entrenadora");
   console.log("    recepcion.puertacarmen@trainingzone.es    Recepción");
+  console.log("  Santander");
+  console.log("    director1.santander@trainingzone.es       Dirección de centro");
+  console.log("    director2.santander@trainingzone.es       Dirección de centro");
+  console.log("    entrenadoradmin1.santander@trainingzone.es  Entrenador Admin");
+  console.log("    entrenadoradmin2.santander@trainingzone.es  Entrenador Admin (imputado también a La Jota)");
+  console.log("    entrenador1.santander@trainingzone.es     Entrenadora");
+  console.log("    entrenador2.santander@trainingzone.es     Entrenador");
+  console.log("    recepcion1.santander@trainingzone.es      Recepción");
+  console.log("    recepcion2.santander@trainingzone.es      Recepción");
+  console.log("    rrhh1.santander@trainingzone.es           RRHH (ámbito de organización)");
+  console.log("    rrhh2.santander@trainingzone.es           RRHH (ámbito de organización)");
+  console.log("    socio1.santander@trainingzone.es          Socia (Amaia Roiz · historial completo, semáforo ámbar, mesociclo aprobado, cumple hoy)");
+  console.log("    socio2.santander@trainingzone.es          Socio (Rubén Setién · revisión vencida, impago y alerta de retención)");
 }
 
 main()

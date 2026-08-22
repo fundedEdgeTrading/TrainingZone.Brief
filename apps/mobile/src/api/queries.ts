@@ -2,6 +2,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { apiRequest } from "./client";
 import type {
   ActivityResponse,
+  BirthdayGreetingResponse,
+  PendingAssessmentResponse,
   AgendaResponse,
   AnnouncementsResponse,
   BookSessionResponse,
@@ -65,6 +67,38 @@ export function useCancelBooking() {
       queryClient.invalidateQueries({ queryKey: ["memberships"] });
       queryClient.invalidateQueries({ queryKey: ["member-calendar"] });
     },
+  });
+}
+
+/**
+ * Cumpleaños y valoración vencida: los dos avisos que la web resuelve en el
+ * layout del portal. La app los pide al entrar por el mismo endpoint, para que
+ * un socio que solo usa el móvil no se salte ninguno de los dos.
+ */
+export function useBirthdayGreeting(enabled: boolean) {
+  return useQuery({
+    queryKey: ["portal-greeting"],
+    queryFn: () => apiRequest<BirthdayGreetingResponse>("/portal/greeting"),
+    enabled,
+  });
+}
+
+export function useDismissBirthdayGreeting() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiRequest<{ dismissed: boolean }>("/portal/greeting", { method: "POST", body: { id } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-greeting"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+export function usePendingAssessment(enabled: boolean) {
+  return useQuery({
+    queryKey: ["portal-valoracion"],
+    queryFn: () => apiRequest<PendingAssessmentResponse>("/portal/valoracion"),
+    enabled,
   });
 }
 
