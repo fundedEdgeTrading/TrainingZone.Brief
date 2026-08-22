@@ -71,9 +71,11 @@ async function elegirCentro(drawer: Locator) {
   const trigger = drawer.getByRole("button", { name: "Seleccionar..." });
   if ((await trigger.count()) === 0) return;
   await trigger.first().click();
+  // La lista se pinta en un portal a `document.body` para que no la recorte el
+  // drawer, así que se busca en la página, no dentro del drawer.
   // La opción se rotula con el prefijo de la organización («TRAINING ZONE La
   // Jota»): fijar el nombre exacto ataría el test al nombre comercial.
-  await drawer.getByRole("button", { name: /La Jota/ }).click();
+  await drawer.page().locator(".tz-select-pop").getByRole("button", { name: /La Jota/ }).click();
 }
 
 test.describe("Importación de socios con su cuota", () => {

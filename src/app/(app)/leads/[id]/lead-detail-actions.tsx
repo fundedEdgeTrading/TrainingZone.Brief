@@ -29,7 +29,7 @@ export function StageButtons({ leadId, status }: { leadId: string; status: strin
   if (status !== "SIN_CONTACTAR" && status !== "SEGUIMIENTO") return null;
 
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       {status === "SIN_CONTACTAR" && (
         <Button size="sm" disabled={pending} onClick={() => moveTo("SEGUIMIENTO")}>
           Marcar en seguimiento
@@ -48,7 +48,7 @@ export function OwnerAssignForm({ leadId, staff, ownerUserId }: { leadId: string
   const [value, setValue] = useState(ownerUserId ?? "");
 
   return (
-    <div className="flex items-end gap-2">
+    <div className="flex flex-wrap items-end gap-2">
       <Field label="Responsable" className="flex-1">
         <Select value={value} onChange={(e) => setValue(e.target.value)}>
           <option value="">Sin asignar</option>
@@ -78,7 +78,7 @@ export function OwnerAssignForm({ leadId, staff, ownerUserId }: { leadId: string
 
 export function NoCloseForm({ leadId, reasons }: { leadId: string; reasons: { id: string; label: string }[] }) {
   return (
-    <ActionForm action={markLeadNoCloseAction} successMessage="Lead archivado como no cerrado" className="flex items-end gap-2">
+    <ActionForm action={markLeadNoCloseAction} successMessage="Lead archivado como no cerrado" className="flex flex-wrap items-end gap-2">
       <input type="hidden" name="leadId" value={leadId} />
       <Field label="Motivo de no cierre (obligatorio)" className="flex-1">
         <Select name="noCloseReason" required defaultValue="">

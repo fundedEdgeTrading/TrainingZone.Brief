@@ -7,6 +7,7 @@ import clsx from "clsx";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { CONSENT_TEXT } from "@/lib/consent";
 import { completeMemberOnboarding, completeStaffOnboarding } from "./actions";
+import { Select } from "@/components/ui/field";
 
 type Props = {
   token: string;
@@ -235,16 +236,16 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
                 <label className="block text-[11px] font-bold uppercase tracking-[0.08em] text-muted mb-1.5">
                   Sexo (opcional)
                 </label>
-                <select
+                <Select
                   value={sex}
                   onChange={(e) => setSex(e.target.value as typeof sex)}
-                  className="w-full rounded-control border border-brand-border px-3.5 py-2.5 text-sm focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none"
+                  placeholder="Prefiero no decirlo"
                 >
                   <option value="">Prefiero no decirlo</option>
                   <option value="FEMALE">Mujer</option>
                   <option value="MALE">Hombre</option>
                   <option value="OTHER">Otro</option>
-                </select>
+                </Select>
               </div>
               <div className="flex flex-col gap-2.5">
                 {CONSENT_DEFS.map((c) => {

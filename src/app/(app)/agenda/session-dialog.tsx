@@ -7,6 +7,7 @@ import { trainerColor, initials } from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
 import { useToast } from "@/components/ui/toast";
 import { TrainerTooltip } from "./trainer-tooltip";
+import { Select } from "@/components/ui/field";
 
 const noopSubscribe = () => () => {};
 function useMounted() {
@@ -342,15 +343,14 @@ export default function SessionDialog({
 
             <div>
               <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Se repite</div>
-              <select
+              <Select
                 value={dlg.recurrence}
                 onChange={(e) => patch({ recurrence: e.target.value as DialogState["recurrence"] })}
-                className={`w-full cursor-pointer ${inputCls}`}
               >
                 <option value="NONE">No se repite</option>
                 <option value="WEEKLY">Cada semana</option>
                 <option value="WEEKDAYS">Todos los días laborables (L–V)</option>
-              </select>
+              </Select>
               {dlg.recurrence !== "NONE" && (
                 <div className="mt-2.5 flex flex-col gap-2">
                   <div className="text-[13px] text-text-2">Termina</div>

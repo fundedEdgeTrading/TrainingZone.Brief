@@ -215,8 +215,8 @@ function ComparisonTable() {
         está en todos los planes: es una obligación legal, no un extra.
       </p>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] bg-white border border-tz-linen rounded-card text-sm">
+      <div className="sm:overflow-x-auto">
+        <table className="tz-stack-table w-full sm:min-w-[560px] bg-white border border-tz-linen rounded-card text-sm">
           <thead>
             <tr className="border-b border-tz-linen">
               <th className="text-left p-3 font-semibold text-brand-text-2">Funcionalidad</th>
@@ -230,9 +230,9 @@ function ComparisonTable() {
           <tbody>
             {CORE_FEATURES.map((label) => (
               <tr key={label} className="border-b border-tz-linen/70">
-                <td className="p-3 text-brand-text-2">{label}</td>
+                <td data-label="" className="p-3 font-semibold text-brand-text-2">{label}</td>
                 {tiers.map((t) => (
-                  <td key={t.code} className="p-3 text-center text-tz-black">
+                  <td key={t.code} data-label={t.name} className="p-3 sm:text-center text-tz-black">
                     ✓
                   </td>
                 ))}
@@ -240,11 +240,12 @@ function ComparisonTable() {
             ))}
             {features.map((f) => (
               <tr key={f} className="border-b border-tz-linen/70 last:border-0">
-                <td className="p-3 text-brand-text-2">{FEATURE_LABEL[f]}</td>
+                <td data-label="" className="p-3 font-semibold text-brand-text-2">{FEATURE_LABEL[f]}</td>
                 {tiers.map((t) => (
                   <td
                     key={t.code}
-                    className={`p-3 text-center ${t.features.includes(f) ? "text-tz-black" : "text-faint"}`}
+                    data-label={t.name}
+                    className={`p-3 sm:text-center ${t.features.includes(f) ? "text-tz-black" : "text-faint"}`}
                   >
                     {t.features.includes(f) ? "✓" : "—"}
                   </td>

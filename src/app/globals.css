@@ -474,6 +474,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* Red de seguridad para móvil: un email o una URL sin espacios no cabe en una
+     columna estrecha y, sin esto, desborda su caja y arrastra un scroll
+     horizontal a toda la página. Solo actúa cuando la palabra no cabe ni sola
+     en su línea, así que no cambia el reparto normal del texto (y no afecta a
+     `truncate`, que ya va con `white-space: nowrap`). */
+  overflow-wrap: break-word;
 }
 
 ::selection {
@@ -860,5 +866,55 @@ textarea:focus-visible {
   ::view-transition-new(*),
   ::view-transition-image-pair(*) {
     animation: none !important;
+  }
+}
+
+/* ===== Tablas que se apilan en móvil =====
+   Una tabla de 5–7 columnas no cabe en un teléfono: obligaba a arrastrar en
+   horizontal dentro de la tarjeta para leer cada registro. Por debajo de `sm`
+   cada fila pasa a ser un bloque y cada celda enseña delante su cabecera, que
+   viaja en `data-label`. De `sm` en adelante sigue siendo una tabla normal, así
+   que el marcado no cambia: solo hay que poner la clase y los `data-label`. */
+@media (max-width: 639px) {
+  .tz-stack-table,
+  .tz-stack-table > tbody,
+  .tz-stack-table > tbody > tr,
+  .tz-stack-table > tbody > tr > td {
+    display: block;
+    width: 100%;
+  }
+  .tz-stack-table > thead {
+    display: none;
+  }
+  .tz-stack-table > tbody > tr {
+    padding: 0.55rem 0;
+  }
+  .tz-stack-table > tbody > tr > td {
+    display: grid;
+    grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr);
+    align-items: baseline;
+    /* `start` para que un badge o un botón no se estiren a todo el ancho de la
+       celda, que es lo que hace por defecto un ítem de rejilla. */
+    justify-items: start;
+    gap: 0.75rem;
+    padding: 0.2rem 0;
+    overflow-wrap: anywhere;
+  }
+  /* La celda que identifica la fila (data-label vacío) ocupa todo el ancho. */
+  .tz-stack-table > tbody > tr > td[data-label=""] {
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+  .tz-stack-table > tbody > tr > td::before {
+    content: attr(data-label);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.7;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-brand-muted);
+  }
+  .tz-stack-table > tbody > tr > td[data-label=""]::before {
+    content: none;
   }
 }

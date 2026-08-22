@@ -22,6 +22,12 @@ const TRAINER_NAME = "Dani Herrero";
 const toast = (page: Page) => page.locator("[role=status], [role=alert]");
 
 /** Crea una sesión desde el diálogo de la agenda, tal cual lo haría el entrenador. */
+/** Rótulos del combobox "Se repite" del diálogo de agenda. */
+const RECURRENCE_LABEL: Record<"WEEKLY" | "WEEKDAYS", string> = {
+  WEEKLY: "Cada semana",
+  WEEKDAYS: "Todos los días laborables (L–V)",
+};
+
 async function createSessionInAgenda(
   page: Page,
   opts: {
@@ -58,7 +64,10 @@ async function createSessionInAgenda(
   }
 
   if (opts.recurrence) {
-    await page.getByRole("combobox").selectOption(opts.recurrence);
+    // "Se repite" es el desplegable del sistema de diseño, no un <select>
+    // nativo: se abre por su rótulo actual y se elige la opción.
+    await page.getByRole("button", { name: "No se repite" }).click();
+    await page.locator(".tz-select-pop").getByRole("button", { name: RECURRENCE_LABEL[opts.recurrence], exact: true }).click();
   }
 
   await page.getByRole("button", { name: `Entrenador ${TRAINER_NAME}` }).click();
