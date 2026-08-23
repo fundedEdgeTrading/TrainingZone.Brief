@@ -86,7 +86,7 @@ export default function Header({
                   {initials(userName)}
                 </div>
                 <span className="hidden sm:inline text-[13px] font-bold text-brand-text">{userName.split(" ")[0]}</span>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8a8574" strokeWidth="2.2" strokeLinecap="round">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--color-brand-muted)" strokeWidth="2.2" strokeLinecap="round">
                   <path d="M7 10l5 5 5-5" />
                 </svg>
               </div>

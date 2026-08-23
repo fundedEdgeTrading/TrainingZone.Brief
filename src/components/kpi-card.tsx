@@ -3,12 +3,12 @@ import { CountUp, type CountUpFormat } from "@/components/ui/count-up";
 type Tone = "default" | "good" | "warning" | "critical" | "accent" | "gold";
 
 const STRIPE_COLOR: Record<Tone, string> = {
-  default: "#d8ccb8",
-  good: "#4b5a22",
-  warning: "#8a5a12",
-  critical: "#8a3420",
-  accent: "#1d1d1c",
-  gold: "#c8ab72",
+  default: "var(--color-brand-border)",
+  good: "var(--color-good)",
+  warning: "var(--color-warning)",
+  critical: "var(--color-critical)",
+  accent: "var(--color-brand-ink)",
+  gold: "var(--color-apta-gold)",
 };
 
 const TEXT_CLASS: Record<Tone, string> = {
@@ -49,7 +49,7 @@ export function KpiCard({
 }) {
   return (
     <div
-      className="relative overflow-hidden bg-brand-card border border-brand-border rounded-[14px] pt-4 px-4 pb-3.5 tz-fade-up transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-[0_10px_24px_-12px_rgba(0,0,0,.25)] hover:border-brand-border-hover"
+      className="relative overflow-hidden bg-brand-card border border-brand-border rounded-[14px] pt-4 px-4 pb-3.5 tz-fade-up transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-[3px] hover:shadow-hover hover:border-brand-border-hover"
       style={{ animationDelay: `${delay}s` }}
     >
       <span
