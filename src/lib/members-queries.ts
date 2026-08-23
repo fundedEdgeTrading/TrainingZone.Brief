@@ -3,26 +3,46 @@ import type { BookingStatus, MemberState } from "@prisma/client";
 import { formatDateParam } from "@/lib/date-utils";
 import { toMin } from "@/app/(app)/agenda/agenda-utils";
 
+/**
+ * Búsqueda por nombre/email, compartida por el listado y por la base de
+ * recuentos de los filtros para que ambos vean exactamente el mismo conjunto.
+ */
+function memberSearchWhere(q?: string) {
+  if (!q) return {};
+  return {
+    OR: [
+      { firstName: { contains: q, mode: "insensitive" as const } },
+      { lastName: { contains: q, mode: "insensitive" as const } },
+      { email: { contains: q, mode: "insensitive" as const } },
+    ],
+  };
+}
+
 export async function listMembers(
   orgId: string,
   // `skip`/`take`: paginación opcional para el scroll infinito de la app móvil;
   // sin ellos se mantiene el listado completo que consume la web.
-  opts: { q?: string; state?: MemberState; centerId?: string; skip?: number; take?: number } = {}
+  // `states`/`centerIds`: ejes multi-valor de la tabla de socios (dentro de un
+  // eje, OR; entre ejes, AND). Mandan sobre `state`/`centerId`, que se
+  // conservan porque la API móvil sigue filtrando por un único valor.
+  opts: {
+    q?: string;
+    state?: MemberState;
+    states?: MemberState[];
+    centerId?: string;
+    centerIds?: string[];
+    skip?: number;
+    take?: number;
+  } = {}
 ) {
   return prisma.member.findMany({
     where: {
       orgId,
-      primaryCenterId: opts.centerId || undefined,
-      state: opts.state || undefined,
-      ...(opts.q
-        ? {
-            OR: [
-              { firstName: { contains: opts.q, mode: "insensitive" } },
-              { lastName: { contains: opts.q, mode: "insensitive" } },
-              { email: { contains: opts.q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      ...(opts.centerIds?.length
+        ? { primaryCenterId: { in: opts.centerIds } }
+        : { primaryCenterId: opts.centerId || undefined }),
+      ...(opts.states?.length ? { state: { in: opts.states } } : { state: opts.state || undefined }),
+      ...memberSearchWhere(opts.q),
     },
     include: {
       primaryCenter: true,
@@ -36,6 +56,54 @@ export async function listMembers(
     skip: opts.skip,
     take: opts.take ?? 300,
   });
+}
+
+/**
+ * Base de los recuentos por opción de los filtros de socios: cuántas filas
+ * quedarían al añadir cada valor manteniendo el resto de filtros. Es lo que
+ * evita el callejón sin salida de «filtro → 0 resultados».
+ *
+ * Va aparte del listado y trae solo los campos que se filtran: el listado ya
+ * viene recortado por los ejes activos, así que no serviría para contar lo que
+ * pasaría con OTRO valor de esos mismos ejes.
+ */
+export async function listMemberFilterBase(orgId: string, opts: { q?: string } = {}) {
+  return prisma.member.findMany({
+    where: { orgId, ...memberSearchWhere(opts.q) },
+    select: {
+      id: true,
+      state: true,
+      primaryCenterId: true,
+      joinedAt: true,
+      subscriptions: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { plan: { select: { type: true } } },
+      },
+    },
+  });
+}
+
+/**
+ * Última asistencia por socio (columna «Última visita»): una sola agregación
+ * sobre los socios de la página, no una subconsulta por fila.
+ *
+ * Cuenta `Booking.status = ATTENDED` sobre `occurrenceDate` — el día concreto de
+ * la reserva, no la fecha base de la serie recurrente ni el momento en que se
+ * reservó.
+ */
+export async function lastAttendanceByMember(memberIds: string[]) {
+  if (memberIds.length === 0) return new Map<string, Date>();
+  const rows = await prisma.booking.groupBy({
+    by: ["memberId"],
+    where: { memberId: { in: memberIds }, status: "ATTENDED" },
+    _max: { occurrenceDate: true },
+  });
+  const out = new Map<string, Date>();
+  for (const row of rows) {
+    if (row._max.occurrenceDate) out.set(row.memberId, row._max.occurrenceDate);
+  }
+  return out;
 }
 
 export async function listActiveMembersForSelect(orgId: string) {

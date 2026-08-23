@@ -13,10 +13,11 @@ import {
 } from "@/lib/leads-queries";
 import { listActivePlansForOrg } from "@/lib/members-queries";
 import { KpiCard } from "@/components/kpi-card";
-import { FilterBar } from "@/components/ui/filter-bar";
+import { FilterToolbar, type FilterGroup } from "@/components/ui/filter-toolbar";
+import { parseFilterValues } from "@/lib/filter-params";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import type { LeadCloseType, LeadStatus } from "@prisma/client";
+import type { LeadStatus } from "@prisma/client";
 import { NewLeadDrawer } from "./new-lead-drawer";
 import { LeadsBoard } from "./leads-board";
 import { LeadConfigPanel } from "./lead-config-panel";
@@ -30,24 +31,57 @@ const COLUMNS: { status: LeadStatus; label: string; tone: "neutral" | "trial" | 
 ];
 
 const CLOSE_TYPE_OPTIONS: { value: string; label: string; tone?: "trial" | "gold" }[] = [
-  { value: "", label: "Todos" },
   { value: "EMBUDO", label: "Embudo" },
   { value: "DIRECTO", label: "Directo", tone: "trial" },
   { value: "ONLINE", label: "Online", tone: "gold" },
 ];
 
+/** Valor del eje «Responsable» para los leads sin asignar (RB-LEAD-003). */
+const NO_OWNER = "none";
+
+type LeadRow = Awaited<ReturnType<typeof listLeads>>[number];
+
+type LeadSelection = { centerId: string[]; closeType: string[]; channel: string[]; ownerId: string[] };
+
+/**
+ * Un lead pasa el filtro cuando encaja en TODOS los ejes con valores (AND entre
+ * ejes, OR dentro de cada uno). El tipo de cierre solo se aplica a los leads
+ * cerrados: es un dato que el resto no tiene, y filtrar por él no debe vaciar
+ * las demás columnas del tablero.
+ */
+function matchesLead(lead: LeadRow, sel: LeadSelection): boolean {
+  if (sel.centerId.length && !sel.centerId.includes(lead.centerId)) return false;
+  if (sel.channel.length && !sel.channel.includes(lead.channel)) return false;
+  if (sel.ownerId.length && !sel.ownerId.includes(lead.ownerUserId ?? NO_OWNER)) return false;
+  if (sel.closeType.length && lead.status === "CERRADO" && !sel.closeType.includes(lead.closeType ?? "")) return false;
+  return true;
+}
+
+function leadFacetCount(base: LeadRow[], sel: LeadSelection, axis: keyof LeadSelection, value: string) {
+  return base.filter((lead) => matchesLead(lead, { ...sel, [axis]: [value] })).length;
+}
+
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; centerId?: string; closeType?: string }>;
+  searchParams: Promise<{ q?: string; centerId?: string; closeType?: string; channel?: string; ownerId?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
   const canCreate = canManageLeads(session.user.role);
-  const closeTypeFilter = (params.closeType || "") as LeadCloseType | "";
 
-  const [leads, channels, , centers, closeRate, closeBreakdown, withoutOwner, channelDist, reasonDist, plans] = await Promise.all([
-    listLeads(session.user.orgId, { q: params.q, centerId: params.centerId }),
+  const selection: LeadSelection = {
+    centerId: parseFilterValues(params.centerId),
+    closeType: parseFilterValues(params.closeType),
+    channel: parseFilterValues(params.channel),
+    ownerId: parseFilterValues(params.ownerId),
+  };
+
+  // Solo la búsqueda va a la query: los ejes se resuelven sobre el mismo
+  // conjunto que alimenta los recuentos por opción, así que un filtro nunca
+  // deja el tablero vacío sin avisar de cuántos leads dejaría cada valor.
+  const [allLeads, channels, , centers, closeRate, closeBreakdown, withoutOwner, channelDist, reasonDist, plans] = await Promise.all([
+    listLeads(session.user.orgId, { q: params.q }),
     listLeadChannels(session.user.orgId),
     listNoCloseReasons(session.user.orgId),
     listCentersForLead(session.user.orgId),
@@ -59,12 +93,69 @@ export default async function LeadsPage({
     listActivePlansForOrg(session.user.orgId),
   ]);
 
+  const leads = allLeads.filter((lead) => matchesLead(lead, selection));
+
   const byStatus: Record<string, typeof leads> = {};
   for (const col of COLUMNS) byStatus[col.status] = [];
-  for (const lead of leads) {
-    if (lead.status === "CERRADO" && closeTypeFilter && lead.closeType !== closeTypeFilter) continue;
-    byStatus[lead.status]?.push(lead);
+  for (const lead of leads) byStatus[lead.status]?.push(lead);
+
+  // Responsables presentes en el embudo: no hace falta la lista completa de
+  // usuarios, y así el eje no ofrece a quien no tiene ningún lead.
+  const owners = new Map<string, string>();
+  for (const lead of allLeads) {
+    if (lead.ownerUserId) owners.set(lead.ownerUserId, lead.owner?.name ?? "Sin nombre");
   }
+
+  const filterGroups: FilterGroup[] = [
+    {
+      name: "centerId",
+      label: "Centro",
+      width: 268,
+      options: centers.map((c) => ({
+        value: c.id,
+        label: c.name,
+        count: leadFacetCount(allLeads, selection, "centerId", c.id),
+      })),
+    },
+    {
+      name: "closeType",
+      label: "Tipo de cierre",
+      width: 262,
+      options: CLOSE_TYPE_OPTIONS.map((o) => ({
+        value: o.value,
+        label: o.label,
+        tone: o.tone,
+        count: leadFacetCount(allLeads, selection, "closeType", o.value),
+      })),
+    },
+    {
+      name: "channel",
+      label: "Canal",
+      width: 252,
+      options: channels.map((c) => ({
+        value: c.label,
+        label: c.label,
+        count: leadFacetCount(allLeads, selection, "channel", c.label),
+      })),
+    },
+    {
+      name: "ownerId",
+      label: "Responsable",
+      width: 252,
+      options: [
+        ...[...owners].map(([id, name]) => ({
+          value: id,
+          label: name,
+          count: leadFacetCount(allLeads, selection, "ownerId", id),
+        })),
+        {
+          value: NO_OWNER,
+          label: "Sin responsable",
+          count: leadFacetCount(allLeads, selection, "ownerId", NO_OWNER),
+        },
+      ],
+    },
+  ];
 
   const { funnel } = closeRate;
   const decided = funnel.cerrado + funnel.noCerrado;
@@ -100,23 +191,21 @@ export default async function LeadsPage({
         />
       </div>
 
-      <FilterBar
-        kicker="Filtrar leads"
-        searchName="q"
-        searchDefault={params.q}
-        searchPlaceholder="Buscar por nombre o teléfono..."
-        chipName="centerId"
-        chipLabel="Centro"
-        chipDefault={params.centerId}
-        chipOptions={[{ value: "", label: "Todos" }, ...centers.map((c) => ({ value: c.id, label: c.name }))]}
-        extraChipName="closeType"
-        extraChipLabel="Tipo de cierre (solo columna Cerrado)"
-        extraChipDefault={params.closeType}
-        extraChipOptions={CLOSE_TYPE_OPTIONS}
+      <FilterToolbar
+        groups={filterGroups}
+        total={leads.length}
+        resultLabel={{ one: "lead", many: "leads" }}
+        searchPlaceholder="Buscar nombre o teléfono…"
       />
 
       {leads.length === 0 ? (
-        <EmptyState title="Sin leads" description="Todavía no hay contactos en el embudo comercial." />
+        // Con filtros puestos, «todavía no hay contactos» sería mentira: lo que
+        // no hay son leads que encajen.
+        allLeads.length === 0 ? (
+          <EmptyState title="Sin leads" description="Todavía no hay contactos en el embudo comercial." />
+        ) : (
+          <EmptyState title="Sin resultados" description="Ningún lead coincide con estos filtros." />
+        )
       ) : (
         <LeadsBoard columns={COLUMNS} leadsByStatus={byStatus} canClaim={canCreate} />
       )}

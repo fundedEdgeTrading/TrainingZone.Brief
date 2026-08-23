@@ -5,6 +5,8 @@ export const AUDIT_PAGE_SIZE = 50;
 
 export type AuditFilters = {
   page?: number;
+  /** Multi-valor: dentro del eje, OR (`?action=A,B`). */
+  actions?: string[];
   action?: string;
   from?: string; // "YYYY-MM-DD"
   to?: string; // "YYYY-MM-DD"
@@ -16,9 +18,11 @@ function buildWhere(orgId: string, filters: AuditFilters): Prisma.AuditLogWhereI
   if (filters.from) createdAt.gte = new Date(`${filters.from}T00:00:00`);
   if (filters.to) createdAt.lte = new Date(`${filters.to}T23:59:59.999`);
 
+  const actions = (filters.actions ?? (filters.action ? [filters.action] : [])).filter((a) => a && a !== "all");
+
   return {
     orgId,
-    action: filters.action && filters.action !== "all" ? filters.action : undefined,
+    action: actions.length ? { in: actions } : undefined,
     createdAt: filters.from || filters.to ? createdAt : undefined,
     actor: filters.q ? { name: { contains: filters.q, mode: "insensitive" } } : undefined,
   };

@@ -15,6 +15,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { useMediaQuery } from "@/lib/use-media-query";
+import { usePopoverPosition, POPOVER_MAX_HEIGHT } from "@/lib/use-popover-position";
 
 const CONTROL =
   "w-full rounded-control border border-brand-border bg-input px-3.5 py-2.5 text-sm text-brand-text placeholder:text-faint transition-[border-color,box-shadow] duration-200 focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none hover:border-brand-border-hover";
@@ -88,13 +89,8 @@ function optionsFromChildren(children: ReactNode): Option[] {
   return options;
 }
 
-/** Alto máximo de la lista: nunca ocupa más que el hueco libre en pantalla. */
-const MENU_MAX_HEIGHT = 300;
-const MENU_GAP = 6;
 /** Ancho mínimo de la lista, aunque el disparador sea más estrecho. */
 const MENU_MIN_WIDTH = 260;
-/** Margen mínimo con los bordes del viewport (también evita la barra de gestos). */
-const VIEWPORT_MARGIN = 10;
 /** Alto aproximado de una opción y del buscador: sirve para estimar si la lista
     cabe debajo del campo. Es una estimación al alza a propósito. */
 const OPTION_ROW = 44;
@@ -103,16 +99,6 @@ const SEARCH_ROW = 48;
 const SEARCH_FROM = 8;
 /** Por debajo de este ancho la lista se pinta como hoja inferior. */
 const MOBILE_QUERY = "(max-width: 639px)";
-
-type MenuPosition = {
-  left: number;
-  width: number;
-  maxHeight: number;
-  side: "top" | "bottom";
-  /** Volteada se ancla por `bottom` (ver comentario en placeMenu). */
-  top?: number;
-  bottom?: number;
-};
 
 const noopSubscribe = () => () => {};
 function useMounted() {
@@ -180,50 +166,24 @@ export function Select({
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [position, setPosition] = useState<MenuPosition | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  /** Lado elegido al abrir: se conserva hasta cerrar (regla 2). */
-  const sideRef = useRef<"top" | "bottom">("bottom");
+
+  // Colocación compartida con los paneles de filtro de tabla
+  // (`src/lib/use-popover-position.ts`): mismas reglas 1-4.
+  const { position, place: placeMenu, reset: resetPosition } = usePopoverPosition({
+    triggerRef,
+    estimateHeight: options.length * OPTION_ROW + (withSearch ? SEARCH_ROW : 0) + 12,
+    minWidth: MENU_MIN_WIDTH,
+    maxHeight: POPOVER_MAX_HEIGHT,
+  });
 
   const close = useCallback(() => {
     setOpen(false);
     setQuery("");
-    setPosition(null);
-  }, []);
-
-  const placeMenu = useCallback(
-    (keepSide: boolean) => {
-      const trigger = triggerRef.current;
-      if (!trigger) return;
-      const rect = trigger.getBoundingClientRect();
-      const vh = window.innerHeight;
-      const vw = window.innerWidth;
-
-      const needed = Math.min(
-        MENU_MAX_HEIGHT,
-        options.length * OPTION_ROW + (withSearch ? SEARCH_ROW : 0) + 12,
-      );
-      const below = vh - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
-      const above = rect.top - MENU_GAP - VIEWPORT_MARGIN;
-
-      const side = keepSide ? sideRef.current : below < needed && above > below ? "top" : "bottom";
-      sideRef.current = side;
-
-      const space = Math.max(140, side === "top" ? above : below);
-      const maxHeight = Math.min(needed, space);
-      const width = Math.min(Math.max(rect.width, MENU_MIN_WIDTH), vw - VIEWPORT_MARGIN * 2);
-      const left = Math.min(Math.max(VIEWPORT_MARGIN, rect.left), vw - width - VIEWPORT_MARGIN);
-
-      setPosition(
-        side === "top"
-          ? { side, left, width, maxHeight, bottom: Math.max(VIEWPORT_MARGIN, vh - rect.top + MENU_GAP) }
-          : { side, left, width, maxHeight, top: Math.min(rect.bottom + MENU_GAP, vh - VIEWPORT_MARGIN - maxHeight) },
-      );
-    },
-    [options.length, withSearch],
-  );
+    resetPosition();
+  }, [resetPosition]);
 
   // La posición se calcula al abrir (en el propio manejador) y se recalcula en
   // scroll/resize, no en un efecto: así no hay un render extra con la lista

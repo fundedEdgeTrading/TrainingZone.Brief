@@ -889,6 +889,37 @@ textarea:focus-visible {
     transform: none;
   }
 }
+/* ===== Filtros de tabla (barra unificada / filtros en columna) =====
+   Sin botón «Filtrar», el cambio se aplica al soltar el clic: hace falta una
+   confirmación visual de que se ha aplicado. Un barrido dorado recorre el borde
+   inferior de la barra y las filas vuelven a entrar escalonadas (`tzRowIn`).
+   `prefers-reduced-motion` ya las anula al final de este fichero. */
+@keyframes tzSweep {
+  0% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  70% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+/* Entrada de un chip de filtro activo y del botón «Limpiar». */
+@keyframes tzChipIn {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Check que se dibuja solo (stroke-dasharray: 30) al confirmar el guardado. */
 @keyframes tzDraw {
   from {

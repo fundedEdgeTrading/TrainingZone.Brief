@@ -19,6 +19,22 @@ export type DataTableColumn = {
    * solo tienen sentido junto al resto de la fila (un índice, un separador).
    */
   hideOnCard?: boolean;
+  /**
+   * Disparador del panel de filtro de esta columna (variante «filtros en
+   * columna»): el filtro vive en la cabecera del dato que filtra. Se pinta a la
+   * derecha del rótulo y solo en la tabla — en la vista de tarjetas de móvil no
+   * hay cabeceras, así que quien llama debe ofrecer los mismos ejes en el riel.
+   */
+  filter?: React.ReactNode;
+  /** Subraya la columna en oro mientras su filtro tiene algún valor. */
+  filterActive?: boolean;
+  /**
+   * Clase de la celda en la vista de tarjetas de móvil, cuando no sirve la de
+   * la tabla. Lo usan las columnas que se ocultan por ancho (`hidden
+   * xl:table-cell`): en una tarjeta sí caben, y sin esto se quedaba la etiqueta
+   * con el valor oculto.
+   */
+  cardClassName?: string;
 };
 
 export type DataTableRow = {
@@ -86,13 +102,15 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 export function DataTable({
   columns,
   rows,
-  pageSize = 10,
+  pageSize = 12,
   defaultSort,
   emptyTitle = "Sin resultados",
   emptyDescription,
   pagination = true,
   maxBodyHeight = "560px",
   cardTitleKey,
+  density = "default",
+  toolbar,
   className,
 }: {
   columns: DataTableColumn[];
@@ -109,11 +127,29 @@ export function DataTable({
    * primera, que en todas las tablas de la app es la que identifica la fila.
    */
   cardTitleKey?: string;
+  /**
+   * `compact` es la densidad del rediseño de filtros (celda 10/20 px, avatar de
+   * 32): con la barra de filtros reducida a 58 px caben más filas en pantalla
+   * sin que la tabla se lea apretada.
+   */
+  density?: "compact" | "default";
+  /**
+   * Riel propio de la tarjeta (búsqueda, recuento, ejes sin columna visible).
+   * Se pinta también cuando no hay filas: si el riel desapareciera con el
+   * listado vacío, un filtro que no devuelve nada dejaría al usuario sin forma
+   * de deshacerlo.
+   */
+  toolbar?: React.ReactNode;
   className?: string;
 }) {
   const isNarrow = useIsNarrow();
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(defaultSort ?? null);
-  /** Sube en cada reordenación: se usa como `key` del `<tbody>` para rearmar la entrada. */
+  /**
+   * Sube en cada reordenación Y con cada nuevo juego de filas (filtro
+   * aplicado): se usa como `key` del `<tbody>` para rearmar la entrada
+   * escalonada. Sin botón «Filtrar», ese reentrada es parte de la confirmación
+   * de que el filtro se ha aplicado.
+   */
   const [sortRun, setSortRun] = useState(0);
   const [page, setPage] = useState(1);
 
@@ -126,6 +162,7 @@ export function DataTable({
   if (rows !== prevRows) {
     setPrevRows(rows);
     setPage(1);
+    setSortRun((n) => n + 1);
   }
 
   const sortedRows = useMemo(() => {
@@ -160,6 +197,7 @@ export function DataTable({
   if (rows.length === 0) {
     return (
       <div className={clsx("bg-brand-card border border-brand-border rounded-card shadow-card", className)}>
+        {toolbar}
         <EmptyState title={emptyTitle} description={emptyDescription} />
       </div>
     );
@@ -172,6 +210,7 @@ export function DataTable({
 
   return (
     <div className={clsx("bg-brand-card border border-brand-border rounded-card overflow-hidden shadow-card", className)}>
+      {toolbar}
       {/* Móvil: una tarjeta por fila. Una tabla de 5 columnas no cabe en 375 px
           y obligaba a arrastrar en horizontal para leer cada registro. */}
       {isNarrow ? (
@@ -204,7 +243,7 @@ export function DataTable({
               className={clsx("border-t border-tz-sand px-4 py-3.5 first:border-t-0", row.className)}
               style={
                 sortRun > 0
-                  ? { ...row.style, animation: `tzRowIn .28s ${(Math.min(i, 10) * 0.02).toFixed(2)}s both` }
+                  ? { ...row.style, animation: `tzRowIn .34s ${(Math.min(i, 12) * 0.028).toFixed(3)}s both` }
                   : row.style
               }
             >
@@ -216,7 +255,9 @@ export function DataTable({
                       <dt className="min-w-0 text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted leading-[1.7]">
                         {col.header}
                       </dt>
-                      <dd className={clsx("min-w-0 break-words", col.className)}>{row.cells[col.key]}</dd>
+                      <dd className={clsx("min-w-0 break-words", col.cardClassName ?? col.className)}>
+                        {row.cells[col.key]}
+                      </dd>
                     </Fragment>
                   ))}
                 </dl>
@@ -233,21 +274,47 @@ export function DataTable({
           <thead className="sticky top-0 z-10 bg-tz-bone text-brand-muted text-[11px] font-bold uppercase tracking-[0.08em] shadow-[0_1px_0_var(--color-tz-sand)]">
             <tr>
               {columns.map((col) => (
-                <th key={col.key} className={clsx("text-left px-3 lg:px-5 py-3 whitespace-nowrap", ALIGN_CLASS[col.align ?? "left"], col.thClassName)}>
-                  {col.sortable ? (
-                    <button
-                      type="button"
-                      onClick={() => handleSort(col.key)}
-                      className={clsx(
-                        "inline-flex items-center gap-1.5 uppercase tracking-[0.08em] font-bold text-[11px] text-brand-muted hover:text-brand-text transition-colors cursor-pointer",
-                        col.align === "right" && "flex-row-reverse"
-                      )}
-                    >
-                      {col.header}
-                      <SortIcon active={sort?.key === col.key} dir={sort?.key === col.key ? sort.dir : "asc"} />
-                    </button>
-                  ) : (
-                    col.header
+                <th
+                  key={col.key}
+                  data-menu-root={col.filter ? "1" : undefined}
+                  className={clsx(
+                    "relative text-left px-3 lg:px-5 py-3 whitespace-nowrap",
+                    ALIGN_CLASS[col.align ?? "left"],
+                    col.filterActive && "text-brand-text",
+                    col.thClassName,
+                  )}
+                >
+                  <span className={clsx("inline-flex items-center gap-2", col.align === "right" && "flex-row-reverse")}>
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.key)}
+                        className={clsx(
+                          "inline-flex items-center gap-1.5 uppercase tracking-[0.08em] font-bold text-[11px] hover:text-brand-text transition-colors cursor-pointer",
+                          col.filterActive ? "text-brand-text" : "text-brand-muted",
+                          col.align === "right" && "flex-row-reverse"
+                        )}
+                      >
+                        {col.header}
+                        <SortIcon active={sort?.key === col.key} dir={sort?.key === col.key ? sort.dir : "asc"} />
+                      </button>
+                    ) : (
+                      col.header
+                    )}
+                    {col.filter}
+                  </span>
+                  {/* Subrayado dorado: hace visible de un vistazo por qué
+                      columna se está filtrando, sin abrir ningún panel. */}
+                  {col.filterActive && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-x-3 lg:inset-x-5 bottom-0 h-0.5 rounded-t-[2px]"
+                      style={{
+                        background: "linear-gradient(90deg,#e3cfa2,#b58e52)",
+                        transformOrigin: "left",
+                        animation: "tzGrow .34s var(--ease-out-soft) both",
+                      }}
+                    />
                   )}
                 </th>
               ))}
@@ -264,12 +331,20 @@ export function DataTable({
                   // del `<tbody>` rearma la animación; mientras nadie ha
                   // reordenado manda el estilo de entrada que trae la fila.
                   sortRun > 0
-                    ? { ...row.style, animation: `tzRowIn .28s ${(Math.min(i, 10) * 0.02).toFixed(2)}s both` }
+                    ? { ...row.style, animation: `tzRowIn .34s ${(Math.min(i, 12) * 0.028).toFixed(3)}s both` }
                     : row.style
                 }
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={clsx("px-3 lg:px-5 py-3.5", ALIGN_CLASS[col.align ?? "left"], col.className)}>
+                  <td
+                    key={col.key}
+                    className={clsx(
+                      "px-3 lg:px-5",
+                      density === "compact" ? "py-2.5" : "py-3.5",
+                      ALIGN_CLASS[col.align ?? "left"],
+                      col.className,
+                    )}
+                  >
                     {row.cells[col.key]}
                   </td>
                 ))}

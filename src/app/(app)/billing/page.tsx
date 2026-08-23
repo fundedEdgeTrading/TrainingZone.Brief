@@ -10,6 +10,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import PaymentForm from "./payment-form";
 import StripeCheckoutForm from "./stripe-checkout-form";
 import { PostponePaymentAction, RefundPaymentAction } from "./payment-lifecycle-forms";
+import { BillingStatusFilter } from "./billing-status-filter";
+import { parseFilterValues } from "@/lib/filter-params";
 import type { PaymentStatus } from "@prisma/client";
 
 function euros(cents: number) {
@@ -17,6 +19,7 @@ function euros(cents: number) {
 }
 
 const STATUS_LABEL: Record<string, string> = { PAID: "Pagado", PENDING: "Pendiente", FAILED: "Fallido", REFUNDED: "Devuelto" };
+const PAYMENT_STATUSES: PaymentStatus[] = ["PAID", "PENDING", "FAILED", "REFUNDED"];
 
 export default async function BillingPage({
   searchParams,
@@ -28,7 +31,7 @@ export default async function BillingPage({
 
   const [kpis, payments, delinquent, membersForForm, plans, stripeConfigured] = await Promise.all([
     getBillingKpis(session.user.orgId),
-    listPayments(session.user.orgId, { status: (params.status as PaymentStatus) || undefined }),
+    listPayments(session.user.orgId, { statuses: parseFilterValues(params.status) as PaymentStatus[] }),
     getDelinquentMembers(session.user.orgId),
     getMembersForPaymentForm(session.user.orgId),
     listActivePlansForOrg(session.user.orgId),
@@ -98,19 +101,13 @@ export default async function BillingPage({
         title="Pagos recientes"
         delay={0.24}
         action={
-          <div className="flex flex-wrap gap-1 text-xs">
-            {["", "PAID", "PENDING", "FAILED"].map((s) => (
-              <Link
-                key={s}
-                href={s ? `/billing?status=${s}` : "/billing"}
-                className={`px-2 py-1 rounded-md transition-colors duration-150 ${
-                  (params.status ?? "") === s ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"
-                }`}
-              >
-                {s ? STATUS_LABEL[s] : "Todos"}
-              </Link>
-            ))}
-          </div>
+          <BillingStatusFilter
+            options={PAYMENT_STATUSES.map((s) => ({
+              value: s,
+              label: STATUS_LABEL[s],
+              tone: PAYMENT_STATUS_TONE[s],
+            }))}
+          />
         }
       >
         <div className="sm:overflow-x-auto">

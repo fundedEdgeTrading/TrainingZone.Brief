@@ -13,27 +13,36 @@ import {
   type AlignmentCategory,
   type SortBy,
 } from "@/lib/feedback-queries";
+import { FilterToolbar, type FilterGroup } from "@/components/ui/filter-toolbar";
+import { parseFilterValues } from "@/lib/filter-params";
 import { AlignmentTrack } from "./alignment-track";
-import { FeedbackFilterBar } from "./feedback-filter-bar";
 
-const CAT_PARAM_TO_CATEGORY: Record<string, AlignmentCategory | "all"> = {
-  all: "all",
+// El eje «Alineación» es multi-valor: dentro del eje los valores se combinan
+// con OR (`?cat=ciego,sin`). `cliente_positivo` no tiene opción propia (ver
+// README): no es ni punto ciego ni alineado, y no hay caso de uso para filtrarlo.
+const CAT_PARAM_TO_CATEGORY: Record<string, AlignmentCategory> = {
   ciego: "ciego",
   alineado: "alineado",
   sin: "sin_feedback",
 };
-const CATEGORY_TO_CAT_PARAM: Record<AlignmentCategory, string> = {
-  ciego: "ciego",
-  cliente_positivo: "cliente_positivo", // sin chip dedicado en el filtro (ver README)
-  alineado: "alineado",
-  sin_feedback: "sin",
-};
+
+const CAT_OPTIONS = [
+  { value: "ciego", label: "Puntos ciegos" },
+  { value: "alineado", label: "Alineados" },
+  { value: "sin", label: "Sin feedback" },
+];
 
 const SORT_PARAM_TO_SORTBY: Record<string, SortBy> = {
   divergencia: "divergencia",
   satisfaccion: "satisfaccion",
   nombre: "nombre",
 };
+
+const SORT_OPTIONS = [
+  { value: "divergencia", label: "Mayor divergencia" },
+  { value: "satisfaccion", label: "Menor satisfacción" },
+  { value: "nombre", label: "Nombre" },
+];
 
 // highlightBlindSpots (README "Tweaks"): resalta las filas de punto ciego. Por
 // defecto true; no se expone control en la UI (no hay caso de uso para
@@ -56,15 +65,48 @@ export default async function FeedbackPage({
   const orgId = session.user.orgId;
   const params = await searchParams;
 
-  const cat = params.cat ? CAT_PARAM_TO_CATEGORY[params.cat] ?? "all" : "all";
+  const selection = {
+    centerId: parseFilterValues(params.centerId),
+    cat: parseFilterValues(params.cat),
+  };
   const sortBy = params.sort ? SORT_PARAM_TO_SORTBY[params.sort] ?? "divergencia" : "divergencia";
 
-  const [rows, centers] = await Promise.all([
-    listMemberFeedback(orgId, { q: params.q, centerId: params.centerId, cat, sortBy }),
+  // La query solo aplica búsqueda y orden: centro y alineación se resuelven
+  // aquí, sobre el mismo conjunto con el que se calculan los recuentos por
+  // opción de cada eje (lo que evita filtrar hasta dejar la lista vacía).
+  const [allRows, centers] = await Promise.all([
+    listMemberFeedback(orgId, { q: params.q, sortBy }),
     listCentersForFeedback(orgId),
   ]);
 
+  const matches = (row: (typeof allRows)[number], sel: typeof selection) => {
+    if (sel.centerId.length && !sel.centerId.includes(row.centerId)) return false;
+    if (sel.cat.length && !sel.cat.some((v) => CAT_PARAM_TO_CATEGORY[v] === row.cat)) return false;
+    return true;
+  };
+  const facetCount = (axis: keyof typeof selection, value: string) =>
+    allRows.filter((row) => matches(row, { ...selection, [axis]: [value] })).length;
+
+  const rows = allRows.filter((row) => matches(row, selection));
   const kpis = computeFeedbackKpis(rows);
+
+  const filterGroups: FilterGroup[] = [
+    {
+      name: "centerId",
+      label: "Centro",
+      width: 268,
+      options: centers.map((c) => ({ value: c.id, label: c.name, count: facetCount("centerId", c.id) })),
+    },
+    {
+      name: "cat",
+      label: "Alineación",
+      width: 252,
+      options: CAT_OPTIONS.map((o) => ({ ...o, count: facetCount("cat", o.value) })),
+    },
+    // El orden no es combinable consigo mismo: es una píldora más, pero de
+    // selección única.
+    { name: "sort", label: "Orden", width: 244, single: true, options: SORT_OPTIONS },
+  ];
 
   return (
     <div className="tz-page space-y-4">
@@ -135,23 +177,11 @@ export default async function FeedbackPage({
         />
       </div>
 
-      <FeedbackFilterBar
-        searchDefault={params.q}
-        centerOptions={[{ value: "", label: "Todos" }, ...centers.map((c) => ({ value: c.id, label: c.name }))]}
-        centerDefault={params.centerId}
-        catOptions={[
-          { value: "all", label: "Todos" },
-          { value: "ciego", label: "Puntos ciegos" },
-          { value: "alineado", label: "Alineados" },
-          { value: "sin", label: "Sin feedback" },
-        ]}
-        catDefault={cat !== "all" ? CATEGORY_TO_CAT_PARAM[cat] : "all"}
-        sortOptions={[
-          { value: "divergencia", label: "Mayor divergencia" },
-          { value: "satisfaccion", label: "Menor satisfacción" },
-          { value: "nombre", label: "Nombre" },
-        ]}
-        sortDefault={sortBy}
+      <FilterToolbar
+        groups={filterGroups}
+        total={rows.length}
+        resultLabel={{ one: "socio", many: "socios" }}
+        searchPlaceholder="Buscar por nombre…"
       />
 
       <Card title="SOCIOS" meta={`${rows.length} socio${rows.length === 1 ? "" : "s"}`}>

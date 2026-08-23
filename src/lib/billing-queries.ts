@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import type { PaymentStatus } from "@prisma/client";
 
-export async function listPayments(orgId: string, opts: { status?: PaymentStatus } = {}) {
+export async function listPayments(orgId: string, opts: { status?: PaymentStatus; statuses?: PaymentStatus[] } = {}) {
   return prisma.payment.findMany({
-    where: { orgId, status: opts.status || undefined },
+    // `statuses`: eje multi-valor de la píldora de estado (dentro del eje, OR).
+    where: { orgId, ...(opts.statuses?.length ? { status: { in: opts.statuses } } : { status: opts.status || undefined }) },
     include: { member: { select: { id: true, firstName: true, lastName: true } } },
     orderBy: { date: "desc" },
     take: 100,

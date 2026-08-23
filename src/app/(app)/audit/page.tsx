@@ -5,7 +5,9 @@ import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
 import { getAuditLogPage, getDistinctAuditActions, type AuditFilters } from "@/lib/audit-queries";
-import { Select } from "@/components/ui/field";
+import { FilterToolbar, type FilterGroup } from "@/components/ui/filter-toolbar";
+import { parseFilterValues } from "@/lib/filter-params";
+import { AuditDateFilter } from "./audit-date-filter";
 
 const ACTION_LABEL: Record<string, string> = {
   HEALTH_RECORD_READ: "Lectura de dato de salud",
@@ -16,9 +18,6 @@ const ACTION_LABEL: Record<string, string> = {
   CONSENT_GRANTED: "Consentimiento otorgado",
   CONSENT_REVOKED: "Consentimiento retirado",
 };
-
-const CONTROL =
-  "rounded-control border border-brand-border bg-white px-3 py-2 text-sm text-brand-text outline-none focus:border-brand-ink";
 
 export default async function AuditPage({
   searchParams,
@@ -33,7 +32,7 @@ export default async function AuditPage({
   const params = await searchParams;
   const filters: AuditFilters = {
     page: params.page ? Number(params.page) : 1,
-    action: params.action,
+    actions: parseFilterValues(params.action),
     from: params.from,
     to: params.to,
     q: params.q,
@@ -45,10 +44,19 @@ export default async function AuditPage({
   ]);
 
   const exportQs = new URLSearchParams();
-  if (filters.action) exportQs.set("action", filters.action);
+  if (filters.actions?.length) exportQs.set("action", filters.actions.join(","));
   if (filters.from) exportQs.set("from", filters.from);
   if (filters.to) exportQs.set("to", filters.to);
   if (filters.q) exportQs.set("q", filters.q);
+
+  const actionGroups: FilterGroup[] = [
+    {
+      name: "action",
+      label: "Acción",
+      width: 300,
+      options: actions.map((a) => ({ value: a, label: ACTION_LABEL[a] ?? a })),
+    },
+  ];
 
   function pageHref(p: number) {
     const qs = new URLSearchParams(exportQs);
@@ -70,42 +78,14 @@ export default async function AuditPage({
         }
       />
 
-      <form className="bg-brand-card border border-brand-border rounded-card p-4 flex flex-wrap items-end gap-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-bold uppercase tracking-[.08em] text-brand-muted">Acción</label>
-          <Select name="action" defaultValue={filters.action || "all"} searchable className="sm:w-[220px]">
-            <option value="all">Todas</option>
-            {actions.map((a) => (
-              <option key={a} value={a}>
-                {ACTION_LABEL[a] ?? a}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-bold uppercase tracking-[.08em] text-brand-muted">Desde</label>
-          <input type="date" name="from" defaultValue={filters.from ?? ""} className={CONTROL} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-bold uppercase tracking-[.08em] text-brand-muted">Hasta</label>
-          <input type="date" name="to" defaultValue={filters.to ?? ""} className={CONTROL} />
-        </div>
-        <div className="flex flex-col gap-1 flex-1 min-w-[160px]">
-          <label className="text-[11px] font-bold uppercase tracking-[.08em] text-brand-muted">Actor</label>
-          <input type="text" name="q" defaultValue={filters.q ?? ""} placeholder="Nombre..." className={CONTROL} />
-        </div>
-        <button
-          type="submit"
-          className="bg-brand-ink text-tz-bone rounded-[10px] px-5 py-2.5 font-display font-bold text-sm uppercase tracking-[.03em]"
-        >
-          Filtrar
-        </button>
-        {(filters.action || filters.from || filters.to || filters.q) && (
-          <Link href="/audit" className="text-[13px] font-semibold text-brand-muted hover:text-brand-text underline underline-offset-2">
-            Limpiar
-          </Link>
-        )}
-      </form>
+      <FilterToolbar
+        groups={actionGroups}
+        total={total}
+        resultLabel={{ one: "evento", many: "eventos" }}
+        searchPlaceholder="Buscar por actor…"
+        extra={<AuditDateFilter />}
+        extraAxes={["from", "to"]}
+      />
 
       <DataTable
         columns={auditColumns}

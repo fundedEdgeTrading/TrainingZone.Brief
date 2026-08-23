@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { requireRole } from "@/lib/guard";
 import { requireFeature } from "@/lib/entitlements";
 import { getAuditLogForExport } from "@/lib/audit-queries";
+import { parseFilterValues } from "@/lib/filter-params";
 
 function csvEscape(value: string) {
   // Excel y LibreOffice interpretan como fórmula cualquier celda que empiece
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const p = req.nextUrl.searchParams;
   const logs = await getAuditLogForExport(session.user.orgId, {
-    action: p.get("action") ?? undefined,
+    actions: parseFilterValues(p.get("action")),
     from: p.get("from") ?? undefined,
     to: p.get("to") ?? undefined,
     q: p.get("q") ?? undefined,
