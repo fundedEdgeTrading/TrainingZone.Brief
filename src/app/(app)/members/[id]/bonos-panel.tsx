@@ -72,6 +72,12 @@ export function BonosPanel({
   canAdjust: boolean;
   actionsById?: Record<string, BonoAction[]>;
 }) {
+  // Qué acción tiene abierta cada bono. Vive aquí y no en la tarjeta porque la
+  // tarjeta se remonta cuando llega un saldo nuevo del servidor (ver la `key`
+  // de abajo): si el estado viviera dentro, guardar el saldo cerraría el
+  // desplegable justo cuando se quiere ver el resultado.
+  const [openByBono, setOpenByBono] = useState<Record<string, string | null>>({});
+
   const vigentes = bonos.filter((b) => b.status === "ACTIVE" || b.status === "FROZEN");
   const historico = bonos.filter((b) => b.status !== "ACTIVE" && b.status !== "FROZEN");
 
@@ -121,6 +127,8 @@ export function BonosPanel({
               bono={b}
               canAdjust={canAdjust}
               actions={actionsById[b.id] ?? []}
+              open={openByBono[b.id] ?? null}
+              onOpenChange={(key) => setOpenByBono((prev) => ({ ...prev, [b.id]: key }))}
             />
           ))
         )}
@@ -173,10 +181,21 @@ export function BonosPanel({
   );
 }
 
-function BonoCard({ bono, canAdjust, actions }: { bono: BonoRowData; canAdjust: boolean; actions: BonoAction[] }) {
+function BonoCard({
+  bono,
+  canAdjust,
+  actions,
+  open,
+  onOpenChange,
+}: {
+  bono: BonoRowData;
+  canAdjust: boolean;
+  actions: BonoAction[];
+  open: string | null;
+  onOpenChange: (key: string | null) => void;
+}) {
   const server = bono.sessionsRemaining;
   const [draft, setDraft] = useState<number>(server ?? 0);
-  const [open, setOpen] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -339,7 +358,7 @@ function BonoCard({ bono, canAdjust, actions }: { bono: BonoRowData; canAdjust: 
                   key={item.key}
                   type="button"
                   aria-expanded={on}
-                  onClick={() => setOpen(on ? null : item.key)}
+                  onClick={() => onOpenChange(on ? null : item.key)}
                   className={clsx(
                     "rounded-lg px-3 py-1.5 text-xs font-semibold border transition-[background-color,border-color,color] duration-200 ease-out-soft",
                     item.tone === "danger"
