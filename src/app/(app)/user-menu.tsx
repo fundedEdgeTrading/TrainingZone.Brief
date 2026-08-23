@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Select } from "@/components/ui/field";
@@ -36,6 +37,33 @@ export default function UserMenu({
         </div>
       </div>
       {organizations.length > 1 && <OrgSwitcher organizations={organizations} activeOrgId={activeOrgId} />}
+      {/* Única entrada a "Mi perfil" para el personal: es donde vive la tarjeta
+          Apariencia (el socio llega a la suya por el menú de cuenta). Igual que
+          el botón de salir, en móvil se queda en icono para no comerle el ancho
+          al título de la página. */}
+      <Link
+        href="/mi-perfil"
+        aria-label="Mi perfil"
+        title="Mi perfil"
+        className="flex items-center justify-center h-[38px] w-[38px] sm:w-auto sm:px-3.5 text-[13px] font-semibold text-brand-footer border border-brand-border bg-white rounded-lg whitespace-nowrap transition-colors duration-[180ms] hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+      >
+        <svg
+          width="17"
+          height="17"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="sm:hidden"
+          aria-hidden="true"
+        >
+          <path d="M20 21a8 8 0 1 0-16 0" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        <span className="hidden sm:inline">Mi perfil</span>
+      </Link>
       {/* En móvil el rótulo se queda en un icono: con el texto completo, la
           cabecera no dejaba sitio al título de la página, que salía cortado. */}
       <button

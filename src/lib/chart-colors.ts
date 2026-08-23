@@ -1,28 +1,34 @@
 // Paleta de marca Training Zone (beige/hueso/negro). Las barras
-// destacadas/hover de las gráficas usan negro sobre relleno neutro cálido,
-// no una serie categórica cicladas.
+// destacadas/hover de las gráficas usan el sólido de contraste sobre relleno
+// neutro cálido, no una serie categórica ciclada.
+//
+// Los valores son referencias a los tokens de `globals.css`, no hexadecimales:
+// así los ejes, las rejillas y las series siguen el tema del usuario sin que
+// haya que pasar el tema por props ni duplicar la paleta. SVG resuelve `var()`
+// en `fill` y `stroke` igual que CSS. Único sitio donde no vale y por eso sigue
+// con hexadecimales: el degradado del mapa de calor, que se pinta en canvas.
 export const BRAND = {
-  yellow: "#1d1d1c",
-  ink: "#1d1d1c",
-  inkSoft: "#c7bfad",
-  inkCircle: "#1d1d1c",
+  yellow: "var(--color-brand-ink)",
+  ink: "var(--color-brand-ink)",
+  inkSoft: "var(--color-brand-border-hover)",
+  inkCircle: "var(--color-brand-ink-circle)",
 };
 
 export const STATUS = {
-  good: "#4b5a22",
-  warning: "#8a5a12",
-  warningText: "#8a5a12",
-  critical: "#8a3420",
+  good: "var(--color-good)",
+  warning: "var(--color-warning)",
+  warningText: "var(--color-warning-text)",
+  critical: "var(--color-critical)",
 };
 
 export const INK = {
-  primary: "#1d1d1c",
-  secondary: "#5b5748",
-  muted: "#8a8574",
-  faint: "#a8a296",
-  gridline: "#e7dfd2",
-  baseline: "#d8ccb8",
-  surface: "#ffffff",
+  primary: "var(--color-brand-text)",
+  secondary: "var(--color-brand-text-2)",
+  muted: "var(--color-brand-muted)",
+  faint: "var(--color-brand-faint)",
+  gridline: "var(--color-tz-sand)",
+  baseline: "var(--color-brand-border)",
+  surface: "var(--color-brand-card)",
 };
 
 export const MEMBER_STATE_COLOR: Record<string, string> = {
@@ -30,8 +36,8 @@ export const MEMBER_STATE_COLOR: Record<string, string> = {
   DELINQUENT: STATUS.critical,
   FROZEN: STATUS.warning,
   CANCELLED: INK.faint,
-  TRIAL: "#5c4a34",
-  PROSPECT: "#5b4552",
+  TRIAL: "var(--color-trial)",
+  PROSPECT: "var(--color-prospect)",
 };
 
 export const MEMBER_STATE_TONE: Record<string, "good" | "critical" | "warning" | "trial" | "prospect" | "neutral"> = {
@@ -69,7 +75,7 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
 
 export const PAYMENT_METHOD_COLOR: Record<string, string> = {
   CARD: BRAND.inkSoft,
-  SEPA: "#3a3a34",
+  SEPA: "var(--color-brand-border-dark)",
   BIZUM: STATUS.good,
   CASH: STATUS.warning,
   TRANSFER: INK.faint,
@@ -77,5 +83,14 @@ export const PAYMENT_METHOD_COLOR: Record<string, string> = {
 
 // BI-1: paleta categórica de marca para donuts (servicio/canal) — monocromática
 // beige/negro, sin degradados. Orden fijo, nunca ciclado por rango; identidad
-// siempre reforzada con leyenda + etiqueta directa (nunca solo color).
-export const CATEGORICAL = ["#1d1d1c", "#5b5748", "#8a8574", "#3a3a34", "#a8a296", "#c7bfad"];
+// siempre reforzada con leyenda + etiqueta directa (nunca solo color). La rampa
+// va del sólido de contraste al borde más tenue, así que se invierte entera con
+// el tema sin perder la separación entre escalones.
+export const CATEGORICAL = [
+  "var(--color-brand-ink)",
+  "var(--color-brand-text-2)",
+  "var(--color-brand-muted)",
+  "var(--color-brand-faint)",
+  "var(--color-brand-border-hover)",
+  "var(--color-brand-border)",
+];

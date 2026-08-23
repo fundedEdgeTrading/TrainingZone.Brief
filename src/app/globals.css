@@ -58,6 +58,17 @@
   --color-gold-bg: #f0e6d0;
   --color-pay-ok: #4b5a22;
 
+  /* Superficies que en claro coinciden con otras y en oscuro no pueden:
+     el campo de formulario se hunde por debajo de la tarjeta y el sidebar baja
+     por debajo del fondo general (la jerarquía se sostiene por luminancia,
+     no por sombras, que sobre carbón no se ven). */
+  --color-input: #ffffff;
+  --color-sidebar: #e7dfd2;
+
+  /* Velo del menú móvil. No puede salir de `tz-black`: ese token es el sólido
+     de contraste y en oscuro es hueso, así que el velo habría salido blanco. */
+  --color-scrim: rgba(29, 29, 28, 0.45);
+
   --font-sans: var(--font-poppins), "Poppins", system-ui, sans-serif;
   --font-display: var(--font-poppins), "Poppins", system-ui, sans-serif;
 
@@ -77,6 +88,96 @@
 
   /* Acento dorado del wordmark Apta */
   --color-apta-gold: #c8ab72;
+}
+
+/* ===== Tema oscuro por usuario =====
+   Los nombres de token no cambian: con Tailwind 4 los valores de `@theme` son
+   variables CSS reales, así que basta redefinirlas en un bloque posterior. Nada
+   de esto obliga a tocar una sola clase de componente. La preferencia vive en
+   `User.theme` y el servidor la escribe en `<html data-theme>` en el primer
+   HTML (ver `src/app/layout.tsx`): no hay destello.
+
+   El fondo es carbón cálido, no negro puro — conserva el matiz tierra de la
+   marca. La jerarquía se sostiene por luminancia (fondo < sidebar < tarjeta),
+   no por sombras: una sombra no se ve sobre negro. Y el "sólido de contraste"
+   (`--color-tz-black`) se invierte a hueso, porque en el código es el color con
+   el que se pinta lo destacado, no un negro literal. */
+[data-theme="dark"] {
+  --background: #1c1b19;
+  --foreground: #f4f0e8;
+
+  --color-tz-black: #f0ece3;
+  --color-tz-bone: #1d1d1c;
+  --color-tz-sand: #33322c;
+  --color-tz-linen: #33322c;
+  --color-white: #24231f;
+
+  --color-text-2: #c2bcae;
+  --color-muted: #968f7f;
+  --color-faint: #7b7566;
+
+  --color-brand-ink: #f0ece3;
+  --color-brand-ink-soft: #ffffff;
+  --color-brand-ink-circle: #f0ece3;
+  --color-brand-border-dark: #46443c;
+  --color-brand-nav-inactive: #c2bcae;
+  --color-brand-nav-hover-bg: #2b2a25;
+
+  --color-brand-bg: #1c1b19;
+  --color-brand-card: #24231f;
+  --color-brand-subtle: #2b2a25;
+  --color-brand-subtle-2: #33322c;
+  --color-brand-border: #35342e;
+  --color-brand-border-hover: #46443c;
+
+  --color-brand-text: #f4f0e8;
+  --color-brand-text-2: #c2bcae;
+  --color-brand-muted: #968f7f;
+  --color-brand-muted-2: #7b7566;
+  --color-brand-faint: #7b7566;
+  --color-brand-footer: #968f7f;
+
+  /* Semánticos: se aclaran para mantener >=4.5:1 sobre `#24231f`; sus fondos
+     bajan a versiones oscuras del mismo matiz. */
+  --color-good: #a3bb5c;
+  --color-good-bg: #2b3318;
+  --color-warning: #d9a24a;
+  --color-warning-bg: #3a2c12;
+  --color-warning-text: #d9a24a;
+  --color-critical: #e08a6f;
+  --color-critical-bg: #3a1f16;
+  --color-trial: #b39a76;
+  --color-trial-bg: #302819;
+  --color-prospect: #c3a3b5;
+  --color-prospect-bg: #33222c;
+  --color-neutral: #8f897b;
+  --color-neutral-bg: #2a2925;
+  --color-gold: #c8ab72;
+  --color-gold-bg: #332a17;
+  --color-pay-ok: #a3bb5c;
+
+  /* El oro del wordmark es el único acento constante: idéntico en los dos temas. */
+  --color-apta-gold: #c8ab72;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 4px 16px -8px rgba(0, 0, 0, 0.6);
+  --shadow-hover: 0 10px 28px -12px rgba(0, 0, 0, 0.75);
+  --shadow-pop: 0 18px 44px -16px rgba(0, 0, 0, 0.8);
+
+  --color-input: #1f1e1b;
+  --color-sidebar: #201f1c;
+  --color-scrim: rgba(0, 0, 0, 0.65);
+}
+
+/* Los cambios de tema no deben parecer un recorte de pantalla: fondos y bordes
+   del armazón y de las tarjetas interpolan. `prefers-reduced-motion` ya anula
+   todas las transiciones al final de este fichero. */
+[data-theme] body,
+[data-theme] header,
+[data-theme] aside,
+[data-theme] main {
+  transition:
+    background-color 280ms var(--ease-out-soft),
+    border-color 280ms var(--ease-out-soft);
 }
 
 @keyframes tzNavIn {
@@ -535,6 +636,10 @@ textarea:focus-visible {
   background-size: 200% 100%;
   animation: tzShimmer 1.6s ease-in-out infinite;
 }
+[data-theme="dark"] .tz-skeleton {
+  background: linear-gradient(90deg, #2b2a25 25%, #3b3a33 50%, #2b2a25 75%);
+  background-size: 200% 100%;
+}
 
 /* ===== BI-3: mapa de calor — burbujas de provincia ===== */
 @keyframes tzMapBubbleIn {
@@ -575,7 +680,7 @@ textarea:focus-visible {
   overflow: hidden;
 }
 .tz-map .leaflet-bar a {
-  background: #fff;
+  background: var(--color-brand-card);
   color: var(--color-tz-black);
   border-bottom: 1px solid var(--color-tz-sand);
   width: 30px;
@@ -593,6 +698,27 @@ textarea:focus-visible {
 }
 .tz-map .leaflet-control-attribution a {
   color: var(--color-brand-text-2);
+}
+
+/* En oscuro las teselas son las mismas imágenes claras: se invierten y se
+   apagan (el `hue-rotate` devuelve el matiz que la inversión se lleva) para
+   que el mapa no sea un rectángulo blanco en medio del panel. */
+[data-theme="dark"] .tz-map .leaflet-tile {
+  filter: grayscale(1) invert(1) brightness(0.78) contrast(0.95) sepia(0.3) hue-rotate(180deg);
+}
+[data-theme="dark"] .tz-map .leaflet-bar a {
+  background: var(--color-brand-card);
+}
+[data-theme="dark"] .tz-map .leaflet-bar a:hover {
+  background: var(--color-brand-subtle-2);
+}
+[data-theme="dark"] .tz-map .leaflet-control-attribution {
+  background: rgba(36, 35, 31, 0.78);
+}
+/* La burbuja hereda `--color-tz-black`, que en oscuro es hueso: sobre un mapa
+   oscuro se lee bien, pero su borde hueso desaparecía contra ella misma. */
+[data-theme="dark"] .tz-map-bubble-core {
+  border-color: rgba(29, 29, 28, 0.85);
 }
 
 .tz-map-bubble {

@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
+import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
+import { ThemeCard } from "../../_perfil/theme-card";
 import { Card } from "@/components/kpi-card";
 import { PageHeader } from "@/components/ui/page-header";
 import { Field, Input } from "@/components/ui/field";
@@ -12,12 +14,17 @@ import { updateMyProfileAction } from "./actions";
 
 export default async function PortalProfilePage() {
   const session = await requireRole(["MEMBER"]);
-  const member = await getMemberForUser(session.user.id);
-  if (!member) redirect("/login");
+  const [member, user] = await Promise.all([
+    getMemberForUser(session.user.id),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { theme: true } }),
+  ]);
+  if (!member || !user) redirect("/login");
 
   return (
     <div className="max-w-[720px] mx-auto flex flex-col gap-4">
       <PageHeader description="Tus datos de contacto, tu foto y tus consentimientos — solo tú puedes cambiarlos aquí." />
+
+      <ThemeCard theme={user.theme} />
 
       <Card title="Datos de contacto">
         <ActionForm action={updateMyProfileAction} successMessage="Datos actualizados." className="flex flex-col gap-4">

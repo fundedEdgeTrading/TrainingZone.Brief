@@ -172,6 +172,11 @@ model Identity {
 /// Membresía de una identidad en una organización, con su rol y su ámbito de
 /// centro. Una identidad tiene N (normalmente 1). El aislamiento multi-tenant
 /// sigue colgando de `orgId` exactamente como antes.
+enum ThemePreference {
+  LIGHT
+  DARK
+}
+
 model User {
   id           String   @id @default(cuid())
   identityId   String
@@ -184,6 +189,10 @@ model User {
   // D7 del handoff: si está activo, su foto y su nombre acompañan a las
   // sesiones que dirige en la app del socio.
   visibleInApp Boolean  @default(true)
+  // Tema de la aplicación elegido por la persona. Vive en `User` (no en
+  // `Identity` ni en `Member`): el personal no tiene ficha de socio y las
+  // preferencias de interfaz ya se guardan por membresía.
+  theme        ThemePreference @default(LIGHT)
   createdAt    DateTime @default(now())
 
   identity              Identity           @relation(fields: [identityId], references: [id], onDelete: Cascade)

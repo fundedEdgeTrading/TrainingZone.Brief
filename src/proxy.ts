@@ -2,56 +2,19 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+import { isPublicPath } from "@/lib/public-paths";
+
 // Next.js 16 renombró "middleware" a "proxy". Se evita importar "@/auth"
 // aquí a propósito: ese módulo carga Prisma (APIs de Node no disponibles
 // en el runtime de Proxy), así que la comprobación de sesión usa el JWT
 // directamente vía next-auth/jwt, que sí es compatible.
 
-// "/lead-form" (no "/lead") a propósito: con startsWith(), "/lead" también
-// marcaría pública la sección de gestión "/leads" del staff.
-const PUBLIC_PATHS = [
-  "/login",
-  "/onboarding",
-  "/lead-form",
-  "/planes",
-  "/demo-checkout",
-  "/hazte-socio",
-  "/activar",
-  "/verificar-email",
-  "/recuperar-clave",
-  "/gestionar-suscripcion",
-  // Preferencias de correo, baja y privacidad: son el pie de todos los emails
-  // y tienen que abrirse sin sesión. Exigir login para dejar de recibir correo
-  // es, literalmente, no ofrecer un medio sencillo de oposición (Art. 21 RGPD).
-  "/preferencias",
-  "/baja",
-  "/privacidad",
-  "/api/email",
-  "/servicio-no-disponible",
-  "/api/jobs",
-  "/api/stripe",
-  "/api/checkout",
-  "/api/hazte-socio",
-  // La API de la app nativa NO usa la cookie de sesión: cada route handler
-  // valida su propio token bearer con `requireApiSession`. Pasarla por el
-  // chequeo de cookie de aquí la rebotaba entera a /login — incluido su
-  // propio endpoint de login, con lo que la app no podía autenticarse nunca.
-  "/api/mobile",
-];
-
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // La raíz es pública a propósito (RB-ALTA-001): sin sesión aterriza en la
-  // landing comercial de /planes, así que no puede rebotar antes a /login. Se
-  // compara por igualdad exacta, no con `startsWith("/")`, porque eso abriría
-  // cualquier ruta del sitio.
-  const isPublic =
-    pathname === "/" ||
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith("/api/auth");
+  const isPublic = isPublicPath(pathname) || pathname.startsWith("/api/auth");
 
-  if (isPublic) return NextResponse.next();
+  if (isPublic) return withPathname(req);
 
   // Auth.js escribe la cookie de sesión como "__Secure-authjs.session-token"
   // cuando se sirve por HTTPS, y sin prefijo cuando no. `getToken` no lo
@@ -80,7 +43,19 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return NextResponse.next();
+  return withPathname(req);
+}
+
+/**
+ * Deja la ruta pedida en una cabecera. El layout raíz decide ahí el
+ * `<html data-theme>` (handoff "Modo oscuro") y necesita saber si la ruta es de
+ * la aplicación autenticada o una pantalla pública, que siempre va en claro —
+ * y un layout raíz no conoce el `pathname` por sí mismo.
+ */
+function withPathname(req: NextRequest) {
+  const headers = new Headers(req.headers);
+  headers.set("x-pathname", req.nextUrl.pathname);
+  return NextResponse.next({ request: { headers } });
 }
 
 export const config = {

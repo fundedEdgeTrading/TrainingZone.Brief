@@ -17,7 +17,7 @@ import { createPortal } from "react-dom";
 import { useMediaQuery } from "@/lib/use-media-query";
 
 const CONTROL =
-  "w-full rounded-control border border-brand-border bg-white px-3.5 py-2.5 text-sm text-brand-text placeholder:text-faint transition-[border-color,box-shadow] duration-200 focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none hover:border-brand-border-hover";
+  "w-full rounded-control border border-brand-border bg-input px-3.5 py-2.5 text-sm text-brand-text placeholder:text-faint transition-[border-color,box-shadow] duration-200 focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none hover:border-brand-border-hover";
 
 const LABEL = "block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5";
 
@@ -316,7 +316,7 @@ export function Select({
               height="16"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#8a6d2f"
+              stroke="var(--color-gold)"
               strokeWidth="2.4"
               strokeLinecap="round"
               strokeLinejoin="round"

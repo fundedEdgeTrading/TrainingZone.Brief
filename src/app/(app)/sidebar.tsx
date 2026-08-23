@@ -169,7 +169,7 @@ export default function Sidebar({
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-tz-black/45 transition-opacity duration-300 lg:hidden ${
+        className={`fixed inset-0 z-40 bg-scrim transition-opacity duration-300 lg:hidden ${
           open ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         onClick={() => setOpen(false)}
@@ -177,7 +177,7 @@ export default function Sidebar({
       />
       <aside
         ref={asideRef}
-        className={`fixed inset-y-0 left-0 z-50 w-[304px] bg-tz-sand text-text-2 border-r border-tz-linen flex flex-col h-dvh transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] ${
+        className={`fixed inset-y-0 left-0 z-50 w-[304px] bg-sidebar text-text-2 border-r border-tz-linen flex flex-col h-dvh transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] ${
           open ? "translate-x-0" : "-translate-x-full"
         } lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 lg:shrink-0 lg:transition-[width] lg:duration-[260ms] lg:ease-[cubic-bezier(.2,.8,.2,1)] ${
           rail ? "lg:w-[76px]" : "lg:w-64"
