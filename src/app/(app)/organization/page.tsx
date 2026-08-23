@@ -241,8 +241,16 @@ export default async function OrganizationPage({
             <Field label="Logo (URL)" hint="Opcional — si no, hereda">
               <Input name="logoUrl" placeholder="/brand/…" />
             </Field>
-            <Field label="Dirección" className="md:col-span-3">
+            <Field label="Dirección" className="md:col-span-2">
               <Input name="address" placeholder="Calle, número, ciudad" />
+            </Field>
+            {/* Sin coordenadas el centro no se puede situar en el mapa de
+                barrios (marcador, anillo de 15 min y distancia por barrio). */}
+            <Field label="Latitud" hint="Opcional — para el mapa de barrios">
+              <Input name="lat" placeholder="41.6685" inputMode="decimal" />
+            </Field>
+            <Field label="Longitud" hint="Opcional — para el mapa de barrios">
+              <Input name="lng" placeholder="-0.8815" inputMode="decimal" />
             </Field>
             <Button type="submit">Añadir centro</Button>
           </ActionForm>

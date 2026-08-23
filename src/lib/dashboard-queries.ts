@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { nearestOf } from "@/lib/barrio-geometry";
+import type { BarrioCenter, BarrioStat } from "@/lib/barrio-map";
 export { getLeadCloseRate } from "@/lib/leads-queries";
 
 export async function getKpis(orgId: string) {
@@ -244,55 +246,167 @@ export async function getGoalsAggregate(orgId: string) {
 // provincia). Cada tarjeta relanzaba antes su propia agregación en JS y la
 // lista se truncaba sin que el mapa lo supiera, así que sus totales podían no
 // coincidir — con un único dataset compartido eso deja de ser posible.
+//
+// El mapa de barrios a pantalla completa (/mapa-barrios) lee de aquí también,
+// con cuatro derivados por barrio (conversión, tendencia, distancia y
+// oportunidad) y la lista de centros situados. Tres de los cuatro no cuestan
+// consulta nueva: salen de los mismos recuentos y de las coordenadas del
+// centro. El que sí la cuesta es la tendencia (altas por ventana de 90 días).
 
-export type PostalCodeStat = {
-  code: string;
-  name: string;
-  lat: number;
-  lng: number;
-  leads: number;
-  members: number;
-  total: number;
+/** Ventana de comparación de la tendencia: últimos 90 días contra los 90 previos. */
+const TREND_WINDOW_DAYS = 90;
+
+/**
+ * Tope de la tendencia, en puntos porcentuales. Un barrio que pasa de 1 alta a
+ * 6 es un +500 % que aplasta la rampa divergente de los otros dieciocho: el
+ * salto es real pero la escala se la come entera. Se acota, y quien mire la
+ * cifra ve el techo, no una variación inventada.
+ */
+const TREND_CAP = 200;
+
+/** Peso del cliente ya captado en el índice de oportunidad (un lead pesa 1). */
+const OPPORTUNITY_MEMBER_WEIGHT = 0.35;
+
+/** Distancia (km) a partir de la cual un barrio se considera desatendido del todo. */
+const OPPORTUNITY_SATURATION_KM = 2.6;
+
+export type PostalCodeStat = BarrioStat;
+
+export type PostalCodeMapData = {
+  points: BarrioStat[];
+  /** Centros de la organización con coordenadas; los que no las tienen no se pueden situar. */
+  centers: BarrioCenter[];
 };
 
-export async function getPostalCodeStats(orgId: string): Promise<PostalCodeStat[]> {
-  const rows = await prisma.$queryRaw<
-    { code: string; name: string; lat: number; lng: number; leads: bigint; members: bigint }[]
-  >`
-    SELECT
-      pca.code,
-      pca.name,
-      pca.lat,
-      pca.lng,
-      COALESCE(l.leads, 0) AS leads,
-      COALESCE(m.members, 0) AS members
-    FROM "PostalCodeArea" pca
-    LEFT JOIN (
-      SELECT "postalCode" AS code, COUNT(*) AS leads
-      FROM "Lead"
-      WHERE "orgId" = ${orgId}
-      GROUP BY 1
-    ) l ON l.code = pca.code
-    LEFT JOIN (
-      SELECT "postalCode" AS code, COUNT(*) AS members
-      FROM "Member"
-      WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL
-      GROUP BY 1
-    ) m ON m.code = pca.code
-  `;
+/**
+ * Todos los barrios de la tabla de referencia con sus cifras y derivados, más
+ * los centros situados. Sin filtrar ni ordenar: el mapa de barrios necesita
+ * también los barrios a cero (son la respuesta a «¿dónde abrir el próximo
+ * centro?») y la teselación necesita el juego completo de puntos de la ciudad.
+ */
+export async function getPostalCodeMapData(orgId: string): Promise<PostalCodeMapData> {
+  const recentFrom = new Date(Date.now() - TREND_WINDOW_DAYS * 86_400_000);
+  const previousFrom = new Date(Date.now() - 2 * TREND_WINDOW_DAYS * 86_400_000);
 
-  return rows
-    .map((r) => ({
+  const [rows, centerRows, org] = await Promise.all([
+    prisma.$queryRaw<
+      {
+        code: string;
+        name: string;
+        lat: number;
+        lng: number;
+        leads: bigint;
+        members: bigint;
+        recent: bigint;
+        previous: bigint;
+      }[]
+    >`
+      SELECT
+        pca.code,
+        pca.name,
+        pca.lat,
+        pca.lng,
+        COALESCE(l.leads, 0) AS leads,
+        COALESCE(m.members, 0) AS members,
+        COALESCE(t.recent, 0) AS recent,
+        COALESCE(t.previous, 0) AS previous
+      FROM "PostalCodeArea" pca
+      LEFT JOIN (
+        SELECT "postalCode" AS code, COUNT(*) AS leads
+        FROM "Lead"
+        WHERE "orgId" = ${orgId}
+        GROUP BY 1
+      ) l ON l.code = pca.code
+      LEFT JOIN (
+        SELECT "postalCode" AS code, COUNT(*) AS members
+        FROM "Member"
+        WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL
+        GROUP BY 1
+      ) m ON m.code = pca.code
+      LEFT JOIN (
+        SELECT
+          "postalCode" AS code,
+          COUNT(*) FILTER (WHERE "joinedAt" >= ${recentFrom}) AS recent,
+          COUNT(*) FILTER (WHERE "joinedAt" < ${recentFrom}) AS previous
+        FROM "Member"
+        WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL AND "joinedAt" >= ${previousFrom}
+        GROUP BY 1
+      ) t ON t.code = pca.code
+    `,
+    prisma.center.findMany({
+      where: { orgId, lat: { not: null }, lng: { not: null } },
+      select: { id: true, name: true, lat: true, lng: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
+  ]);
+
+  const centers: BarrioCenter[] = centerRows.map((c) => ({
+    id: c.id,
+    // Sobre el plano el centro se rotula con su nombre corto: "TRAINING ZONE
+    // La Jota" repetido en cada marcador es la marca tres veces y el centro
+    // ninguna. Misma regla que el subtítulo del header.
+    name: shortCenterName(c.name, org?.name),
+    lat: c.lat as number,
+    lng: c.lng as number,
+  }));
+
+  const points = rows.map((r) => {
+    const leads = Number(r.leads);
+    const members = Number(r.members);
+    const total = leads + members;
+    const nearest = nearestOf({ lat: r.lat, lng: r.lng }, centers);
+    const distKm = nearest?.km ?? 0;
+
+    return {
       code: r.code,
       name: r.name,
       lat: r.lat,
       lng: r.lng,
-      leads: Number(r.leads),
-      members: Number(r.members),
-      total: Number(r.leads) + Number(r.members),
-    }))
-    .filter((r) => r.total > 0)
-    .sort((a, b) => b.total - a.total);
+      leads,
+      members,
+      total,
+      conv: Math.round((members / Math.max(1, total)) * 100),
+      trend: trendPercent(Number(r.recent), Number(r.previous)),
+      dist: Math.round(distKm * 10) / 10,
+      // Demanda que existe pero queda lejos de un centro: un barrio con muchos
+      // leads a 3 km de la puerta puntúa alto; el mismo volumen a 500 m no,
+      // porque ya está atendido. Fórmula del prototipo, a validar con negocio.
+      opp: nearest
+        ? Math.round(
+            (leads + members * OPPORTUNITY_MEMBER_WEIGHT) * Math.min(1, distKm / OPPORTUNITY_SATURATION_KM) * 10
+          ) / 10
+        : 0,
+      nearestCenter: nearest?.center.name ?? null,
+    };
+  });
+
+  return { points, centers };
+}
+
+/** "TRAINING ZONE La Jota" → "La Jota" cuando el centro lleva delante el nombre de su organización. */
+function shortCenterName(name: string, orgName: string | undefined): string {
+  if (!orgName) return name;
+  return name.toUpperCase().startsWith(orgName.toUpperCase()) ? name.slice(orgName.length).trim() || name : name;
+}
+
+/**
+ * Variación porcentual de altas entre las dos ventanas.
+ *
+ * Sin altas previas no hay porcentaje que calcular: un barrio que estrena
+ * clientes se marca como crecimiento pleno (+100) en vez de como infinito, y
+ * uno sin altas en ninguna de las dos ventanas es un cero, no un vacío.
+ */
+function trendPercent(recent: number, previous: number): number {
+  if (previous === 0) return recent > 0 ? 100 : 0;
+  const change = Math.round(((recent - previous) / previous) * 100);
+  return Math.max(-TREND_CAP, Math.min(TREND_CAP, change));
+}
+
+/** Barrios con datos, de más a menos volumen: lo que consume el mapa de calor del panel. */
+export async function getPostalCodeStats(orgId: string): Promise<PostalCodeStat[]> {
+  const { points } = await getPostalCodeMapData(orgId);
+  return points.filter((p) => p.total > 0).sort((a, b) => b.total - a.total);
 }
 
 // ---------- BI-2: distribución por sexo (RB-BI-005) ----------
