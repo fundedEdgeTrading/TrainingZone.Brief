@@ -12,7 +12,7 @@ import {
 } from "@/lib/portal-queries";
 import { getActiveMembershipPlans } from "@/lib/public-membership-queries";
 import { isRecurring } from "@/lib/member-billing";
-import { planServiceKind } from "@/lib/members-queries";
+import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import { zonedToday } from "@/lib/date-utils";
 import Link from "next/link";
@@ -134,7 +134,11 @@ export default async function PortalMembresiaPage({
               Producto contratado
             </div>
             <div className="font-display font-extrabold text-[28px] sm:text-[34px] leading-[1.05] text-white mt-3.5 uppercase tracking-[-.01em]">
-              {activeSub ? `${kind ? SERVICE_LABEL[kind] : ""} · ${activeSub.plan.name}` : "Sin membresía activa"}
+              {activeSub
+                ? [kind ? SERVICE_LABEL[kind] : null, planNameWithoutService(activeSub.plan.name, kind ? SERVICE_LABEL[kind] : null)]
+                    .filter(Boolean)
+                    .join(" · ")
+                : "Sin membresía activa"}
             </div>
             <p className="text-sm text-brand-muted-2 mt-3.5 max-w-[440px] leading-[1.55]">
               {activeSub ? (
@@ -160,7 +164,7 @@ export default async function PortalMembresiaPage({
               <span className="inline-flex items-center gap-1.5 bg-brand-ink-soft rounded-full px-3.5 py-[7px] text-[12.5px] font-semibold text-tz-bone">
                 <span
                   className="w-[7px] h-[7px] rounded-full"
-                  style={{ background: member.state === "DELINQUENT" ? "#8a3420" : "#4b5a22" }}
+                  style={{ background: member.state === "DELINQUENT" ? "var(--color-critical)" : "var(--color-good)" }}
                 />
                 {member.state === "DELINQUENT" ? "Recibo pendiente" : "Al corriente de pago"}
               </span>
@@ -186,7 +190,7 @@ export default async function PortalMembresiaPage({
               <div className="h-1.5 rounded-full bg-white/[.14] overflow-hidden mt-3">
                 <div
                   className="h-full rounded-full"
-                  style={{ width: `${sessionsPct}%`, background: "linear-gradient(90deg,#4b5a22,#c8ab72)" }}
+                  style={{ width: `${sessionsPct}%`, background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" }}
                 />
               </div>
               <div className="text-xs text-brand-muted mt-2">

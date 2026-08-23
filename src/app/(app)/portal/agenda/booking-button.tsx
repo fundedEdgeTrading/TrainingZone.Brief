@@ -147,7 +147,7 @@ export default function BookingButton({
         <button
           disabled={pending}
           onClick={() => handleCancelClick(myBookingId)}
-          className={`${baseClass} bg-white text-brand-footer border border-[#d8d7cf] hover:bg-brand-ink hover:text-white hover:border-brand-ink`}
+          className={`${baseClass} bg-white text-brand-footer border border-brand-border hover:bg-brand-ink hover:text-white hover:border-brand-ink`}
           title={warnForfeit ? `Fuera de la ventana de cancelación sin penalización (${cancelWindowHours}h)` : ""}
         >
           {pending && <ButtonSpinner />}

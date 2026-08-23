@@ -22,7 +22,7 @@ export function LeadConfigPanel({
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
       <Card title="Canales de origen" meta={`${leadsTotal} leads`}>
         <p className="text-xs text-brand-muted -mt-3 mb-4">De dónde llegan los leads</p>
-        <DistributionChart rows={channelDistribution} gradient="linear-gradient(90deg,#1d1d1c,#5c4a34)" valueColor="#1d1d1c" />
+        <DistributionChart rows={channelDistribution} gradient="linear-gradient(90deg,var(--color-brand-ink),var(--color-trial))" valueColor="var(--color-brand-ink)" />
         <ActionForm action={addLeadChannelAction} successMessage="Canal añadido" className="flex gap-2 mt-4">
           <Input name="label" placeholder="Nuevo canal..." className="flex-1" />
           <Button type="submit" size="sm">
@@ -32,7 +32,7 @@ export function LeadConfigPanel({
       </Card>
       <Card title="Motivos de no cierre" meta={`${noCerradoTotal} no cerrados`}>
         <p className="text-xs text-brand-muted -mt-3 mb-4">Por qué se pierden</p>
-        <DistributionChart rows={reasonDistribution} gradient="linear-gradient(90deg,#8a3420,#c0674a)" valueColor="#8a3420" />
+        <DistributionChart rows={reasonDistribution} gradient="linear-gradient(90deg,var(--color-critical),var(--color-critical))" valueColor="var(--color-critical)" />
         <ActionForm action={addNoCloseReasonAction} successMessage="Motivo añadido" className="flex gap-2 mt-4">
           <Input name="label" placeholder="Nuevo motivo..." className="flex-1" />
           <Button type="submit" size="sm">

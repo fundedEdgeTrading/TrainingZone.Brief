@@ -54,9 +54,9 @@ function FeedbackCard({
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-[268px_1fr] bg-brand-card border border-[#e3dbcd] rounded-[20px] overflow-hidden shadow-[0_1px_2px_rgba(29,29,28,.04),0_24px_48px_-34px_rgba(29,29,28,.35)] tz-fade-up">
+    <div className="grid grid-cols-1 sm:grid-cols-[268px_1fr] bg-brand-card border border-brand-border rounded-[20px] overflow-hidden shadow-[0_1px_2px_rgba(29,29,28,.04),0_24px_48px_-34px_rgba(29,29,28,.35)] tz-fade-up">
       {/* Rail de contexto */}
-      <div className="bg-tz-sand border-b sm:border-b-0 sm:border-r border-[#ddd3c2] px-7 py-[30px] flex flex-col justify-between gap-7">
+      <div className="bg-tz-sand border-b sm:border-b-0 sm:border-r border-brand-border px-7 py-[30px] flex flex-col justify-between gap-7">
         <div>
           <div className="text-[10px] font-bold uppercase tracking-[.2em] text-gold">Sesión completada</div>
           <div className="font-display font-extrabold text-[34px] leading-none tracking-[-.02em] text-brand-text mt-4">
@@ -94,8 +94,8 @@ function FeedbackCard({
                   aria-pressed={active}
                   className={`flex items-center justify-center gap-2.5 rounded-[14px] py-[15px] text-sm font-semibold text-brand-text border transition-colors duration-[180ms] ${
                     active
-                      ? "border-brand-ink bg-[#f6f2ea] shadow-[inset_0_0_0_1px_#1d1d1c]"
-                      : "border-[#e3dbcd] bg-white hover:border-brand-border-hover"
+                      ? "border-brand-ink bg-surface-soft shadow-[inset_0_0_0_1px_var(--color-brand-ink)]"
+                      : "border-brand-border bg-brand-card hover:border-brand-border-hover"
                   }`}
                 >
                   <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${f.dot}`} />
@@ -123,7 +123,7 @@ function FeedbackCard({
                     className={`w-7 h-7 sm:w-[30px] sm:h-[30px] rounded-[9px] text-xs font-bold tabular-nums border transition-colors duration-150 shrink-0 ${
                       active
                         ? "bg-tz-black text-tz-bone border-transparent"
-                        : "bg-[#f6f2ea] text-brand-muted border-[#e9e2d4] hover:text-brand-text"
+                        : "bg-surface-soft text-brand-muted border-brand-border hover:text-brand-text"
                     }`}
                   >
                     {n}
@@ -133,13 +133,13 @@ function FeedbackCard({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3.5 pt-[18px] border-t border-[#efe9dd]">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3.5 pt-[18px] border-t border-brand-border">
             <input
               type="text"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder={`Añade una nota para ${trainerName ?? "tu entrenador"} (opcional)`}
-              className="flex-1 min-w-0 bg-[#faf7f1] border border-[#e3dbcd] rounded-xl px-3.5 py-3 text-sm text-brand-text outline-none focus:border-brand-ink transition-colors duration-150"
+              className="flex-1 min-w-0 bg-surface-soft border border-brand-border rounded-xl px-3.5 py-3 text-sm text-brand-text outline-none focus:border-brand-ink transition-colors duration-150"
             />
             <button
               onClick={submit}

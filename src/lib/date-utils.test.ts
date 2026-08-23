@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { addMonthsClamped, isBirthdayOn } from "./date-utils";
+import { addMonthsClamped, formatInstantDate, formatInstantDateTime, isBirthdayOn } from "./date-utils";
 
 // Los dos casos borde de las reglas de cron F4/F5 (el día 31 y el 29 de
 // febrero) se escriben aquí antes que en la regla: son fallos que solo se
@@ -48,4 +48,22 @@ test("isBirthdayOn: el 29 de febrero se felicita el 28 solo en años no bisiesto
 test("isBirthdayOn: 2100 no es bisiesto pese a ser múltiplo de 4", () => {
   assert.equal(isBirthdayOn(utcDay("1992-02-29"), day("2100-02-28")), true);
   assert.equal(isBirthdayOn(utcDay("1992-02-29"), day("2000-02-28")), false);
+});
+
+test("formatInstantDate usa el reloj del centro, no el del servidor (UTC)", () => {
+  // 23/08/2026 22:30 UTC son ya las 00:30 del 24 en Madrid: la fecha que ve
+  // quien mira la pantalla es la del 24, no la del 23.
+  const instant = new Date("2026-08-23T22:30:00.000Z");
+  assert.equal(formatInstantDate(instant, "Europe/Madrid"), "24/08/2026");
+  assert.equal(formatInstantDate(instant, "UTC"), "23/08/2026");
+});
+
+test("formatInstantDateTime añade la hora de pared de esa zona", () => {
+  const instant = new Date("2026-01-15T08:05:00.000Z");
+  assert.equal(formatInstantDateTime(instant, "Europe/Madrid"), "15/01/2026, 09:05");
+});
+
+test("una zona horaria inválida cae a España en vez de reventar", () => {
+  const instant = new Date("2026-08-23T22:30:00.000Z");
+  assert.equal(formatInstantDate(instant, "No/Existe"), "24/08/2026");
 });

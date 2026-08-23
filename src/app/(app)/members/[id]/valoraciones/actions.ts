@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { saveAssessment } from "@/lib/assessments/save";
 import { dueDateForKind } from "@/lib/assessments/queries";
@@ -27,6 +27,7 @@ export async function openAssessmentAction(memberId: string, kind: AssessmentKin
     select: { id: true, joinedAt: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const pending = await prisma.assessment.findFirst({
     where: { orgId: session.user.orgId, memberId, kind, completedAt: null },
@@ -68,6 +69,7 @@ export async function submitAssessmentAction(assessmentId: string, raw: unknown)
     select: { kind: true, memberId: true },
   });
   if (!assessment) return { ok: false, error: "No se ha encontrado esa valoración." };
+  if (!(await memberIsInScope(session.user, assessment.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const parsed = schemaForKind(assessment.kind).safeParse(raw);
   if (!parsed.success) {

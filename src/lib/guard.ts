@@ -3,6 +3,7 @@ import type { Role } from "@prisma/client";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
 import { defaultRouteForRole, canManageOrg } from "@/lib/rbac";
+import { isCenterInScope, isMemberInScope, type ScopedUser } from "@/lib/center-scope";
 import { isPlatformOperational } from "@/lib/entitlements";
 
 export async function requireRole(allowed: Role[]) {
@@ -65,3 +66,27 @@ export async function requireCenterRole(centerId: string, allowed: Role[]) {
 
   redirect(defaultRouteForRole(role));
 }
+
+/**
+ * Ámbito de centro sobre la ficha de un socio.
+ *
+ * `requireCenterRole` pide un `centerId`; aquí el centro sale del propio socio,
+ * que es lo que se está mirando o tocando. Dirección de organización y soporte
+ * de plataforma pasan siempre (dentro de SU organización); al resto del equipo
+ * solo le abren los socios de los centros a los que está imputado.
+ *
+ * Devuelve `false` en vez de redirigir para poder usarse también desde una
+ * server action, donde lo correcto es responder un error, no una navegación.
+ */
+export async function memberIsInScope(user: ScopedUser, memberId: string): Promise<boolean> {
+  return isMemberInScope(user, memberId);
+}
+
+/** Igual, para el centro que una acción quiere usar (alta, cambio de centro, bono). */
+export async function centerIsInScope(user: ScopedUser, centerId: string): Promise<boolean> {
+  return isCenterInScope(user, centerId);
+}
+
+/** Mensajes únicos para las acciones que rechazan por ámbito de centro. */
+export const OUT_OF_CENTER_SCOPE = "Este socio no es de tus centros.";
+export const CENTER_OUT_OF_SCOPE = "Ese centro no es uno de los tuyos.";

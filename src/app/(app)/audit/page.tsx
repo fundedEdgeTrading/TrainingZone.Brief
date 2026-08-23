@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDateTime } from "@/lib/date-utils";
 import { requireRole } from "@/lib/guard";
 import { requireFeature } from "@/lib/entitlements";
 import { PageHeader } from "@/components/ui/page-header";
@@ -9,14 +11,47 @@ import { FilterToolbar, type FilterGroup } from "@/components/ui/filter-toolbar"
 import { parseFilterValues } from "@/lib/filter-params";
 import { AuditDateFilter } from "./audit-date-filter";
 
+/**
+ * Rótulo de cada acción del registro. El mapa cubría 7 de las 28 acciones que
+ * se escriben de verdad, así que el listado mezclaba frases ("Lectura de dato
+ * de salud") con claves crudas del código ("TRAINER_PANEL_HEALTH_READ") en la
+ * misma columna. Al añadir una acción nueva, añádela también aquí.
+ */
 const ACTION_LABEL: Record<string, string> = {
+  // Salud (Art. 9 RGPD)
   HEALTH_RECORD_READ: "Lectura de dato de salud",
+  HEALTH_RECORD_CREATED: "Alta de dato de salud",
+  HEALTH_RECORD_CREATED_FROM_ASSESSMENT: "Dato de salud desde una valoración",
+  HEALTH_RECORD_RESOLVED: "Dato de salud resuelto",
+  LEAD_HEALTH_RECORD_READ: "Lectura de dato de salud de un lead",
+  LEAD_HEALTH_RECORD_CREATED: "Alta de dato de salud de un lead",
   SESSION_BRIEF_OPENED: "Session Brief abierto",
+  TRAINER_PANEL_HEALTH_READ: "Panel del entrenador: lectura de salud",
+  MESOCYCLE_AI_INPUT_READ: "Ficha enviada al generador de mesociclos",
+  BODY_COMPOSITION_RECORDED: "Toma de composición corporal",
+  // Ficha del socio y consentimientos
   MEMBER_UPDATED: "Ficha de socio actualizada",
   MEMBER_SELF_UPDATED_CONTACT: "Socio actualizó su contacto",
-  SUBSCRIPTION_SESSIONS_ADJUSTED: "Saldo de bono ajustado a mano",
+  MEMBER_DELETED: "Socio eliminado",
   CONSENT_GRANTED: "Consentimiento otorgado",
   CONSENT_REVOKED: "Consentimiento retirado",
+  CONSENT_VERSION_ACCEPTED: "Nueva versión de consentimientos aceptada",
+  EMAIL_PREFERENCES_UPDATED: "Preferencias de correo actualizadas",
+  // Bonos, suscripciones y cobros
+  SUBSCRIPTION_ADDED: "Bono añadido",
+  SUBSCRIPTION_SESSIONS_ADJUSTED: "Saldo de bono ajustado a mano",
+  SUBSCRIPTION_FROZEN: "Bono congelado",
+  SUBSCRIPTION_RESUMED: "Bono reanudado",
+  SUBSCRIPTION_PRICE_UPDATED: "Precio del bono actualizado",
+  SUBSCRIPTION_CANCELLATION_SCHEDULED: "Baja programada",
+  SUBSCRIPTION_CANCELLATION_UNSCHEDULED: "Baja programada cancelada",
+  ONE_OFF_PRODUCT_SOLD: "Producto suelto vendido",
+  PAYMENT_POSTPONED: "Cobro aplazado",
+  PAYMENT_REFUNDED_LOCAL: "Cobro devuelto (registro local)",
+  // Feedback
+  FEEDBACK_REQUESTED: "Feedback solicitado al socio",
+  FEEDBACK_REVIEWED: "Feedback revisado",
+  FEEDBACK_FOLLOWUP_SCHEDULED: "Seguimiento de feedback programado",
 };
 
 export default async function AuditPage({
@@ -28,6 +63,7 @@ export default async function AuditPage({
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("exportaciones");
+  const timeZone = await resolveTimezone();
 
   const params = await searchParams;
   const filters: AuditFilters = {
@@ -89,7 +125,7 @@ export default async function AuditPage({
 
       <DataTable
         columns={auditColumns}
-        rows={logs.map(logToRow)}
+        rows={logs.map((l) => logToRow(l, timeZone))}
         pagination={false}
         emptyTitle="Sin registros"
         emptyDescription="No hay eventos de auditoría para este filtro."
@@ -101,13 +137,16 @@ export default async function AuditPage({
             {total} evento{total === 1 ? "" : "s"} · página {page} de {totalPages}
           </span>
           <div className="flex items-center gap-2">
+            {/* `scroll={false}`: pasar de página es cambiar el contenido de la
+                tabla, no ir a otra pantalla — sin esto la vista saltaba al
+                principio en cada clic, igual que hacían los filtros. */}
             {page > 1 && (
-              <Link href={pageHref(page - 1)} className="font-semibold text-brand-text hover:underline">
+              <Link href={pageHref(page - 1)} scroll={false} className="font-semibold text-brand-text hover:underline">
                 ← Anterior
               </Link>
             )}
             {page < totalPages && (
-              <Link href={pageHref(page + 1)} className="font-semibold text-brand-text hover:underline">
+              <Link href={pageHref(page + 1)} scroll={false} className="font-semibold text-brand-text hover:underline">
                 Siguiente →
               </Link>
             )}
@@ -128,7 +167,7 @@ const auditColumns: DataTableColumn[] = [
   { key: "member", header: "Socio" },
 ];
 
-function logToRow(l: AuditLog): DataTableRow {
+function logToRow(l: AuditLog, timeZone: string): DataTableRow {
   return {
     key: l.id,
     sortValues: {
@@ -138,7 +177,7 @@ function logToRow(l: AuditLog): DataTableRow {
       entity: l.entityType,
     },
     cells: {
-      createdAt: l.createdAt.toLocaleString("es-ES"),
+      createdAt: formatInstantDateTime(l.createdAt, timeZone),
       action: <Badge tone="neutral">{ACTION_LABEL[l.action] ?? l.action}</Badge>,
       actor: (
         <>

@@ -10,9 +10,9 @@ type Workout = {
 };
 
 const LEVEL_TONE: Record<string, string> = {
-  Principiante: "bg-[#e9f9ef] text-good",
-  Intermedio: "bg-[#fff2e0] text-[#8a5a12]",
-  Avanzado: "bg-[#fdecea] text-critical",
+  Principiante: "bg-good-bg text-good",
+  Intermedio: "bg-warning-bg text-warning",
+  Avanzado: "bg-critical-bg text-critical",
 };
 
 export function OnlineWorkoutLibrary({ workouts }: { workouts: Workout[] }) {

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { getMemberDetail, getMemberAttendanceStats, planServiceKind, sessionServiceKind } from "@/lib/members-queries";
 import { canManageMembers } from "@/lib/rbac";
+import { isMemberInScope } from "@/lib/center-scope";
 import { formatDateParam } from "@/lib/date-utils";
 import { debriefAverage } from "../../_lib/calendar";
 import { requireApiRole } from "../../_lib/api-session";
@@ -24,6 +25,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const member = await getMemberDetail(claims.orgId, id);
   if (!member) return apiError("No se ha encontrado el socio.", 404);
+  const inScope = await isMemberInScope(
+    { id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId },
+    member.id
+  );
+  if (!inScope) return apiError("No se ha encontrado el socio.", 404);
   const stats = await getMemberAttendanceStats(member.id);
 
   const now = Date.now();

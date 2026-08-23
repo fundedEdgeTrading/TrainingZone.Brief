@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope } from "@/lib/guard";
 import { getAssessment, parseAnswers } from "@/lib/assessments/queries";
 import {
   ASSESSMENT_KIND_LABEL,
@@ -36,9 +38,11 @@ export default async function AssessmentDetailPage({
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const { id, assessmentId } = await params;
+  const timeZone = await resolveTimezone();
 
   const assessment = await getAssessment(session.user.orgId, assessmentId);
   if (!assessment || assessment.memberId !== id) notFound();
+  if (!(await memberIsInScope(session.user, id))) notFound();
 
   const answers = assessment.completedAt ? parseAnswers(assessment.kind, assessment.answers) : null;
   const marks = answers?.marcas ?? [];
@@ -54,7 +58,7 @@ export default async function AssessmentDetailPage({
         </h1>
         <p className="text-sm text-brand-muted">
           {assessment.completedAt
-            ? `Completada el ${assessment.completedAt.toLocaleDateString("es-ES")}${
+            ? `Completada el ${formatInstantDate(assessment.completedAt, timeZone)}${
                 assessment.filledBy?.name ? ` por ${assessment.filledBy.name}` : ""
               }`
             : `Pendiente · vence el ${assessment.dueDate.toLocaleDateString("es-ES")}`}

@@ -128,14 +128,14 @@ export default async function FeedbackPage({
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-3 h-3 rounded-full bg-brand-ink border-2 border-white"
-                style={{ boxShadow: "0 0 0 1px #d8ccb8" }}
+                style={{ boxShadow: "0 0 0 1px var(--color-tz-linen)" }}
               />
               Cliente
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="w-[11px] h-[11px] bg-apta-gold border-2 border-white rotate-45"
-                style={{ boxShadow: "0 0 0 1px #cbb98f" }}
+                style={{ boxShadow: "0 0 0 1px var(--color-gold)" }}
               />
               Entrenador
             </span>
@@ -195,12 +195,12 @@ export default async function FeedbackPage({
                 <Link
                   key={r.memberId}
                   href={`/feedback/${r.memberId}`}
-                  className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 sm:flex-wrap px-4 sm:px-[22px] py-4 border-b border-[#ede7dc] last:border-0 transition-colors duration-150 hover:bg-[#faf8f3] ${
-                    highlighted ? "bg-[#fbf1ec]" : ""
+                  className={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 sm:flex-wrap px-4 sm:px-[22px] py-4 border-b border-brand-border last:border-0 transition-colors duration-150 hover:bg-surface-soft ${
+                    highlighted ? "bg-highlight-bg" : ""
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0 sm:[flex:1_1_240px]">
-                    <span className="w-10 h-10 rounded-full bg-[#efe8dc] text-[#5c4a34] font-bold text-[13px] inline-flex items-center justify-center shrink-0">
+                    <span className="w-10 h-10 rounded-full bg-trial-bg text-trial font-bold text-[13px] inline-flex items-center justify-center shrink-0">
                       {initials(r.firstName, r.lastName)}
                     </span>
                     <div className="min-w-0">
@@ -214,11 +214,11 @@ export default async function FeedbackPage({
                   </div>
 
                   <div className="flex items-center gap-2.5 sm:[flex:2_1_300px]">
-                    <span className={`text-sm font-bold tabular-nums w-9 text-right ${r.clientAvg != null ? "text-brand-text" : "text-[#c7bfad]"}`}>
+                    <span className={`text-sm font-bold tabular-nums w-9 text-right ${r.clientAvg != null ? "text-brand-text" : "text-brand-border-hover"}`}>
                       {r.clientAvg != null ? r.clientAvg.toFixed(1) : "—"}
                     </span>
                     <AlignmentTrack clientValue={r.clientAvg} trainerValue={r.trainerAvg} cat={r.cat} />
-                    <span className={`text-sm font-bold tabular-nums w-9 ${r.trainerAvg == null ? "text-[#c7bfad]" : ""}`} style={r.trainerAvg != null ? { color: "#8a6d2f" } : undefined}>
+                    <span className={`text-sm font-bold tabular-nums w-9 ${r.trainerAvg == null ? "text-brand-border-hover" : ""}`} style={r.trainerAvg != null ? { color: "var(--color-gold)" } : undefined}>
                       {r.trainerAvg != null ? r.trainerAvg.toFixed(1) : "—"}
                     </span>
                   </div>
@@ -228,13 +228,13 @@ export default async function FeedbackPage({
                     {r.gap != null && (
                       <span
                         className="text-xs font-bold tabular-nums"
-                        style={{ color: r.cat === "ciego" ? "#8a3420" : r.cat === "cliente_positivo" ? "#5c4a34" : "#8a8574" }}
+                        style={{ color: r.cat === "ciego" ? "var(--color-critical)" : r.cat === "cliente_positivo" ? "var(--color-trial)" : "var(--color-brand-muted)" }}
                       >
                         {r.gap >= 0 ? "+" : ""}
                         {r.gap.toFixed(1)}
                       </span>
                     )}
-                    <span className="text-[#c7bfad] hidden sm:inline">›</span>
+                    <span className="text-brand-border-hover hidden sm:inline">›</span>
                   </div>
                 </Link>
               );

@@ -12,7 +12,7 @@ function MetricTooltip({ active, payload, label, unit }: TooltipContentProps & {
   const value = payload[0]?.value;
   return (
     <div
-      className="flex flex-col gap-1 bg-brand-ink border border-[#33332d] rounded-xl px-[13px] pt-[9px] pb-2.5 shadow-[0_16px_38px_-10px_rgba(0,0,0,.55)]"
+      className="flex flex-col gap-1 bg-brand-ink border border-brand-border-dark rounded-xl px-[13px] pt-[9px] pb-2.5 shadow-[0_16px_38px_-10px_rgba(0,0,0,.55)]"
       style={{ animation: "tzPop .13s ease both" }}
     >
       <span className="text-[11px] font-semibold uppercase tracking-[.03em] text-brand-muted-2">{label}</span>

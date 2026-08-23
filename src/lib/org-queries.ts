@@ -49,9 +49,19 @@ export async function getStaffWithMemberships(orgId: string) {
 }
 
 /** Listado ligero de personal asignable (dueño de lead, entrenador responsable...). */
-export async function listAssignableStaff(orgId: string, roles?: Role[]) {
+export async function listAssignableStaff(orgId: string, roles?: Role[], centerId?: string | null) {
   return prisma.user.findMany({
-    where: { orgId, role: roles ? { in: roles } : { not: "MEMBER" } },
+    where: {
+      orgId,
+      role: roles ? { in: roles } : { not: "MEMBER" },
+      // Acotado al centro cuando quien pregunta trabaja sobre un centro
+      // concreto (la agenda). Sin esto, el filtro de entrenadores de La Jota
+      // listaba también a los de Santander y el desplegable de "Nueva sesión"
+      // dejaba asignar una clase a alguien que no pisa ese centro.
+      ...(centerId
+        ? { OR: [{ centerId }, { centerMemberships: { some: { centerId } } }] }
+        : {}),
+    },
     orderBy: { name: "asc" },
     // `image`: los chips de entrenador de la agenda móvil llevan su foto.
     select: { id: true, name: true, role: true, image: true },

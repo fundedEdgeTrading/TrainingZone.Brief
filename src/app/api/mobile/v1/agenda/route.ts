@@ -20,8 +20,14 @@ export async function GET(req: NextRequest) {
   const { claims } = auth;
 
   const centers = await getCentersForUser({ id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId });
+  // Mismo criterio que la web (src/app/(app)/agenda/page.tsx): el `centerId`
+  // del cliente solo puede elegir entre los centros imputados a esta persona,
+  // nunca abrir uno ajeno.
+  const allowed = new Set(centers.map((c) => c.id));
   const centerParam = req.nextUrl.searchParams.get("centerId");
-  const centerId = centerParam || claims.centerId || centers[0]?.id || null;
+  const requested = centerParam && allowed.has(centerParam) ? centerParam : null;
+  const base = claims.centerId && allowed.has(claims.centerId) ? claims.centerId : null;
+  const centerId = requested ?? base ?? centers[0]?.id ?? null;
 
   const dateParam = req.nextUrl.searchParams.get("date");
   const day = dateParam ? parseDateParam(dateParam) : zonedNow(await resolveTimezoneForCenter(centerId));
@@ -44,7 +50,7 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { startTime: "asc" },
         }),
-        listAssignableStaff(claims.orgId, ["TRAINER", "TRAINER_ADMIN"]),
+        listAssignableStaff(claims.orgId, ["TRAINER", "TRAINER_ADMIN"], centerId),
         listActiveMembersForSelect(claims.orgId),
       ])
     : [[], [], []];

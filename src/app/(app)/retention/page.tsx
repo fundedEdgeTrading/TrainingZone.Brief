@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import { requireRole } from "@/lib/guard";
 import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +22,7 @@ export default async function RetentionPage() {
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("retencion");
+  const timeZone = await resolveTimezone();
 
   const alerts = await prisma.retentionAlert.findMany({
     where: { member: { orgId: session.user.orgId } },
@@ -126,7 +129,7 @@ export default async function RetentionPage() {
                   </td>
                   <td data-label="Riesgo" className="py-2">{RISK_LABEL[a.riskLevel]}</td>
                   <td data-label="Caída" className="py-2 tz-nums">{a.dropPct}%</td>
-                  <td data-label="Creada" className="py-2 text-muted tz-nums">{a.createdAt.toLocaleDateString("es-ES")}</td>
+                  <td data-label="Creada" className="py-2 text-muted tz-nums">{formatInstantDate(a.createdAt, timeZone)}</td>
                   <td data-label="Estado" className="py-2 text-muted">{a.status}</td>
                 </tr>
               ))}

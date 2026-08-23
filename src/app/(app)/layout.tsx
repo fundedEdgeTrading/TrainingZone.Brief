@@ -7,8 +7,9 @@ import { listNotificationsForUser } from "@/lib/notifications";
 import { membershipsFor } from "@/lib/identity";
 import { getMemberForUser, getPendingSessionFeedbackCountForUser, getMemberUpcomingBookings, isLiveBooking } from "@/lib/portal-queries";
 import { isRecurring } from "@/lib/member-billing";
-import { planServiceKind } from "@/lib/members-queries";
+import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
 import { resolveTimezone } from "@/lib/timezone";
+import { logoUrlForTheme } from "@/lib/theme";
 import { TimezoneSync } from "@/components/timezone-sync";
 import Sidebar, { type MemberSidebarData } from "./sidebar";
 import Header from "./header";
@@ -87,6 +88,7 @@ export default async function AppLayout({
 
   // NavBar: logo del centro, si no el de la organización, si no el de Apta (null).
   const logoUrl = center?.logoUrl ?? org?.logoUrl ?? null;
+  const logoUrlDark = logoUrlForTheme(logoUrl, "dark");
   const brandName = org?.name ?? "Apta";
 
   let centerName = center?.name ?? "";
@@ -105,14 +107,15 @@ export default async function AppLayout({
   let memberSidebar: MemberSidebarData | undefined;
   if (role === "MEMBER" && member) {
     const activeSub = member.subscriptions[0];
+    const serviceLabel = activeSub ? SERVICE_LABEL[planServiceKind(activeSub.plan.type) ?? "GROUP"] : "";
     memberSidebar = {
       name: name ?? email ?? "",
       roleLabel: ROLE_LABEL.MEMBER,
       centerName,
       bono: activeSub
         ? {
-            serviceLabel: SERVICE_LABEL[planServiceKind(activeSub.plan.type) ?? "GROUP"],
-            planName: activeSub.plan.name,
+            serviceLabel,
+            planName: planNameWithoutService(activeSub.plan.name, serviceLabel),
             recurring: isRecurring(activeSub.plan.type),
             sessionsRemaining: activeSub.sessionsRemaining,
             sessionsIncluded: activeSub.plan.sessionsIncluded,
@@ -133,6 +136,7 @@ export default async function AppLayout({
             nav={nav}
             footerLabel={footerLabelForRole(role)}
             logoUrl={logoUrl}
+            logoUrlDark={logoUrlDark}
             brandName={brandName}
             member={memberSidebar}
           />

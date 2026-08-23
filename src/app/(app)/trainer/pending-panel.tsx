@@ -111,7 +111,7 @@ export function PendingPanel({
                 key={a.memberId}
                 href={`/members/${a.memberId}`}
                 className={`block p-3 rounded-xl border tz-fade-up transition-[transform,border-color] duration-200 hover:-translate-y-[2px] ${
-                  a.light === "RED" ? "bg-[#fdf3ef] border-[#f4ddd2] hover:border-[#e8bfae]" : "bg-[#fdf8ef] border-[#f3e3c0] hover:border-[#e8c88a]"
+                  a.light === "RED" ? "bg-critical-bg border-critical-bg hover:border-critical" : "bg-warning-bg border-warning-bg hover:border-warning"
                 }`}
                 style={{ animationDelay: `${i * 0.06}s` }}
               >

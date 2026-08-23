@@ -44,7 +44,7 @@ export default async function PuestaEnMarchaPage() {
             className="h-full w-full rounded-pill origin-left transition-transform duration-500 ease-spring"
             style={{
               transform: `scaleX(${done / total})`,
-              background: complete ? "linear-gradient(90deg,#4b5a22,#c8ab72)" : "var(--color-tz-black)",
+              background: complete ? "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" : "var(--color-tz-black)",
             }}
           />
         </div>

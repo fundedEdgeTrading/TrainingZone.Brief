@@ -175,3 +175,37 @@ export function isBirthdayOn(birthDate: Date, today: Date): boolean {
 function isLeapYear(year: number): boolean {
   return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
+
+
+/**
+ * Fecha (y hora) de un INSTANTE real en el reloj de una zona concreta.
+ *
+ * `createdAt.toLocaleDateString("es-ES")` sin `timeZone` usa el reloj del
+ * proceso, que en producción es UTC: entre las 22:00 y medianoche en España, un
+ * registro creado "hoy" se listaba con la fecha de ayer — y en el registro de
+ * auditoría eso no es un detalle estético. Se formatea a mano (dd/mm/aaaa) y no
+ * con `toLocaleDateString`, porque el ICU de Node y el del navegador no dan la
+ * misma cadena para es-ES y React marcaría discrepancia de hidratación.
+ *
+ * OJO: solo para instantes. Los "días sueltos" (`ClassSession.date`,
+ * `workDate`, `birthDate`...) se guardan con componentes locales y NO llevan
+ * zona — ver la nota larga de más arriba.
+ */
+function zonedDateParts(instant: Date, timeZone: string) {
+  try {
+    return zonedParts(timeZone, instant);
+  } catch {
+    return zonedParts(DEFAULT_TIMEZONE, instant);
+  }
+}
+
+export function formatInstantDate(instant: Date, timeZone: string): string {
+  const p = zonedDateParts(instant, timeZone);
+  return `${String(p.day).padStart(2, "0")}/${String(p.month).padStart(2, "0")}/${p.year}`;
+}
+
+export function formatInstantDateTime(instant: Date, timeZone: string): string {
+  const p = zonedDateParts(instant, timeZone);
+  const date = `${String(p.day).padStart(2, "0")}/${String(p.month).padStart(2, "0")}/${p.year}`;
+  return `${date}, ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+}

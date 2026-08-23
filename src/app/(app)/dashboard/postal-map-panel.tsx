@@ -133,7 +133,7 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                 </div>
                 <div className="w-px h-4 bg-tz-sand" />
                 <div className="flex items-center gap-1.5">
-                  <span className="w-[13px] h-[13px] rounded-full bg-gradient-to-br from-[#e2c896] to-apta-gold" />
+                  <span className="w-[13px] h-[13px] rounded-full bg-gradient-to-br from-apta-gold/70 to-apta-gold" />
                   <span className="text-[10px] font-semibold text-brand-muted">mayor foco</span>
                 </div>
               </div>
