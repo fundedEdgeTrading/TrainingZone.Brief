@@ -98,11 +98,13 @@ export async function KpiRow({ orgId }: PanelProps) {
         delay={0.28}
       />
       <KpiCard
-        label="Alertas de retención"
+        label="Socios en riesgo de fuga"
         value={String(kpis.openAlerts)}
         numericValue={kpis.openAlerts}
         tone={kpis.openAlerts > 0 ? "warning" : "default"}
-        hint="ver módulo Retención"
+        // El módulo "Retención" ya no existe: la señal se trabaja en el listado
+        // de socios, donde cada uno lleva su marca y su caída.
+        hint="marcados en Socios"
         delay={0.34}
       />
     </div>

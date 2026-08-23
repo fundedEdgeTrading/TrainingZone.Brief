@@ -10,7 +10,6 @@ import {
   HealthStatus,
   AptitudeLight,
   DebriefFeeling,
-  RetentionRiskLevel,
   MesocycleStatus,
   SubscriptionStatus,
   Role,
@@ -23,6 +22,7 @@ import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
 import { POSTAL_CODES } from "@/lib/postal-codes";
 import { CONSENT_VERSION } from "@/lib/consent";
+import { runRetentionAlertRule } from "@/lib/retention";
 import { dueDateForKind } from "@/lib/assessments/queries";
 import { startOfWeekMonday } from "@/lib/date-utils";
 import type { FeedbackDims } from "@/lib/feedback-queries";
@@ -1243,56 +1243,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     ].map((r) => ({ id: id(), orgId, editedByUserId: ownerId, ...r })),
   });
 
-  // ---------- Motor de retención (G.3) ----------
-  const retentionAlerts: { id: string; memberId: string; baselineFreq: number; recentFreq: number; dropPct: number; riskLevel: RetentionRiskLevel; context: string | null }[] = [];
-  for (const m of members) {
-    if (m.state !== MemberState.ACTIVE) continue;
-    const dates = attendanceByMember.get(m.id) ?? [];
-    const baselineCount = dates.filter((d) => d >= addDays(TODAY, -98) && d < addDays(TODAY, -14)).length;
-    const recentCount = dates.filter((d) => d >= addDays(TODAY, -14)).length;
-    const baselineFreq = baselineCount / 12;
-    const recentFreq = recentCount / 2;
-    if (baselineFreq < 0.4) continue;
-    const dropPct = (recentFreq - baselineFreq) / baselineFreq;
-    if (dropPct <= -0.6) {
-      const lastDate = dates.length ? dates[dates.length - 1] : null;
-      const daysSinceLast = lastDate ? Math.round((TODAY.getTime() - lastDate.getTime()) / DAY) : null;
-      const hr = healthRecords.find((h) => h.memberId === m.id && h.status === "ACTIVE");
-      retentionAlerts.push({
-        id: id(),
-        memberId: m.id,
-        baselineFreq: Number(baselineFreq.toFixed(2)),
-        recentFreq: Number(recentFreq.toFixed(2)),
-        dropPct: Number((dropPct * 100).toFixed(0)),
-        riskLevel: dropPct <= -0.85 ? RetentionRiskLevel.HIGH : RetentionRiskLevel.MEDIUM,
-        context: hr
-          ? `Reportó ${hr.description.toLowerCase()} el ${hr.reportedAt.toLocaleDateString("es-ES")}.`
-          : daysSinceLast !== null
-          ? `Última clase hace ${daysSinceLast} días.`
-          : null,
-      });
-    }
-  }
-  // F7: el socio de contraste "atRisk" tiene que disparar la alerta sí o sí —
-  // media demo consiste en enseñar que el motor de retención avisa. Si su caída
-  // real no llegó al umbral (la agenda es aleatoria), se añade la fila a mano.
-  for (const m of members.filter((m) => m.showcase === "atRisk")) {
-    if (retentionAlerts.some((a) => a.memberId === m.id)) continue;
-    const dates = attendanceByMember.get(m.id) ?? [];
-    const lastDate = dates.length ? dates[dates.length - 1] : null;
-    retentionAlerts.push({
-      id: id(),
-      memberId: m.id,
-      baselineFreq: 2.1,
-      recentFreq: 0.5,
-      dropPct: -76,
-      riskLevel: RetentionRiskLevel.HIGH,
-      context: lastDate
-        ? `Última clase hace ${Math.round((TODAY.getTime() - lastDate.getTime()) / DAY)} días.`
-        : "Sin asistencias registradas en las últimas semanas.",
-    });
-  }
-  await prisma.retentionAlert.createMany({ data: retentionAlerts });
+  // (El motor de retención corre al final de esta función, cuando ya están
+  // todas las reservas en la base: lee asistencias de la BD, no de memoria.)
 
   // ---------- Auditoría (ADR-008) ----------
   const receptionIds = staffUsers.filter((u) => u.role === "RECEPTION").map((u) => u.id);
@@ -2924,8 +2876,15 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     }
   }
 
+  // ---------- Motor de retención (G.3) ----------
+  // Al final del todo, con las reservas ya podadas: el motor mira asistencias
+  // reales en la base. El socio de contraste `atRisk` no necesita fila a mano
+  // —su asistencia se desploma a propósito (ver `attendChance` más arriba)—, así
+  // que la demo enseña el motor funcionando en vez de un dato inventado.
+  const retentionAlertCount = await runRetentionAlertRule(orgId, TODAY, prisma);
+
   console.log(
-    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas (${prunedFutureBookings} futuras podadas fuera de ventana) · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlerts.length} alertas · ${fixes.length} solapes corregidos`
+    `[${cfg.name}] ${centersData.length} centros · ${staffUsers.length} personal · ${memberships.length} imputaciones · ${members.length} socios · ${sessions.length} sesiones · ${bookings.length} reservas (${prunedFutureBookings} futuras podadas fuera de ventana) · ${payments.length} pagos · ${healthRecords.length} salud · ${noteRows.length} notas · ${retentionAlertCount} alertas · ${fixes.length} solapes corregidos`
   );
 }
 

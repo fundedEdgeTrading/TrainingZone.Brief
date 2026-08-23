@@ -53,6 +53,7 @@ import { SingleMetricChart } from "@/components/single-metric-chart";
 import { BonosPanel, type BonoAction } from "./bonos-panel";
 import { MemberSessionsCalendar } from "./member-calendar";
 import { listMesocyclesForMember } from "@/lib/mesocycle-queries";
+import { openRetentionAlertsByMember } from "@/lib/retention";
 import { isAiConfigured } from "@/lib/ai/anthropic";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
 
@@ -241,21 +242,28 @@ export default async function MemberDetailPage({
 
   const canSeeMesocycles = canManageMesocycles(session.user.role);
 
-  const [stats, healthRecords, notes, goalTemplates, centers, plans, assessments, mesocycles] = await Promise.all([
-    getMemberAttendanceStats(member.id),
-    getHealthRecordsForMember({
-      memberId: member.id,
-      orgId: session.user.orgId,
-      actorUserId: session.user.id,
-      actorRole: session.user.role,
-    }),
-    getMemberNotes(session.user.orgId, member.id),
-    listClientGoalTemplates(session.user.orgId),
-    listCentersForOrg(session.user.orgId),
-    listActivePlansForOrg(session.user.orgId),
-    listAssessmentsForMember(session.user.orgId, member.id),
-    canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
-  ]);
+  const [stats, healthRecords, notes, goalTemplates, centers, plans, assessments, mesocycles, retentionAlerts] =
+    await Promise.all([
+      getMemberAttendanceStats(member.id),
+      getHealthRecordsForMember({
+        memberId: member.id,
+        orgId: session.user.orgId,
+        actorUserId: session.user.id,
+        actorRole: session.user.role,
+      }),
+      getMemberNotes(session.user.orgId, member.id),
+      listClientGoalTemplates(session.user.orgId),
+      listCentersForOrg(session.user.orgId),
+      listActivePlansForOrg(session.user.orgId),
+      listAssessmentsForMember(session.user.orgId, member.id),
+      canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
+      openRetentionAlertsByMember([member.id]),
+    ]);
+
+  // Caída de frecuencia respecto a SU línea base (G.3). El motor
+  // (`src/lib/retention.ts`) la recalcula en cada pasada del cron y la cierra
+  // sola cuando el socio vuelve a su ritmo, así que lo que hay aquí está vivo.
+  const retentionRisk = retentionAlerts.get(member.id) ?? null;
 
   // Las valoraciones son trabajo de entrenador y arrastran screening de salud:
   // recepción ve la ficha pero no este bloque (mismo criterio que /salud).
@@ -733,6 +741,26 @@ export default async function MemberDetailPage({
       content: (
         <>
           <SectionHead title="Actividad" description="Asistencia y bitácora en un solo hilo cronológico." />
+
+          {/* G.3: la señal de retención vive donde está la asistencia que la
+              produce, no en una pantalla aparte. Las tres cifras de abajo dicen
+              cuánto ha venido en total; esto dice si está dejando de venir. */}
+          {retentionRisk && (
+            <div className="rounded-xl border border-critical-bg bg-critical-bg p-[15px_16px]">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge tone="critical">
+                  {retentionRisk.riskLevel === "HIGH" ? "Riesgo alto de fuga" : "Riesgo de fuga"}
+                </Badge>
+                <span className="text-[13px] font-semibold text-critical tz-nums">
+                  {retentionRisk.dropPct}% respecto a su ritmo habitual
+                </span>
+              </div>
+              <p className="text-[12.5px] text-brand-text-2 mt-2 tz-nums">
+                Venía {retentionRisk.baselineFreq.toFixed(1)} veces por semana (media de las 12 semanas previas) y en
+                las últimas 2 semanas lleva {retentionRisk.recentFreq.toFixed(1)}.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-2.5">
             <div className="border border-brand-border rounded-xl p-[15px_16px]">

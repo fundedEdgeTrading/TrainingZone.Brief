@@ -35,7 +35,6 @@ export type NavIcon =
   | "cobros"
   | "aforo"
   | "leads"
-  | "retencion"
   | "anuncios"
   | "reglas"
   | "rangos"
@@ -71,8 +70,15 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   // `/dashboard` NO se gatea: es la ruta de aterrizaje de dirección y cerrarla
   // dejaría a un cliente Esencial mirando un muro de pago en cada login. Lo que
   // se gatea es el BI avanzado DENTRO del panel, no la puerta.
+  //
+  // `retencion` tampoco aparece aquí, y no es un olvido: ya no hay ruta que
+  // gatear. La pantalla `/retention` se retiró —era una lista sin motor detrás,
+  // de ámbito organización y con la prioridad al revés— y el motor (G.3) pasó a
+  // `src/lib/retention.ts`, disparado por el cron. El gateo por plan vive ahora
+  // donde se produce el valor: `runRetentionAlertRule` no calcula nada para una
+  // organización cuyo plan no incluye la funcionalidad, así que sin ella no hay
+  // alertas que enseñar ni en el listado de socios ni en la ficha.
   "/feedback": "feedback_direccion",
-  "/retention": "retencion",
   "/brief": "salud_aptitud",
   "/health/aptitude-rules": "salud_aptitud",
   "/health/reference-ranges": "salud_aptitud",
@@ -100,7 +106,6 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
     { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
-    { href: "/retention", label: "Retención", section: "Crecimiento", icon: "retencion" },
     // Anuncios sale de Administración: es comunicación al socio, no estructura.
     { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
@@ -118,7 +123,6 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/aforo", label: "Aforo de clases", section: "Día a día", icon: "aforo" },
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
     { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
-    { href: "/retention", label: "Retención", section: "Crecimiento", icon: "retencion" },
     { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
     { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },

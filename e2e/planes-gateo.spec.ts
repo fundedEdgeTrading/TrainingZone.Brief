@@ -37,7 +37,6 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
     await loginAs(page, "sergio@trainingzone.es");
 
     const sidebar = page.locator("aside, nav").first();
-    await expect(sidebar.getByRole("link", { name: "Retención" })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Feedback" })).toBeVisible();
     // Auditoría cuelga de "Administración", que arranca plegada (rediseño del
     // NavBar): se despliega antes de mirar. Lo que verifica el test es que el
@@ -48,9 +47,12 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
 
   test("una ruta gateada responde por URL directa cuando el plan la incluye", async ({ page }) => {
     await loginAs(page, "sergio@trainingzone.es");
-    await page.goto("/retention");
+    // `/feedback` en vez de `/retention`: aquella ruta se retiró junto con su
+    // pantalla y el gateo de `retencion` pasó al motor (`src/lib/retention.ts`),
+    // que no tiene URL que probar.
+    await page.goto("/feedback");
 
     // Con Élite no debe desviar a /planes.
-    await expect(page).toHaveURL(/\/retention/);
+    await expect(page).toHaveURL(/\/feedback/);
   });
 });
