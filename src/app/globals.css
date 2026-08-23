@@ -687,6 +687,59 @@ textarea:focus-visible {
     opacity: 0.35;
   }
 }
+/* ===== NavBar: animación de activación del item =====
+   Al aterrizar la ruta, la píldora entra, la barra de oro crece desde el
+   centro, un destello la recorre, el icono da un salto y la etiqueta desliza.
+   El destello es el mismo recurso que `.tz-card-sheen` del login, con el oro de
+   marca. `prefers-reduced-motion` ya las anula al final de este fichero. */
+@keyframes tzPillIn {
+  from {
+    opacity: 0;
+    transform: scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tzBarGrow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes tzPillSheen {
+  from {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  to {
+    transform: translateX(340%) skewX(-18deg);
+  }
+}
+@keyframes tzIconPop {
+  0% {
+    transform: scale(0.72);
+  }
+  58% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes tzLabelIn {
+  from {
+    opacity: 0;
+    transform: translateX(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @keyframes tzPulseRing {
   0% {
     transform: scale(1);
