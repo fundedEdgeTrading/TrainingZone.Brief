@@ -155,7 +155,7 @@ export function Select({
   required,
   disabled,
   searchable,
-  placeholder = "Seleccionar...",
+  placeholder,
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; placeholder?: string }) {
   const options = useMemo(() => optionsFromChildren(children), [children]);
   const isControlled = value !== undefined;
@@ -165,6 +165,12 @@ export function Select({
   });
   const currentValue = isControlled ? String(value ?? "") : internalValue;
   const selected = options.find((o) => o.value === currentValue && !o.disabled);
+  // Media app usa `<option value="" disabled>` con su propio texto de marcador
+  // («Selecciona...», «Selecciona un motivo...»). Como esa opción no cuenta
+  // como valor elegido, su etiqueta es la que hace de marcador; el prop
+  // explícito, si lo hay, sigue mandando sobre ella.
+  const placeholderText =
+    placeholder ?? options.find((o) => o.value === currentValue)?.label ?? "Seleccionar...";
 
   const mounted = useMounted();
   // La hoja inferior entra por debajo de 640px, no en el breakpoint `lg`
@@ -350,7 +356,7 @@ export function Select({
           <span className="h-1 w-11 rounded-full bg-brand-border" />
         </div>
         <div className="flex shrink-0 items-center justify-between gap-3 px-2 pb-2.5">
-          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-muted">{placeholder}</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-muted">{placeholderText}</span>
           <button type="button" onClick={close} className="px-1.5 py-1 text-[13.5px] font-semibold text-brand-text-2">
             Cerrar
           </button>
@@ -400,7 +406,7 @@ export function Select({
         <span className="inline-flex min-w-0 items-start gap-2">
           {selected?.tone && <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />}
           <span className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}>
-            {selected ? selected.label : placeholder}
+            {selected ? selected.label : placeholderText}
           </span>
         </span>
         <svg
