@@ -160,6 +160,10 @@ type CenterCfg = {
   name: string;
   slug: string;
   address: string;
+  /** Coordenadas del local: sitúan el centro en el mapa de barrios (marcador,
+   *  anillo de 15 min andando y distancia de cada barrio al centro más cercano). */
+  lat: number;
+  lng: number;
   logoUrl?: string | null;
   capacityRange: [number, number];
   memberCount: number;
@@ -334,6 +338,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       name: c.name,
       slug: c.slug,
       address: c.address,
+      lat: c.lat,
+      lng: c.lng,
       logoUrl: c.logoUrl ?? null,
     })),
   });
@@ -2899,8 +2905,8 @@ const ORGS: OrgSeedConfig[] = [
       // La Jota genera 5 socios aleatorios porque recibe además los 5 clientes
       // de EP construidos a medida para el panel del entrenador demo (ver
       // RB-RRHH-005 más abajo): 5 + 5 = los 10 socios del centro.
-      { key: "lajota", name: "TRAINING ZONE La Jota", slug: "la-jota", address: "Av. de Cataluña 42, Zaragoza", capacityRange: [8, 12], memberCount: 5, postalPool: ZARAGOZA_POSTAL_POOL },
-      { key: "puertacarmen", name: "TRAINING ZONE Puerta del Carmen", slug: "puerta-del-carmen", address: "Paseo Pamplona 15, Zaragoza", capacityRange: [8, 12], memberCount: 10, postalPool: ZARAGOZA_POSTAL_POOL },
+      { key: "lajota", name: "TRAINING ZONE La Jota", slug: "la-jota", address: "Av. de Cataluña 42, Zaragoza", lat: 41.6685, lng: -0.8815, capacityRange: [8, 12], memberCount: 5, postalPool: ZARAGOZA_POSTAL_POOL },
+      { key: "puertacarmen", name: "TRAINING ZONE Puerta del Carmen", slug: "puerta-del-carmen", address: "Paseo Pamplona 15, Zaragoza", lat: 41.647, lng: -0.888, capacityRange: [8, 12], memberCount: 10, postalPool: ZARAGOZA_POSTAL_POOL },
       // F7: segundo centro y segunda ciudad. Sus socios y leads salen del pool de
       // CP de Santander, así que el mapa de calor pasa a tener dos ciudades con
       // sus barrios en vez de una.
@@ -2909,6 +2915,8 @@ const ORGS: OrgSeedConfig[] = [
         name: "TRAINING ZONE Santander",
         slug: "santander",
         address: "C/ Castilla 28, Santander",
+        lat: 43.4631,
+        lng: -3.8085,
         capacityRange: [8, 12],
         memberCount: 50,
         postalPool: SANTANDER_POSTAL_POOL,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Card } from "@/components/kpi-card";
 import { postalCityLabel } from "@/lib/postal-codes";
@@ -61,19 +62,33 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
       meta={`leads + clientes por barrio${cities ? ` (${cities})` : ""}`}
       delay={0.64}
       action={
-        <div className="flex gap-[5px] bg-tz-bone border border-tz-sand rounded-full p-1">
-          {SEGMENTS.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => setMetric(s.key)}
-              className={`px-3.5 py-1.5 rounded-full font-display text-xs font-semibold transition-all duration-150 ${
-                metric === s.key ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2.5">
+          {/* La tarjeta responde "dónde hay volumen"; el resto de preguntas
+              (conversión, tendencia, distancia, oportunidad) piden el plano
+              entero, y ahí es donde vive el mapa de barrios. */}
+          <Link
+            href="/mapa-barrios"
+            className="hidden sm:flex items-center gap-1.5 border border-tz-sand rounded-full px-3.5 py-1.5 font-display text-xs font-semibold text-brand-text-2 transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone hover:border-tz-black"
+          >
+            Mapa de barrios
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 6l6 6-6 6" />
+            </svg>
+          </Link>
+          <div className="flex gap-[5px] bg-tz-bone border border-tz-sand rounded-full p-1">
+            {SEGMENTS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setMetric(s.key)}
+                className={`px-3.5 py-1.5 rounded-full font-display text-xs font-semibold transition-all duration-150 ${
+                  metric === s.key ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
         </div>
       }
     >

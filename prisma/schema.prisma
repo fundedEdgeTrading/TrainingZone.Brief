@@ -91,6 +91,11 @@ model Center {
   name                 String
   slug                 String
   address              String?
+  // Coordenadas del centro. Opcionales: un centro sin situar sigue operando
+  // igual, solo deja de pintarse en el mapa de barrios (marcador, anillo de
+  // 15 min andando y distancia por barrio, ver getPostalCodeMapData).
+  lat                  Float?
+  lng                  Float?
   logoUrl              String? // logo propio del centro; si es null se hereda el de la organización (y en su defecto, Apta)
   timezone             String   @default("Europe/Madrid")
   // Aforo por defecto de las sesiones de grupo del centro. Solo semilla del

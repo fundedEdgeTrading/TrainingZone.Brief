@@ -761,6 +761,127 @@ textarea:focus-visible {
   border-color: rgba(29, 29, 28, 0.85);
 }
 
+/* Pantalla a sangre: la raíz de la página se marca con `data-full-bleed` y el
+   contenedor de página pierde relleno y scroll para que el lienzo ocupe
+   exactamente el hueco entre el header y el borde de la ventana.
+   `z-index:0` crea contexto de apilamiento propio: las tarjetas flotantes del
+   mapa van por encima de las capas de Leaflet (z 400-700), y sin él esos 500
+   subirían también por encima del header (z-30) y taparían, por ejemplo, el
+   panel de notificaciones. */
+main:has(> [data-full-bleed]) {
+  position: relative;
+  z-index: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+/* ---------- Mapa de barrios (/mapa-barrios) ----------
+   Coropleta por barrio: manda el color de la celda, así que la tesela va más
+   clara y más desaturada que la del panel y sin rótulos propios (los nombres
+   los pone la vista). Los colores de esta sección son literales y no tokens a
+   propósito: se pintan SOBRE la rampa de datos —que es fija— y no sobre la
+   superficie del tema, así que en oscuro tienen que seguir siendo los mismos
+   para que el rótulo se lea encima de su celda. */
+.tz-barrio-map .leaflet-tile {
+  filter: grayscale(1) sepia(0.34) saturate(0.6) brightness(1.08) contrast(0.86);
+}
+.tz-barrio-map .leaflet-interactive {
+  transition: fill-opacity 0.18s ease;
+}
+/* El control de zoom vive en la esquina inferior derecha, que es justo donde la
+   vista pone su botonera flotante: se sube por encima de ella en vez de
+   quedarse debajo, medio tapado. */
+.tz-barrio-map .leaflet-bottom.leaflet-right .leaflet-control-zoom {
+  margin-bottom: 66px;
+}
+
+/* Etiqueta de barrio: nombre + cifra, con halo hueso. El halo es lo que las
+   hace legibles sobre cualquier escalón de la rampa. */
+.tz-lbl {
+  pointer-events: none;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.tz-lbl b {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1d1d1c;
+  white-space: nowrap;
+  text-shadow:
+    0 0 3px #f7f4ed,
+    0 0 6px #f7f4ed,
+    0 0 9px #f7f4ed;
+}
+.tz-lbl i {
+  display: inline-block;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #5b5748;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 0 3px #f7f4ed,
+    0 0 6px #f7f4ed;
+}
+.tz-lbl.hi b,
+.tz-lbl.hi i {
+  color: #1d1d1c;
+}
+/* No cabía el nombre: queda la cifra, que es lo que el mapa mide. */
+.tz-lbl.compact b {
+  display: none;
+}
+/* Ni la cifra cabe, o dirección ha pedido el mapa sin nombres. Va con
+   `!important` porque la regla base de `.tz-lbl` también lo lleva. */
+.tz-lbl.off {
+  display: none !important;
+}
+
+/* Centro de la organización: cuadradito sólido + rótulo, sobre el anillo de
+   "15 min andando" que dibuja el propio mapa. */
+.tz-ctr {
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tz-ctr span.d {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: #1d1d1c;
+  border: 2.5px solid #f4f0e8;
+  box-shadow: 0 3px 10px -2px rgba(29, 29, 28, 0.6);
+}
+.tz-ctr span.t {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1d1d1c;
+  white-space: nowrap;
+  text-shadow:
+    0 0 3px #f7f4ed,
+    0 0 6px #f7f4ed,
+    0 0 9px #f7f4ed;
+}
+
+/* Barra de scroll del ranking flotante: sobre cristal, la del sistema canta. */
+.tz-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.tz-scroll::-webkit-scrollbar-thumb {
+  background: var(--color-brand-border);
+  border-radius: 999px;
+}
+
 .tz-map-bubble {
   display: grid;
   place-items: center;

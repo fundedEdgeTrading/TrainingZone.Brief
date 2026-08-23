@@ -347,6 +347,7 @@ export const ROLE_LABEL: Record<Role, string> = {
  * como "Mi actividad", con ese item marcado como activo en el sidebar.
  */
 export const OFF_NAV_TITLES: Record<string, string> = {
+  "/mapa-barrios": "Mapa de barrios",
   "/mi-perfil": "Mi perfil",
   "/portal/perfil": "Mi perfil",
   "/portal/chat": "Chat con tu centro",
@@ -355,11 +356,22 @@ export const OFF_NAV_TITLES: Record<string, string> = {
 };
 
 /**
+ * Pantallas que cuelgan de otra: de dónde se sale y, por tanto, a dónde vuelve
+ * el botón «volver» del header. También es lo que mantiene marcado el item del
+ * menú del que la pantalla depende (el mapa de barrios se abre desde el panel
+ * de control, y el sidebar no debería quedarse sin nada activo mientras).
+ */
+export const PARENT_ROUTE: Record<string, string> = {
+  "/mapa-barrios": "/dashboard",
+};
+
+/**
  * Item de navegación al que corresponde una ruta: la coincidencia de prefijo
- * más larga, salvo que la ruta sea una de las que no cuelgan del menú.
+ * más larga, salvo que la ruta sea una de las que no cuelgan del menú (que
+ * marcan la de su pantalla de origen, si la tienen).
  */
 export function activeNavHref(nav: { href: string }[], pathname: string): string | undefined {
-  if (OFF_NAV_TITLES[pathname]) return undefined;
+  if (OFF_NAV_TITLES[pathname]) return PARENT_ROUTE[pathname];
   return [...nav]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.href;
