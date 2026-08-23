@@ -291,8 +291,8 @@ Cliente rellena autovaloración: "me siento estancado"
     nutrición, cambio de modalidad de entrenamiento)
 ```
 
-Esto conecta directamente con el motor de ofertas personalizadas (§8.6): la detección de
-estancamiento es una de las señales de entrada de ese motor, no un sistema aparte.
+Esto conectaba con el motor de ofertas personalizadas (§8.7), retirado el 23-08-2026: la
+detección de estancamiento sigue viva por sí misma (`RetentionAlert`), ya sin ese consumidor.
 
 **`RB-IA-007`** — Definición de "cliente estancado" **(decisión §11.9)**. El estancamiento **no**
 se decide solo por la autovaloración textual: se **combina** la señal subjetiva con **señales
@@ -306,7 +306,8 @@ objetivas**:
 Estas señales objetivas **reutilizan el motor de retención ya existente** (`RetentionAlert`), no se
 construye un sistema paralelo: la detección de estancamiento es una regla más sobre esas señales.
 El cliente se marca como "en riesgo de estancamiento" cuando concurre la autovaloración **o** un
-umbral de señales objetivas, y eso alimenta la recomendación de IA (§4.5) y el motor de ofertas.
+umbral de señales objetivas, y eso alimenta la recomendación de IA (§4.5). (El motor de ofertas
+era el otro consumidor de esta señal; se retiró el 23-08-2026 — §8.7.)
 
 ### 4.6. Seguimiento periódico de objetivos (check-in recurrente)
 
@@ -429,25 +430,30 @@ equivalente en volumen (para clientes con baja frecuencia semanal), salta tambi�
 - "Cliente X lleva 2 meses viniendo 1 día/semana — ¿ofrecerle 2 días/semana con 20% de
   descuento el primer mes?"
 
-Este último ejemplo es un caso concreto del motor de ofertas personalizadas (§8.7): no es una
-notificación aislada, es la salida visible de ese motor.
+Este último ejemplo era un caso concreto del motor de ofertas personalizadas (§8.7), retirado el
+23-08-2026: hoy sería una notificación como cualquier otra, sin motor detrás.
 
-### 8.7. Motor de ofertas personalizadas
+### 8.7. Motor de ofertas personalizadas — RETIRADO (23-08-2026)
 
-**`RB-RRHH-008`** — El comportamiento del cliente que alimenta las ofertas personalizadas se
+Las dos reglas de esta sección quedan **sin efecto**: el módulo se ha eliminado del producto
+(ruta `/offers`, `lib/offers-queries.ts`, modelo `PersonalizedOffer`, enum `OfferStatus` y la
+regla del cron que sugería ofertas). Se conserva el enunciado como registro de lo que se
+decidió; si el upsell vuelve, se replantea desde cero.
+
+**`RB-RRHH-008`** — ~~El comportamiento del cliente que alimenta las ofertas personalizadas se
 registra por **tres vías combinadas**:
 1. Automática por software: asistencia real (días que viene), antigüedad, consumo de bono.
 2. Preguntada al entrenador (cualitativo).
 3. Anotada por el propio cliente (autovaloraciones, RPE, comentarios post-sesión).
 
-Con esas señales, el sistema (IA + reglas) sugiere ofertas concretas al entrenador.
+Con esas señales, el sistema (IA + reglas) sugiere ofertas concretas al entrenador.~~
 
-**`RB-RRHH-013`** — Aprobación de ofertas personalizadas **(decisión §11.7)**. Una oferta sugerida
+**`RB-RRHH-013`** — ~~Aprobación de ofertas personalizadas **(decisión §11.7)**. Una oferta sugerida
 por el motor **requiere luz verde de dirección antes de comunicarse al cliente**. Flujo:
 `sistema sugiere → entrenador la propone/eleva → dirección aprueba o rechaza → solo tras
 aprobación se comunica al cliente`. El entrenador **no** puede ofrecer el descuento/upsell
 directamente sin ese visto bueno. La oferta arrastra su estado (`SUGERIDA` → `PENDIENTE_DIRECCION`
-→ `APROBADA`/`RECHAZADA` → `COMUNICADA`) para trazabilidad.
+→ `APROBADA`/`RECHAZADA` → `COMUNICADA`) para trazabilidad.~~
 
 ### 8.8. RPE y anotaciones post-sesión → informe semanal
 
@@ -511,7 +517,7 @@ objetivo, cuántos se ven estancados, cuántos piden "más" en el último check-
 | Lesiones/patologías | Ve las suyas | No (salvo asignado) | Sí | Sí |
 | Valoraciones de entrenadores | No | No | No (ni sobre sí mismo) | Sí — **exclusivo** |
 | Registro horario propio | — | Lee/firma el suyo | — | Ve todos |
-| Ofertas personalizadas sugeridas | No (hasta que se aprueba y se le comunica) | No | Propone/eleva, no ofrece sin aprobación | **Aprueba** — luz verde obligatoria (`RB-RRHH-013`) |
+| ~~Ofertas personalizadas sugeridas~~ | 🗑️ módulo retirado el 23-08-2026 (§8.7) | — | — | — |
 | Reporte semanal de comentarios | No | Sí (es del equipo) | Sí | Sí |
 | Huecos de agenda de grupos | Sí (si es de grupos) | Sí | Sí | Sí |
 | Huecos de agenda de EP | No | No | Solo franjas autorreservables (si es su cliente) | Sí |
@@ -531,7 +537,7 @@ registro histórico; cada una ya está reflejada como regla concreta en su secci
 | 11.4 | Entrenador responsable en "solo online" | **Entrenador individual asignado**, no "Training Zone" genérico | `RB-PERFIL-002` (§2.2) |
 | 11.5 | Franjas autorreservables de EP | Las **configura el entrenador** (con permiso crear/editar/añadir); objetivo futuro: política global de centro. El EP admite **reserva manual** (clientes que no usan app) o franja autorreservable. Grupos: siempre reserva el cliente, en horarios del centro, con aforo por sesión | `RB-AGENDA-002/006/007` (§3.1) |
 | 11.6 | Periodicidad check-in objetivos y valoración de entrenadores | **Configurable por tipo de servicio**, con defaults: check-in de objetivos **mensual**, valoración de entrenadores **trimestral** | `RB-IA-006` (§4.6), `RB-RRHH-011` (§8.9) |
-| 11.7 | Aprobación de ofertas personalizadas | **Requiere luz verde de dirección** antes de comunicarse al cliente | `RB-RRHH-013` (§8.7) |
+| 11.7 | ~~Aprobación de ofertas personalizadas~~ | 🗑️ módulo retirado el 23-08-2026 | `RB-RRHH-013` (§8.7) |
 | 11.8 | Umbral de "pocas sesiones programadas" | **Por tiempo**: < 2 semanas de entrenamientos programados; salvaguarda equivalente en **4 sesiones** restantes | `RB-RRHH-006` (§8.5) |
 | 11.9 | Definición de "cliente estancado" | **Combinar** autovaloración textual **+** señales objetivas (caída de asistencia, RPE bajo sostenido, ausencia de progresión), reutilizando el motor de retención | `RB-IA-007` (§4.5) |
 
@@ -557,7 +563,7 @@ registro histórico; cada una ya está reflejada como regla concreta en su secci
 | Registro horario | `TimeClockEntry` | 🆕 nueva |
 | ~~Propuestas/mejoras al director~~ | ~~`StaffProposal`~~ | 🗑️ retirada (23-08-2026) |
 | Venta atribuida a trabajador | Campo `soldByUserId` en `Payment`/`Subscription` | 🆕 nuevo campo |
-| Oferta personalizada | `PersonalizedOffer` | 🆕 nueva |
+| ~~Oferta personalizada~~ | ~~`PersonalizedOffer`~~ | 🗑️ retirada (23-08-2026) |
 | Valoración de entrenador (confidencial) | `TrainerRating` | 🆕 nueva, visibilidad restringida a `OWNER` |
 | Reporte semanal de comentarios | Vista agregada sobre `SessionDebrief`/notas, no tabla nueva | — |
 

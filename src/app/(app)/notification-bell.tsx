@@ -18,7 +18,6 @@ type NotificationItem = {
 const ENTITY_HREF: Record<string, (id: string) => string> = {
   Lead: (id) => `/leads/${id}`,
   Member: (id) => `/members/${id}`,
-  PersonalizedOffer: () => `/offers`,
 };
 
 export function NotificationBell({ notifications }: { notifications: NotificationItem[] }) {

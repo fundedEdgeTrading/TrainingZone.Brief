@@ -290,19 +290,9 @@ export function canManageCenterCapacity(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER_ADMIN";
 }
 
-// F14/RB-RRHH-013 — aprobar (luz verde) ofertas personalizadas.
-export function canApproveOffers(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR";
-}
-
 // D.1 — publicar anuncios/banners del Dashboard del socio: EXCLUSIVO de dirección.
 export function canManageAnnouncements(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "PLATFORM_ADMIN";
-}
-
-// F14/RB-RRHH-013 — proponer/elevar ofertas a dirección.
-export function canProposeOffers(role: Role): boolean {
-  return role === "TRAINER" || role === "TRAINER_ADMIN" || role === "OWNER" || role === "CENTER_DIRECTOR";
 }
 
 // F14/RB-RRHH-012 — valoraciones de entrenadores: EXCLUSIVO dirección, nunca el propio entrenador.

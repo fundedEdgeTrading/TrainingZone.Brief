@@ -8,28 +8,16 @@ Regla común: **se oculta, no se borra.** Ni el código, ni las tablas, ni los
 datos. Volver a encenderlo debe ser cuestión de deshacer los puntos de esta
 ficha, no de reescribir el módulo.
 
-## Ofertas y sugerencias de IA (22-08-2026, F2)
+## ~~Ofertas y sugerencias de IA (22-08-2026, F2)~~ — ELIMINADO (23-08-2026)
 
-**Por qué.** El gimnasio todavía no vende paquetes de forma activa, así que el
-módulo ocupaba una sección entera del menú de cuatro roles sin que nadie
-llegara a usarlo. Vuelve cuando haya campaña comercial que sostener.
-
-**Qué se ha hecho.**
-
-- `src/lib/rbac.ts`: fuera `/offers` del `NAV_BY_ROLE` de Dirección, Dirección
-  de centro, Entrenador y Entrenador Admin.
-- `src/app/api/jobs/run/route.ts`: la llamada a `generateOfferSuggestions` deja
-  de ejecutarse en el cron. La clave `offerSuggestions` sigue en el `summary`
-  (a 0) para no cambiar la forma de la respuesta que consume el disparador
-  externo.
-
-**Qué NO se ha tocado.** La ruta `/offers` y sus acciones, `PersonalizedOffer`,
-`generateOfferSuggestions`, `canProposeOffers` / `canApproveOffers` y el
-apartado de ofertas de la ficha del socio. Todo sigue funcionando por URL
-directa.
-
-**Para reactivarlo.** Devolver la entrada al menú de los roles que la tenían y
-descomentar la llamada de la regla en el cron.
+Estuvo aparcado un día: fuera del menú desde el 22-08-2026 y **eliminado del
+todo el 23-08-2026**. Ya no queda nada que reactivar. Se fueron la ruta
+`/offers` con sus acciones y componentes, `lib/offers-queries.ts` (incluida
+`generateOfferSuggestions`), `canProposeOffers` / `canApproveOffers`, el modelo
+`PersonalizedOffer` con su tabla y el enum `OfferStatus`, la clave
+`offerSuggestions` del `summary` del cron y `e2e/offers.spec.ts`. La regla de
+negocio `RB-RRHH-008/013` queda marcada como retirada en
+`CRM_REGLAS_NEGOCIO.md` §8.7.
 
 ## Fichajes (22-08-2026, F2)
 
@@ -84,7 +72,8 @@ arriba, y devolver el tile de «Tratamiento con IA» a los consentimientos.
 ## Nota sobre el recuento del menú de Dirección
 
 El roadmap de la jornada (§3.4) fijaba bajar el menú de Dirección de 15
-entradas a 13. Con Ofertas fuera queda en **14**: las demás filas de esa tabla
+entradas a 13. Con Ofertas fuera —primero oculta, desde el 23-08-2026
+eliminada— queda en **14**: las demás filas de esa tabla
 (salud para Dirección de centro, Comercial del entrenador, navegación del
 Entrenador Admin) no retiran nada más de ese menú, y ninguna de las entradas
 restantes es prescindible sin dejar su pantalla sin puerta de entrada — la

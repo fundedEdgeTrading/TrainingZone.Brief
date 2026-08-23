@@ -292,7 +292,6 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       await tx.trainerRating.deleteMany({ where: { memberId } });
       await tx.selfAssessment.deleteMany({ where: { memberId } });
       await tx.workoutProgram.deleteMany({ where: { memberId } });
-      await tx.personalizedOffer.deleteMany({ where: { memberId } });
       await tx.retentionAlert.deleteMany({ where: { memberId } });
       await tx.healthRecord.deleteMany({ where: { memberId } });
       await tx.clientFeedback.deleteMany({ where: { memberId } });

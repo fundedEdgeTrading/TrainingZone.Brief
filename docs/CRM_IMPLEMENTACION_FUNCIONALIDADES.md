@@ -53,7 +53,7 @@ mecanismo actual.
 | Panel del entrenador | `RB-RRHH-005` | ❌ | Vista propia + métricas EP/grupos 🆕 |
 | Alerta pocas sesiones programadas | `RB-RRHH-006` | ❌ | Regla temporal (<2 sem / 4 ses.) 🆕 |
 | Notificaciones accionables (tareas) | `RB-RRHH-007` | ❌ | Motor de notificaciones 🆕 |
-| Motor de ofertas + aprobación | `RB-RRHH-008/013` | ❌ | `PersonalizedOffer` con flujo 🆕 |
+| ~~Motor de ofertas + aprobación~~ | ~~`RB-RRHH-008/013`~~ | 🗑️ retirado (23-08-2026) | — |
 | Reporte semanal de comentarios | `RB-RRHH-010` | ❌ | Vista agregada 🆕 |
 | Valoración de entrenadores (confid.) | `RB-RRHH-011/012` | ❌ | `TrainerRating` visible solo dirección 🆕 |
 | BI: LTV, ticket medio | `RB-BI-002` | ➕ Panel existe (ocupación/ingresos) | Métricas nuevas ➕ |
@@ -238,20 +238,7 @@ model TimeClockEntry {             // RB-RRHH-001/002 (registro horario + firma)
 
 // StaffProposal (RB-RRHH-003) — retirado el 23-08-2026, no llegó a producción.
 
-enum OfferStatus { SUGERIDA PENDIENTE_DIRECCION APROBADA RECHAZADA COMUNICADA }
-
-model PersonalizedOffer {          // RB-RRHH-008/013 (motor de ofertas + aprobación dirección)
-  id String @id @default(cuid())
-  orgId String
-  memberId String
-  proposedByUserId String?         // entrenador que la eleva
-  approvedByUserId String?         // dirección (RB-RRHH-013: luz verde obligatoria)
-  signals Json                     // señales que la dispararon (asistencia, antigüedad, RPE…)
-  description String               // "2 días/semana con 20% dto. el primer mes", etc.
-  status OfferStatus @default(SUGERIDA)
-  createdAt DateTime @default(now())
-  @@index([orgId]) @@index([memberId])
-}
+// OfferStatus / PersonalizedOffer (RB-RRHH-008/013) — retirados el 23-08-2026.
 
 model TrainerRating {              // RB-RRHH-011/012 (valoración de entrenador, CONFIDENCIAL)
   id String @id @default(cuid())
@@ -285,7 +272,7 @@ model Notification {               // RB-RRHH-007/006, RB-LEAD-009, RB-IA-005…
   kind NotificationKind @default(TASK)
   title String
   body String?
-  entityType String?               // "Lead" | "Member" | "PersonalizedOffer"…
+  entityType String?               // "Lead" | "Member" | "ClientFeedbackPrompt"…
   entityId String?
   dueDate DateTime?
   resolvedAt DateTime?
@@ -362,11 +349,13 @@ declara sus dependencias.
 - Alerta de **pocas sesiones programadas** (`RB-RRHH-006`, decisión §11.8): <2 semanas o ≤4 sesiones
   futuras → `Notification` al entrenador (regla temporal en F10).
 
-### F14 — Motor de ofertas y valoración de entrenadores 🆕 *(dep: F10, señales de F11/G)*
-- `PersonalizedOffer` con flujo de estados y **aprobación obligatoria de dirección** (`RB-RRHH-013`,
-  decisión §11.7). El entrenador **eleva**, dirección **aprueba**, luego se comunica.
-- Detección de estancamiento `RB-IA-007` (decisión §11.9) como señal de entrada, en
-  `lib/stall-detection.ts` reutilizando `RetentionAlert`.
+### F14 — Valoración de entrenadores 🆕 *(dep: F10, señales de F11/G)*
+- ~~`PersonalizedOffer` con flujo de estados y aprobación obligatoria de dirección
+  (`RB-RRHH-013`)~~ — **retirado el 23-08-2026**: modelo, tabla, enum, ruta `/offers`,
+  `lib/offers-queries.ts` y la regla del cron, todo fuera del repo.
+- Detección de estancamiento `RB-IA-007` (decisión §11.9), en `lib/stall-detection.ts`
+  reutilizando `RetentionAlert`. Nació como señal de entrada del motor de ofertas; sobrevive
+  a su retirada por sí misma.
 - `TrainerRating` confidencial (`RB-RRHH-011/012`) con acceso restringido a dirección
   (`lib/trainer-rating-access.ts`), periodicidad trimestral por defecto (F15).
 
@@ -397,7 +386,7 @@ declara sus dependencias.
 F8 (Leads) ──► F9 (Perfil+trainerId) ──┬─► F11 (Agenda EP) ──► F13 (RRHH/horario)
                                         ├─► F16 (IA+chat)
 F10 (Notificaciones) ──────────────────┼─► F13, F14, F15   (habilitador transversal)
-                                        └─► F14 (Ofertas) ──► necesita señales de F11/G
+                                        └─► F14 (Ofertas — retirado 23-08-2026)
 F12 (Stripe) ──► cierra el bucle de F8 (RB-LEAD-005) y alimenta F17 (BI económico)
 F15 (Programador) ──► F17 (BI de objetivos)
 ```
@@ -424,8 +413,8 @@ proveedor de IA).
   reutiliza `SessionDebrief`; progreso reutiliza `MemberProgressEntry`; bitácora del member ya
   existe (`MemberNote`). Solo `LeadNote` es genuinamente nuevo (o un `Note` polimórfico lead/member).
 - **Seed de demo (`prisma/seed.ts`):** cada fase debe ampliar el seed para poder enseñarla (leads en
-  varios estados, franjas EP autorreservables, ofertas pendientes de aprobación, valoraciones
-  confidenciales, notificaciones abiertas).
+  varios estados, franjas EP autorreservables, valoraciones confidenciales, notificaciones
+  abiertas).
 - **Programación temporal:** varias reglas (24h, pocas sesiones, check-ins periódicos) necesitan un
   disparador recurrente. Al no haber worker en el stack, centralizar la lógica en `lib/` e invocarla
   desde route handlers `/api/jobs/*` accionados por un cron externo.

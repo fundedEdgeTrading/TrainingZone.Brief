@@ -22,7 +22,7 @@ propósito, no es un olvido).
 **La imagen ha cambiado mucho en una semana.** `CRM_IMPLEMENTACION_FUNCIONALIDADES.md` describe el CRM interno
 (leads, ficha EP/online, agenda autorreservable, IA, RRHH, chat) como prácticamente 0% construido (fases F8–F17
 "❌"). Eso ya **no es cierto**: leads, ficha de cliente, agenda EP, RRHH (fichaje, panel del
-entrenador, ofertas personalizadas, valoración confidencial), BI demográfico/financiero y la infraestructura de
+entrenador, valoración confidencial), BI demográfico/financiero y la infraestructura de
 notificaciones/cron están **construidos y en uso**. Del mismo modo, `PLAN_IMPLEMENTACION_APTA_COMERCIAL.md` §6
 marca F5 (cobro recurrente) y F6 (autoservicio del socio) como "⏳ Pendiente" — también están **hechas**, con
 commits posteriores a esa tabla.
@@ -178,12 +178,12 @@ compara la percepción del cliente con la del entrenador, y no genera ni un solo
 | RB-RRHH-005 (panel del entrenador) | ✅ | `src/app/(app)/trainer/page.tsx` | ⚠️ pero sigue restringido a `requireRole(["TRAINER"])` (`trainer/page.tsx:42`) — dirección no puede ver el panel de su propio equipo, esto ya lo señalaba la auditoría anterior y sigue igual |
 | RB-RRHH-006 (alerta pocas sesiones, &lt;2 sem / ≤4 ses.) | ⚠️ | Umbrales correctos (`src/lib/trainer-alerts.ts:8-56`), pero notifica a OWNER/CENTER_DIRECTOR en vez de "al entrenador responsable" — consecuencia directa de que no existe `trainerId` fijo (§2) | 🏛️ mismo pivote de arquitectura que RB-PERFIL-002 |
 | RB-RRHH-007 (notificaciones tipo tarea) | ✅ | `src/lib/trainer-alerts.ts:58-89` | — |
-| RB-RRHH-008 (3 señales del motor de ofertas) | ⚠️ | Señal automática y manual cubiertas; sin captura estructurada separada de "cualitativo preguntado al entrenador" más allá del campo de texto libre | 🧱 hueco menor, no bloqueado |
+| ~~RB-RRHH-008 (3 señales del motor de ofertas)~~ | 🗑️ | Motor de ofertas retirado el 23-08-2026: fuera `PersonalizedOffer`, su tabla, `lib/offers-queries.ts` y la ruta `/offers` | regla sin efecto |
 | RB-RRHH-009 (RPE post-sesión) | ✅ | Ya existía (`SessionDebrief`) | — |
 | RB-RRHH-010 (reporte semanal agregado) | ✅ | `src/app/(app)/feedback/debriefs-semanales/page.tsx` | — |
 | RB-RRHH-011 (valoración de entrenadores, trimestral configurable) | ✅ | `src/lib/checkin-schedule.ts:9-102`; `src/lib/trainer-rating-access.ts:43-70` | — |
 | RB-RRHH-012 (confidencial, solo dirección) | ✅ | `src/lib/trainer-rating-access.ts:1-33` (matriz invertida, nunca accesible al propio entrenador) | — |
-| RB-RRHH-013 (aprobación obligatoria de ofertas) | ✅ | `src/app/(app)/offers/actions.ts:1-46`; máquina de estados completa `SUGERIDA→PENDIENTE_DIRECCION→APROBADA/RECHAZADA→COMUNICADA` | — |
+| ~~RB-RRHH-013 (aprobación obligatoria de ofertas)~~ | 🗑️ | Retirada con el motor de ofertas el 23-08-2026 | regla sin efecto |
 
 ---
 
