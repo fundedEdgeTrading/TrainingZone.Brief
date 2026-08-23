@@ -4,11 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getTrainerPanelData, formatHoursEs } from "@/lib/trainer-panel-queries";
 import { formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezone } from "@/lib/timezone";
-import { addDays } from "@/app/(app)/agenda/agenda-utils";
 import { KpiCard, Card } from "@/components/kpi-card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { buildAgendaDayView } from "./agenda-day";
+import { TrainerAgendaCard } from "./agenda-day-card";
 import { PendingPanel } from "./pending-panel";
 import { SessionCountdown } from "./session-countdown";
 
@@ -20,15 +20,6 @@ function greetingForHour(hour: number) {
 
 function initials(firstName: string, lastName: string) {
   return `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase();
-}
-
-/** Título de la tarjeta de agenda según el día navegado, nunca anterior a hoy. */
-function agendaCardTitle(selectedDay: Date, today: Date) {
-  const diffDays = Math.round((selectedDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-  if (diffDays === 0) return "Agenda de hoy";
-  if (diffDays === 1) return "Agenda de mañana";
-  const label = selectedDay.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
-  return `Agenda · ${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
 /** Rejilla de "Mis clientes de EP" de `sm` en adelante (en móvil se apila). */
@@ -84,13 +75,9 @@ export default async function TrainerPanelPage({
   // próxima sesión aún no ha empezado, que es el caso habitual.
   const dashOffset = Math.round(176 * (1 - data.todayProgressPct / 100));
 
-  const agendaSessionCount = data.agendaSessions.length;
-  const agendaRangeLabel = agendaSessionCount
-    ? `${data.agendaSessions[0].startTime}–${data.agendaSessions[agendaSessionCount - 1].endTime}`
-    : null;
-  const canGoPrevDay = selectedDay.getTime() > today.getTime();
-  const prevDayHref = `/trainer?day=${formatDateParam(addDays(selectedDay, -1))}`;
-  const nextDayHref = `/trainer?day=${formatDateParam(addDays(selectedDay, 1))}`;
+  // La tarjeta de agenda navega de día por su cuenta (acción de servidor, sin
+  // recargar el panel): el servidor solo siembra el día de la URL.
+  const agendaView = buildAgendaDayView(data.agendaSessions, selectedDay, today);
 
   return (
     <div className="tz-page">
@@ -221,220 +208,147 @@ export default async function TrainerPanelPage({
       <div className="flex flex-wrap gap-5 items-start">
         <div className="flex-[1_1_600px] min-w-0 flex flex-col gap-5">
           {/* AGENDA DE HOY */}
-          <Card
-            title={agendaCardTitle(selectedDay, today)}
-            meta={agendaRangeLabel ? `${agendaSessionCount} sesiones · ${agendaRangeLabel}` : undefined}
+          <TrainerAgendaCard
+            initialView={agendaView}
+            todayISO={formatDateParam(today)}
+            statusLabel={statusLabel || null}
             delay={0.28}
-            action={
-              <div className="flex items-center gap-3">
-                {data.agendaIsToday && statusLabel && <span className="text-xs font-semibold text-brand-muted">{statusLabel}</span>}
-                <div className="flex items-center gap-1">
-                  {!data.agendaIsToday && (
-                    <Link href="/trainer" className="mr-1 text-xs font-bold uppercase tracking-[.06em] text-brand-muted hover:text-brand-text">
-                      Hoy
-                    </Link>
-                  )}
-                  {canGoPrevDay ? (
-                    <Link
-                      href={prevDayHref}
-                      aria-label="Día anterior"
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-brand-border text-brand-text-2 transition-colors hover:bg-brand-bg hover:text-brand-text"
-                    >
-                      ‹
-                    </Link>
-                  ) : (
-                    <span aria-hidden className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-brand-border text-brand-text-2 opacity-30">
-                      ‹
-                    </span>
-                  )}
-                  <Link
-                    href={nextDayHref}
-                    aria-label="Día siguiente"
-                    className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-brand-border text-brand-text-2 transition-colors hover:bg-brand-bg hover:text-brand-text"
-                  >
-                    ›
-                  </Link>
+            spotlight={
+              /* Spotlight: solo aplica al día real de hoy, es estado en tiempo real.
+                 Se pinta siempre (aunque se entre por la URL de otro día) y la tarjeta
+                 lo oculta mientras se mira otro día, así su cuenta atrás no se reinicia
+                 al volver a hoy. */
+              spotlightKind === "empty" ? (
+                <div className="rounded-[14px] bg-brand-ink p-6 mb-[22px] [&_h3]:text-tz-bone [&_p]:text-tz-linen">
+                  <EmptyState
+                    title="Día completado"
+                    description={`${data.completedCount} sesión${data.completedCount === 1 ? "" : "es"} realizadas hoy. Buen trabajo.`}
+                  />
                 </div>
-              </div>
-            }
-          >
-            {/* Spotlight: solo aplica al día real de hoy, es estado en tiempo real */}
-            {!data.agendaIsToday ? null : spotlightKind === "empty" ? (
-              <div className="rounded-[14px] bg-brand-ink p-6 mb-[22px] [&_h3]:text-tz-bone [&_p]:text-tz-linen">
-                <EmptyState
-                  title="Día completado"
-                  description={`${data.completedCount} sesión${data.completedCount === 1 ? "" : "es"} realizadas hoy. Buen trabajo.`}
-                />
-              </div>
-            ) : (
-              <div className="relative overflow-hidden rounded-[14px] bg-brand-ink p-[20px_22px] mb-[22px] tz-card-sheen">
-                <span
-                  aria-hidden
-                  className="absolute pointer-events-none rounded-full"
-                  style={{
-                    width: 320,
-                    height: 320,
-                    right: -80,
-                    top: -120,
-                    background: "radial-gradient(circle, rgba(200,171,114,.18), transparent 70%)",
-                    filter: "blur(70px)",
-                    animation: "tzAuroraDrift 26s infinite alternate",
-                  }}
-                />
-                <span
-                  aria-hidden
-                  className="absolute pointer-events-none rounded-full"
-                  style={{
-                    width: 260,
-                    height: 260,
-                    left: "30%",
-                    bottom: -140,
-                    background: "rgba(216,204,184,.14)",
-                    filter: "blur(70px)",
-                    animation: "tzAuroraDrift 30s -8s infinite alternate-reverse",
-                  }}
-                />
-                <div className="relative flex gap-6 items-center flex-wrap">
-                  <div className="flex flex-col items-center gap-1.5 shrink-0">
-                    <svg
-                      width="78"
-                      height="78"
-                      viewBox="0 0 78 78"
-                      className="-rotate-90"
-                      role="img"
-                      aria-label={`${data.todayProgressPct}% de los minutos de hoy trabajados`}
-                    >
-                      <circle cx="39" cy="39" r="28" fill="none" stroke="rgba(244,240,232,.16)" strokeWidth="5" />
-                      <circle
-                        cx="39"
-                        cy="39"
-                        r="28"
-                        fill="none"
-                        stroke="var(--color-apta-gold)"
-                        strokeWidth="5"
-                        strokeLinecap="round"
-                        strokeDasharray={176}
-                        strokeDashoffset={dashOffset}
-                        style={{ animation: "tzDash 1.4s .6s both" }}
-                      />
-                      <text x="39" y="39" textAnchor="middle" dominantBaseline="central" fill="var(--color-tz-bone)" fontSize="15" fontWeight="800" transform="rotate(90 39 39)">
-                        {data.todayProgressPct}%
-                      </text>
-                    </svg>
-                    <span className="text-[10px] font-bold tabular-nums tracking-[.04em]" style={{ color: "var(--color-brand-muted-2)" }}>
-                      {data.todayMinutesWorked}/{data.todayMinutesTotal} min
-                    </span>
-                  </div>
-
-                  <div className="flex-1 min-w-[260px]">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="relative inline-flex items-center gap-1.5 rounded-pill px-[11px] py-[5px] text-[10px] font-extrabold tracking-[.08em] uppercase" style={{ background: "rgba(200,171,114,.16)", color: "var(--color-apta-gold)" }}>
-                        <span className="relative w-1.5 h-1.5 rounded-full" style={{ background: "var(--color-apta-gold)" }}>
-                          {spotlightKind === "current" && (
-                            <span className="absolute inset-0 rounded-full border" style={{ borderColor: "var(--color-apta-gold)", animation: "tzPulseRing 2.4s ease-out infinite" }} />
-                          )}
-                        </span>
-                        {spotlightKind === "current" ? "En curso" : "Próxima"}
+              ) : (
+                <div className="relative overflow-hidden rounded-[14px] bg-brand-ink p-[20px_22px] mb-[22px] tz-card-sheen">
+                  <span
+                    aria-hidden
+                    className="absolute pointer-events-none rounded-full"
+                    style={{
+                      width: 320,
+                      height: 320,
+                      right: -80,
+                      top: -120,
+                      background: "radial-gradient(circle, rgba(200,171,114,.18), transparent 70%)",
+                      filter: "blur(70px)",
+                      animation: "tzAuroraDrift 26s infinite alternate",
+                    }}
+                  />
+                  <span
+                    aria-hidden
+                    className="absolute pointer-events-none rounded-full"
+                    style={{
+                      width: 260,
+                      height: 260,
+                      left: "30%",
+                      bottom: -140,
+                      background: "rgba(216,204,184,.14)",
+                      filter: "blur(70px)",
+                      animation: "tzAuroraDrift 30s -8s infinite alternate-reverse",
+                    }}
+                  />
+                  <div className="relative flex gap-6 items-center flex-wrap">
+                    <div className="flex flex-col items-center gap-1.5 shrink-0">
+                      <svg
+                        width="78"
+                        height="78"
+                        viewBox="0 0 78 78"
+                        className="-rotate-90"
+                        role="img"
+                        aria-label={`${data.todayProgressPct}% de los minutos de hoy trabajados`}
+                      >
+                        <circle cx="39" cy="39" r="28" fill="none" stroke="rgba(244,240,232,.16)" strokeWidth="5" />
+                        <circle
+                          cx="39"
+                          cy="39"
+                          r="28"
+                          fill="none"
+                          stroke="var(--color-apta-gold)"
+                          strokeWidth="5"
+                          strokeLinecap="round"
+                          strokeDasharray={176}
+                          strokeDashoffset={dashOffset}
+                          style={{ animation: "tzDash 1.4s .6s both" }}
+                        />
+                        <text x="39" y="39" textAnchor="middle" dominantBaseline="central" fill="var(--color-tz-bone)" fontSize="15" fontWeight="800" transform="rotate(90 39 39)">
+                          {data.todayProgressPct}%
+                        </text>
+                      </svg>
+                      <span className="text-[10px] font-bold tabular-nums tracking-[.04em]" style={{ color: "var(--color-brand-muted-2)" }}>
+                        {data.todayMinutesWorked}/{data.todayMinutesTotal} min
                       </span>
-                      {spotlight && (
-                        <span className="inline-flex items-center gap-1 text-xs" style={{ color: "var(--color-brand-muted-2)" }}>
-                          {spotlightKind === "current" ? "quedan" : "empieza en"}
-                          <SessionCountdown
-                            targetIso={spotlightKind === "current" ? spotlight.endsAt : spotlight.startsAt}
-                            initialSeconds={(spotlightKind === "current" ? spotlight.secondsRemaining : spotlight.secondsUntil) ?? 0}
-                            className="font-bold"
-                          />
-                        </span>
-                      )}
                     </div>
-                    <div className="font-display font-extrabold text-[22px] tracking-[-.015em] mt-2" style={{ color: "var(--color-tz-bone)" }}>
-                      {spotlight?.startTime}–{spotlight?.endTime} · {spotlight?.title}
-                    </div>
-                    <div className="text-sm mt-1" style={{ color: "var(--color-tz-linen)" }}>
-                      {spotlight?.meta}
-                    </div>
-                  </div>
 
-                  <div className="flex flex-col gap-2 min-w-[168px]">
-                    {spotlightKind === "current" ? (
-                      <>
+                    <div className="flex-1 min-w-[260px]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="relative inline-flex items-center gap-1.5 rounded-pill px-[11px] py-[5px] text-[10px] font-extrabold tracking-[.08em] uppercase" style={{ background: "rgba(200,171,114,.16)", color: "var(--color-apta-gold)" }}>
+                          <span className="relative w-1.5 h-1.5 rounded-full" style={{ background: "var(--color-apta-gold)" }}>
+                            {spotlightKind === "current" && (
+                              <span className="absolute inset-0 rounded-full border" style={{ borderColor: "var(--color-apta-gold)", animation: "tzPulseRing 2.4s ease-out infinite" }} />
+                            )}
+                          </span>
+                          {spotlightKind === "current" ? "En curso" : "Próxima"}
+                        </span>
+                        {spotlight && (
+                          <span className="inline-flex items-center gap-1 text-xs" style={{ color: "var(--color-brand-muted-2)" }}>
+                            {spotlightKind === "current" ? "quedan" : "empieza en"}
+                            <SessionCountdown
+                              targetIso={spotlightKind === "current" ? spotlight.endsAt : spotlight.startsAt}
+                              initialSeconds={(spotlightKind === "current" ? spotlight.secondsRemaining : spotlight.secondsUntil) ?? 0}
+                              className="font-bold"
+                            />
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-display font-extrabold text-[22px] tracking-[-.015em] mt-2" style={{ color: "var(--color-tz-bone)" }}>
+                        {spotlight?.startTime}–{spotlight?.endTime} · {spotlight?.title}
+                      </div>
+                      <div className="text-sm mt-1" style={{ color: "var(--color-tz-linen)" }}>
+                        {spotlight?.meta}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 min-w-[168px]">
+                      {spotlightKind === "current" ? (
+                        <>
+                          <Link
+                            href={`/agenda/session/${spotlight?.id}`}
+                            className="text-center font-bold text-sm rounded-[10px] px-4 py-2.5 transition-transform duration-200 hover:-translate-y-[2px]"
+                            style={{ background: "var(--color-tz-bone)", color: "var(--color-tz-black)" }}
+                          >
+                            Cerrar debrief
+                          </Link>
+                          {spotlight?.soloMemberId && (
+                            <Link
+                              href={`/members/${spotlight.soloMemberId}`}
+                              className="text-center font-semibold text-sm rounded-[10px] px-4 py-2.5 border transition-colors duration-200"
+                              style={{ borderColor: "rgba(216,204,184,.35)", color: "var(--color-tz-linen)" }}
+                            >
+                              Ver ficha del socio
+                            </Link>
+                          )}
+                        </>
+                      ) : (
                         <Link
-                          href={`/agenda/session/${spotlight?.id}`}
+                          href={`/brief/${spotlight?.id}`}
                           className="text-center font-bold text-sm rounded-[10px] px-4 py-2.5 transition-transform duration-200 hover:-translate-y-[2px]"
                           style={{ background: "var(--color-tz-bone)", color: "var(--color-tz-black)" }}
                         >
-                          Cerrar debrief
+                          Abrir Session Brief
                         </Link>
-                        {spotlight?.soloMemberId && (
-                          <Link
-                            href={`/members/${spotlight.soloMemberId}`}
-                            className="text-center font-semibold text-sm rounded-[10px] px-4 py-2.5 border transition-colors duration-200"
-                            style={{ borderColor: "rgba(216,204,184,.35)", color: "var(--color-tz-linen)" }}
-                          >
-                            Ver ficha del socio
-                          </Link>
-                        )}
-                      </>
-                    ) : (
-                      <Link
-                        href={`/brief/${spotlight?.id}`}
-                        className="text-center font-bold text-sm rounded-[10px] px-4 py-2.5 transition-transform duration-200 hover:-translate-y-[2px]"
-                        style={{ background: "var(--color-tz-bone)", color: "var(--color-tz-black)" }}
-                      >
-                        Abrir Session Brief
-                      </Link>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Timeline */}
-            {data.agendaSessions.length === 0 ? (
-              data.agendaIsToday ? null : (
-                <EmptyState title="Sin sesiones" description="No tienes sesiones programadas ese día." />
               )
-            ) : (
-              // El timeline crece con las sesiones del día: se acota para que la
-              // tarjeta no empuje el resto del panel y se navega con scroll propio.
-              <div className="max-h-[420px] overflow-y-auto -mr-1.5 pr-1.5">
-                <div className="relative pl-[26px]">
-                  <span className="absolute left-[5px] top-[6px] bottom-[6px] w-[2px] rounded-full bg-gradient-to-b from-tz-linen to-tz-sand" />
-                  <div className="flex flex-col">
-                  {data.agendaSessions.map((s, i) => (
-                    <Link
-                      key={s.id}
-                      href={s.status === "past" ? `/agenda/session/${s.id}` : `/brief/${s.id}`}
-                      // En móvil el chip baja a su propia línea: compartiendo fila
-                      // con el título dejaba a este unos 60 px y todas las
-                      // sesiones se leían "Fun…", "Pers…".
-                      className={`relative grid grid-cols-[64px_minmax(0,1fr)] sm:grid-cols-[84px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 sm:gap-4 p-[13px_14px] rounded-xl transition-[transform,background-color] duration-200 hover:translate-x-[3px] hover:bg-brand-bg tz-fade-up ${
-                        s.status === "current" ? "bg-brand-bg" : s.status === "past" ? "opacity-60 hover:opacity-100" : ""
-                      }`}
-                      style={{ animationDelay: `${0.34 + i * 0.04}s` }}
-                    >
-                      <span
-                        className="absolute left-[-26px] top-1/2 -mt-[5px] w-3 h-3 rounded-full border-[3px] border-white"
-                        style={{ background: s.status === "current" ? "var(--color-apta-gold)" : s.status === "past" ? "var(--color-brand-text-2)" : "var(--color-tz-linen)" }}
-                      />
-                      <div>
-                        <div className="text-[13px] font-bold tabular-nums text-brand-text-2">{s.startTime}</div>
-                        <div className="text-[11px] text-brand-muted-2">{s.durationMin} min</div>
-                      </div>
-                      <div className="min-w-0">
-                        <div className={`text-[15px] font-bold text-brand-text truncate ${s.status === "current" ? "font-extrabold" : ""}`}>{s.title}</div>
-                        <div className="text-xs text-brand-muted truncate">{s.meta}</div>
-                      </div>
-                      <span className="col-start-2 justify-self-start sm:col-auto sm:justify-self-auto">
-                        <Badge tone={s.chipTone}>{s.chipLabel}</Badge>
-                      </span>
-                    </Link>
-                  ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
+            }
+          />
 
           {/* MIS CLIENTES DE EP */}
           <Card
