@@ -12,6 +12,7 @@ import {
   listActivePlansForOrg,
   listClientGoalTemplates,
 } from "@/lib/members-queries";
+import { bonoUsage } from "@/lib/session-balance";
 import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
@@ -316,8 +317,14 @@ export default async function MemberDetailPage({
 
   // ---- Franja de métricas de la cabecera --------------------------------
   const unlimitedBono = manageableSubscriptions.some((s) => s.sessionsRemaining == null);
-  const remainingTotal = manageableSubscriptions.reduce((acc, s) => acc + (s.sessionsRemaining ?? 0), 0);
-  const includedTotal = manageableSubscriptions.reduce((acc, s) => acc + (s.plan.sessionsIncluded ?? 0), 0);
+  // El "X / Y" de la cabecera se arma con `bonoUsage` para que el total no se
+  // quede por debajo del saldo cuando a un bono se le han añadido sesiones a
+  // mano (si no, salía "13 / 12").
+  const bonoUsages = manageableSubscriptions
+    .map((s) => bonoUsage(s.plan.sessionsIncluded, s.sessionsRemaining))
+    .filter((u): u is NonNullable<typeof u> => u != null);
+  const remainingTotal = bonoUsages.reduce((acc, u) => acc + u.remaining, 0);
+  const includedTotal = bonoUsages.reduce((acc, u) => acc + u.total, 0);
 
   const todayISO = formatDateParam(calendarToday);
   const nextBooking = member.bookings

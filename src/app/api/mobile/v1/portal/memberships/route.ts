@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSessionBalances, planServiceKind, sessionServiceKind } from "@/lib/members-queries";
+import { getSessionBalances, planServiceKind, sessionServiceKind, bonoUsage } from "@/lib/members-queries";
 import { formatDateParam } from "@/lib/date-utils";
 import { requireMember } from "../../_lib/require-member";
 import { apiOk } from "../../_lib/response";
@@ -38,17 +38,20 @@ export async function GET(req: NextRequest) {
   return apiOk({
     balances,
     memberships: subscriptions.map((s) => {
-      const total = s.plan.sessionsIncluded;
-      const remaining = s.sessionsRemaining;
+      // Mismo reparto cuadrado (gastadas + disponibles = total) que enseña la
+      // web: el anillo de "Mis bonos" se pinta con estas tres cifras y con el
+      // total contratado a secas se pasaba del 100 % en cuanto un bono tenía
+      // sesiones añadidas a mano.
+      const usage = bonoUsage(s.plan.sessionsIncluded, s.sessionsRemaining);
       return {
         id: s.id,
         planName: s.plan.name,
         serviceKind: planServiceKind(s.plan.type) ?? "GROUP",
         status: s.status,
-        unlimited: total == null,
-        remaining,
-        total,
-        used: total != null && remaining != null ? Math.max(0, total - remaining) : null,
+        unlimited: usage == null,
+        remaining: usage?.remaining ?? null,
+        total: usage?.total ?? null,
+        used: usage?.used ?? null,
         priceCents: s.priceCents,
         centerName: s.center.name,
         /** Fecha de renovación/caducidad ya formateada como "YYYY-MM-DD" (null = sin vencimiento). */
