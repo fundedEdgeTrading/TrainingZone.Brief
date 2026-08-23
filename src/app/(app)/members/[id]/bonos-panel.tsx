@@ -6,7 +6,7 @@ import { adjustSubscriptionSessions } from "./bonos-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import type { SessionBalance } from "@/lib/members-queries";
+import { bonoUsage, type SessionBalance } from "@/lib/session-balance";
 
 export type BonoRowData = {
   id: string;
@@ -105,7 +105,7 @@ export function BonosPanel({
                 {b.unlimited
                   ? "Sesiones ilimitadas"
                   : b.total != null
-                    ? `de ${b.total} contratadas`
+                    ? `de ${b.total} del bono`
                     : "sesiones disponibles"}
               </div>
             </div>
@@ -202,9 +202,14 @@ function BonoCard({
   const unlimited = server == null;
   const delta = unlimited ? 0 : draft - server;
   const editable = canAdjust && !unlimited;
-  const total = bono.sessionsIncluded;
+  // `included` es lo que trae el plan contratado (lo que se enseña al ajustar
+  // el saldo); `usage.total` es la capacidad real de ESTE bono, que nunca queda
+  // por debajo del saldo — si no, el titular decía "13 / 12" en cuanto alguien
+  // le había sumado sesiones a mano.
+  const included = bono.sessionsIncluded;
+  const usage = bonoUsage(included, server);
   // Barra de consumo: se anima con scaleX (nunca `width`, plan UX §4/§0.6).
-  const ratio = unlimited || !total ? 1 : Math.max(0, Math.min(1, server / total));
+  const ratio = !usage || usage.total === 0 ? 1 : usage.remaining / usage.total;
 
   const items: BonoAction[] = [
     ...actions,
@@ -257,7 +262,7 @@ function BonoCard({
                   </div>
                 </div>
 
-                {total != null && <span className="text-xs text-brand-muted pb-2">de {total} incluidas</span>}
+                {included != null && <span className="text-xs text-brand-muted pb-2">de {included} incluidas</span>}
 
                 {delta !== 0 && (
                   <span className={clsx("text-xs font-bold tz-nums pb-2", delta > 0 ? "text-good" : "text-critical")}>
@@ -331,8 +336,8 @@ function BonoCard({
         <div className="text-right shrink-0">
           <div className="font-display font-extrabold text-[26px] text-brand-text tz-nums leading-none">
             {unlimited ? "∞" : server}
-            {!unlimited && total != null && (
-              <span className="text-[13px] font-semibold text-brand-muted"> / {total}</span>
+            {usage != null && usage.total > 0 && (
+              <span className="text-[13px] font-semibold text-brand-muted"> / {usage.total}</span>
             )}
           </div>
           <div className="text-[11px] text-brand-faint mt-1">

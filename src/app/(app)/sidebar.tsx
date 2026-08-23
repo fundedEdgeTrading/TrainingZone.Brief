@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
 import NavIconSvg from "@/components/nav-icons";
 import { activeNavHref, groupNav, NAV_SECTIONS_COLLAPSED_BY_DEFAULT, type NavItem, type NavSection } from "@/lib/rbac";
+import { bonoUsage } from "@/lib/session-balance";
 import { useMobileNav } from "./mobile-nav";
 import { AccountMenuTrigger, initials } from "./account-menu";
 
@@ -491,10 +492,10 @@ export default function Sidebar({
 const RING_CIRCUMFERENCE = 2 * Math.PI * 40;
 
 function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
-  const pct =
-    !bono.recurring && bono.sessionsIncluded
-      ? Math.max(0, Math.min(100, ((bono.sessionsRemaining ?? 0) / bono.sessionsIncluded) * 100))
-      : 0;
+  // `bonoUsage` cuadra saldo y total: sin él, un bono al que recepción le ha
+  // añadido sesiones enseñaba "13 de 12" y el anillo lleno al 108 %.
+  const usage = bono.recurring ? null : bonoUsage(bono.sessionsIncluded, bono.sessionsRemaining);
+  const pct = usage && usage.total > 0 ? (usage.remaining / usage.total) * 100 : 0;
 
   return (
     <div className="mt-auto p-4 rounded-2xl bg-white border border-tz-linen">
@@ -539,10 +540,10 @@ function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="font-display font-extrabold text-[19px] leading-none text-tz-black tz-nums">
-                  {bono.sessionsRemaining ?? 0}
+                  {usage?.remaining ?? 0}
                 </span>
                 <span className="text-[9.5px] font-bold uppercase tracking-[.08em] text-muted mt-0.5">
-                  de {bono.sessionsIncluded ?? 0}
+                  de {usage?.total ?? 0}
                 </span>
               </div>
             </div>
