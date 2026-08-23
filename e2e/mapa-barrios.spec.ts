@@ -15,10 +15,14 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     await page.getByRole("link", { name: "Mapa de barrios" }).click();
     await page.waitForURL("**/mapa-barrios");
 
-    // Coropleta: un polígono por barrio, no una mancha difuminada.
-    const cells = page.locator(".tz-barrio-map .leaflet-overlay-pane path");
-    await expect(cells.first()).toBeVisible({ timeout: 15_000 });
-    expect(await cells.count()).toBeGreaterThan(5);
+    // Coropleta: un polígono por barrio, no una mancha difuminada. Se comprueba
+    // por etapas para que, si algún día falla, el propio error diga dónde se
+    // quedó: contenedor en el DOM → Leaflet montado → celdas dibujadas.
+    await expect(page.locator(".tz-barrio-map")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".tz-barrio-map.leaflet-container")).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(() => page.locator(".tz-barrio-map .leaflet-overlay-pane path").count(), { timeout: 15_000 })
+      .toBeGreaterThan(5);
 
     // Cada métrica responde a una pregunta, y la leyenda se reetiqueta con ella.
     await expect(page.getByText("¿Dónde están mis clientes?")).toBeVisible();
@@ -74,5 +78,8 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     await expect(page.getByText(/Santander · \d+ centros?/)).toBeVisible();
     // Y la geometría se reconstruye: los barrios de Santander son otros.
     await expect(page.getByRole("button", { name: /Puertochico/ })).toBeVisible();
+    await expect
+      .poll(() => page.locator(".tz-barrio-map .leaflet-overlay-pane path").count(), { timeout: 15_000 })
+      .toBeGreaterThan(5);
   });
 });

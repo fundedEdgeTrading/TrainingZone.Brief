@@ -68,6 +68,12 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
               entero, y ahí es donde vive el mapa de barrios. */}
           <Link
             href="/mapa-barrios"
+            // Sin prefetch: pasar el ratón por encima no tiene por qué lanzar la
+            // consulta geográfica entera en el servidor. Además el prefetch de
+            // esta ruta compite con la navegación real —dos peticiones RSC para
+            // el mismo segmento, y la que se aborta puede dejar el `main`
+            // vacío—, que es un fallo que se reprodujo en los e2e.
+            prefetch={false}
             className="hidden sm:flex items-center gap-1.5 border border-tz-sand rounded-full px-3.5 py-1.5 font-display text-xs font-semibold text-brand-text-2 transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone hover:border-tz-black"
           >
             Mapa de barrios

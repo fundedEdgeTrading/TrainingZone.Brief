@@ -177,6 +177,10 @@ export function BarrioMap({
     map.stop();
     map.invalidateSize({ animate: false });
     const size = map.getSize();
+    // Contenedor todavía sin medidas (el layout aún no ha cuajado): encuadrar
+    // aquí daría un zoom NaN y dejaría las geometrías sin dibujar. Se deja para
+    // cuando el `ResizeObserver` avise de que ya ocupa algo.
+    if (size.x === 0 || size.y === 0) return;
     map.fitBounds(bounds, {
       animate: false,
       // Prioriza que los barrios se vean grandes: las etiquetas ya esquivan las
@@ -238,10 +242,15 @@ export function BarrioMap({
     labelsRef.current = L.layerGroup().addTo(map);
 
     map.on("zoomend moveend", layoutLabels);
-    const onResize = () => frame();
-    window.addEventListener("resize", onResize);
-    // El contenedor todavía puede estar dimensionándose al montar: un segundo
-    // encuadre cuando el layout ha cuajado evita quedarse con medio mapa fuera.
+    // `ResizeObserver` y no `resize` de ventana: el contenedor cambia de tamaño
+    // también sin que lo haga la ventana (al plegar el sidebar), y —lo que
+    // importa aquí— puede estar todavía a 0×0 cuando el mapa se monta en una
+    // navegación de cliente. Su primer aviso con medidas reales es el que
+    // encuadra la ciudad.
+    const observer = new ResizeObserver(() => frame());
+    observer.observe(containerRef.current);
+    // Red de seguridad para navegadores que no avisen: un segundo encuadre
+    // cuando el layout ya ha cuajado.
     const settle = window.setTimeout(() => {
       map.invalidateSize();
       frame();
@@ -249,7 +258,7 @@ export function BarrioMap({
 
     return () => {
       window.clearTimeout(settle);
-      window.removeEventListener("resize", onResize);
+      observer.disconnect();
       map.off("zoomend moveend", layoutLabels);
       map.remove();
       mapRef.current = null;
@@ -335,6 +344,9 @@ export function BarrioMap({
     }
 
     paint();
+    // Segundo encuadre, ya con geometría: si el primero se saltó por no tener
+    // medidas el contenedor, este la coloca en su sitio; si no, es un no-op.
+    frame();
     // El juego de puntos y de centros cambia con la ciudad: es lo que dispara la
     // reconstrucción, junto a los parámetros que redibujan los anillos.
   }, [points, centers, showCenters, walkMinutes, frame, paint]);

@@ -69,6 +69,11 @@ leads a 3 km puntúa alto; el mismo volumen a 500 m no, porque ya está atendido
 **El ranking de Conversión va al revés.** La pregunta es «dónde convierto
 peor», así que lo primero de la lista tiene que ser el problema.
 
+**El encuadre espera a que el contenedor tenga medidas.** Un `ResizeObserver`
+sobre el lienzo dispara el encuadre en cuanto el mapa ocupa algo: en una
+navegación de cliente el contenedor puede estar todavía a 0×0 cuando Leaflet se
+monta, y encuadrar contra eso da un zoom inválido y deja las celdas sin dibujar.
+
 **Las etiquetas resuelven colisiones.** Dirección pidió los nombres siempre
 visibles, así que no basta con pintarlos: se colocan de mayor a menor valor,
 midiendo la caja real de tinta, sembrando la lista de ocupados con los
@@ -83,6 +88,13 @@ contenido de la página pasa a viajar como un hueco del stream y llega más tard
 que el resto (se vio en los e2e de `/billing` y del panel del entrenador, con
 dos copias del contenido en el DOM durante el primer instante). Se resuelve con
 una tiendecilla de módulo y `useSyncExternalStore`: solo el header se suscribe.
+
+**El enlace del panel no hace prefetch.** Con el prefetch por defecto, pasar el
+ratón por encima lanza en el servidor la consulta geográfica entera, y —peor—
+esa petición RSC compite con la de la navegación real: se llegaron a ver tres
+peticiones al mismo segmento, una de ellas abortada, y el router se quedaba con
+la vacía dejando el `main` con la barra de progreso y nada más. Se reprodujo en
+los e2e (1 de cada 3 ejecuciones); con `prefetch={false}`, 10 de 10 en verde.
 
 **La pantalla a sangre se marca en la propia página.** Su raíz lleva
 `data-full-bleed` y una regla de `globals.css` (`main:has(> [data-full-bleed])`)
