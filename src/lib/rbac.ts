@@ -326,11 +326,6 @@ export function canViewSessionDebrief(
   return session.trainerId === actorUserId || session.directedByUserId === actorUserId;
 }
 
-// F13/RB-RRHH-003 — buzón de propuestas: dirección + RRHH lo revisan.
-export function canReviewStaffProposals(role: Role): boolean {
-  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "HR_MANAGER";
-}
-
 export function defaultRouteForRole(role: Role): string {
   // La primera entrada de su navegación que NO dependa del plan contratado:
   // evita redirigir a una ruta sin permiso (y su bucle) y también aterrizar a

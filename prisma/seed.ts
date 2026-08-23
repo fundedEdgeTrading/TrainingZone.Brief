@@ -2354,7 +2354,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     await prisma.classSession.update({ where: { id: s.id }, data: { directedByUserId: s.trainerId } });
   }
 
-  // ---------- F13: RRHH — fichaje y buzón de propuestas ----------
+  // ---------- F13: RRHH — fichaje ----------
   const timeClockRows: { id: string; orgId: string; userId: string; centerId: string; workDate: Date; clockIn: string; clockOut: string | null; signedAt: Date | null }[] = [];
   for (const u of staffUsers) {
     if (!u.centerId) continue;
@@ -2378,17 +2378,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     await prisma.timeClockEntry.createMany({ data: timeClockRows.slice(i, i + CHUNK) });
   }
 
-  const trainerUsers = staffUsers.filter((u) => u.role === "TRAINER");
-  if (trainerUsers.length) {
-    await prisma.staffProposal.createMany({
-      data: [
-        { id: id(), orgId, authorUserId: pick(trainerUsers).id, body: "Podríamos añadir una clase de movilidad los sábados por la mañana.", status: "OPEN" },
-        { id: id(), orgId, authorUserId: pick(trainerUsers).id, body: "Sería útil tener una sala pequeña solo para EP.", status: "REVIEWED" },
-      ],
-    });
-  }
-
   // ---------- F14: Ofertas personalizadas y valoración de entrenadores ----------
+  const trainerUsers = staffUsers.filter((u) => u.role === "TRAINER");
   if (activeNonAnchorMembers.length && trainerUsers.length) {
     const offerMembers = activeNonAnchorMembers.slice(0, Math.min(3, activeNonAnchorMembers.length));
     const offerStatuses: ("SUGERIDA" | "PENDIENTE_DIRECCION" | "APROBADA")[] = ["SUGERIDA", "PENDIENTE_DIRECCION", "APROBADA"];
@@ -2829,35 +2820,19 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   // ---------- F10: Notificaciones de ejemplo ----------
   const directorForNotif = staffUsers.find((u) => u.role === "OWNER" || u.role === "CENTER_DIRECTOR");
-  if (directorForNotif) {
-    const staleLead = leads.find((l) => l.status === "SIN_CONTACTAR");
-    await prisma.notification.createMany({
-      data: [
-        ...(staleLead
-          ? [
-              {
-                id: id(),
-                orgId,
-                recipientUserId: directorForNotif.id,
-                kind: "ALERT" as const,
-                title: `Lead sin responsable: ${staleLead.firstName} ${staleLead.lastName}`,
-                body: "Lleva más de 24h sin que nadie se lo asigne (RB-LEAD-009).",
-                entityType: "Lead",
-                entityId: staleLead.id,
-              },
-            ]
-          : []),
-        {
-          id: id(),
-          orgId,
-          recipientUserId: directorForNotif.id,
-          kind: "INFO" as const,
-          title: "Nueva propuesta de un compañero",
-          body: "Podríamos añadir una clase de movilidad los sábados por la mañana.",
-          entityType: "StaffProposal",
-          entityId: null,
-        },
-      ],
+  const staleLead = leads.find((l) => l.status === "SIN_CONTACTAR");
+  if (directorForNotif && staleLead) {
+    await prisma.notification.create({
+      data: {
+        id: id(),
+        orgId,
+        recipientUserId: directorForNotif.id,
+        kind: "ALERT",
+        title: `Lead sin responsable: ${staleLead.firstName} ${staleLead.lastName}`,
+        body: "Lleva más de 24h sin que nadie se lo asigne (RB-LEAD-009).",
+        entityType: "Lead",
+        entityId: staleLead.id,
+      },
     });
   }
 
@@ -3086,7 +3061,6 @@ async function main() {
     prisma.workoutProgram.deleteMany(),
     prisma.trainerRating.deleteMany(),
     prisma.personalizedOffer.deleteMany(),
-    prisma.staffProposal.deleteMany(),
     prisma.timeClockEntry.deleteMany(),
     prisma.checkinScheduleConfig.deleteMany(),
     prisma.clientGoal.deleteMany(),

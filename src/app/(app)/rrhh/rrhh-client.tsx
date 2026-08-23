@@ -5,14 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { ActionForm } from "@/components/ui/action-form";
 import { useToast } from "@/components/ui/toast";
-import {
-  clockInAction,
-  clockOutAction,
-  signEntryAction,
-  markProposalReviewedAction,
-  submitProposalAction,
-  updateCheckinConfigAction,
-} from "./actions";
+import { clockInAction, clockOutAction, signEntryAction, updateCheckinConfigAction } from "./actions";
 
 type Entry = { id: string; workDate: Date; clockIn: string; clockOut: string | null; signedAt: Date | null };
 
@@ -69,55 +62,6 @@ export function TimeClockWidget({ todayEntry, recent }: { todayEntry: Entry | nu
         </table>
       </div>
     </div>
-  );
-}
-
-export function ProposalForm() {
-  return (
-    <ActionForm action={submitProposalAction} successMessage="Propuesta enviada a dirección" resetOnSuccess className="flex gap-2">
-      <Input name="body" placeholder="Tu propuesta o sugerencia..." className="flex-1" required />
-      <Button type="submit" size="sm">
-        Enviar
-      </Button>
-    </ActionForm>
-  );
-}
-
-export function ProposalReviewList({ proposals }: { proposals: { id: string; body: string; status: string; author: { name: string } | null; createdAt: Date }[] }) {
-  const [pending, startTransition] = useTransition();
-  const toast = useToast();
-
-  return (
-    <ul className="space-y-2">
-      {proposals.map((p) => (
-        <li key={p.id} className="border border-brand-border rounded-lg p-3 text-sm flex items-start justify-between gap-3">
-          <div>
-            <p className="text-brand-text">{p.body}</p>
-            <p className="text-xs text-faint mt-1">
-              {p.author?.name ?? "—"} · {p.createdAt.toLocaleDateString("es-ES")}
-            </p>
-          </div>
-          {p.status === "OPEN" ? (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={pending}
-              onClick={() =>
-                startTransition(async () => {
-                  const result = await markProposalReviewedAction(p.id);
-                  if (!result.ok) toast.error(result.error);
-                })
-              }
-            >
-              Marcar revisada
-            </Button>
-          ) : (
-            <span className="text-xs text-good font-semibold shrink-0">Revisada</span>
-          )}
-        </li>
-      ))}
-      {proposals.length === 0 && <p className="text-sm text-brand-muted">Sin propuestas todavía.</p>}
-    </ul>
   );
 }
 

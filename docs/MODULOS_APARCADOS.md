@@ -40,8 +40,9 @@ así que se va con él.
 **Qué se ha hecho.**
 
 - `src/app/(app)/rrhh/page.tsx`: fuera las tarjetas «Mi fichaje» y
-  «Verificación cruzada de horas». El buzón de propuestas, la valoración de
-  entrenadores, el ranking de ventas y los check-ins se quedan.
+  «Verificación cruzada de horas». La valoración de entrenadores, el ranking de
+  ventas y los check-ins se quedan. (El buzón de propuestas también se quedaba
+  entonces; se eliminó del todo el 23-08-2026 — no está aparcado, está borrado.)
 
 **Qué NO se ha tocado.** El modelo `TimeClockEntry`, `lib/timeclock-queries.ts`
 (`clockIn` / `clockOut` / `signEntry` / `crossCheckHours`), las acciones de

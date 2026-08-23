@@ -48,7 +48,7 @@ mecanismo actual.
 | Chat centro–cliente | `RB-CHAT-001` | ❌ | `Conversation`/`ChatMessage` 🆕 |
 | Cobros por Stripe | `RB-PAGO-001` | 🔁 `Payment` manual multi-método | Integración Stripe 🔁 |
 | Registro horario + firma | `RB-RRHH-001/002` | ❌ | `TimeClockEntry` 🆕 |
-| Buzón de propuestas | `RB-RRHH-003` | ❌ | `StaffProposal` 🆕 |
+| ~~Buzón de propuestas~~ | ~~`RB-RRHH-003`~~ | 🗑️ retirado (23-08-2026) | — |
 | Venta atribuida a trabajador | `RB-RRHH-004` | ❌ | `Payment.soldByUserId` 🆕 |
 | Panel del entrenador | `RB-RRHH-005` | ❌ | Vista propia + métricas EP/grupos 🆕 |
 | Alerta pocas sesiones programadas | `RB-RRHH-006` | ❌ | Regla temporal (<2 sem / 4 ses.) 🆕 |
@@ -236,15 +236,7 @@ model TimeClockEntry {             // RB-RRHH-001/002 (registro horario + firma)
   @@index([orgId]) @@index([userId])
 }
 
-model StaffProposal {              // RB-RRHH-003 (buzón de sugerencias → dirección)
-  id String @id @default(cuid())
-  orgId String
-  authorUserId String
-  body String
-  status String @default("OPEN")   // OPEN | REVIEWED
-  createdAt DateTime @default(now())
-  @@index([orgId])
-}
+// StaffProposal (RB-RRHH-003) — retirado el 23-08-2026, no llegó a producción.
 
 enum OfferStatus { SUGERIDA PENDIENTE_DIRECCION APROBADA RECHAZADA COMUNICADA }
 
@@ -360,10 +352,11 @@ declara sus dependencias.
 - ⚠️ El README marca Stripe/VERI*FACTU como fuera del MVP por diseño (D3); esta fase **reabre** esa
   decisión conforme a `RB-PAGO-001`.
 
-### F13 — RRHH: registro horario, propuestas, panel del entrenador 🆕
+### F13 — RRHH: registro horario, panel del entrenador 🆕
 - `TimeClockEntry` (fichaje + firma, `RB-RRHH-001`) y **verificación cruzada** contra
   `ClassSession.directedByUserId` (`RB-RRHH-002`) — informe para dirección, no bloqueo de nómina.
-- `StaffProposal` (buzón → dirección, `RB-RRHH-003`, notifica vía F10).
+- ~~`StaffProposal` (buzón → dirección, `RB-RRHH-003`)~~ — **retirado el 23-08-2026**: modelo,
+  tabla, queries, acciones y tarjeta de `/rrhh` eliminados del repo.
 - **Panel del entrenador** (`RB-RRHH-005`): sus clientes de EP, horas de EP/grupos al mes, gráficos.
   Ruta nueva bajo `agenda`/`brief` o un `trainer/` propio.
 - Alerta de **pocas sesiones programadas** (`RB-RRHH-006`, decisión §11.8): <2 semanas o ≤4 sesiones

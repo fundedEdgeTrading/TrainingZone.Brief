@@ -21,7 +21,7 @@ propósito, no es un olvido).
 
 **La imagen ha cambiado mucho en una semana.** `CRM_IMPLEMENTACION_FUNCIONALIDADES.md` describe el CRM interno
 (leads, ficha EP/online, agenda autorreservable, IA, RRHH, chat) como prácticamente 0% construido (fases F8–F17
-"❌"). Eso ya **no es cierto**: leads, ficha de cliente, agenda EP, RRHH (fichaje, propuestas, panel del
+"❌"). Eso ya **no es cierto**: leads, ficha de cliente, agenda EP, RRHH (fichaje, panel del
 entrenador, ofertas personalizadas, valoración confidencial), BI demográfico/financiero y la infraestructura de
 notificaciones/cron están **construidos y en uso**. Del mismo modo, `PLAN_IMPLEMENTACION_APTA_COMERCIAL.md` §6
 marca F5 (cobro recurrente) y F6 (autoservicio del socio) como "⏳ Pendiente" — también están **hechas**, con
@@ -173,7 +173,7 @@ compara la percepción del cliente con la del entrenador, y no genera ni un solo
 |---|---|---|---|
 | RB-RRHH-001 (fichaje + firma) | ✅ | `TimeClockEntry.signedAt` `schema.prisma:1070-1087`; `src/app/(app)/rrhh/page.tsx:41-43` | — |
 | RB-RRHH-002 (verificación cruzada horas↔sesiones) | ✅ | `src/lib/timeclock-queries.ts` (`crossCheckHours`) | — |
-| RB-RRHH-003 (buzón de propuestas) | ✅ | `src/lib/staff-proposals.ts:1-40` | — |
+| ~~RB-RRHH-003 (buzón de propuestas)~~ | 🗑️ | Retirado el 23-08-2026: fuera el modelo `StaffProposal`, su tabla, `lib/staff-proposals.ts` y la tarjeta de `/rrhh` | regla sin efecto |
 | RB-RRHH-004 (venta atribuida a trabajador) | ⚠️ | `Payment.soldByUserId` se captura en todos los puntos de venta, pero **no hay ranking/vista** que lo explote — `dashboard-queries.ts` no tiene ranking por vendedor | 🧱 backlog — el dato ya existe, falta la vista |
 | RB-RRHH-005 (panel del entrenador) | ✅ | `src/app/(app)/trainer/page.tsx` | ⚠️ pero sigue restringido a `requireRole(["TRAINER"])` (`trainer/page.tsx:42`) — dirección no puede ver el panel de su propio equipo, esto ya lo señalaba la auditoría anterior y sigue igual |
 | RB-RRHH-006 (alerta pocas sesiones, &lt;2 sem / ≤4 ses.) | ⚠️ | Umbrales correctos (`src/lib/trainer-alerts.ts:8-56`), pero notifica a OWNER/CENTER_DIRECTOR en vez de "al entrenador responsable" — consecuencia directa de que no existe `trainerId` fijo (§2) | 🏛️ mismo pivote de arquitectura que RB-PERFIL-002 |
