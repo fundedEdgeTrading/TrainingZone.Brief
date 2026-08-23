@@ -5,6 +5,11 @@ on:
     branches: [release]
   push:
     branches: [release]
+  # Sin esto, la única forma de volver a lanzar CI sobre una rama es empujar
+  # otro commit: un PR abierto por error contra `main` y luego reapuntado a
+  # `release` no dispara nada (el cambio de base es un evento `edited`, que no
+  # está entre los tipos por defecto de `pull_request`).
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
