@@ -982,20 +982,28 @@ enum RetentionRiskLevel {
   HIGH
 }
 
+// El motor (`src/lib/retention.ts`) solo usa OPEN y RECOVERED: abre una alerta
+// cuando aparece la caída y la cierra sola cuando el socio vuelve a su ritmo.
+// CONTACTED/POSTPONED/DISMISSED los escribía la pantalla `/retention`, retirada:
+// se conservan porque hay filas históricas con esos estados, no porque se usen.
 enum RetentionAlertStatus {
   OPEN
   CONTACTED
   POSTPONED
   DISMISSED
+  RECOVERED
 }
 
 model RetentionAlert {
   id           String               @id @default(cuid())
   memberId     String
-  baselineFreq Float // sesiones/semana, línea base personal
+  baselineFreq Float // sesiones/semana, línea base personal (12 semanas)
   recentFreq   Float // sesiones/semana, últimas 2 semanas
-  dropPct      Float
+  dropPct      Float // NEGATIVO: -76 = ha bajado un 76 %
   riskLevel    RetentionRiskLevel
+  // Desde cuándo no viene. Nunca la causa clínica: replicar aquí un HealthRecord
+  // lo sacaría del punto de lectura auditado (`health-access.ts`) y lo pondría
+  // delante de roles sin acceso a salud.
   context      String?
   status       RetentionAlertStatus @default(OPEN)
   createdAt    DateTime             @default(now())
@@ -1005,6 +1013,8 @@ model RetentionAlert {
 
   @@index([memberId])
   @@index([status])
+  // El motor busca "la alerta viva de este socio" en cada pasada del cron.
+  @@index([memberId, status])
 }
 
 // ---------- F8: Embudo de Leads / CRM comercial ----------

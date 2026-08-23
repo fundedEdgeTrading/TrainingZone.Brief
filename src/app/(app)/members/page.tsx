@@ -7,10 +7,12 @@ import {
   listCentersForOrg,
   listActivePlansForOrg,
 } from "@/lib/members-queries";
+import { bonoUsage } from "@/lib/session-balance";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { canManageMembers, canImportMembers } from "@/lib/rbac";
 import { parseFilterValues } from "@/lib/filter-params";
 import { centerScopeFor, intersectCenterScope } from "@/lib/center-scope";
+import { openRetentionAlertsByMember, type RetentionSignal } from "@/lib/retention";
 import type { MemberState } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { ColumnFilter } from "@/components/ui/column-filter";
@@ -104,7 +106,15 @@ export default async function MembersPage({
     now,
   );
 
-  const lastVisits = await lastAttendanceByMember(members.map((m) => m.id));
+  const memberIds = members.map((m) => m.id);
+  // La caída de frecuencia (G.3) se lee aquí, en la columna que dirección ya
+  // mira, en vez de en una pantalla aparte: «hace N días» dice cuándo vino por
+  // última vez, y la alerta, si ese silencio rompe SU hábito o es su ritmo
+  // normal. Ambas consultas van juntas porque alimentan la misma celda.
+  const [lastVisits, retentionAlerts] = await Promise.all([
+    lastAttendanceByMember(memberIds),
+    openRetentionAlertsByMember(memberIds),
+  ]);
 
   const groups: FilterGroup[] = [
     {
@@ -157,7 +167,7 @@ export default async function MembersPage({
 
       <DataTable
         columns={columns}
-        rows={members.map((m, i) => memberToRow(m, i, lastVisits.get(m.id) ?? null, now))}
+        rows={members.map((m, i) => memberToRow(m, i, lastVisits.get(m.id) ?? null, retentionAlerts.get(m.id) ?? null, now))}
         density="compact"
         pageSize={12}
         // Las 12 filas compactas caben de sobra: recortar el cuerpo a 560 px
@@ -248,22 +258,27 @@ function visitLabel(days: number) {
   return `hace ${days} días`;
 }
 
-function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): DataTableRow {
+function memberToRow(
+  m: Member,
+  i: number,
+  lastVisit: Date | null,
+  risk: RetentionSignal | null,
+  now: Date,
+): DataTableRow {
   const sub = m.subscriptions[0] ?? null;
   const planKind = planKindOf(sub?.plan.type);
   const remaining = sub?.sessionsRemaining ?? null;
-  const included = sub?.plan.sessionsIncluded ?? null;
   // `sessionsRemaining` null = bono ilimitado (cuota mensual / online).
   const unlimited = sub != null && remaining == null;
   const low = remaining != null && remaining <= 2;
-  // La columna enseña lo CONSUMIDO sobre lo contratado («6 / 12» = seis
-  // sesiones gastadas de doce). `used` sale del propio bono
-  // (`sessionsIncluded - sessionsRemaining`), no del histórico de asistencias,
-  // que incluiría bonos anteriores — mismo criterio que `getSessionBalances`.
-  // El saldo se puede ajustar a mano (RB-RES-006), así que `remaining` puede
-  // superar lo contratado: ahí `used` se queda en 0 y la barra, en 0 %.
-  const used = remaining != null && included != null ? Math.max(0, included - remaining) : null;
-  const pct = used != null && included ? Math.min(100, Math.round((used / included) * 100)) : 100;
+  // La columna enseña lo CONSUMIDO sobre el bono («6 / 12» = seis sesiones
+  // gastadas de doce). Las tres cifras salen de `bonoUsage`, que las cuadra
+  // (gastadas + disponibles = total) aunque a recepción le haya dado saldo de
+  // más — mismo criterio que `getSessionBalances`, para que la ficha del socio
+  // y su portal no cuenten distinto.
+  const usage = sub ? bonoUsage(sub.plan.sessionsIncluded, remaining) : null;
+  const used = usage?.used ?? null;
+  const pct = usage && usage.total > 0 ? Math.round((usage.used / usage.total) * 100) : 100;
 
   const visitDays = lastVisit ? Math.floor((now.getTime() - lastVisit.getTime()) / 86_400_000) : null;
   const stale = visitDays != null && visitDays > STALE_VISIT_DAYS;
@@ -283,7 +298,13 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
       // ilimitados y los socios sin bono no tienen consumo con el que comparar
       // y caen al final.
       bonus: used ?? null,
-      lastVisit: visitDays ?? 9999,
+      // Ordena por urgencia, no solo por recencia: quien tiene alerta abierta
+      // sube por encima de quien lleva los mismos días sin venir pero es su
+      // ritmo de siempre. Alta antes que media, y dentro de cada una, la caída
+      // mayor primero (`dropPct` es negativo: cuanto menor, peor).
+      lastVisit: risk
+        ? (risk.riskLevel === "HIGH" ? -2_000_000 : -1_000_000) + risk.dropPct
+        : (visitDays ?? 9999),
       joinedAt: m.joinedAt.getTime(),
     },
     cells: {
@@ -311,6 +332,15 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
             </span>
             <span className="block truncate text-[11.5px] text-faint">{m.email}</span>
           </span>
+          {/* La columna «Última visita» solo aparece a partir de `2xl`, así que
+              el detalle de la caída se pierde en un portátil normal. Aquí, junto
+              al nombre, la marca se ve a cualquier ancho: es lo que convierte el
+              listado en la lista de a quién llamar. */}
+          {risk && (
+            <span className="shrink-0" title={`${risk.dropPct}% respecto a su línea base`}>
+              <Badge tone="critical">{risk.riskLevel === "HIGH" ? "En fuga" : "En riesgo"}</Badge>
+            </span>
+          )}
         </Link>
       ),
       center: <span className="block max-w-[170px] truncate">{m.primaryCenter.name}</span>,
@@ -325,15 +355,15 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
             title={
               unlimited
                 ? "Bono ilimitado"
-                : used != null && included != null
-                  ? `${used} de ${included} sesiones consumidas · quedan ${remaining}`
+                : usage
+                  ? `${usage.used} de ${usage.total} sesiones consumidas · quedan ${usage.remaining}`
                   : undefined
             }
           >
             <span
               className={`text-[12.5px] font-semibold tz-nums ${low ? "text-critical" : unlimited ? "text-faint" : "text-brand-text"}`}
             >
-              {unlimited ? "Ilimitado" : used != null && included != null ? `${used} / ${included}` : "—"}
+              {unlimited ? "Ilimitado" : usage ? `${usage.used} / ${usage.total}` : "—"}
             </span>
             <span className="block h-1 w-16 overflow-hidden rounded-pill bg-tz-sand">
               <span
@@ -343,12 +373,25 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
             </span>
           </span>
         ),
-      lastVisit:
-        visitDays == null ? (
-          <span className="text-faint">—</span>
-        ) : (
-          <span className={stale ? "font-semibold text-critical" : "text-brand-text-2"}>{visitLabel(visitDays)}</span>
-        ),
+      lastVisit: (
+        <span className="flex flex-col gap-[3px]">
+          <span
+            className={
+              risk || stale ? "font-semibold text-critical" : visitDays == null ? "text-faint" : "text-brand-text-2"
+            }
+          >
+            {visitDays == null ? "—" : visitLabel(visitDays)}
+          </span>
+          {risk && (
+            <span
+              className="text-[11px] font-semibold tz-nums text-critical"
+              title={`Línea base ${risk.baselineFreq.toFixed(1)}/sem → últimas 2 semanas ${risk.recentFreq.toFixed(1)}/sem`}
+            >
+              {risk.dropPct}% vs. su ritmo
+            </span>
+          )}
+        </span>
+      ),
       joinedAt: m.joinedAt.toLocaleDateString("es-ES"),
     },
   };

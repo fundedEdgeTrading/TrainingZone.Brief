@@ -108,14 +108,16 @@ export default async function PortalAgendaPage() {
                 </div>
               </div>
 
-              {/* Consumo del bono contratado: el saldo restante ya se veía, pero
-                  no cuántas sesiones llevaba gastadas ni sobre qué total. */}
+              {/* Consumo del bono: el saldo restante ya se veía, pero no cuántas
+                  sesiones llevaba gastadas ni sobre qué total. `getSessionBalances`
+                  garantiza que gastadas + disponibles dan el total, así que la
+                  barra nunca se pasa del 100 %. */}
               {b.used != null && b.total != null && (
                 <div className="mt-3.5">
                   <div className="h-1.5 rounded-full bg-tz-sand overflow-hidden">
                     <div
                       className="h-full bg-good rounded-full origin-left [animation:tzGrow_.7s_ease-out_both]"
-                      style={{ width: `${Math.min(100, Math.round((b.used / b.total) * 100))}%` }}
+                      style={{ width: `${Math.round((b.used / b.total) * 100)}%` }}
                     />
                   </div>
                   <div className="text-xs font-semibold text-brand-muted mt-1.5 tabular-nums">
