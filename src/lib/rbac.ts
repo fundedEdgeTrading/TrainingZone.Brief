@@ -8,8 +8,13 @@ import type { PlatformFeature } from "@/lib/platform-plans";
  */
 export type NavSection =
   | "Vista general"
-  | "Comercial"
-  | "Operativa del centro"
+  // Rediseño del NavBar: "Comercial" (una cabecera para un único item, Leads)
+  // desaparece y "Operativa del centro" pasa a "Día a día". Captar, recuperar y
+  // comunicar son el mismo trabajo, y se agrupan en "Crecimiento"; en "Día a
+  // día" queda lo que se abre cada mañana. El rótulo antiguo tampoco encajaba
+  // en Dirección de organización, que no está en un centro.
+  | "Día a día"
+  | "Crecimiento"
   | "Salud y aptitud"
   | "Administración"
   // Navegación del socio (rediseño NavBar premium, opción 1b): dos grupos con
@@ -17,10 +22,39 @@ export type NavSection =
   | "Entrenar"
   | "Membresía";
 
+/**
+ * Clave del icono de trazo de cada item. Es una clave, no JSX: `rbac.ts` se
+ * importa desde el servidor y desde `middleware`, así que no puede arrastrar
+ * componentes. El mapa clave → SVG vive en `src/components/nav-icons.tsx`.
+ */
+export type NavIcon =
+  | "panel"
+  | "feedback"
+  | "socios"
+  | "agenda"
+  | "cobros"
+  | "aforo"
+  | "leads"
+  | "retencion"
+  | "anuncios"
+  | "reglas"
+  | "rangos"
+  | "organizacion"
+  | "rrhh"
+  | "puestaEnMarcha"
+  | "auditoria"
+  | "brief"
+  | "actividad"
+  | "reservar"
+  | "evolucion"
+  | "membresia"
+  | "facturas";
+
 export type NavItem = {
   href: string;
   label: string;
   section: NavSection;
+  icon: NavIcon;
   badge?: number;
   /** Texto corto a la derecha del item (p.ej. próxima reserva en "Reservar clase"). */
   meta?: string;
@@ -60,92 +94,100 @@ export function filterNavByFeatures(items: NavItem[], features: Set<PlatformFeat
 
 export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
-    { href: "/dashboard", label: "Panel de control", section: "Vista general" },
-    { href: "/feedback", label: "Feedback", section: "Vista general" },
-    { href: "/leads", label: "Leads", section: "Comercial" },
-    { href: "/members", label: "Socios", section: "Operativa del centro" },
-    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
-    { href: "/billing", label: "Cobros", section: "Operativa del centro" },
-    { href: "/retention", label: "Retención", section: "Operativa del centro" },
-    { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud" },
-    { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud" },
-    { href: "/anuncios", label: "Anuncios", section: "Administración" },
-    { href: "/rrhh", label: "RRHH", section: "Administración" },
-    { href: "/organization", label: "Organización", section: "Administración" },
-    { href: "/puesta-en-marcha", label: "Puesta en marcha", section: "Administración" },
-    { href: "/audit", label: "Auditoría", section: "Administración" },
+    { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
+    { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
+    { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
+    { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
+    { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
+    { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
+    { href: "/retention", label: "Retención", section: "Crecimiento", icon: "retencion" },
+    // Anuncios sale de Administración: es comunicación al socio, no estructura.
+    { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
+    { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
+    { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },
+    { href: "/organization", label: "Organización", section: "Administración", icon: "organizacion" },
+    { href: "/rrhh", label: "RRHH", section: "Administración", icon: "rrhh" },
+    { href: "/puesta-en-marcha", label: "Puesta en marcha", section: "Administración", icon: "puestaEnMarcha" },
+    { href: "/audit", label: "Auditoría", section: "Administración", icon: "auditoria" },
   ],
   CENTER_DIRECTOR: [
-    { href: "/dashboard", label: "Panel de control", section: "Vista general" },
-    { href: "/feedback", label: "Feedback", section: "Vista general" },
-    { href: "/leads", label: "Leads", section: "Comercial" },
-    { href: "/members", label: "Socios", section: "Operativa del centro" },
-    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
-    { href: "/aforo", label: "Aforo de clases", section: "Operativa del centro" },
-    { href: "/billing", label: "Cobros", section: "Operativa del centro" },
-    { href: "/retention", label: "Retención", section: "Operativa del centro" },
-    { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud" },
-    { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud" },
-    { href: "/anuncios", label: "Anuncios", section: "Administración" },
-    { href: "/rrhh", label: "RRHH", section: "Administración" },
+    { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
+    { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
+    { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
+    { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
+    { href: "/aforo", label: "Aforo de clases", section: "Día a día", icon: "aforo" },
+    { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
+    { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
+    { href: "/retention", label: "Retención", section: "Crecimiento", icon: "retencion" },
+    { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
+    { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
+    { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },
+    { href: "/rrhh", label: "RRHH", section: "Administración", icon: "rrhh" },
   ],
-  // Un entrenador no gestiona personal: RRHH fuera. Con Ofertas retirada, su
-  // sección "Comercial" se quedaba con un único enlace, así que Leads cuelga de
-  // "Mi panel" en vez de abrir una sección para él solo.
+  // Un entrenador no gestiona personal: RRHH fuera. Sus 5 items caben en una
+  // sola sección: por debajo de 7 items las cabeceras cuestan más de lo que
+  // ordenan, y el sidebar las oculta cuando solo hay un grupo.
   TRAINER: [
-    { href: "/trainer", label: "Mi panel", section: "Vista general" },
-    { href: "/brief", label: "Session Brief", section: "Vista general" },
-    { href: "/leads", label: "Leads", section: "Vista general" },
-    { href: "/members", label: "Socios", section: "Operativa del centro" },
-    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
+    { href: "/trainer", label: "Mi panel", section: "Vista general", icon: "panel" },
+    { href: "/agenda", label: "Agenda", section: "Vista general", icon: "agenda" },
+    { href: "/brief", label: "Session Brief", section: "Vista general", icon: "brief" },
+    { href: "/members", label: "Socios", section: "Vista general", icon: "socios" },
+    { href: "/leads", label: "Leads", section: "Vista general", icon: "leads" },
   ],
   // El del entrenador más lo que le da su mando sobre el centro (F1).
   TRAINER_ADMIN: [
-    { href: "/trainer", label: "Mi panel", section: "Vista general" },
-    { href: "/brief", label: "Session Brief", section: "Vista general" },
-    { href: "/leads", label: "Leads", section: "Vista general" },
-    { href: "/members", label: "Socios", section: "Operativa del centro" },
-    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
-    { href: "/aforo", label: "Aforo de clases", section: "Operativa del centro" },
+    { href: "/trainer", label: "Mi panel", section: "Vista general", icon: "panel" },
+    { href: "/agenda", label: "Agenda", section: "Vista general", icon: "agenda" },
+    { href: "/aforo", label: "Aforo de clases", section: "Vista general", icon: "aforo" },
+    { href: "/brief", label: "Session Brief", section: "Vista general", icon: "brief" },
+    { href: "/members", label: "Socios", section: "Vista general", icon: "socios" },
+    { href: "/leads", label: "Leads", section: "Vista general", icon: "leads" },
   ],
   RECEPTION: [
-    { href: "/leads", label: "Leads", section: "Comercial" },
-    { href: "/members", label: "Socios", section: "Operativa del centro" },
-    { href: "/agenda", label: "Agenda", section: "Operativa del centro" },
-    { href: "/billing", label: "Cobros", section: "Operativa del centro" },
+    { href: "/leads", label: "Leads", section: "Día a día", icon: "leads" },
+    { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
+    { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
+    { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
   ],
   // "Mi perfil" ya no vive en el nav: se accede desde el bloque de usuario del
   // pie del sidebar y desde el chip de usuario del header (menú de cuenta).
   // "Mi plan" + "Comprar/renovar" se fusionan en "Mi membresía".
   MEMBER: [
-    { href: "/portal", label: "Mi actividad", section: "Entrenar" },
-    { href: "/portal/agenda", label: "Reservar clase", section: "Entrenar" },
-    { href: "/portal/evolucion", label: "Mi evolución", section: "Entrenar" },
-    { href: "/portal/membresia", label: "Mi membresía", section: "Membresía" },
-    { href: "/portal/membresia/facturas", label: "Facturas y pagos", section: "Membresía" },
+    { href: "/portal", label: "Mi actividad", section: "Entrenar", icon: "actividad" },
+    { href: "/portal/agenda", label: "Reservar clase", section: "Entrenar", icon: "reservar" },
+    { href: "/portal/evolucion", label: "Mi evolución", section: "Entrenar", icon: "evolucion" },
+    { href: "/portal/membresia", label: "Mi membresía", section: "Membresía", icon: "membresia" },
+    { href: "/portal/membresia/facturas", label: "Facturas y pagos", section: "Membresía", icon: "facturas" },
   ],
   HR_MANAGER: [
-    { href: "/organization", label: "Organización", section: "Administración" },
-    { href: "/rrhh", label: "RRHH", section: "Administración" },
+    { href: "/organization", label: "Organización", section: "Administración", icon: "organizacion" },
+    { href: "/rrhh", label: "RRHH", section: "Administración", icon: "rrhh" },
   ],
   PLATFORM_ADMIN: [
-    { href: "/dashboard", label: "Panel de control", section: "Vista general" },
-    { href: "/anuncios", label: "Anuncios", section: "Administración" },
-    { href: "/organization", label: "Organización", section: "Administración" },
-    { href: "/audit", label: "Auditoría", section: "Administración" },
+    { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
+    { href: "/anuncios", label: "Anuncios", section: "Vista general", icon: "anuncios" },
+    { href: "/organization", label: "Organización", section: "Vista general", icon: "organizacion" },
+    { href: "/audit", label: "Auditoría", section: "Vista general", icon: "auditoria" },
   ],
 };
 
 // Orden canónico de secciones (las vacías se omiten al render).
 export const NAV_SECTION_ORDER: NavSection[] = [
   "Vista general",
-  "Comercial",
-  "Operativa del centro",
+  "Día a día",
+  "Crecimiento",
   "Salud y aptitud",
   "Administración",
   "Entrenar",
   "Membresía",
 ];
+
+/**
+ * Secciones que arrancan plegadas la primera vez (sin nada en
+ * `localStorage["tz-nav-groups"]`). Administración es estructura y control: se
+ * consulta de tarde en tarde, no cada mañana.
+ */
+export const NAV_SECTIONS_COLLAPSED_BY_DEFAULT: NavSection[] = ["Administración"];
 
 export function groupNav(nav: NavItem[]) {
   return NAV_SECTION_ORDER.map((section) => ({
