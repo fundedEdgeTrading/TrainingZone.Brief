@@ -2378,24 +2378,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     await prisma.timeClockEntry.createMany({ data: timeClockRows.slice(i, i + CHUNK) });
   }
 
-  // ---------- F14: Ofertas personalizadas y valoración de entrenadores ----------
+  // ---------- F14: Valoración de entrenadores ----------
   const trainerUsers = staffUsers.filter((u) => u.role === "TRAINER");
   if (activeNonAnchorMembers.length && trainerUsers.length) {
-    const offerMembers = activeNonAnchorMembers.slice(0, Math.min(3, activeNonAnchorMembers.length));
-    const offerStatuses: ("SUGERIDA" | "PENDIENTE_DIRECCION" | "APROBADA")[] = ["SUGERIDA", "PENDIENTE_DIRECCION", "APROBADA"];
-    await prisma.personalizedOffer.createMany({
-      data: offerMembers.map((m, i) => ({
-        id: id(),
-        orgId,
-        memberId: m.id,
-        proposedByUserId: offerStatuses[i] === "SUGERIDA" ? null : pick(trainerUsers).id,
-        approvedByUserId: offerStatuses[i] === "APROBADA" ? ownerId : null,
-        signals: { attendancePerWeek: 1.0, tenureDays: 90 },
-        description: "2 días/semana con 20% dto. el primer mes.",
-        status: offerStatuses[i] ?? "SUGERIDA",
-      })),
-    });
-
     const ratingMembers = activeNonAnchorMembers.slice(0, Math.min(5, activeNonAnchorMembers.length));
     await prisma.trainerRating.createMany({
       data: ratingMembers.map((m) => ({
@@ -3060,7 +3045,6 @@ async function main() {
     prisma.selfAssessment.deleteMany(),
     prisma.workoutProgram.deleteMany(),
     prisma.trainerRating.deleteMany(),
-    prisma.personalizedOffer.deleteMany(),
     prisma.timeClockEntry.deleteMany(),
     prisma.checkinScheduleConfig.deleteMany(),
     prisma.clientGoal.deleteMany(),

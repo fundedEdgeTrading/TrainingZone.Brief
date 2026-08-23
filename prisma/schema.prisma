@@ -75,7 +75,6 @@ model Organization {
   selfAssessments        SelfAssessment[]
   conversations          Conversation[]
   timeClockEntries       TimeClockEntry[]
-  personalizedOffers     PersonalizedOffer[]
   trainerRatings         TrainerRating[]
   checkinScheduleConfigs CheckinScheduleConfig[]
   referenceRanges        ReferenceRange[]
@@ -215,8 +214,6 @@ model User {
   mobileRefreshTokens      MobileRefreshToken[]
   notifications            Notification[]       @relation("NotificationRecipient")
   timeClockEntries         TimeClockEntry[]
-  offersProposed           PersonalizedOffer[]  @relation("OfferProposedBy")
-  offersApproved           PersonalizedOffer[]  @relation("OfferApprovedBy")
   trainerRatingsReceived   TrainerRating[]      @relation("TrainerRatingSubject")
   paymentsSold             Payment[]            @relation("SoldBy")
   chatMessagesSent         ChatMessage[]
@@ -410,7 +407,6 @@ model Member {
   workoutPrograms     WorkoutProgram[]
   selfAssessments     SelfAssessment[]
   conversation        Conversation?
-  personalizedOffers  PersonalizedOffer[]
   trainerRatingsGiven TrainerRating[]
   announcementViews   AnnouncementView[]
   clientFeedback      ClientFeedback[]
@@ -1128,7 +1124,7 @@ model Notification {
   kind            NotificationKind @default(TASK)
   title           String
   body            String?
-  entityType      String? // "Lead" | "Member" | "PersonalizedOffer"...
+  entityType      String? // "Lead" | "Member" | "ClientFeedbackPrompt"...
   entityId        String?
   dueDate         DateTime?
   resolvedAt      DateTime?
@@ -1163,35 +1159,7 @@ model TimeClockEntry {
   @@index([userId])
 }
 
-// ---------- F14: Motor de ofertas y valoración de entrenadores ----------
-
-enum OfferStatus {
-  SUGERIDA
-  PENDIENTE_DIRECCION
-  APROBADA
-  RECHAZADA
-  COMUNICADA
-}
-
-model PersonalizedOffer {
-  id               String      @id @default(cuid())
-  orgId            String
-  memberId         String
-  proposedByUserId String? // entrenador que la eleva
-  approvedByUserId String? // dirección: luz verde obligatoria (RB-RRHH-013)
-  signals          Json // señales que la dispararon (asistencia, antigüedad, RPE...)
-  description      String // "2 días/semana con 20% dto. el primer mes", etc.
-  status           OfferStatus @default(SUGERIDA)
-  createdAt        DateTime    @default(now())
-
-  organization Organization @relation(fields: [orgId], references: [id])
-  member       Member       @relation(fields: [memberId], references: [id])
-  proposedBy   User?        @relation("OfferProposedBy", fields: [proposedByUserId], references: [id])
-  approvedBy   User?        @relation("OfferApprovedBy", fields: [approvedByUserId], references: [id])
-
-  @@index([orgId])
-  @@index([memberId])
-}
+// ---------- F14: Valoración de entrenadores ----------
 
 // Valoración CONFIDENCIAL del entrenador por el socio (RB-RRHH-011/012): el
 // acceso se centraliza en lib/trainer-rating-access.ts, que solo deja leer a
