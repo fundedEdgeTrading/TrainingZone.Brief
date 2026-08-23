@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import type { Role } from "@prisma/client";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
+import { prisma } from "@/lib/prisma";
 import { getMesocycleBriefingForMember } from "@/lib/health-access";
 import { generateMesocyclePlan, refineMesocyclePlan } from "@/lib/ai/mesocycle-generator";
 import {
@@ -30,6 +31,60 @@ function revalidateMesocycle(memberId: string, mesocycleId?: string) {
   if (mesocycleId) revalidatePath(`/members/${memberId}/mesociclos/${mesocycleId}`);
 }
 
+
+/**
+ * Ámbito de centro de un mesociclo — y de cualquier pieza suya.
+ *
+ * El socio se deduce SIEMPRE del objeto que se va a tocar, nunca del `memberId`
+ * que manda el cliente (que solo sirve para revalidar rutas): con el par
+ * "mi socio + el id de una fase ajena" se editaba el plan de un socio de otro
+ * centro, porque las consultas solo acotaban por organización.
+ */
+async function ownerOfMesocycleTarget(
+  orgId: string,
+  target: { mesocycleId?: string; phaseId?: string; dayId?: string; exerciseId?: string }
+): Promise<string | null> {
+  if (target.exerciseId) {
+    const row = await prisma.mesocycleExercise.findFirst({
+      where: { id: target.exerciseId, block: { day: { phase: { mesocycle: { orgId } } } } },
+      select: { block: { select: { day: { select: { phase: { select: { mesocycle: { select: { memberId: true } } } } } } } } },
+    });
+    return row?.block.day.phase.mesocycle.memberId ?? null;
+  }
+  if (target.dayId) {
+    const row = await prisma.mesocycleDay.findFirst({
+      where: { id: target.dayId, phase: { mesocycle: { orgId } } },
+      select: { phase: { select: { mesocycle: { select: { memberId: true } } } } },
+    });
+    return row?.phase.mesocycle.memberId ?? null;
+  }
+  if (target.phaseId) {
+    const row = await prisma.mesocyclePhase.findFirst({
+      where: { id: target.phaseId, mesocycle: { orgId } },
+      select: { mesocycle: { select: { memberId: true } } },
+    });
+    return row?.mesocycle.memberId ?? null;
+  }
+  if (target.mesocycleId) {
+    const row = await prisma.mesocycle.findFirst({
+      where: { id: target.mesocycleId, orgId },
+      select: { memberId: true },
+    });
+    return row?.memberId ?? null;
+  }
+  return null;
+}
+
+/** `null` si pasa; si no, el mensaje de error listo para devolver. */
+async function mesocycleScopeError(
+  user: { id: string; role: Role; orgId: string; centerId: string | null },
+  target: { mesocycleId?: string; phaseId?: string; dayId?: string; exerciseId?: string }
+): Promise<string | null> {
+  const ownerId = await ownerOfMesocycleTarget(user.orgId, target);
+  if (!ownerId) return "No se ha encontrado ese mesociclo.";
+  return (await memberIsInScope(user, ownerId)) ? null : OUT_OF_CENTER_SCOPE;
+}
+
 function lines(value: string): string[] {
   return value
     .split("\n")
@@ -42,6 +97,7 @@ export async function generateMesocycleAction(
   input: { level: string; weeks: number; availability: string }
 ): Promise<GenerateResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const availability = lines(input.availability);
   if (availability.length === 0) return { ok: false, error: "Indica al menos un día de disponibilidad." };
@@ -87,6 +143,7 @@ export async function refineMesocycleAction(
 
   const detail = await getMesocycleDetail(session.user.orgId, mesocycleId);
   if (!detail) return { ok: false, error: "Mesociclo no encontrado." };
+  if (!(await memberIsInScope(session.user, detail.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const refined = await refineMesocyclePlan({
     plan: toPlan(detail),
@@ -112,6 +169,9 @@ export async function approveMesocycleAction(
   mesocycleId: string
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
+  const scopeError = await mesocycleScopeError(session.user, { mesocycleId });
+  if (scopeError) return { ok: false, error: scopeError };
+
   const result = await approveMesocycle(session.user.orgId, mesocycleId, session.user.id);
   if (!result.ok) return result;
   revalidateMesocycle(memberId, mesocycleId);
@@ -123,6 +183,9 @@ export async function archiveMesocycleAction(
   mesocycleId: string
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
+  const scopeError = await mesocycleScopeError(session.user, { mesocycleId });
+  if (scopeError) return { ok: false, error: scopeError };
+
   const result = await archiveMesocycle(session.user.orgId, mesocycleId);
   if (!result.ok) return result;
   revalidateMesocycle(memberId, mesocycleId);
@@ -136,6 +199,9 @@ export async function updateMesocycleHeaderAction(
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
   if (!input.title.trim()) return { ok: false, error: "El mesociclo necesita un título." };
+
+  const scopeError = await mesocycleScopeError(session.user, { mesocycleId });
+  if (scopeError) return { ok: false, error: scopeError };
 
   const result = await updateMesocycleHeader(session.user.orgId, mesocycleId, {
     title: input.title.trim(),
@@ -156,6 +222,9 @@ export async function updateMesocyclePhaseAction(
   const session = await requireRole(MESOCYCLE_ROLES);
   if (!input.name.trim()) return { ok: false, error: "La fase necesita un nombre." };
 
+  const scopeError = await mesocycleScopeError(session.user, { phaseId });
+  if (scopeError) return { ok: false, error: scopeError };
+
   const result = await updateMesocyclePhase(session.user.orgId, phaseId, {
     name: input.name.trim(),
     notes: input.notes.trim() || null,
@@ -174,6 +243,9 @@ export async function updateMesocycleDayAction(
   const session = await requireRole(MESOCYCLE_ROLES);
   const warmup = lines(input.warmup);
   if (warmup.length === 0) return { ok: false, error: "Todo día lleva calentamiento." };
+
+  const scopeError = await mesocycleScopeError(session.user, { dayId });
+  if (scopeError) return { ok: false, error: scopeError };
 
   const result = await updateMesocycleDay(session.user.orgId, dayId, {
     focus: input.focus.trim(),
@@ -197,6 +269,9 @@ export async function updateMesocycleExerciseAction(
   // El porqué no es opcional: es lo que separa el mesociclo de una plantilla.
   if (!input.rationale.trim()) return { ok: false, error: "Falta el porqué del ejercicio." };
 
+  const scopeError = await mesocycleScopeError(session.user, { exerciseId });
+  if (scopeError) return { ok: false, error: scopeError };
+
   const result = await updateMesocycleExercise(session.user.orgId, exerciseId, {
     name: input.name.trim(),
     sets: input.sets,
@@ -216,6 +291,9 @@ export async function deleteMesocycleExerciseAction(
   exerciseId: string
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
+  const scopeError = await mesocycleScopeError(session.user, { exerciseId });
+  if (scopeError) return { ok: false, error: scopeError };
+
   const result = await deleteMesocycleExercise(session.user.orgId, exerciseId);
   if (!result.ok) return result;
   revalidateMesocycle(memberId, mesocycleId);

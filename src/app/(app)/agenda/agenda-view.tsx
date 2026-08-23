@@ -224,7 +224,11 @@ export default function AgendaView({
     // page.tsx), así que el modo semana de móvil se reenvía por la URL o se
     // perdía en cada salto de semana con las flechas.
     const viewParam = mobileWeekView ? "&view=week" : "";
-    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}${viewParam}`);
+    // `scroll: false`: pasar de semana es mover la rejilla, no cambiar de
+    // pantalla; sin esto la página saltaba arriba en cada flecha.
+    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}${viewParam}`, {
+      scroll: false,
+    });
   }
 
   /** Flechas: en semana completa saltan de semana; en día único, de día en día. */
@@ -814,8 +818,8 @@ function MiniCalendar({
                 onClick={() => onPick(d)}
                 className="h-7 rounded-full text-xs font-medium flex items-center justify-center"
                 style={{
-                  color: isToday ? "var(--color-tz-bone)" : inMonth ? "var(--color-tz-black)" : "#bdb3a0",
-                  background: isToday ? "var(--color-tz-black)" : inWeek ? "#ece4d6" : "transparent",
+                  color: isToday ? "var(--color-tz-bone)" : inMonth ? "var(--color-tz-black)" : "var(--color-brand-faint)",
+                  background: isToday ? "var(--color-tz-black)" : inWeek ? "var(--color-brand-subtle-2)" : "transparent",
                 }}
               >
                 {d.getDate()}

@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { canAdjustSessionBalance } from "@/lib/rbac";
 import { getMemberSessionCalendar, type MemberCalendarEvent } from "@/lib/members-queries";
 import { parseDateParam } from "@/lib/date-utils";
@@ -78,6 +78,7 @@ export async function adjustSubscriptionSessions(
     },
   });
   if (!sub) return { ok: false, error: "No se ha encontrado ese bono." };
+  if (!(await memberIsInScope(session.user, sub.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   // Mismo conjunto que `manageableSubscriptions` en la ficha. Recargar un bono
   // CANCELLED lo resucitaría a medias: tendría saldo, pero el motor de reservas
@@ -169,6 +170,7 @@ export async function fetchMemberSessionsMonth(
   month: string // "YYYY-MM"
 ): Promise<MemberSessionsMonthResult> {
   const session = await requireRole([...STAFF]);
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Mes no válido." };
 
   const from = parseDateParam(`${month}-01`);

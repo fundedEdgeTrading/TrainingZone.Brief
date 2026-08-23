@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDateTime } from "@/lib/date-utils";
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { getLeadDetail, listNoCloseReasons, leadIsArchived } from "@/lib/leads-queries";
@@ -31,6 +33,7 @@ const CLOSE_TYPE_TONE: Record<string, "neutral" | "trial" | "gold"> = { EMBUDO: 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const { id } = await params;
+  const timeZone = await resolveTimezone();
 
   const lead = await getLeadDetail(session.user.orgId, id);
   if (!lead) notFound();
@@ -129,7 +132,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   <li key={n.id} className="border-t border-tz-sand pt-2 first:border-0 first:pt-0">
                     <p className="text-brand-text">{n.body}</p>
                     <p className="text-xs text-faint mt-0.5">
-                      {n.author?.name ?? "Sistema"} · {n.createdAt.toLocaleString("es-ES")}
+                      {n.author?.name ?? "Sistema"} · {formatInstantDateTime(n.createdAt, timeZone)}
                     </p>
                   </li>
                 ))}

@@ -31,7 +31,7 @@ export function PendingSessionsRating({ pending }: { pending: PendingSession[] }
             {pending.length} pendientes
           </span>
         )}
-        <span className="flex-1 h-px bg-[#e0d9cb]" />
+        <span className="flex-1 h-px bg-brand-border" />
         <span className="text-[12.5px] font-semibold text-brand-muted hidden sm:inline">
           Puntúa a tu entrenador y evalúate · 30 segundos
         </span>
@@ -46,13 +46,13 @@ export function PendingSessionsRating({ pending }: { pending: PendingSession[] }
             >
               <span
                 className="absolute top-0 left-0 w-full h-[3px]"
-                style={{ background: "linear-gradient(90deg,#4b5a22,#c8ab72)" }}
+                style={{ background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" }}
               />
               <div className="flex items-center justify-between gap-2.5">
                 <span className="text-xs font-bold tracking-[.06em] uppercase text-brand-muted">
                   {p.dateLabel} · {p.time}
                 </span>
-                <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-[#eef0e4] text-good">{p.focus}</span>
+                <span className="text-[11px] font-bold rounded-full px-2.5 py-1 bg-good-bg text-good">{p.focus}</span>
               </div>
               <div className="font-display font-extrabold text-xl text-brand-text mt-3.5 tracking-[-.01em]">
                 {p.sessionName}
@@ -75,8 +75,8 @@ export function PendingSessionsRating({ pending }: { pending: PendingSession[] }
           ))}
         </div>
       ) : (
-        <div className="bg-brand-card border border-dashed border-[#d0c7b4] rounded-[18px] p-[34px] flex flex-col items-center text-center gap-2">
-          <span className="w-[54px] h-[54px] rounded-full bg-[#eef0e4] text-good flex items-center justify-center text-2xl">
+        <div className="bg-brand-card border border-dashed border-brand-border rounded-[18px] p-[34px] flex flex-col items-center text-center gap-2">
+          <span className="w-[54px] h-[54px] rounded-full bg-good-bg text-good flex items-center justify-center text-2xl">
             ✓
           </span>
           <div className="font-display font-extrabold text-[17px] text-brand-text">¡Todo valorado!</div>

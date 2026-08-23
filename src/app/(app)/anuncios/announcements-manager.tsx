@@ -37,9 +37,9 @@ type CenterOption = { id: string; name: string };
 const CATEGORY_LABEL: Record<string, string> = { NEWS: "Novedad", EVENT: "Evento", PROMO: "Promoción", ALERT: "Aviso" };
 const CATEGORY_TONE: Record<string, string> = {
   NEWS: "bg-brand-subtle text-brand-text",
-  EVENT: "bg-[#e9f2ff] text-[#1c4e80]",
-  PROMO: "bg-[#fff2e0] text-[#8a5a12]",
-  ALERT: "bg-[#fdecea] text-critical",
+  EVENT: "bg-info-bg text-info",
+  PROMO: "bg-warning-bg text-warning",
+  ALERT: "bg-critical-bg text-critical",
 };
 const AUDIENCE_LABEL: Record<string, string> = { ALL: "Todos", MEMBERS: "Socios activos" };
 

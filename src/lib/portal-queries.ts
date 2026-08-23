@@ -418,10 +418,10 @@ export async function getBookableSessions(
       };
     })
     .filter((s) => s.canBook || s.myBookingId)
-    // El centro no abre los domingos y la agenda del entrenador no los pinta:
-    // ofrecerlos aquí vendía una sesión que luego nadie podía gestionar. Se
-    // mantienen, eso sí, las que el socio YA tuviera reservadas de antes, o se
-    // quedaría con una reserva que no puede cancelar.
+    // Solo días que el centro opera (`isOperatingDay`): ofrecer un día que la
+    // agenda del entrenador no pinta vendía una sesión que luego nadie podía
+    // gestionar. Se mantienen, eso sí, las que el socio YA tuviera reservadas
+    // de antes, o se quedaría con una reserva que no puede cancelar.
     .filter((s) => isOperatingDay(s.date) || s.myBookingId)
     .filter((s) => s.startsAt.getTime() <= windowEndMs);
 }
@@ -622,7 +622,7 @@ export async function bookSessionForMember(
     // (api/mobile/v1/portal/agenda/book) entra con un `sessionId` crudo y se
     // salta el listado entero.
     if (!isOperatingDay(occurrenceDate)) {
-      return { ok: false as const, error: "El centro no abre los domingos: esa clase no admite reservas." };
+      return { ok: false as const, error: "El centro no abre ese día: esa clase no admite reservas." };
     }
 
     const now = new Date();

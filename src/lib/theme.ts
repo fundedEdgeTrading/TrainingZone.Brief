@@ -33,3 +33,20 @@ export async function themeForUser(userId: string): Promise<ThemePreference> {
 export function themeAttribute(theme: ThemePreference): "light" | "dark" {
   return theme === "DARK" ? "dark" : "light";
 }
+
+/**
+ * Variante del logo que toca según el tema.
+ *
+ * Los assets de marca vienen en pareja (`tz-logo-black.png` / `-white.png`) y
+ * la organización guarda UNO en `logoUrl`. En oscuro, el negro quedaba
+ * literalmente invisible sobre el sidebar (#201f1c): el nombre del centro
+ * desaparecía de la cabecera. Solo se cambia cuando el fichero declara su
+ * variante en el nombre — un logo propio de cliente se sirve tal cual, porque
+ * no sabemos si tiene contrapartida.
+ */
+export function logoUrlForTheme(logoUrl: string | null | undefined, theme: "light" | "dark"): string | null {
+  if (!logoUrl) return null;
+  const wanted = theme === "dark" ? "white" : "black";
+  const other = theme === "dark" ? "black" : "white";
+  return logoUrl.replace(new RegExp(`-${other}(?=\\.[a-z0-9]+$)`, "i"), `-${wanted}`);
+}

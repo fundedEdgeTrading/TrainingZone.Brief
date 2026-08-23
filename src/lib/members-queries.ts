@@ -38,7 +38,11 @@ export async function listMembers(
   return prisma.member.findMany({
     where: {
       orgId,
-      ...(opts.centerIds?.length
+      // `centerIds` presente manda SIEMPRE, aunque venga vacío: una lista vacía
+      // es "ningún centro visible" (ámbito sin centros, o un `?centerId=` de
+      // otro centro que el cruce con el ámbito ha dejado en nada), y tratarla
+      // como "sin filtro" devolvía la organización entera — justo lo contrario.
+      ...(opts.centerIds !== undefined
         ? { primaryCenterId: { in: opts.centerIds } }
         : { primaryCenterId: opts.centerId || undefined }),
       ...(opts.states?.length ? { state: { in: opts.states } } : { state: opts.state || undefined }),
@@ -67,9 +71,12 @@ export async function listMembers(
  * viene recortado por los ejes activos, así que no serviría para contar lo que
  * pasaría con OTRO valor de esos mismos ejes.
  */
-export async function listMemberFilterBase(orgId: string, opts: { q?: string } = {}) {
+export async function listMemberFilterBase(orgId: string, opts: { q?: string; centerIds?: string[] } = {}) {
   return prisma.member.findMany({
-    where: { orgId, ...memberSearchWhere(opts.q) },
+    // `centerIds` es el ámbito de centro de quien mira (center-scope.ts), no un
+    // filtro de la interfaz: los recuentos por opción tienen que salir de la
+    // misma base que el listado o las cifras no cuadran con las filas.
+    where: { orgId, ...(opts.centerIds ? { primaryCenterId: { in: opts.centerIds } } : {}), ...memberSearchWhere(opts.q) },
     select: {
       id: true,
       state: true,
@@ -272,8 +279,17 @@ export async function getMemberNotes(orgId: string, memberId: string) {
   });
 }
 
-export async function listCentersForOrg(orgId: string) {
-  return prisma.center.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+/**
+ * Centros de la organización. `only` acota al ámbito de quien pregunta: sin
+ * ello, el filtro «Centro» del listado de socios ofrecía los tres centros a una
+ * dirección de un solo centro.
+ */
+export async function listCentersForOrg(orgId: string, only?: string[] | null) {
+  return prisma.center.findMany({
+    where: { orgId, ...(only ? { id: { in: only } } : {}) },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 }
 
 export async function listActivePlansForOrg(orgId: string) {
@@ -383,4 +399,22 @@ export async function getMemberSessionCalendar(
       hasDebrief: b.debrief != null,
     }))
     .sort((a, b) => a.dateISO.localeCompare(b.dateISO) || toMin(a.startTime) - toMin(b.startTime));
+}
+
+/**
+ * Nombre de un producto sin repetir la modalidad que ya se enseña al lado.
+ *
+ * Los productos se llaman "Entrenamiento personal · Bono 4 sesiones", y tanto
+ * el sidebar del socio como la cabecera de Mi membresía anteponen la modalidad,
+ * así que se leía "Entrenamiento personal · Entrenamiento personal · Bono 4
+ * sesiones". Se recorta el prefijo cuando coincide; si el producto se llama de
+ * otra forma, el nombre sale entero.
+ */
+export function planNameWithoutService(planName: string, serviceLabel: string | null | undefined): string {
+  if (!serviceLabel) return planName;
+  const prefix = `${serviceLabel} · `;
+  if (planName.toLowerCase().startsWith(prefix.toLowerCase())) {
+    return planName.slice(prefix.length).trim() || planName;
+  }
+  return planName;
 }

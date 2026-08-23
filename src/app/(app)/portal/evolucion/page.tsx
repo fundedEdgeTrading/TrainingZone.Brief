@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import { requireRole } from "@/lib/guard";
 import { getMemberForUser, getMemberEvolution, getMemberGoals, getMemberRatingSummary } from "@/lib/portal-queries";
 import { CelebrateOnce } from "@/components/ui/celebrate";
@@ -18,6 +20,7 @@ const STATUS_LABEL: Record<string, string> = { DRAFT: "Por confirmar", PENDING_T
 export default async function PortalEvolutionPage() {
   const session = await requireRole(["MEMBER"]);
   const member = await getMemberForUser(session.user.id);
+  const timeZone = await resolveTimezone();
   if (!member) redirect("/login");
 
   const [evolution, goals, programs, ratings] = await Promise.all([
@@ -195,7 +198,7 @@ export default async function PortalEvolutionPage() {
             <ul className="space-y-2">
               {programs.map((p) => (
                 <li key={p.id} className="border border-brand-border rounded-lg p-3 text-sm flex items-center justify-between">
-                  <span className="text-brand-text-2">{p.createdAt.toLocaleDateString("es-ES")}</span>
+                  <span className="text-brand-text-2">{formatInstantDate(p.createdAt, timeZone)}</span>
                   <Badge tone={p.status === "ACTIVE" ? "good" : "neutral"}>{STATUS_LABEL[p.status]}</Badge>
                 </li>
               ))}

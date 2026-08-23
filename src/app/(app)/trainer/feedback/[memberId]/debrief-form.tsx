@@ -91,7 +91,7 @@ export function TrainerDebriefForm({ memberId, memberName }: { memberId: string;
   if (done) {
     return (
       <div className="bg-brand-card border border-brand-border rounded-card p-8 flex flex-col items-center text-center gap-3.5">
-        <span className="w-[64px] h-[64px] rounded-full bg-[#eef0e4] text-good flex items-center justify-center text-3xl">✓</span>
+        <span className="w-[64px] h-[64px] rounded-full bg-good-bg text-good flex items-center justify-center text-3xl">✓</span>
         <div className="font-display font-extrabold text-xl text-brand-text">Debrief enviado</div>
         <p className="text-sm text-brand-muted max-w-[360px]">
           Ya está disponible en /feedback para el contraste con la respuesta de {memberName}.
@@ -141,7 +141,7 @@ export function TrainerDebriefForm({ memberId, memberName }: { memberId: string;
           >
             <div
               className="absolute left-0 top-0 h-full rounded-full"
-              style={{ width: `${dims[key] * 10}%`, background: "linear-gradient(90deg,#4b5a22,#c8ab72)" }}
+              style={{ width: `${dims[key] * 10}%`, background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" }}
             />
             <div
               className="absolute top-1/2 w-[26px] h-[26px] rounded-full bg-white border-[3px] border-brand-ink shadow-[0_6px_16px_-4px_rgba(29,29,28,.5)] cursor-grab touch-none"
@@ -180,7 +180,7 @@ export function TrainerDebriefForm({ memberId, memberName }: { memberId: string;
         <button
           disabled={pending}
           onClick={submit}
-          className="flex-1 bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-[#3c4a19] active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
+          className="flex-1 bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-good active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
         >
           {pending ? "Enviando…" : "Enviar debrief"}
         </button>

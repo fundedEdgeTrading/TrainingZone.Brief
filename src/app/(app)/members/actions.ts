@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/guard";
+import { requireRole, centerIsInScope, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { canManageMembers, canManageOrg } from "@/lib/rbac";
 import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
@@ -51,6 +51,12 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
     select: { id: true, name: true, address: true },
   });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+  // El alta nace ya dentro del ámbito: el desplegable solo ofrece los centros
+  // propios, pero el formulario viaja por la red y el servidor no se fía de él.
+  if (!(await centerIsInScope(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
+  for (const bono of bonosParsed.data) {
+    if (!(await centerIsInScope(session.user, bono.centerId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
+  }
 
   const dup = await prisma.member.findFirst({ where: { orgId: session.user.orgId, email }, select: { id: true } });
   if (dup) return { ok: false, error: "Ya existe un socio con ese email." };

@@ -45,11 +45,11 @@ export default function SessionCard({ session: s, cancelWindowHours }: { session
           {s.startTime}
         </div>
         {isGroup ? (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[.05em] rounded-full px-[11px] py-[5px] bg-[#eef0e4] text-[#4b5a22]">
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[.05em] rounded-full px-[11px] py-[5px] bg-good-bg text-good">
             <span className="inline-flex items-center">
-              <span className="w-[9px] h-[9px] rounded-full bg-[#4b5a22]" />
-              <span className="w-[9px] h-[9px] rounded-full bg-[#4b5a22] -ml-[3px] border-[1.5px] border-[#eef0e4]" />
-              <span className="w-[9px] h-[9px] rounded-full bg-[#4b5a22] -ml-[3px] border-[1.5px] border-[#eef0e4]" />
+              <span className="w-[9px] h-[9px] rounded-full bg-good" />
+              <span className="w-[9px] h-[9px] rounded-full bg-good -ml-[3px] border-[1.5px] border-good-bg" />
+              <span className="w-[9px] h-[9px] rounded-full bg-good -ml-[3px] border-[1.5px] border-good-bg" />
             </span>
             Grupo reducido
           </span>
@@ -88,7 +88,7 @@ export default function SessionCard({ session: s, cancelWindowHours }: { session
 
       <div className="flex items-center gap-2.5 mt-4">
         {booked && (
-          <span className="inline-flex items-center bg-[#e9f9ef] text-good rounded-full px-[11px] py-1.5 text-xs font-bold">
+          <span className="inline-flex items-center bg-good-bg text-good rounded-full px-[11px] py-1.5 text-xs font-bold">
             Reservada
           </span>
         )}

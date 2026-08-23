@@ -142,11 +142,11 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
       >
         {session && (
           <>
-            <div className="relative pt-[22px] px-[26px] pb-[18px] border-b border-[#eeede6] shrink-0">
+            <div className="relative pt-[22px] px-[26px] pb-[18px] border-b border-brand-border shrink-0">
               <button
                 onClick={onClose}
                 aria-label="Cerrar"
-                className="absolute top-[18px] right-5 w-8 h-8 rounded-[9px] border border-[#e0d9cb] bg-[#faf8f3] text-brand-text-2 flex items-center justify-center hover:bg-brand-ink hover:text-white hover:border-brand-ink transition-colors duration-150"
+                className="absolute top-[18px] right-5 w-8 h-8 rounded-[9px] border border-brand-border bg-surface-soft text-brand-text-2 flex items-center justify-center hover:bg-brand-ink hover:text-white hover:border-brand-ink transition-colors duration-150"
               >
                 ✕
               </button>
@@ -157,13 +157,13 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
               <div className="text-[13px] text-brand-muted mt-[3px]">{session.meta}</div>
               {step < 2 && (
                 <div className="flex items-center gap-2.5 mt-4">
-                  <div className="flex-1 h-[5px] rounded-full bg-[#eee7d8] overflow-hidden">
+                  <div className="flex-1 h-[5px] rounded-full bg-brand-subtle-2 overflow-hidden">
                     {/* El paso se marca con `scaleX`, no con `width` (plan §0.6). */}
                     <div
                       className="h-full w-full rounded-full origin-left transition-transform duration-300 ease-out-soft"
                       style={{
                         transform: `scaleX(${step === 0 ? 0.5 : 1})`,
-                        background: "linear-gradient(90deg,#4b5a22,#c8ab72)",
+                        background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))",
                       }}
                     />
                   </div>
@@ -184,7 +184,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                   <RatingSlider
                     label="Valoración global"
                     value={answers.trainerScore}
-                    colorStop="#c8ab72"
+                    colorStop="var(--color-apta-gold)"
                     dragging={dragging === "trainerScore"}
                     onPointerDown={(e) => onPointerDown("trainerScore", e)}
                     onChange={(v) => setAnswers((a) => ({ ...a, trainerScore: v }))}
@@ -203,7 +203,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                           className={`text-[13.5px] font-semibold rounded-full px-4 py-2.5 border transition-colors duration-150 ${
                             answers.tags.includes(tag)
                               ? "bg-good border-good text-white"
-                              : "bg-[#faf8f3] border-brand-border text-brand-text-2"
+                              : "bg-surface-soft border-brand-border text-brand-text-2"
                           }`}
                         >
                           {tag}
@@ -226,7 +226,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                     label="Nivel de energía"
                     hint="¿Con qué energía llegaste?"
                     value={answers.energy}
-                    colorStop="#c8ab72"
+                    colorStop="var(--color-apta-gold)"
                     dragging={dragging === "energy"}
                     onPointerDown={(e) => onPointerDown("energy", e)}
                     onChange={(v) => setAnswers((a) => ({ ...a, energy: v }))}
@@ -236,7 +236,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                     label="Esfuerzo percibido"
                     hint="Lo duro que fue para ti (RPE)"
                     value={answers.rpe}
-                    colorStop="#8a5a12"
+                    colorStop="var(--color-warning)"
                     dragging={dragging === "rpe"}
                     onPointerDown={(e) => onPointerDown("rpe", e)}
                     onChange={(v) => setAnswers((a) => ({ ...a, rpe: v }))}
@@ -259,7 +259,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
 
               {step === 2 && (
                 <div className="flex flex-col items-center text-center gap-3.5 py-6 px-2">
-                  <span className="w-[72px] h-[72px] rounded-full bg-[#eef0e4] text-good flex items-center justify-center text-[34px] [animation:tzPop_.4s_ease_both]">
+                  <span className="w-[72px] h-[72px] rounded-full bg-good-bg text-good flex items-center justify-center text-[34px] [animation:tzPop_.4s_ease_both]">
                     ✓
                   </span>
                   <div className="font-display font-extrabold text-[22px] text-brand-text">¡Gracias!</div>
@@ -272,7 +272,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
               )}
             </div>
 
-            <div className="shrink-0 py-4 px-[26px] border-t border-[#eeede6] flex items-center gap-3">
+            <div className="shrink-0 py-4 px-[26px] border-t border-brand-border flex items-center gap-3">
               {step === 1 && (
                 <button
                   onClick={() => setStep(0)}
@@ -294,7 +294,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                 <button
                   disabled={pending}
                   onClick={submit}
-                  className="bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-[#3c4a19] active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
+                  className="bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-good active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
                 >
                   {pending ? "Enviando…" : "Enviar valoración"}
                 </button>
@@ -380,7 +380,7 @@ function RatingSlider({
       >
         <div
           className="absolute left-0 top-0 h-full rounded-full"
-          style={{ width: `${pct}%`, background: `linear-gradient(90deg,#4b5a22,${colorStop})` }}
+          style={{ width: `${pct}%`, background: `linear-gradient(90deg,var(--color-good),${colorStop})` }}
         />
         <div
           className="absolute top-1/2 w-[30px] h-[30px] rounded-full bg-white border-[3px] border-brand-ink shadow-[0_6px_16px_-4px_rgba(29,29,28,.5)] cursor-grab touch-none"
@@ -397,7 +397,7 @@ function RatingSlider({
             <span
               key={n}
               className={`text-xs font-bold tabular-nums w-[18px] text-center ${
-                n === value ? "text-brand-text" : "text-[#c2bba8]"
+                n === value ? "text-brand-text" : "text-brand-faint"
               }`}
             >
               {n}
@@ -439,7 +439,7 @@ function ChoiceGroup({
             className={`text-[13.5px] rounded-full px-[18px] py-2.5 border transition-colors duration-150 ${
               value === opt
                 ? "bg-brand-ink border-brand-ink text-white font-bold"
-                : "bg-[#faf8f3] border-brand-border text-brand-text-2 font-semibold"
+                : "bg-surface-soft border-brand-border text-brand-text-2 font-semibold"
             }`}
           >
             {opt}

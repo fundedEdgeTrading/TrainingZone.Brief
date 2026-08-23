@@ -19,7 +19,15 @@ export default async function AgendaPage({
   const params = await searchParams;
 
   const centers = await getCentersForUser(session.user);
-  const centerId = params.center || session.user.centerId || centers[0]?.id;
+  // `?center=` es de quien escribe la URL, así que NO puede elegir centro: solo
+  // elegir entre los suyos. Sin este filtro, una dirección de centro (o un
+  // entrenador, o recepción) leía la agenda completa de cualquier otro centro
+  // de la organización con solo cambiar el id a mano — mientras el selector de
+  // centro, que sí respeta la imputación, solo le ofrecía el suyo.
+  const allowed = new Set(centers.map((c) => c.id));
+  const requested = params.center && allowed.has(params.center) ? params.center : null;
+  const base = session.user.centerId && allowed.has(session.user.centerId) ? session.user.centerId : null;
+  const centerId = requested ?? base ?? centers[0]?.id;
   const currentCenter = centers.find((c) => c.id === centerId) ?? null;
 
   // `day` solo lo usa la vista móvil (un día por pantalla) al saltar de semana
@@ -45,7 +53,7 @@ export default async function AgendaPage({
 
   const [trainers, members] = centerId
     ? await Promise.all([
-        listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"]),
+        listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"], centerId),
         listActiveMembersForSelect(session.user.orgId),
       ])
     : [[], []];
@@ -54,7 +62,7 @@ export default async function AgendaPage({
   for (const s of sessions) {
     if (!s.trainerId) continue;
     for (const dayIndex of instancesForWeek(s, weekStart, weekEnd)) {
-    // De momento la agenda no opera en domingo: se descarta esa ocurrencia.
+    // Fuera de la semana visible (ver `VISIBLE_DAYS`): no hay columna donde pintarla.
     if (dayIndex >= VISIBLE_DAYS) continue;
     // Reservas del día que se pinta: en una serie recurrente todas las
     // ocurrencias comparten fila, y contarlas juntas inflaba el aforo.

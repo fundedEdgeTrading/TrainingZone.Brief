@@ -15,7 +15,7 @@ import ActivityChart from "./activity-chart";
 import { AnnouncementsBanner } from "./announcements-banner";
 import { PendingFeedbackBanner } from "./pending-feedback-banner";
 
-const LIGHT_COLOR: Record<string, string> = { RED: "#8A3420", AMBER: "#8A5A12", GREEN: "#4B5A22" };
+const LIGHT_COLOR: Record<string, string> = { RED: "var(--color-critical)", AMBER: "var(--color-warning)", GREEN: "var(--color-good)" };
 
 export default async function PortalHomePage() {
   const session = await requireRole(["MEMBER"]);
@@ -128,14 +128,14 @@ export default async function PortalHomePage() {
         ) : (
           <div className="flex flex-col gap-2.5">
             {adaptations.map((a, i) => (
-              <div key={i} className="flex items-start gap-3 px-4 py-3.5 bg-brand-subtle border border-[#eeede6] rounded-xl">
+              <div key={i} className="flex items-start gap-3 px-4 py-3.5 bg-brand-subtle border border-brand-border rounded-xl">
                 <span
                   className="w-3.5 h-3.5 rounded-full shrink-0 mt-[3px]"
                   style={{ background: LIGHT_COLOR[a.light], boxShadow: `0 0 0 4px ${LIGHT_COLOR[a.light]}22` }}
                 />
                 <div>
                   <div className="text-sm font-bold text-brand-text">{a.blockArea}</div>
-                  {a.adaptation && <div className="text-[13px] text-[#77776f] mt-0.5">{a.adaptation}</div>}
+                  {a.adaptation && <div className="text-[13px] text-brand-muted mt-0.5">{a.adaptation}</div>}
                 </div>
               </div>
             ))}

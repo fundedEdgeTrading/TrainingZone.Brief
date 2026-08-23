@@ -6,16 +6,16 @@ import type { MemberAnnouncement } from "@/lib/announcements-queries";
 const CATEGORY_LABEL: Record<string, string> = { NEWS: "Novedad", EVENT: "Evento", PROMO: "Promoción", ALERT: "Aviso" };
 const CATEGORY_TONE: Record<string, string> = {
   NEWS: "bg-white/15 text-white",
-  EVENT: "bg-[#cfe5ff] text-[#1c4e80]",
-  PROMO: "bg-[#ffe3bf] text-[#8a5a12]",
-  ALERT: "bg-[#ffd6d0] text-[#8a3420]",
+  EVENT: "bg-info-bg text-info",
+  PROMO: "bg-warning-bg text-warning",
+  ALERT: "bg-critical-bg text-critical",
 };
 
 export function AnnouncementsBanner({
   announcements,
   autoplaySeconds = 6,
   pauseOnHover = true,
-  accentColor = "#c8ab72",
+  accentColor = "var(--color-apta-gold)",
 }: {
   announcements: MemberAnnouncement[];
   autoplaySeconds?: number;

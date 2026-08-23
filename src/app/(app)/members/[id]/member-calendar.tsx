@@ -99,7 +99,7 @@ export function MemberSessionsCalendar({
     return [y, m - 1] as const;
   }, [month]);
 
-  // Rejilla de 6x7. A diferencia de /agenda (VISIBLE_DAYS = 6, sin domingo),
+  // Rejilla de 6x7, igual que /agenda desde que la semana es completa,
   // una vista de mes pinta los siete días: el histórico puede caer en domingo.
   const gridStart = useMemo(() => {
     const first = new Date(year, monthIdx, 1);

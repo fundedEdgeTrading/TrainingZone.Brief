@@ -19,7 +19,7 @@ export function RouteProgress() {
       <div
         className="h-full origin-left"
         style={{
-          background: "linear-gradient(90deg,#1d1d1c 0%,#c8ab72 55%,#e7dfd2 100%)",
+          background: "linear-gradient(90deg,var(--color-brand-ink) 0%,var(--color-apta-gold) 55%,var(--color-tz-sand) 100%)",
           animation: "tzRouteBar .62s var(--ease-out-soft) both",
         }}
       />

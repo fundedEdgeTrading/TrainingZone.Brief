@@ -8,7 +8,15 @@
   --foreground: #1d1d1c;
 }
 
-@theme inline {
+/* `@theme`, NO `@theme inline`: con `inline` Tailwind sustituye el valor
+   literal dentro de cada utilidad (`.bg-brand-card{background:#fff}`) en vez de
+   emitir `var(--color-brand-card)`. Con los valores incrustados, redefinir los
+   tokens en `[data-theme="dark"]` no cambiaba absolutamente nada: el modo
+   oscuro solo se veía en las pocas reglas que leen las variables a mano
+   (`body`, estilos en línea), que es justo lo que se reportó como "al cambiar a
+   oscuro no cambia apenas nada". Sin `inline`, cada utilidad referencia su
+   variable y el bloque oscuro de más abajo sí manda. */
+@theme {
   /* Marca Training Zone (beige/hueso/negro) */
   --color-tz-black: #1d1d1c;
   --color-tz-bone: #f4f0e8;
@@ -64,6 +72,20 @@
      no por sombras, que sobre carbón no se ven). */
   --color-input: #ffffff;
   --color-sidebar: #e7dfd2;
+
+  /* Superficie "hundida" dentro de una tarjeta (hilo de chat, cuerpo de un
+     panel). En claro es un hueso más cálido que la tarjeta; en oscuro tiene que
+     ser MÁS oscuro que ella, no más claro, o el hundido se lee como relieve. */
+  --color-surface-soft: #faf8f3;
+
+  /* Fila o tarjeta señalada (un socio con punto ciego, un aviso que reclama
+     atención). Tinte, no color pleno: convive con el texto normal encima. */
+  --color-highlight-bg: #fbf1ec;
+
+  /* Informativo (categoría "novedad" de los anuncios). Es el único acento frío
+     de la marca y no tenía token: estaba escrito a mano en azul claro. */
+  --color-info: #1c4e80;
+  --color-info-bg: #cfe5ff;
 
   /* Velo del menú móvil. No puede salir de `tz-black`: ese token es el sólido
      de contraste y en oscuro es hueso, así que el velo habría salido blanco. */
@@ -166,6 +188,24 @@
   --color-input: #1f1e1b;
   --color-sidebar: #201f1c;
   --color-scrim: rgba(0, 0, 0, 0.65);
+
+  /* El hundido se invierte: por debajo de la tarjeta (#24231f), no por encima. */
+  --color-surface-soft: #1f1e1b;
+  --color-highlight-bg: #33231d;
+  --color-info: #8fbce8;
+  --color-info-bg: #16293c;
+}
+
+/* Logo de marca con variante por tema: se pintan las dos imágenes y aquí se
+   decide cuál se ve. El negro sobre el sidebar oscuro era invisible. */
+.tz-logo-dark {
+  display: none;
+}
+[data-theme="dark"] .tz-logo-light {
+  display: none;
+}
+[data-theme="dark"] .tz-logo-dark {
+  display: block;
 }
 
 /* Los cambios de tema no deben parecer un recorte de pantalla: fondos y bordes

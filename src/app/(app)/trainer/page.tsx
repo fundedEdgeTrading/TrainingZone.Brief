@@ -35,8 +35,8 @@ function agendaCardTitle(selectedDay: Date, today: Date) {
 const SM_GRID =
   "sm:grid-cols-[minmax(170px,1.7fr)_minmax(96px,.9fr)_68px_minmax(90px,.85fr)_minmax(76px,.7fr)]";
 
-const APTITUDE_DOT: Record<string, string> = { GREEN: "#4B5A22", AMBER: "#8A5A12", RED: "#8A3420" };
-const ADHERENCE_COLOR = (pct: number) => (pct >= 85 ? "#4B5A22" : pct >= 70 ? "#8A5A12" : "#8A3420");
+const APTITUDE_DOT: Record<string, string> = { GREEN: "var(--color-good)", AMBER: "var(--color-warning)", RED: "var(--color-critical)" };
+const ADHERENCE_COLOR = (pct: number) => (pct >= 85 ? "var(--color-good)" : pct >= 70 ? "var(--color-warning)" : "var(--color-critical)");
 
 export default async function TrainerPanelPage({
   searchParams,
@@ -310,34 +310,34 @@ export default async function TrainerPanelPage({
                         cy="39"
                         r="28"
                         fill="none"
-                        stroke="#C8AB72"
+                        stroke="var(--color-apta-gold)"
                         strokeWidth="5"
                         strokeLinecap="round"
                         strokeDasharray={176}
                         strokeDashoffset={dashOffset}
                         style={{ animation: "tzDash 1.4s .6s both" }}
                       />
-                      <text x="39" y="39" textAnchor="middle" dominantBaseline="central" fill="#F4F0E8" fontSize="15" fontWeight="800" transform="rotate(90 39 39)">
+                      <text x="39" y="39" textAnchor="middle" dominantBaseline="central" fill="var(--color-tz-bone)" fontSize="15" fontWeight="800" transform="rotate(90 39 39)">
                         {data.todayProgressPct}%
                       </text>
                     </svg>
-                    <span className="text-[10px] font-bold tabular-nums tracking-[.04em]" style={{ color: "#A8A296" }}>
+                    <span className="text-[10px] font-bold tabular-nums tracking-[.04em]" style={{ color: "var(--color-brand-muted-2)" }}>
                       {data.todayMinutesWorked}/{data.todayMinutesTotal} min
                     </span>
                   </div>
 
                   <div className="flex-1 min-w-[260px]">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="relative inline-flex items-center gap-1.5 rounded-pill px-[11px] py-[5px] text-[10px] font-extrabold tracking-[.08em] uppercase" style={{ background: "rgba(200,171,114,.16)", color: "#E3CFA2" }}>
-                        <span className="relative w-1.5 h-1.5 rounded-full" style={{ background: "#C8AB72" }}>
+                      <span className="relative inline-flex items-center gap-1.5 rounded-pill px-[11px] py-[5px] text-[10px] font-extrabold tracking-[.08em] uppercase" style={{ background: "rgba(200,171,114,.16)", color: "var(--color-apta-gold)" }}>
+                        <span className="relative w-1.5 h-1.5 rounded-full" style={{ background: "var(--color-apta-gold)" }}>
                           {spotlightKind === "current" && (
-                            <span className="absolute inset-0 rounded-full border" style={{ borderColor: "#C8AB72", animation: "tzPulseRing 2.4s ease-out infinite" }} />
+                            <span className="absolute inset-0 rounded-full border" style={{ borderColor: "var(--color-apta-gold)", animation: "tzPulseRing 2.4s ease-out infinite" }} />
                           )}
                         </span>
                         {spotlightKind === "current" ? "En curso" : "Próxima"}
                       </span>
                       {spotlight && (
-                        <span className="inline-flex items-center gap-1 text-xs" style={{ color: "#A8A296" }}>
+                        <span className="inline-flex items-center gap-1 text-xs" style={{ color: "var(--color-brand-muted-2)" }}>
                           {spotlightKind === "current" ? "quedan" : "empieza en"}
                           <SessionCountdown
                             targetIso={spotlightKind === "current" ? spotlight.endsAt : spotlight.startsAt}
@@ -347,10 +347,10 @@ export default async function TrainerPanelPage({
                         </span>
                       )}
                     </div>
-                    <div className="font-display font-extrabold text-[22px] tracking-[-.015em] mt-2" style={{ color: "#F4F0E8" }}>
+                    <div className="font-display font-extrabold text-[22px] tracking-[-.015em] mt-2" style={{ color: "var(--color-tz-bone)" }}>
                       {spotlight?.startTime}–{spotlight?.endTime} · {spotlight?.title}
                     </div>
-                    <div className="text-sm mt-1" style={{ color: "#D8CCB8" }}>
+                    <div className="text-sm mt-1" style={{ color: "var(--color-tz-linen)" }}>
                       {spotlight?.meta}
                     </div>
                   </div>
@@ -361,7 +361,7 @@ export default async function TrainerPanelPage({
                         <Link
                           href={`/agenda/session/${spotlight?.id}`}
                           className="text-center font-bold text-sm rounded-[10px] px-4 py-2.5 transition-transform duration-200 hover:-translate-y-[2px]"
-                          style={{ background: "#F4F0E8", color: "#1D1D1C" }}
+                          style={{ background: "var(--color-tz-bone)", color: "var(--color-tz-black)" }}
                         >
                           Cerrar debrief
                         </Link>
@@ -369,7 +369,7 @@ export default async function TrainerPanelPage({
                           <Link
                             href={`/members/${spotlight.soloMemberId}`}
                             className="text-center font-semibold text-sm rounded-[10px] px-4 py-2.5 border transition-colors duration-200"
-                            style={{ borderColor: "rgba(216,204,184,.35)", color: "#D8CCB8" }}
+                            style={{ borderColor: "rgba(216,204,184,.35)", color: "var(--color-tz-linen)" }}
                           >
                             Ver ficha del socio
                           </Link>
@@ -379,7 +379,7 @@ export default async function TrainerPanelPage({
                       <Link
                         href={`/brief/${spotlight?.id}`}
                         className="text-center font-bold text-sm rounded-[10px] px-4 py-2.5 transition-transform duration-200 hover:-translate-y-[2px]"
-                        style={{ background: "#F4F0E8", color: "#1D1D1C" }}
+                        style={{ background: "var(--color-tz-bone)", color: "var(--color-tz-black)" }}
                       >
                         Abrir Session Brief
                       </Link>
@@ -415,7 +415,7 @@ export default async function TrainerPanelPage({
                     >
                       <span
                         className="absolute left-[-26px] top-1/2 -mt-[5px] w-3 h-3 rounded-full border-[3px] border-white"
-                        style={{ background: s.status === "current" ? "#C8AB72" : s.status === "past" ? "#5B5748" : "#D8CCB8" }}
+                        style={{ background: s.status === "current" ? "var(--color-apta-gold)" : s.status === "past" ? "var(--color-brand-text-2)" : "var(--color-tz-linen)" }}
                       />
                       <div>
                         <div className="text-[13px] font-bold tabular-nums text-brand-text-2">{s.startTime}</div>
@@ -537,7 +537,7 @@ export default async function TrainerPanelPage({
                 <div key={d.dayLabel + i} className="flex flex-col justify-end gap-1 h-full">
                   {d.reservedCount + d.freeCount === 0 ? (
                     <span
-                      className="rounded-md bg-[#efece3] origin-bottom"
+                      className="rounded-md bg-brand-subtle-2 origin-bottom"
                       style={{ height: "8%", animation: "tzRise .55s both", animationDelay: `${0.5 + i * 0.04}s` }}
                     />
                   ) : (
@@ -545,7 +545,7 @@ export default async function TrainerPanelPage({
                       {d.freeCount > 0 && (
                         <span
                           className="rounded-md origin-bottom"
-                          style={{ height: `${d.freePct}%`, background: d.isToday ? "#C8AB72" : "#E7DFD2", animation: "tzRise .55s both", animationDelay: `${0.5 + i * 0.04}s` }}
+                          style={{ height: `${d.freePct}%`, background: d.isToday ? "var(--color-apta-gold)" : "var(--color-tz-sand)", animation: "tzRise .55s both", animationDelay: `${0.5 + i * 0.04}s` }}
                         />
                       )}
                       {d.reservedCount > 0 && (
@@ -589,7 +589,7 @@ export default async function TrainerPanelPage({
               style={{ width: 200, height: 200, right: -40, bottom: -60, background: "radial-gradient(circle, rgba(200,171,114,.3), transparent 70%)", filter: "blur(30px)", animation: "tzFloat 11s ease-in-out infinite" }}
             />
             <div className="relative">
-              <div className="font-display font-bold text-[10px] tracking-[.16em] uppercase mb-2" style={{ color: "#8A6D2F" }}>
+              <div className="font-display font-bold text-[10px] tracking-[.16em] uppercase mb-2" style={{ color: "var(--color-gold)" }}>
                 Reconocimiento del mes
               </div>
               <p className="text-[15px] font-semibold text-brand-text leading-[1.45]">

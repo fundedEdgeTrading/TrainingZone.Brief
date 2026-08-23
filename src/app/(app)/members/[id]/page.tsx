@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope } from "@/lib/guard";
 import {
   getMemberDetail,
   getMemberAttendanceStats,
@@ -232,6 +232,11 @@ export default async function MemberDetailPage({
 
   const member = await getMemberDetail(session.user.orgId, id);
   if (!member) notFound();
+  // Ámbito de centro: la ficha arrastra salud, composición y valoraciones, así
+  // que no basta con que el socio sea de la organización — tiene que ser de un
+  // centro del que esta persona forme parte. `notFound` y no un error: desde
+  // fuera del ámbito, la ficha sencillamente no existe.
+  if (!(await memberIsInScope(session.user, member.id))) notFound();
 
   const canSeeMesocycles = canManageMesocycles(session.user.role);
 
