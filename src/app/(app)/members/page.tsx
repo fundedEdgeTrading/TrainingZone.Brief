@@ -212,7 +212,7 @@ function memberColumns(groups: Map<string, FilterGroup>, selection: MemberSelect
       className: "text-brand-text-2",
       ...filterFor("plan"),
     },
-    { key: "bonus", header: "Bono", sortable: true, thClassName: "w-[118px] hidden xl:table-cell", className: "hidden xl:table-cell", cardClassName: "" },
+    { key: "bonus", header: "Bono usado", sortable: true, thClassName: "w-[118px] hidden xl:table-cell", className: "hidden xl:table-cell", cardClassName: "" },
     {
       key: "lastVisit",
       header: "Última visita",
@@ -247,9 +247,14 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
   // `sessionsRemaining` null = bono ilimitado (cuota mensual / online).
   const unlimited = sub != null && remaining == null;
   const low = remaining != null && remaining <= 2;
-  // El saldo se puede ajustar a mano (RB-RES-006), así que puede superar lo
-  // contratado: la barra se recorta al 100 %.
-  const pct = remaining != null && included ? Math.min(100, Math.round((remaining / included) * 100)) : 100;
+  // La columna enseña lo CONSUMIDO sobre lo contratado («6 / 12» = seis
+  // sesiones gastadas de doce). `used` sale del propio bono
+  // (`sessionsIncluded - sessionsRemaining`), no del histórico de asistencias,
+  // que incluiría bonos anteriores — mismo criterio que `getSessionBalances`.
+  // El saldo se puede ajustar a mano (RB-RES-006), así que `remaining` puede
+  // superar lo contratado: ahí `used` se queda en 0 y la barra, en 0 %.
+  const used = remaining != null && included != null ? Math.max(0, included - remaining) : null;
+  const pct = used != null && included ? Math.min(100, Math.round((used / included) * 100)) : 100;
 
   const visitDays = lastVisit ? Math.floor((now.getTime() - lastVisit.getTime()) / 86_400_000) : null;
   const stale = visitDays != null && visitDays > STALE_VISIT_DAYS;
@@ -265,7 +270,10 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
       center: m.primaryCenter.name,
       state: MEMBER_STATE_LABEL[m.state],
       plan: sub?.plan.name ?? "",
-      bonus: remaining ?? (unlimited ? Number.MAX_SAFE_INTEGER : -1),
+      // Ordena por lo que enseña la celda (sesiones consumidas); los bonos
+      // ilimitados y los socios sin bono no tienen consumo con el que comparar
+      // y caen al final.
+      bonus: used ?? null,
       lastVisit: visitDays ?? 9999,
       joinedAt: m.joinedAt.getTime(),
     },
@@ -303,11 +311,20 @@ function memberToRow(m: Member, i: number, lastVisit: Date | null, now: Date): D
         planKind === "NONE" ? (
           <span className="text-faint">—</span>
         ) : (
-          <span className="flex flex-col gap-[5px]">
+          <span
+            className="flex flex-col gap-[5px]"
+            title={
+              unlimited
+                ? "Bono ilimitado"
+                : used != null && included != null
+                  ? `${used} de ${included} sesiones consumidas · quedan ${remaining}`
+                  : undefined
+            }
+          >
             <span
               className={`text-[12.5px] font-semibold tz-nums ${low ? "text-critical" : unlimited ? "text-faint" : "text-brand-text"}`}
             >
-              {unlimited ? "Ilimitado" : `${remaining} / ${included ?? "—"}`}
+              {unlimited ? "Ilimitado" : used != null && included != null ? `${used} / ${included}` : "—"}
             </span>
             <span className="block h-1 w-16 overflow-hidden rounded-pill bg-tz-sand">
               <span

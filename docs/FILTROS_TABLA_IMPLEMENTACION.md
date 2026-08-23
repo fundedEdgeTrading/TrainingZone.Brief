@@ -57,8 +57,11 @@ borrados: no había más call-sites.
 - **La tira de chips vive en el riel**, no solo en la barra: con el listado
   vacío es la única forma de deshacer el filtro que lo ha vaciado (por eso el
   riel se pinta también cuando no hay filas).
-- **Columnas nuevas de socios**: «Bono» (saldo del bono activo, recortado al
-  100 % porque el saldo se puede ajustar a mano, RB-RES-006) y «Última visita»
+- **Columnas nuevas de socios**: «Bono usado» (sesiones consumidas sobre las
+  contratadas — «6 / 12» son seis gastadas de doce —, derivadas del propio bono
+  con `sessionsIncluded - sessionsRemaining`, no del histórico de asistencias;
+  la barra se recorta al 100 % porque el saldo se puede ajustar a mano,
+  RB-RES-006, y el número se pone en rojo cuando quedan ≤2) y «Última visita»
   (última `Booking` con `status = ATTENDED` sobre `occurrenceDate`, resuelta con
   un `groupBy` sobre los socios de la página). Aparecen a partir de `xl` y `2xl`:
   siete columnas no caben en un portátil sin arrastrar la tabla en horizontal.
