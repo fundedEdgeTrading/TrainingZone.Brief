@@ -336,8 +336,35 @@ export const ROLE_LABEL: Record<Role, string> = {
   PLATFORM_ADMIN: "Admin plataforma",
 };
 
+/**
+ * Pantallas que no están en el menú y por tanto no tienen entrada de la que
+ * sacar el rótulo. Sin este mapa, `/mi-perfil` se titulaba "Training Zone" y
+ * —peor— `/portal/perfil` heredaba por prefijo el de `/portal` y se anunciaba
+ * como "Mi actividad", con ese item marcado como activo en el sidebar.
+ */
+export const OFF_NAV_TITLES: Record<string, string> = {
+  "/mi-perfil": "Mi perfil",
+  "/portal/perfil": "Mi perfil",
+  "/portal/chat": "Chat con tu centro",
+  "/portal/comprar": "Comprar o renovar",
+  "/portal/plan": "Mi plan",
+};
+
+/**
+ * Item de navegación al que corresponde una ruta: la coincidencia de prefijo
+ * más larga, salvo que la ruta sea una de las que no cuelgan del menú.
+ */
+export function activeNavHref(nav: { href: string }[], pathname: string): string | undefined {
+  if (OFF_NAV_TITLES[pathname]) return undefined;
+  return [...nav]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.href;
+}
+
 /** Título de cabecera para la ruta actual: coincidencia de prefijo más larga en NAV_BY_ROLE. */
 export function getPageTitle(nav: { href: string; label: string }[], pathname: string): string {
+  const offNav = OFF_NAV_TITLES[pathname];
+  if (offNav) return offNav;
   const match = [...nav]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"));

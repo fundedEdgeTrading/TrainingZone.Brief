@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { listAssessmentsForMember, ASSESSMENT_KIND_ORDER } from "@/lib/assessments/queries";
 import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
@@ -11,12 +13,14 @@ import { OpenAssessmentButton } from "./open-assessment-buttons";
 export default async function MemberAssessmentsPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
   const { id } = await params;
+  const timeZone = await resolveTimezone();
 
   const member = await prisma.member.findFirst({
     where: { id, orgId: session.user.orgId },
     select: { id: true, firstName: true, lastName: true },
   });
   if (!member) notFound();
+  if (!(await memberIsInScope(session.user, member.id))) notFound();
 
   const assessments = await listAssessmentsForMember(session.user.orgId, member.id);
   const doneKinds = new Set(assessments.filter((a) => a.completedAt).map((a) => a.kind));
@@ -54,7 +58,7 @@ export default async function MemberAssessmentsPage({ params }: { params: Promis
                     {a.completedAt ? (
                       <>
                         <span>
-                          {a.completedAt.toLocaleDateString("es-ES")}
+                          {formatInstantDate(a.completedAt, timeZone)}
                           {a.filledBy?.name ? ` · ${a.filledBy.name}` : ""}
                         </span>
                         <Badge tone="good">Completada</Badge>

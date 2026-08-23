@@ -31,12 +31,12 @@ export default function UpcomingBookings({
         >
           Tus próximas reservas
         </h2>
-        <span className="inline-flex items-center rounded-full px-[11px] py-1.5 text-xs font-bold tabular-nums bg-[#eef0e4] text-[#4b5a22]">
+        <span className="inline-flex items-center rounded-full px-[11px] py-1.5 text-xs font-bold tabular-nums bg-good-bg text-good">
           {active} {active === 1 ? "reserva" : "reservas"}
         </span>
       </div>
 
-      <div className="flex flex-col divide-y divide-[#eeede6] mt-1">
+      <div className="flex flex-col divide-y divide-brand-border mt-1">
         {bookings.map((b) => {
           const isGroup = sessionServiceKind(b.classType) === "GROUP";
           return (
@@ -44,7 +44,7 @@ export default function UpcomingBookings({
               <div className="flex items-center gap-3.5 min-w-0">
                 <span
                   className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                    b.sessionCancelled ? "bg-critical" : isGroup ? "bg-[#4b5a22]" : "bg-brand-ink"
+                    b.sessionCancelled ? "bg-critical" : isGroup ? "bg-good" : "bg-brand-ink"
                   }`}
                 />
                 <div className="min-w-0">
@@ -56,7 +56,7 @@ export default function UpcomingBookings({
                       </span>
                     )}
                     {b.sessionCancelled && (
-                      <span className="ml-2 inline-flex items-center rounded-full bg-[#fdecea] px-2 py-[3px] text-[11px] font-bold uppercase tracking-[.05em] text-critical align-middle">
+                      <span className="ml-2 inline-flex items-center rounded-full bg-critical-bg px-2 py-[3px] text-[11px] font-bold uppercase tracking-[.05em] text-critical align-middle">
                         Clase anulada por el centro
                       </span>
                     )}

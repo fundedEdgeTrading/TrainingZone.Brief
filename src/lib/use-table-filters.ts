@@ -22,6 +22,11 @@ const SEARCH_DEBOUNCE_MS = 220;
  *
  * Cualquier cambio resetea la paginación de servidor (`page`); la de cliente la
  * resetea `DataTable` al cambiar la referencia de `rows`.
+ *
+ * La pantalla se queda donde está. Lo único que la mueve al filtrar es que el
+ * listado se quede más corto que el desplazamiento actual: ahí el navegador
+ * recorta contra el nuevo final de página, y eso es correcto — no hay a dónde
+ * desplazarse. No se fuerza ninguna restauración por encima de eso.
  */
 export function useTableFilters(axes: string[], searchName = "q") {
   const router = useRouter();

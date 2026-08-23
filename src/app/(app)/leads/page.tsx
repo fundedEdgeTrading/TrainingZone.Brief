@@ -23,11 +23,11 @@ import { LeadsBoard } from "./leads-board";
 import { LeadConfigPanel } from "./lead-config-panel";
 
 const COLUMNS: { status: LeadStatus; label: string; tone: "neutral" | "trial" | "warning" | "good" | "critical"; dot: string }[] = [
-  { status: "SIN_CONTACTAR", label: "Sin contactar", tone: "neutral", dot: "#8a8574" },
-  { status: "SEGUIMIENTO", label: "Seguimiento", tone: "trial", dot: "#5c4a34" },
-  { status: "CON_FECHA_VALORACION", label: "Con fecha de valoración", tone: "warning", dot: "#8a5a12" },
-  { status: "CERRADO", label: "Cerrado", tone: "good", dot: "#4b5a22" },
-  { status: "NO_CERRADO", label: "No cerrado", tone: "critical", dot: "#8a3420" },
+  { status: "SIN_CONTACTAR", label: "Sin contactar", tone: "neutral", dot: "var(--color-brand-muted)" },
+  { status: "SEGUIMIENTO", label: "Seguimiento", tone: "trial", dot: "var(--color-trial)" },
+  { status: "CON_FECHA_VALORACION", label: "Con fecha de valoración", tone: "warning", dot: "var(--color-warning)" },
+  { status: "CERRADO", label: "Cerrado", tone: "good", dot: "var(--color-good)" },
+  { status: "NO_CERRADO", label: "No cerrado", tone: "critical", dot: "var(--color-critical)" },
 ];
 
 const CLOSE_TYPE_OPTIONS: { value: string; label: string; tone?: "trial" | "gold" }[] = [

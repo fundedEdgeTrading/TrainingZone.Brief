@@ -135,13 +135,13 @@ export function FloatingChat({
             <div className="w-10 h-10 rounded-full bg-brand-ink-soft flex items-center justify-center shrink-0">
               <span className="inline-flex items-baseline font-display font-bold text-[17px] text-tz-bone">
                 A
-                <span className="w-1 h-1 ml-0.5 rounded-full bg-gradient-to-br from-[#e3cfa2] to-[#b58e52]" />
+                <span className="w-1 h-1 ml-0.5 rounded-full bg-gradient-to-br from-apta-gold to-apta-gold" />
               </span>
             </div>
             <div className="flex-1 min-w-0">
               <div className="font-display font-bold text-sm text-white">Asistente Training Zone</div>
               <div className="flex items-center gap-1.5 text-xs text-brand-muted-2 mt-px">
-                <span className="w-[7px] h-[7px] rounded-full bg-[#6f8a3a]" />
+                <span className="w-[7px] h-[7px] rounded-full bg-good" />
                 En línea · responde al instante
               </div>
             </div>
@@ -156,14 +156,14 @@ export function FloatingChat({
           </div>
 
           {/* Mensajes */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-[18px] flex flex-col gap-2.5 bg-[#faf8f3]">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-[18px] flex flex-col gap-2.5 bg-surface-soft">
             {initialMessages.map((m) => {
               const isSelf = m.senderKind === SELF_KIND;
               return (
                 <div key={m.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`tz-bubble-in max-w-[80%] rounded-2xl px-[13px] py-2.5 text-[13.5px] leading-[1.45] ${
-                      isSelf ? "bg-tz-black text-tz-bone" : "bg-white text-brand-text border border-[#eee5d6]"
+                      isSelf ? "bg-tz-black text-tz-bone" : "bg-white text-brand-text border border-brand-border"
                     }`}
                   >
                     <p>{m.body}</p>
@@ -186,7 +186,7 @@ export function FloatingChat({
 
           {/* Respuestas rápidas (se ocultan al iniciar la conversación) */}
           {!memberHasWritten && (
-            <div className="flex flex-wrap gap-1.5 px-[18px] pb-3 bg-[#faf8f3]">
+            <div className="flex flex-wrap gap-1.5 px-[18px] pb-3 bg-surface-soft">
               {QUICK_REPLIES.map((q) => (
                 <button
                   key={q.label}
@@ -210,13 +210,13 @@ export function FloatingChat({
               send(el.value);
               el.value = "";
             }}
-            className="flex gap-2 p-3.5 border-t border-[#eeede6] bg-white"
+            className="flex gap-2 p-3.5 border-t border-brand-border bg-white"
           >
             <input
               ref={inputRef}
               name="body"
               placeholder="Escribe un mensaje..."
-              className="flex-1 min-w-0 border border-brand-border rounded-[10px] px-3 py-2.5 text-sm bg-[#faf8f3] text-brand-text placeholder:text-faint outline-none focus:border-brand-ink"
+              className="flex-1 min-w-0 border border-brand-border rounded-[10px] px-3 py-2.5 text-sm bg-surface-soft text-brand-text placeholder:text-faint outline-none focus:border-brand-ink"
             />
             <button
               type="submit"
@@ -241,7 +241,7 @@ export function FloatingChat({
           <span className="text-tz-bone text-[22px] leading-none">✕</span>
         ) : (
           <span className="relative flex items-center justify-center">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#f4f0e8" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--color-tz-bone)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7a8.5 8.5 0 0 1-.9-3.8 8.38 8.38 0 0 1 8.5-8.5 8.38 8.38 0 0 1 8.5 8.5z" />
             </svg>
             {unread && (

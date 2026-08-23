@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canManageMembers } from "@/lib/rbac";
+import { isMemberInScope } from "@/lib/center-scope";
 import { getMemberCalendar } from "../../../_lib/calendar";
 import { requireApiRole } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
@@ -19,6 +20,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // El socio tiene que ser de la organización del token, nunca del id a secas.
   const member = await prisma.member.findFirst({ where: { id, orgId: claims.orgId }, select: { id: true } });
   if (!member) return apiError("No se ha encontrado el socio.", 404);
+  // ...y además de un centro suyo (center-scope.ts), igual que en la web.
+  const inScope = await isMemberInScope(
+    { id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId },
+    member.id
+  );
+  if (!inScope) return apiError("No se ha encontrado el socio.", 404);
 
   const calendar = await getMemberCalendar(member.id, req.nextUrl.searchParams.get("month"));
   return apiOk(calendar);

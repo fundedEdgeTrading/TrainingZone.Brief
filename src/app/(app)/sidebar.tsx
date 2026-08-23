@@ -5,7 +5,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
 import NavIconSvg from "@/components/nav-icons";
-import { groupNav, NAV_SECTIONS_COLLAPSED_BY_DEFAULT, type NavItem, type NavSection } from "@/lib/rbac";
+import { activeNavHref, groupNav, NAV_SECTIONS_COLLAPSED_BY_DEFAULT, type NavItem, type NavSection } from "@/lib/rbac";
 import { useMobileNav } from "./mobile-nav";
 import { AccountMenuTrigger, initials } from "./account-menu";
 
@@ -96,25 +96,64 @@ function NavItemIcon({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
+
+/**
+ * Logo de la organización con su variante oscura.
+ *
+ * Se pintan los dos y manda el CSS (`.tz-logo-light` / `.tz-logo-dark` en
+ * globals.css). Resolverlo en el servidor obligaría a leer `User.theme` también
+ * en este layout; hacerlo en el cliente dejaría un fotograma con el logo
+ * equivocado. Cuando no hay variante distinta (logo propio del cliente), se
+ * pinta una sola imagen.
+ */
+function BrandLogo({
+  light,
+  dark,
+  alt,
+  className,
+}: {
+  light: string;
+  dark?: string | null;
+  alt: string;
+  className?: string;
+}) {
+  /* eslint-disable @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático */
+  if (!dark || dark === light) {
+    return <img src={light} alt={alt} className={`block ${className ?? ""}`} />;
+  }
+  return (
+    <>
+      <img src={light} alt={alt} className={`tz-logo-light block ${className ?? ""}`} />
+      <img src={dark} alt="" aria-hidden="true" className={`tz-logo-dark block ${className ?? ""}`} />
+    </>
+  );
+  /* eslint-enable @next/next/no-img-element */
+}
+
 export default function Sidebar({
   nav,
   footerLabel,
   logoUrl,
+  logoUrlDark,
   brandName,
   member,
 }: {
   nav: NavItem[];
   footerLabel: string;
   logoUrl?: string | null;
+  /**
+   * Variante del logo para el tema oscuro, si el asset la tiene (ver
+   * `logoUrlForTheme`). Se pintan las dos y el CSS enseña la que toca: así no
+   * hace falta leer el tema aquí ni hay un fotograma con el logo equivocado.
+   */
+  logoUrlDark?: string | null;
   brandName?: string;
   /** Presente solo para el rol MEMBER (rediseño NavBar premium 1b). Otros roles conservan el pie de texto plano. */
   member?: MemberSidebarData;
 }) {
   const pathname = usePathname();
   const { open, setOpen } = useMobileNav();
-  const activeHref = [...nav]
-    .sort((a, b) => b.href.length - a.href.length)
-    .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.href;
+  const activeHref = activeNavHref(nav, pathname);
   const groups = groupNav(nav);
   // Un solo grupo no necesita cabecera: por debajo de 7 items (entrenador,
   // recepción, RRHH, admin de plataforma) rotular cuesta más de lo que ordena.
@@ -198,19 +237,19 @@ export default function Sidebar({
                 // Isotipo: el mismo lockup recortado a sus primeros 26 px (las
                 // dos medias lunas). Ver docs/BRANDING.md §1.
                 <span className="hidden lg:block w-[26px] h-[34px] overflow-hidden shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático */}
-                  <img
-                    src={logoUrl}
+                  <BrandLogo
+                    light={logoUrl}
+                    dark={logoUrlDark}
                     alt={brandName ?? "Logo"}
                     className="h-[34px] w-[202px] max-w-none object-cover object-left"
                   />
                 </span>
               )}
-              {/* eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático */}
-              <img
-                src={logoUrl}
+              <BrandLogo
+                light={logoUrl}
+                dark={logoUrlDark}
                 alt={brandName ?? "Logo"}
-                className={`h-[26px] lg:h-[34px] w-auto max-w-[190px] object-contain block ${rail ? "lg:hidden" : ""}`}
+                className={`h-[26px] lg:h-[34px] w-auto max-w-[190px] object-contain ${rail ? "lg:hidden" : ""}`}
               />
             </>
           ) : (
@@ -277,7 +316,7 @@ export default function Sidebar({
                         height="12"
                         viewBox="0 0 24 24"
                         fill="none"
-                        stroke="#a8a296"
+                        stroke="var(--color-brand-faint)"
                         strokeWidth="2.4"
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -402,7 +441,7 @@ export default function Sidebar({
                       {member.roleLabel} · {member.centerName}
                     </div>
                   </div>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8a8574" strokeWidth="2.2" strokeLinecap="round" className="shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-brand-muted)" strokeWidth="2.2" strokeLinecap="round" className="shrink-0">
                     <path d="M7 15l5-5 5 5" />
                   </svg>
                 </div>

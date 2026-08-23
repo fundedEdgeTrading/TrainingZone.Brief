@@ -2,7 +2,14 @@
 
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { canManageEpSlots } from "@/lib/rbac";
-import { saveSession, deleteSession, rescheduleSession, cancelSessionBooking } from "@/lib/agenda-queries";
+import {
+  saveSession,
+  deleteSession,
+  rescheduleSession,
+  cancelSessionBooking,
+  getSessionCenterId,
+  getBookingCenterId,
+} from "@/lib/agenda-queries";
 import { parseDateParam } from "@/lib/date-utils";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
@@ -23,6 +30,15 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const id = String(formData.get("id") ?? "") || null;
+  // Al editar hay DOS centros que comprobar: el de destino (el del formulario,
+  // ya validado arriba) y el de origen. Sin este segundo control, mandar el
+  // centro propio con el id de una sesión de otro centro la reescribía entera
+  // —y de paso se la traía al centro del atacante—.
+  if (id) {
+    const currentCenterId = await getSessionCenterId(session.user.orgId, id);
+    if (!currentCenterId) return { ok: false, error: "Sesión no encontrada." };
+    await requireCenterRole(currentCenterId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+  }
   const type = String(formData.get("type") ?? "personal") === "reduced" ? "reduced" : "personal";
   const trainerId = String(formData.get("trainerId") ?? "") || session.user.id;
   const dateRaw = String(formData.get("date") ?? "");
@@ -87,11 +103,14 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
-  const centerId = String(formData.get("centerId") ?? "");
-  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
-
   const id = String(formData.get("id") ?? "");
   if (!id) return { ok: false, error: "Sesión no encontrada." };
+
+  // El centro sale de la sesión, no del formulario: es lo único que el cliente
+  // no puede falsear para borrar la sesión de otro centro.
+  const centerId = await getSessionCenterId(session.user.orgId, id);
+  if (!centerId) return { ok: false, error: "Sesión no encontrada." };
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const result = await deleteSession(session.user.orgId, id);
   if (!result.ok) return result;
@@ -108,6 +127,13 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
  */
 export async function cancelSessionBookingAction(bookingId: string, sessionId: string): Promise<SessionActionResult> {
   const session = await requireRole([...ALLOWED_ROLES, "RECEPTION"]);
+
+  // Ámbito de centro: cancelar la reserva de un socio es tocar el roster de esa
+  // sesión, y el roster es del centro que la imparte.
+  const centerId = await getBookingCenterId(session.user.orgId, bookingId);
+  if (!centerId) return { ok: false, error: "No se ha encontrado esa reserva." };
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+
   const result = await cancelSessionBooking(session.user.orgId, bookingId);
   if (!result.ok) return result;
 
@@ -125,7 +151,11 @@ export async function moveSessionAction(input: {
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
-  await requireCenterRole(input.centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+  // Igual que al borrar: manda el centro real de la sesión, no el que venga en
+  // la petición (que el cliente elige).
+  const centerId = await getSessionCenterId(session.user.orgId, input.id);
+  if (!centerId) return { ok: false, error: "Sesión no encontrada." };
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
   const result = await rescheduleSession(session.user.orgId, input.id, parseDateParam(input.date), input.startTime, input.endTime);
   if (!result.ok) return result;

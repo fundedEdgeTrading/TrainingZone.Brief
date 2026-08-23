@@ -10,6 +10,7 @@ import {
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { canManageMembers, canImportMembers } from "@/lib/rbac";
 import { parseFilterValues } from "@/lib/filter-params";
+import { centerScopeFor, intersectCenterScope } from "@/lib/center-scope";
 import type { MemberState } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { ColumnFilter } from "@/components/ui/column-filter";
@@ -56,6 +57,14 @@ export default async function MembersPage({
     joined: parseFilterValues(params.joined),
   };
 
+  // Ámbito de centro (center-scope.ts): dirección de organización ve toda la
+  // empresa; el resto del equipo, solo los socios de los centros a los que está
+  // imputado. Antes el listado era siempre de toda la organización y la ficha
+  // se abría por URL sin más, así que una dirección de centro llegaba al
+  // expediente completo —salud incluida— de un socio de otro centro.
+  const scope = await centerScopeFor(session.user);
+  const scopedCenterIds = intersectCenterScope(scope, selection.centerId);
+
   // Estado y Centro se filtran en la query; Plan y Alta, en memoria (ver
   // `members-filters.ts`). `filterBase` solo aplica la búsqueda: es la base con
   // la que se calculan los recuentos por opción de cada eje.
@@ -63,10 +72,10 @@ export default async function MembersPage({
     listMembers(session.user.orgId, {
       q: params.q,
       states: selection.state as MemberState[],
-      centerIds: selection.centerId,
+      centerIds: scopedCenterIds,
     }),
-    listMemberFilterBase(session.user.orgId, { q: params.q }),
-    listCentersForOrg(session.user.orgId),
+    listMemberFilterBase(session.user.orgId, { q: params.q, centerIds: scope ?? undefined }),
+    listCentersForOrg(session.user.orgId, scope),
     canCreate ? listActivePlansForOrg(session.user.orgId) : Promise.resolve([]),
   ]);
 

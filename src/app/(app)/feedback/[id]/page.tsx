@@ -60,7 +60,7 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
         description={
           <span className="flex items-center gap-3 flex-wrap">
             <span
-              className="rounded-full bg-[#efe8dc] text-[#5c4a34] font-bold text-base inline-flex items-center justify-center shrink-0"
+              className="rounded-full bg-trial-bg text-trial font-bold text-base inline-flex items-center justify-center shrink-0"
               style={{ width: 52, height: 52 }}
             >
               {initials(member.firstName, member.lastName)}
@@ -83,7 +83,7 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
           <div className="flex items-start gap-6 sm:contents">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Cliente</div>
-              <div className={`font-display font-extrabold text-[28px] sm:text-[34px] tabular-nums leading-none ${member.clientAvg != null ? "text-brand-text" : "text-[#c7bfad]"}`}>
+              <div className={`font-display font-extrabold text-[28px] sm:text-[34px] tabular-nums leading-none ${member.clientAvg != null ? "text-brand-text" : "text-brand-border-hover"}`}>
                 {member.clientAvg != null ? member.clientAvg.toFixed(1) : "—"}
                 <span className="text-sm text-faint font-semibold">/10</span>
               </div>
@@ -92,7 +92,7 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
               <div className="text-[10px] font-bold uppercase tracking-[.1em] text-brand-muted mb-1">Entrenador</div>
               <div
                 className="font-display font-extrabold text-[28px] sm:text-[34px] tabular-nums leading-none"
-                style={{ color: member.trainerAvg != null ? "#8a6d2f" : "#c7bfad" }}
+                style={{ color: member.trainerAvg != null ? "var(--color-gold)" : "var(--color-brand-border-hover)" }}
               >
                 {member.trainerAvg != null ? member.trainerAvg.toFixed(1) : "—"}
                 <span className="text-sm text-faint font-semibold">/10</span>
@@ -116,11 +116,11 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
                   {label}
                 </span>
                 <div className="flex items-center gap-2 sm:gap-3 sm:flex-1 min-w-0">
-                  <span className={`text-sm font-bold tabular-nums text-right shrink-0 ${clientV != null ? "text-brand-text" : "text-[#c7bfad]"}`} style={{ width: 28 }}>
+                  <span className={`text-sm font-bold tabular-nums text-right shrink-0 ${clientV != null ? "text-brand-text" : "text-brand-border-hover"}`} style={{ width: 28 }}>
                     {clientV != null ? clientV : "—"}
                   </span>
                   <AlignmentTrack clientValue={clientV} trainerValue={trainerV} cat={member.cat} />
-                  <span className={`text-sm font-bold tabular-nums shrink-0 ${trainerV == null ? "text-[#c7bfad]" : ""}`} style={{ color: trainerV != null ? "#8a6d2f" : undefined, width: 28 }}>
+                  <span className={`text-sm font-bold tabular-nums shrink-0 ${trainerV == null ? "text-brand-border-hover" : ""}`} style={{ color: trainerV != null ? "var(--color-gold)" : undefined, width: 28 }}>
                     {trainerV ?? "—"}
                   </span>
                   <Badge tone={deltaTone} className="justify-center shrink-0" dot={false}>
@@ -181,7 +181,7 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
       </div>
 
       {member.client && member.debrief && member.periodMismatch && (
-        <div className="bg-[#fdf8ef] border border-[#f3e3c0] rounded-xl px-4 py-3 text-[13px] text-[#8a5a12]">
+        <div className="bg-warning-bg border border-warning-bg rounded-xl px-4 py-3 text-[13px] text-warning">
           Ojo: el feedback del cliente es de <b>{member.client.periodKey}</b> y el debrief del entrenador de{" "}
           <b>{member.debrief.periodKey}</b> — no son del mismo periodo, la comparación es orientativa.
         </div>

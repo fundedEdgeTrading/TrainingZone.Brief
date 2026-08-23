@@ -155,11 +155,11 @@ function ClientFeedbackModal({ open, onClose }: { open: boolean; onClose: () => 
         className="w-[560px] max-w-full max-h-[92vh] bg-white rounded-[22px] overflow-hidden flex flex-col shadow-pop transition-[transform,opacity] duration-[260ms] [transition-timing-function:cubic-bezier(.2,.8,.2,1)]"
         style={{ transform: open ? "translateY(0) scale(1)" : "translateY(18px) scale(.96)", opacity: open ? 1 : 0 }}
       >
-        <div className="relative pt-[22px] px-[26px] pb-[18px] border-b border-[#eeede6] shrink-0">
+        <div className="relative pt-[22px] px-[26px] pb-[18px] border-b border-brand-border shrink-0">
           <button
             onClick={handleClose}
             aria-label="Cerrar"
-            className="absolute top-[18px] right-5 w-8 h-8 rounded-[9px] border border-[#e0d9cb] bg-[#faf8f3] text-brand-text-2 flex items-center justify-center hover:bg-brand-ink hover:text-white hover:border-brand-ink transition-colors duration-150"
+            className="absolute top-[18px] right-5 w-8 h-8 rounded-[9px] border border-brand-border bg-surface-soft text-brand-text-2 flex items-center justify-center hover:bg-brand-ink hover:text-white hover:border-brand-ink transition-colors duration-150"
           >
             ✕
           </button>
@@ -207,7 +207,7 @@ function ClientFeedbackModal({ open, onClose }: { open: boolean; onClose: () => 
                   >
                     <div
                       className="absolute left-0 top-0 h-full rounded-full"
-                      style={{ width: `${dims[key] * 10}%`, background: "linear-gradient(90deg,#4b5a22,#c8ab72)" }}
+                      style={{ width: `${dims[key] * 10}%`, background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" }}
                     />
                     <div
                       className="absolute top-1/2 w-[26px] h-[26px] rounded-full bg-white border-[3px] border-brand-ink shadow-[0_6px_16px_-4px_rgba(29,29,28,.5)] cursor-grab touch-none"
@@ -236,7 +236,7 @@ function ClientFeedbackModal({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           ) : (
             <div className="flex flex-col items-center text-center gap-3.5 py-6 px-2">
-              <span className="w-[72px] h-[72px] rounded-full bg-[#eef0e4] text-good flex items-center justify-center text-[34px] [animation:tzPop_.4s_ease_both]">
+              <span className="w-[72px] h-[72px] rounded-full bg-good-bg text-good flex items-center justify-center text-[34px] [animation:tzPop_.4s_ease_both]">
                 ✓
               </span>
               <div className="font-display font-extrabold text-[22px] text-brand-text">¡Gracias!</div>
@@ -247,12 +247,12 @@ function ClientFeedbackModal({ open, onClose }: { open: boolean; onClose: () => 
           )}
         </div>
 
-        <div className="shrink-0 py-4 px-[26px] border-t border-[#eeede6] flex items-center gap-3">
+        <div className="shrink-0 py-4 px-[26px] border-t border-brand-border flex items-center gap-3">
           {!done ? (
             <button
               disabled={pending}
               onClick={submit}
-              className="w-full bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-[#3c4a19] active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
+              className="w-full bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-good active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
             >
               {pending ? "Enviando…" : "Enviar feedback"}
             </button>

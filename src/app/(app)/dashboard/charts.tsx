@@ -47,12 +47,12 @@ function TzTooltip({
       ? `${Math.round(raw)}%`
       : Math.round(raw).toLocaleString("es-ES");
   const payloadData = item.payload as { dotColor?: string; label?: string } | undefined;
-  const color = payloadData?.dotColor ?? (item.color as string) ?? "#D8CCB8";
+  const color = payloadData?.dotColor ?? (item.color as string) ?? "var(--color-tz-linen)";
   const name = payloadData?.label ?? item.name;
 
   return (
     <div
-      className="flex items-center gap-2.5 bg-brand-ink border border-[#33332d] rounded-xl px-[13px] pt-[9px] pb-2.5 shadow-[0_16px_38px_-10px_rgba(0,0,0,.55)]"
+      className="flex items-center gap-2.5 bg-brand-ink border border-brand-border-dark rounded-xl px-[13px] pt-[9px] pb-2.5 shadow-[0_16px_38px_-10px_rgba(0,0,0,.55)]"
       style={{ animation: "tzPop .13s ease both" }}
     >
       <span className="w-[9px] h-[9px] rounded-[3px] shrink-0" style={{ background: color }} />
@@ -235,7 +235,7 @@ export function NoShowRateCard({ rate }: { rate: number }) {
       style={{ animationDelay: "0.36s" }}
     >
       <h3 className="relative z-10 font-display font-extrabold text-base uppercase text-white">
-        Tasa de no-show <span className="font-sans font-semibold text-xs normal-case text-[#8a8a80]">· 30 días</span>
+        Tasa de no-show <span className="font-sans font-semibold text-xs normal-case text-brand-muted-2">· 30 días</span>
       </h3>
       <div className="relative z-10">
         <div className="font-display font-extrabold text-[76px] leading-none text-tz-linen">{rate}%</div>
@@ -366,7 +366,7 @@ export function DonutChart({
             innerRadius={50}
             outerRadius={76}
             paddingAngle={2}
-            stroke="#fff"
+            stroke="var(--color-brand-card)"
             strokeWidth={2}
             isAnimationActive
             animationDuration={700}

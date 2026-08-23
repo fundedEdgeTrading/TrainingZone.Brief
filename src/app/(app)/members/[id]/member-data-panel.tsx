@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useTransition } from "react";
+import { postalCodeCitiesLabel } from "@/lib/postal-codes";
 import { useRouter } from "next/navigation";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -187,7 +188,7 @@ export function MemberDataPanel({
         </div>
 
         <p className="text-[11px] text-brand-faint">
-          El barrio se deduce del código postal (Zaragoza capital) y alimenta el mapa de calor del panel.
+          El barrio se deduce del código postal ({postalCodeCitiesLabel()}) y alimenta el mapa de calor del panel.
         </p>
       </div>
 
@@ -284,7 +285,7 @@ export function MemberDataPanel({
                 </Field>
               </div>
               <p className="text-xs text-brand-muted mt-3">
-                El barrio se rellena solo a partir del CP. Fuera de Zaragoza capital se guarda solo el código postal.
+                El barrio se rellena solo a partir del CP. Fuera de {postalCodeCitiesLabel()} se guarda solo el código postal.
               </p>
             </div>
 
@@ -346,7 +347,7 @@ export function DeleteMemberSection({
 
   return (
     <>
-      <section className="border border-[#e0cfc6] rounded-card px-5 py-[18px] bg-[linear-gradient(180deg,rgba(244,221,210,.28),rgba(255,255,255,0)_70%)]">
+      <section className="border border-brand-border rounded-card px-5 py-[18px] bg-[linear-gradient(180deg,rgba(244,221,210,.28),rgba(255,255,255,0)_70%)]">
         <div className="flex items-center gap-2.5">
           <span className={`${BAR} bg-critical`} />
           <span className={`${KICKER} text-critical`}>Zona de riesgo</span>
@@ -373,7 +374,7 @@ export function DeleteMemberSection({
             <button
               type="button"
               disabled
-              className="w-full rounded-control px-4 py-[11px] text-sm font-semibold bg-white border border-[#e0cfc6] text-faint opacity-65 cursor-not-allowed"
+              className="w-full rounded-control px-4 py-[11px] text-sm font-semibold bg-white border border-brand-border text-faint opacity-65 cursor-not-allowed"
             >
               Eliminar socio
             </button>

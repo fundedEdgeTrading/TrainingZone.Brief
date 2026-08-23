@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
 import { TrainerDebriefForm } from "./debrief-form";
@@ -14,6 +14,7 @@ export default async function TrainerDebriefPage({ params }: { params: Promise<{
     select: { firstName: true, lastName: true },
   });
   if (!member) notFound();
+  if (!(await memberIsInScope(session.user, memberId))) notFound();
 
   const memberName = `${member.firstName} ${member.lastName}`;
 

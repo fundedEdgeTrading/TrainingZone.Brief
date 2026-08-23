@@ -1,4 +1,6 @@
 import type { Prisma } from "@prisma/client";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import { requireRole } from "@/lib/guard";
 import { canEditAptitudeRules } from "@/lib/rbac";
 import { requireFeature } from "@/lib/entitlements";
@@ -13,6 +15,7 @@ const LIGHT_LABEL: Record<string, string> = { RED: "Evitar", AMBER: "Adaptar", G
 
 export default async function AptitudeRulesPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  const timeZone = await resolveTimezone();
   // La dirección de centro LEE las reglas (las aplica a diario en su centro);
   // mantenerlas sigue siendo del director de la organización (G.2).
   const canEdit = canEditAptitudeRules(session.user.role);
@@ -34,7 +37,7 @@ export default async function AptitudeRulesPage() {
 
       <DataTable
         columns={canEdit ? ruleColumns : ruleColumns.filter((c) => c.key !== "actions")}
-        rows={rules.map((r) => ruleToRow(r, canEdit))}
+        rows={rules.map((r) => ruleToRow(r, canEdit, timeZone))}
         emptyTitle="Sin reglas"
       />
     </div>
@@ -52,7 +55,7 @@ const ruleColumns: DataTableColumn[] = [
   { key: "actions", header: "" },
 ];
 
-function ruleToRow(r: Rule, canEdit: boolean): DataTableRow {
+function ruleToRow(r: Rule, canEdit: boolean, timeZone: string): DataTableRow {
   return {
     key: r.id,
     sortValues: {
@@ -74,7 +77,7 @@ function ruleToRow(r: Rule, canEdit: boolean): DataTableRow {
       adaptation: r.adaptation ?? "—",
       editedBy: (
         <>
-          {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
+          {r.editedBy?.name} · {formatInstantDate(r.updatedAt, timeZone)}
         </>
       ),
       actions: canEdit ? <DeleteButton id={r.id} /> : null,

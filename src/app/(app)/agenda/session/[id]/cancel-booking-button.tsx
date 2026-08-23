@@ -36,7 +36,7 @@ export default function CancelBookingButton({
       disabled={pending}
       onClick={handleClick}
       aria-label={`Cancelar la reserva de ${memberName}`}
-      className="inline-flex items-center gap-1.5 text-xs rounded-pill px-3 py-1 font-semibold text-critical transition-colors duration-150 hover:bg-[#fdecea] active:scale-95"
+      className="inline-flex items-center gap-1.5 text-xs rounded-pill px-3 py-1 font-semibold text-critical transition-colors duration-150 hover:bg-critical-bg active:scale-95"
     >
       {pending && <ButtonSpinner />}
       Cancelar reserva

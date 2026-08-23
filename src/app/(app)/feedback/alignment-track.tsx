@@ -43,7 +43,7 @@ export function AlignmentTrack({
           style={{
             left: `${clientLeft}%`,
             transform: "translate(-50%,-50%)",
-            boxShadow: "0 0 0 1px #d8ccb8, 0 2px 6px -2px rgba(29,29,28,.5)",
+            boxShadow: "0 0 0 1px var(--color-tz-linen), 0 2px 6px -2px rgba(29,29,28,.5)",
           }}
         />
       )}
@@ -53,7 +53,7 @@ export function AlignmentTrack({
           style={{
             left: `${trainerLeft}%`,
             transform: "translate(-50%,-50%) rotate(45deg)",
-            boxShadow: "0 0 0 1px #cbb98f, 0 2px 6px -2px rgba(29,29,28,.5)",
+            boxShadow: "0 0 0 1px var(--color-gold), 0 2px 6px -2px rgba(29,29,28,.5)",
           }}
         />
       )}

@@ -3,6 +3,7 @@ import type { MemberState, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { listMembers } from "@/lib/members-queries";
 import { canManageMembers } from "@/lib/rbac";
+import { centerScopeFor } from "@/lib/center-scope";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk, apiError } from "../_lib/response";
 
@@ -25,14 +26,23 @@ export async function GET(req: NextRequest) {
 
   const page = Math.max(0, Number(params.get("page") ?? 0) || 0);
 
+  // Mismo ámbito de centro que la web (center-scope.ts): dirección de centro y
+  // recepción solo ven a los socios de los centros donde están imputadas.
+  const scope = await centerScopeFor({ id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId });
+
   const [members, byState] = await Promise.all([
     listMembers(claims.orgId, {
       q: params.get("search")?.trim() || undefined,
       state,
+      centerIds: scope ?? undefined,
       skip: page * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
-    prisma.member.groupBy({ by: ["state"], where: { orgId: claims.orgId }, _count: { _all: true } }),
+    prisma.member.groupBy({
+      by: ["state"],
+      where: { orgId: claims.orgId, ...(scope ? { primaryCenterId: { in: scope } } : {}) },
+      _count: { _all: true },
+    }),
   ]);
 
   const counts = Object.fromEntries(byState.map((row) => [row.state, row._count._all])) as Partial<Record<MemberState, number>>;

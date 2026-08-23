@@ -1,4 +1,6 @@
 import { requireRole } from "@/lib/guard";
+import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import { requireFeature } from "@/lib/entitlements";
 import { listReferenceRanges } from "@/lib/reference-ranges";
 import { PageHeader } from "@/components/ui/page-header";
@@ -16,6 +18,7 @@ const SEX_LABEL: Record<string, string> = { M: "Hombre", F: "Mujer" };
 
 export default async function ReferenceRangesPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  const timeZone = await resolveTimezone();
   // Igual que las reglas de aptitud: la dirección de centro consulta, el
   // director de la organización mantiene (es el ámbito de `actions.ts`).
   const canEdit = session.user.role === "OWNER";
@@ -32,7 +35,7 @@ export default async function ReferenceRangesPage() {
 
       <DataTable
         columns={canEdit ? rangeColumns : rangeColumns.filter((c) => c.key !== "actions")}
-        rows={ranges.map((r) => rangeToRow(r, canEdit))}
+        rows={ranges.map((r) => rangeToRow(r, canEdit, timeZone))}
         emptyTitle="Sin rangos"
       />
     </div>
@@ -50,7 +53,7 @@ const rangeColumns: DataTableColumn[] = [
   { key: "actions", header: "" },
 ];
 
-function rangeToRow(r: Range, canEdit: boolean): DataTableRow {
+function rangeToRow(r: Range, canEdit: boolean, timeZone: string): DataTableRow {
   return {
     key: r.id,
     sortValues: {
@@ -75,7 +78,7 @@ function rangeToRow(r: Range, canEdit: boolean): DataTableRow {
       ),
       editedBy: (
         <>
-          {r.editedBy?.name} · {r.updatedAt.toLocaleDateString("es-ES")}
+          {r.editedBy?.name} · {formatInstantDate(r.updatedAt, timeZone)}
         </>
       ),
       actions: canEdit ? <DeleteButton id={r.id} /> : null,

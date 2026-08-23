@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma, type PlanType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/guard";
+import { requireRole, centerIsInScope, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { canImportMembers } from "@/lib/rbac";
 import { parseMembersCsv, type ParsedMemberData, type ParsedSubscriptionData } from "@/lib/member-import";
 
@@ -122,6 +122,9 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
   if (!centerId) return { ok: false, error: "Selecciona el centro de destino de la importación." };
   const center = await prisma.center.findFirst({ where: { id: centerId, orgId }, select: { id: true } });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+  // Importar un CSV entero a un centro ajeno sería la vía más rápida de saltarse
+  // el ámbito: se comprueba igual que en el alta individual.
+  if (!(await centerIsInScope(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {

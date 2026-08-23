@@ -91,7 +91,7 @@ export function LeadsBoard({ columns, leadsByStatus, canClaim }: { columns: Colu
             key={col.status}
             data-lead-column={col.status}
             className={`rounded-card shadow-card overflow-hidden border transition-colors duration-150 ${
-              isOver ? "bg-[#faf8f3]" : "bg-brand-card"
+              isOver ? "bg-surface-soft" : "bg-brand-card"
             }`}
             style={{ borderColor: isOver ? col.dot : "var(--color-brand-border)" }}
           >

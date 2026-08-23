@@ -109,3 +109,19 @@ export function postalAreaLabel(postalCode: string | null | undefined): string |
   const province = PROVINCE_BY_PREFIX[postalCode.slice(0, 2)];
   return province ? `${province} (provincia)` : null;
 }
+
+/**
+ * Ciudades cubiertas por la tabla CP→barrio, en el orden en que se declaran.
+ * La ficha del socio la usa para explicar el alcance real en vez de nombrar una
+ * ciudad a mano: la copia decía "Zaragoza capital" desde antes de que existiera
+ * Santander, y quedaba desmentida por la propia ficha de un socio de Santander.
+ */
+export const POSTAL_CODE_CITIES = Object.keys(POSTAL_CODES_BY_CITY);
+
+/** "Zaragoza y Santander" / "Zaragoza, Santander y Bilbao". */
+export function postalCodeCitiesLabel(): string {
+  const cities = POSTAL_CODE_CITIES;
+  if (cities.length === 0) return "";
+  if (cities.length === 1) return cities[0];
+  return `${cities.slice(0, -1).join(", ")} y ${cities[cities.length - 1]}`;
+}

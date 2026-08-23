@@ -36,7 +36,7 @@ export function PendingAssessmentGate({
         aria-label={label}
         className="w-[480px] max-w-full bg-white rounded-[22px] overflow-hidden shadow-pop"
       >
-        <div className="px-7 pt-7 pb-5 border-b border-[#eeede6]">
+        <div className="px-7 pt-7 pb-5 border-b border-brand-border">
           <div className="text-[11px] font-bold tracking-[.12em] uppercase text-brand-muted">Valoración pendiente</div>
           <div className="font-display font-extrabold text-[22px] text-brand-text mt-1.5 tracking-[-.01em]">{label}</div>
         </div>

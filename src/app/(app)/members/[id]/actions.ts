@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope, centerIsInScope, OUT_OF_CENTER_SCOPE, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { createHealthRecord, resolveHealthRecord } from "@/lib/health-access";
 import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
@@ -40,6 +40,7 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
   if (!memberId || !type || !severity || !description) {
     return { ok: false, error: "Completa el tipo, la severidad y la descripción." };
   }
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   await createHealthRecord({
     memberId,
@@ -55,6 +56,18 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
 
 export async function resolveHealthRecordAction(recordId: string, memberId: string): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+
+  // El ámbito se comprueba sobre el socio DEL REGISTRO, no sobre el `memberId`
+  // que llega del cliente (que solo se usa para revalidar la ruta): si no, bastaba
+  // con mandar un socio propio junto al id de un registro ajeno.
+  // `HealthRecord` no lleva `orgId`: cuelga del socio (o de un lead), así que el
+  // aislamiento por organización se pide a través de la relación.
+  const record = await prisma.healthRecord.findFirst({
+    where: { id: recordId, member: { orgId: session.user.orgId } },
+    select: { memberId: true },
+  });
+  if (!record?.memberId) return { ok: false, error: "No se ha encontrado ese registro." };
+  if (!(await memberIsInScope(session.user, record.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   await resolveHealthRecord({
     recordId,
@@ -81,6 +94,7 @@ export async function addMemberNote(formData: FormData): Promise<MemberActionRes
     select: { id: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   await prisma.memberNote.create({
     data: { orgId: session.user.orgId, memberId, authorUserId: session.user.id, body },
@@ -128,6 +142,7 @@ export async function updateMemberData(formData: FormData): Promise<MemberAction
     select: { id: true, primaryCenterId: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   // El email identifica al socio dentro de la organización (y es su login en el
   // portal): no puede chocar con el de otro socio del mismo tenant.
@@ -144,6 +159,9 @@ export async function updateMemberData(formData: FormData): Promise<MemberAction
       select: { id: true },
     });
     if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+    // Mover un socio a un centro ajeno equivale a sacárselo de las manos a quien
+    // sí lo lleva (y a metérselo a otro): solo a centros propios.
+    if (!(await centerIsInScope(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
     primaryCenterId = center.id;
   }
 
@@ -213,6 +231,7 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
     select: { id: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const [plan, center] = await Promise.all([
     prisma.membershipPlan.findFirst({ where: { id: parsed.data.planId, orgId: session.user.orgId } }),
@@ -220,6 +239,7 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
   ]);
   if (!plan) return { ok: false, error: "No se ha encontrado ese plan." };
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+  if (!(await centerIsInScope(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
 
   const subscription = await prisma.subscription.create({
     data: {
@@ -274,6 +294,7 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
     },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (member.subscriptions.length > 0) {
     return {
       ok: false,
@@ -344,6 +365,7 @@ export async function updateMemberPhoto(formData: FormData): Promise<MemberActio
 
   const member = await prisma.member.findFirst({ where: { id: memberId, orgId: session.user.orgId }, select: { id: true } });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   await prisma.member.update({ where: { id: memberId }, data: { photoUrl } });
   revalidatePath(`/members/${memberId}`);
@@ -377,6 +399,7 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
     select: { id: true, consentImages: true, consentHealth: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const num = (key: string) => {
     const raw = String(formData.get(key) ?? "").trim().replace(",", ".");
@@ -438,6 +461,7 @@ export async function importTanitaText(formData: FormData): Promise<MemberAction
     select: { id: true, consentHealth: true },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (!member.consentHealth) {
     return { ok: false, error: "Este socio no ha firmado el consentimiento de datos de salud (Art. 9 RGPD)." };
   }
@@ -479,6 +503,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
     include: { primaryCenter: { select: { name: true, address: true } } },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
+  if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (member.userId) return { ok: false, error: "Este socio ya completó su acceso." };
 
   const token = generateInvitationToken();

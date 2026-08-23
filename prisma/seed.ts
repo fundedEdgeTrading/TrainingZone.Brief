@@ -3066,6 +3066,20 @@ async function main() {
     prisma.healthRecord.deleteMany(),
     prisma.aptitudeRule.deleteMany(),
     prisma.referenceRange.deleteMany(),
+    // Valoraciones, métricas y mesociclos referencian Member y Organization con
+    // RESTRICT: sin borrarlos antes, `npm run db:seed` sobre una base ya sembrada
+    // reventaba en `member.deleteMany` con "Assessment_memberId_fkey". En CI no
+    // se veía porque siempre arranca con la base recién migrada.
+    prisma.assessment.deleteMany(),
+    prisma.performanceMetric.deleteMany(),
+    // El mesociclo cuelga en cadena: ejercicio → bloque → día → fase → mesociclo.
+    prisma.mesocycleExercise.deleteMany(),
+    prisma.mesocycleBlock.deleteMany(),
+    prisma.mesocycleDay.deleteMany(),
+    prisma.mesocyclePhase.deleteMany(),
+    prisma.mesocycle.deleteMany(),
+    // Tokens de refresco de la app nativa: cuelgan de User.
+    prisma.mobileRefreshToken.deleteMany(),
     // Lead <-> Member forman un ciclo de FKs (Lead.convertedMemberId / Member.originLeadId):
     // se rompe el ciclo antes de poder borrar cualquiera de las dos tablas.
     prisma.member.updateMany({ data: { originLeadId: null } }),

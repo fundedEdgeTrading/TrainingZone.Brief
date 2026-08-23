@@ -42,7 +42,7 @@ export default async function SessionDetailPage({
   await requireCenterRole(cls.centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
 
   const isEpSession = cls.classType === "Personal Training";
-  const trainers = isEpSession ? await listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"]) : [];
+  const trainers = isEpSession ? await listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"], cls.centerId) : [];
 
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");

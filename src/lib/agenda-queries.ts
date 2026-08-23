@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { canManageOrg } from "@/lib/rbac";
+import { centerScopeFor, type ScopedUser } from "@/lib/center-scope";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
-import type { Role } from "@prisma/client";
 
 /**
  * Centros visibles para un usuario según su imputación real:
@@ -11,25 +10,12 @@ import type { Role } from "@prisma/client";
  * - Resto de staff: su centro base (`centerId`) más los centros donde tenga
  *   una fila en `CenterMembership` (imputación multi-centro).
  */
-export async function getCentersForUser(user: {
-  id: string;
-  role: Role;
-  orgId: string;
-  centerId: string | null;
-}) {
-  if (canManageOrg(user.role)) {
-    return prisma.center.findMany({ where: { orgId: user.orgId }, orderBy: { name: "asc" } });
-  }
-
-  const memberships = await prisma.centerMembership.findMany({
-    where: { userId: user.id, orgId: user.orgId },
-    select: { centerId: true },
-  });
-  const ids = new Set<string>(memberships.map((m) => m.centerId));
-  if (user.centerId) ids.add(user.centerId);
-
+export async function getCentersForUser(user: ScopedUser) {
+  // El "qué centros son suyos" lo decide `center-scope.ts` para toda la app:
+  // aquí solo se hidratan las filas.
+  const scope = await centerScopeFor(user);
   return prisma.center.findMany({
-    where: { orgId: user.orgId, id: { in: [...ids] } },
+    where: { orgId: user.orgId, ...(scope === null ? {} : { id: { in: scope } }) },
     orderBy: { name: "asc" },
   });
 }
@@ -101,10 +87,20 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   // más que conocer su id.
   const [center, trainer] = await Promise.all([
     prisma.center.findFirst({ where: { id: input.centerId, orgId }, select: { id: true, defaultGroupCapacity: true } }),
-    prisma.user.findFirst({ where: { id: input.trainerId, orgId }, select: { id: true } }),
+    // Y además imputado a ESE centro: una sesión de La Jota a nombre de una
+    // entrenadora que solo trabaja en Santander no la puede dar nadie, y en el
+    // panel de ella aparecía como suya.
+    prisma.user.findFirst({
+      where: {
+        id: input.trainerId,
+        orgId,
+        OR: [{ centerId: input.centerId }, { centerMemberships: { some: { centerId: input.centerId } } }],
+      },
+      select: { id: true },
+    }),
   ]);
   if (!center) return { ok: false as const, error: "Centro no encontrado." };
-  if (!trainer) return { ok: false as const, error: "Entrenador no encontrado." };
+  if (!trainer) return { ok: false as const, error: "Ese entrenador no está imputado a este centro." };
 
   if (input.memberId) {
     const member = await prisma.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
@@ -329,6 +325,32 @@ export async function createEpSlot(
 }
 
 /** RB-AGENDA-004: entrenador que dirigió realmente la sesión (puede diferir del asignado). */
+/**
+ * Centro al que pertenece una sesión de ESTA organización (`null` si no existe).
+ *
+ * Es la pieza que le faltaba a las guardas de la agenda: `requireCenterRole`
+ * comprobaba el `centerId` que venía en el formulario, no el de la sesión que
+ * se iba a tocar. Con los dos desacoplados, mandar el centro propio junto al id
+ * de una sesión ajena bastaba para borrarla, moverla o cambiarle el
+ * responsable desde otro centro de la organización.
+ */
+export async function getSessionCenterId(orgId: string, sessionId: string): Promise<string | null> {
+  const found = await prisma.classSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: { centerId: true },
+  });
+  return found?.centerId ?? null;
+}
+
+/** Igual, partiendo de una reserva: su sesión es la que manda el centro. */
+export async function getBookingCenterId(orgId: string, bookingId: string): Promise<string | null> {
+  const found = await prisma.booking.findFirst({
+    where: { id: bookingId, session: { orgId } },
+    select: { session: { select: { centerId: true } } },
+  });
+  return found?.session.centerId ?? null;
+}
+
 export async function setSessionDirector(orgId: string, sessionId: string, directedByUserId: string | null) {
   const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId }, select: { id: true } });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };

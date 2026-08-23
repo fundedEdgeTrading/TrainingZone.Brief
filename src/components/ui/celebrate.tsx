@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useToast } from "./toast";
 
-const COLORS = ["#1d1d1c", "#c8ab72", "#d8ccb8", "#4b5a22", "#5b5748"];
+const COLORS = ["var(--color-brand-ink)", "var(--color-apta-gold)", "var(--color-tz-linen)", "var(--color-good)", "var(--color-brand-text-2)"];
 
 type Piece = {
   id: string;

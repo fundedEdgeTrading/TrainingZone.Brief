@@ -9,8 +9,16 @@ export const ROW_HEIGHT = 56; // px por hora
 // tarjetas crecen y se pueden tocar/arrastrar con el dedo sin apuntar.
 export const ROW_HEIGHT_MOBILE = 72;
 
-// De momento la agenda solo pinta de lunes a sábado (el domingo no se opera).
-export const VISIBLE_DAYS = 6;
+/**
+ * Días de la semana que pinta la agenda, empezando en lunes.
+ *
+ * Era 6 (lunes a sábado) y el domingo quedaba en tierra de nadie: existían
+ * sesiones en domingo —el panel del entrenador y el panel de dirección las
+ * contaban— pero la rejilla no las mostraba y el portal rechazaba reservarlas.
+ * Con 7, la semana de la agenda, la del socio y la de los informes son la
+ * misma, que es lo único que evita que vuelvan a divergir.
+ */
+export const VISIBLE_DAYS = 7;
 
 export const DAY_ABBR = ["LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB", "DOM"];
 export const DAY_LETTER = ["L", "M", "X", "J", "V", "S", "D"];
@@ -41,13 +49,15 @@ export function weekdayIdx(d: Date) {
 }
 
 /**
- * ¿Opera el centro ese día? Hoy: de lunes a sábado.
+ * ¿Opera el centro ese día? Hoy: la semana completa (ver `VISIBLE_DAYS`).
  *
  * La regla vivía solo como un descarte de PINTADO en la rejilla de la agenda
  * (`VISIBLE_DAYS`), y esa asimetría dejaba que el socio reservara por el portal
  * una sesión en domingo que su entrenador no podía ni abrir ni editar. Al
  * exponerla como predicado, rejilla y motor de reservas (portal-queries.ts)
- * citan la MISMA fuente en vez de duplicar un `=== 0` mágico.
+ * citan la MISMA fuente en vez de duplicar un `=== 0` mágico. Se conserva
+ * aunque hoy sea siempre `true`: es el punto por el que un centro que cierre
+ * un día concreto volverá a entrar, y sin él la regla se volvería a repartir.
  */
 export function isOperatingDay(d: Date): boolean {
   return weekdayIdx(d) < VISIBLE_DAYS;

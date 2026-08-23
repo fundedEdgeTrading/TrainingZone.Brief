@@ -1,4 +1,5 @@
 import type { Role } from "@prisma/client";
+import { logoUrlForTheme } from "@/lib/theme";
 import { requireRole } from "@/lib/guard";
 import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
 import { getOrganization, getCentersWithCounts, getStaffWithMemberships } from "@/lib/org-queries";
@@ -24,6 +25,24 @@ import { ProductsSection } from "./products-section";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
+
+
+/**
+ * Vista previa del logo respetando el tema: el asset negro sobre la superficie
+ * oscura no se veía (mismo criterio que el `BrandLogo` del sidebar).
+ */
+function ThemedLogo({ url, alt, className }: { url: string; alt: string; className: string }) {
+  const dark = logoUrlForTheme(url, "dark");
+  /* eslint-disable @next/next/no-img-element -- logo por URL arbitraria, no un asset estático */
+  if (!dark || dark === url) return <img src={url} alt={alt} className={className} />;
+  return (
+    <>
+      <img src={url} alt={alt} className={`tz-logo-light ${className}`} />
+      <img src={dark} alt="" aria-hidden="true" className={`tz-logo-dark ${className}`} />
+    </>
+  );
+  /* eslint-enable @next/next/no-img-element */
+}
 
 export default async function OrganizationPage({
   searchParams,
@@ -72,8 +91,7 @@ export default async function OrganizationPage({
               </div>
               <div className="h-14 min-w-[180px] flex items-center rounded-lg border border-brand-border bg-tz-sand px-4">
                 {org.logoUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- logo de marca por URL arbitraria
-                  <img src={org.logoUrl} alt={org.name} className="h-8 w-auto max-w-[200px] object-contain" />
+                  <ThemedLogo url={org.logoUrl} alt={org.name} className="h-8 w-auto max-w-[200px] object-contain" />
                 ) : (
                   <span className="flex items-center gap-2 text-xs text-faint">
                     <AptaLogo variant="dark" className="text-xl" />
@@ -151,8 +169,7 @@ export default async function OrganizationPage({
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-tz-sand border border-brand-border flex items-center justify-center overflow-hidden shrink-0">
                   {c.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- logo de centro por URL arbitraria
-                    <img src={c.logoUrl} alt={c.name} className="h-7 w-7 object-contain" />
+                    <ThemedLogo url={c.logoUrl} alt={c.name} className="h-7 w-7 object-contain" />
                   ) : (
                     <span className="text-[8px] font-bold text-faint uppercase tracking-wide">hereda</span>
                   )}
