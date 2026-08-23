@@ -1,12 +1,17 @@
 "use client";
 
-import { useMemo, useState, useTransition, useSyncExternalStore } from "react";
+import { useMemo, useTransition, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { trainerColor, initials } from "./agenda-utils";
+import {
+  trainerColor,
+  initials,
+  occupancyOf,
+  DEFAULT_GROUP_CAPACITY,
+  MAX_GROUP_CAPACITY,
+} from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
 import { useToast } from "@/components/ui/toast";
-import { TrainerTooltip } from "./trainer-tooltip";
 import { Select } from "@/components/ui/field";
 
 const noopSubscribe = () => () => {};
@@ -24,9 +29,10 @@ export type DialogState = {
   type: "personal" | "reduced";
   trainerId: string;
   memberId: string | null;
-  memberQuery: string;
   /** Plazas del grupo reducido (el EP es siempre 1 a 1). */
   capacity: number;
+  /** Reservas activas de LA ocurrencia que se está editando (0 al crear). */
+  bookedCount: number;
   /** RB-AGENDA-002: la franja de EP queda abierta a que el socio la reserve. */
   selfBookable: boolean;
   isTrial: boolean;
@@ -54,6 +60,7 @@ export default function SessionDialog({
   centerId,
   trainers,
   members,
+  defaultGroupCapacity,
   currentUserId,
   isDirection,
   onDone,
@@ -64,38 +71,31 @@ export default function SessionDialog({
   centerId: string;
   trainers: Trainer[];
   members: Member[];
+  /** Aforo por defecto del centro; null si no lo tiene fijado. */
+  defaultGroupCapacity: number | null;
   currentUserId: string;
   isDirection: boolean;
   onDone: () => void;
 }) {
-  const [showMembers, setShowMembers] = useState(false);
   const [saving, startSaveTransition] = useTransition();
   const [deleting, startDeleteTransition] = useTransition();
   const pending = saving || deleting;
   const toast = useToast();
   const mounted = useMounted();
 
-  const initialQuery = useMemo(() => {
-    if (dlg.memberQuery) return dlg.memberQuery;
-    if (dlg.memberId) {
-      const m = members.find((x) => x.id === dlg.memberId);
-      if (m) return `${m.firstName} ${m.lastName}`;
-    }
-    return "";
-  }, [dlg.memberId, dlg.memberQuery, members]);
-  const [memberQuery, setMemberQuery] = useState(initialQuery);
-
   function patch(p: Partial<DialogState>) {
     setDlg((d) => (d ? { ...d, ...p } : d));
   }
 
-  const memberResults = useMemo(() => {
-    if (!showMembers) return [];
-    const q = memberQuery.trim().toLowerCase();
-    return members
-      .filter((m) => `${m.firstName} ${m.lastName}`.toLowerCase().includes(q))
-      .slice(0, 6);
-  }, [showMembers, memberQuery, members]);
+  const selectedMember = useMemo(
+    () => (dlg.memberId ? members.find((m) => m.id === dlg.memberId) ?? null : null),
+    [dlg.memberId, members],
+  );
+
+  // Previsualización del aforo de LA ocurrencia que se está editando: el aforo
+  // que se teclea se contrasta con las reservas que ya existen.
+  const occ = occupancyOf({ capacity: dlg.capacity, bookedCount: dlg.bookedCount });
+  const overbooked = dlg.bookedCount > dlg.capacity;
 
   function handleSave() {
     const fd = new FormData();
@@ -154,7 +154,7 @@ export default function SessionDialog({
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-[480px] max-w-full max-h-[min(90vh,90dvh)] overflow-y-auto bg-white rounded-2xl"
+        className="w-[520px] max-w-full max-h-[min(90vh,90dvh)] overflow-y-auto bg-white rounded-2xl"
         style={{
           boxShadow: "var(--shadow-pop)",
           // El diálogo está centrado en el viewport, así que su centro cae en
@@ -192,16 +192,24 @@ export default function SessionDialog({
             <div>
               <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Tipo de entrenamiento</div>
               <div className="flex gap-2">
-                <button className={`${SEG_BASE} ${dlg.type === "personal" ? SEG_ACTIVE : SEG_INACTIVE}`} onClick={() => patch({ type: "personal" })}>
+                <button
+                  className={`${SEG_BASE} whitespace-nowrap ${dlg.type === "personal" ? SEG_ACTIVE : SEG_INACTIVE}`}
+                  onClick={() => patch({ type: "personal" })}
+                >
                   Entrenamiento personal
                 </button>
                 <button
-                  className={`${SEG_BASE} ${dlg.type === "reduced" ? SEG_ACTIVE : SEG_INACTIVE}`}
-                  onClick={() => {
-                    patch({ type: "reduced", title: "Grupo", memberId: null });
-                    setMemberQuery("");
-                    setShowMembers(false);
-                  }}
+                  className={`${SEG_BASE} whitespace-nowrap ${dlg.type === "reduced" ? SEG_ACTIVE : SEG_INACTIVE}`}
+                  onClick={() =>
+                    patch({
+                      type: "reduced",
+                      title: "Grupo",
+                      memberId: null,
+                      // Al convertir un EP en grupo, el aforo heredado es 1 y el
+                      // campo Plazas nacía con un 1 sin sentido.
+                      capacity: dlg.capacity <= 1 ? defaultGroupCapacity ?? DEFAULT_GROUP_CAPACITY : dlg.capacity,
+                    })
+                  }
                 >
                   Grupo reducido
                 </button>
@@ -218,64 +226,88 @@ export default function SessionDialog({
               </div>
             </div>
 
-            <div className="relative">
-              <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Socio</div>
-              <input
-                value={dlg.type === "reduced" ? "" : memberQuery}
-                onChange={(e) => {
-                  setMemberQuery(e.target.value);
-                  setShowMembers(true);
-                  patch({ memberId: null });
-                }}
-                onFocus={() => setShowMembers(true)}
-                placeholder={dlg.type === "reduced" ? "No aplica a grupo reducido" : "Buscar socio…"}
-                autoComplete="off"
-                disabled={dlg.type === "reduced"}
-                className={`w-full ${inputCls} disabled:cursor-not-allowed disabled:bg-tz-bone disabled:text-muted`}
-              />
-              {showMembers && dlg.type !== "reduced" && (
-                <div
-                  className="absolute left-0 right-0 top-full z-[5] mt-1 bg-white border border-brand-border rounded-xl max-h-[210px] overflow-y-auto"
-                  style={{ boxShadow: "var(--shadow-pop)" }}
-                >
-                  {memberResults.map((m) => (
-                    <div
-                      key={m.id}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        const name = `${m.firstName} ${m.lastName}`;
-                        setMemberQuery(name);
-                        setShowMembers(false);
-                        patch({ memberId: m.id, title: dlg.type === "reduced" ? dlg.title : name });
-                      }}
-                      className="px-3.5 py-[9px] text-sm text-brand-text cursor-pointer flex items-center gap-2.5 hover:bg-tz-bone"
+            {/* El campo Socio solo existe en Entrenamiento Personal: en grupo
+                reducido el roster son varias personas y este campo no lo
+                representa (antes salía deshabilitado con "No aplica"). */}
+            {dlg.type === "personal" && (
+              <div data-field="member">
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted">Socio asignado</div>
+                  {dlg.memberId && (
+                    <button
+                      onClick={() => patch({ memberId: null })}
+                      className="text-[11.5px] font-semibold text-muted underline underline-offset-2 hover:text-brand-text"
                     >
-                      <span className="w-[26px] h-[26px] rounded-full bg-tz-sand text-text-2 text-[11px] font-semibold flex items-center justify-center shrink-0">
-                        {initials(`${m.firstName} ${m.lastName}`)}
-                      </span>
-                      {m.firstName} {m.lastName}
-                    </div>
-                  ))}
-                  {memberResults.length === 0 && <div className="px-3.5 py-2.5 text-[13px] text-muted">Sin resultados</div>}
+                      Quitar
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
+                <Select
+                  value={dlg.memberId ?? ""}
+                  searchable
+                  placeholder="Sin socio asignado"
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const m = members.find((x) => x.id === id);
+                    patch({ memberId: id || null, title: m ? `${m.firstName} ${m.lastName}` : dlg.title });
+                  }}
+                >
+                  {members.map((m) => (
+                    <option
+                      key={m.id}
+                      value={m.id}
+                      data-swatch="var(--color-tz-sand)"
+                      data-swatch-text="var(--color-text-2)"
+                      data-swatch-round="true"
+                      data-swatch-label={initials(`${m.firstName} ${m.lastName}`)}
+                    >
+                      {m.firstName} {m.lastName}
+                    </option>
+                  ))}
+                </Select>
+                <p className="text-xs text-muted mt-1.5">
+                  {selectedMember
+                    ? "La plaza queda ocupada por este socio."
+                    : "Puedes dejarla sin asignar y que la reserve el socio."}
+                </p>
+              </div>
+            )}
 
             {dlg.type === "reduced" ? (
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Plazas</div>
-                <input
-                  type="number"
-                  name="capacity"
-                  min={1}
-                  max={30}
-                  aria-label="Plazas del grupo"
-                  value={dlg.capacity}
-                  onChange={(e) => patch({ capacity: Number(e.target.value) || 1 })}
-                  className={`w-[110px] ${inputCls}`}
-                />
-                <p className="text-xs text-muted mt-1.5">
-                  Aforo del grupo. Al llenarse, los socios entran en lista de espera.
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    name="capacity"
+                    min={1}
+                    max={MAX_GROUP_CAPACITY}
+                    aria-label="Plazas del grupo"
+                    value={dlg.capacity}
+                    onChange={(e) => patch({ capacity: Number(e.target.value) || 1 })}
+                    className={`w-[96px] ${inputCls}`}
+                  />
+                  {/* Previsualización del llenado de esta ocurrencia: el aforo
+                      que se teclea se ve contra las reservas que ya existen. */}
+                  <div aria-hidden className="h-2.5 flex-1 rounded-full bg-tz-sand overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${occ.pct}%`,
+                        background: overbooked
+                          ? "var(--color-critical)"
+                          : occ.full
+                            ? "var(--color-warning)"
+                            : "var(--color-good)",
+                        transition: "width .2s var(--ease-out-soft)",
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className={`text-xs mt-1.5 ${overbooked ? "font-semibold text-critical" : "text-muted"}`}>
+                  {overbooked
+                    ? `Ya hay ${dlg.bookedCount} reservas: no puedes bajar el aforo de ${dlg.bookedCount}.`
+                    : `${dlg.bookedCount} de ${dlg.capacity} plazas reservadas`}
                 </p>
               </div>
             ) : (
@@ -314,31 +346,27 @@ export default function SessionDialog({
               </span>
             </label>
 
-            <div>
+            <div data-field="trainer">
               <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Entrenador</div>
-              <div className="flex gap-3 items-center flex-wrap">
-                {trainers.map((t) => {
-                  const color = trainerColor(t.id);
-                  const sel = dlg.trainerId === t.id;
-                  return (
-                    <TrainerTooltip key={t.id} name={t.name} color={color} className="shrink-0">
-                      {/* El círculo solo se identificaba por color y tooltip al
-                          pasar el ratón: sin nombre accesible no había forma de
-                          elegir entrenador con teclado o lector de pantalla. */}
-                      <button
-                        onClick={() => patch({ trainerId: t.id })}
-                        aria-label={`Entrenador ${t.name}`}
-                        aria-pressed={sel}
-                        className="w-7 h-7 rounded-full text-white text-sm shrink-0"
-                        style={{ background: color, boxShadow: sel ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : "none" }}
-                      >
-                        {sel ? "✓" : ""}
-                      </button>
-                    </TrainerTooltip>
-                  );
-                })}
-                {trainers.length === 0 && <p className="text-xs text-muted">Sin entrenadores.</p>}
-              </div>
+              {/* Los círculos de color solo se identificaban por color y tooltip
+                  al pasar el ratón: sin nombre no había forma de elegir
+                  entrenador con teclado ni con lector de pantalla. */}
+              {trainers.length === 0 ? (
+                <p className="text-xs text-muted">Sin entrenadores.</p>
+              ) : (
+                <Select value={dlg.trainerId} onChange={(e) => patch({ trainerId: e.target.value })}>
+                  {trainers.map((t) => (
+                    <option
+                      key={t.id}
+                      value={t.id}
+                      data-swatch={trainerColor(t.id)}
+                      data-swatch-label={initials(t.name)}
+                    >
+                      {t.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
             </div>
 
             <div>

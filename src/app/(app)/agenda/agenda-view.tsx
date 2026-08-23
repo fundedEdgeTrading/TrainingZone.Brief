@@ -15,11 +15,16 @@ import {
   DAY_NAME,
   MONTHS,
   trainerColor,
+  TRAINER_PALETTE,
   addDays,
   weekdayIdx,
   fmtHHMM,
   snap,
   layoutDay,
+  occupancyOf,
+  shortMemberName,
+  CAPACITY_AMBER,
+  CAPACITY_FULL,
   DEFAULT_GROUP_CAPACITY,
   type WeekOccurrence,
 } from "./agenda-utils";
@@ -258,8 +263,8 @@ export default function AgendaView({
       type: "personal",
       trainerId: trainers[0]?.id ?? "",
       memberId: null,
-      memberQuery: "",
       capacity: defaultGroupCapacity ?? DEFAULT_GROUP_CAPACITY,
+      bookedCount: 0,
       // Una franja nueva nace abierta al socio: es lo que espera el entrenador
       // al crearla desde la agenda (RB-AGENDA-001/002).
       selfBookable: true,
@@ -287,8 +292,8 @@ export default function AgendaView({
       // Solo el EP arrastra "su" socio al diálogo: en un grupo reducido el
       // roster son varias personas y este campo no lo representa.
       memberId: ev.type === "personal" ? ev.bookedMemberId : null,
-      memberQuery: "",
       capacity: ev.capacity,
+      bookedCount: ev.bookedCount,
       selfBookable: ev.selfBookable,
       isTrial: ev.isTrial,
       recurrence: ev.recurrence,
@@ -434,6 +439,8 @@ export default function AgendaView({
               {trainers.length === 0 && <p className="text-xs text-muted px-2">Sin entrenadores asignables.</p>}
             </div>
           </div>
+
+          <CapacityLegend />
         </aside>
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 bg-white">
@@ -564,6 +571,28 @@ export default function AgendaView({
                         const widthPct = 100 / ev.total;
                         const color = trainerColor(ev.trainerId);
                         const showTrainer = mobileDayOnly && ev.total === 1 && height >= 56;
+                        const occ = occupancyOf(ev);
+                        // La guarda por tipo no es opcional: en EP la capacidad
+                        // es siempre 1, así que una sesión personal reservada
+                        // también cumple `occ.full` y se pintaría con la alarma
+                        // de aforo lleno de un grupo.
+                        const isGroup = ev.type === "reduced";
+                        const groupFull = isGroup && occ.full;
+                        const closedEp = ev.type === "personal" && ev.bookedCount === 0 && !ev.selfBookable;
+                        const edge =
+                          isGroup && occ.full
+                            ? CAPACITY_FULL
+                            : isGroup && occ.lastSeats
+                              ? CAPACITY_AMBER
+                              : "rgba(255,255,255,.5)";
+                        const epLabel =
+                          ev.bookedCount > 0
+                            ? ev.bookedMemberName
+                              ? `· ${shortMemberName(ev.bookedMemberName)}`
+                              : "· Reservada"
+                            : ev.selfBookable
+                              ? "· Libre"
+                              : "· Libre, no reservable";
                         return (
                           <TrainerTooltip
                             key={ev.uid}
@@ -595,25 +624,80 @@ export default function AgendaView({
                               left: `calc(${ev.col * widthPct}% + 1px)`,
                               width: `calc(${widthPct}% - 3px)`,
                               background: color,
-                              boxShadow: draggingId === ev.uid ? "0 10px 24px -6px rgba(29,29,28,.45)" : "0 1px 2px rgba(29,29,28,.18)",
+                              boxShadow:
+                                draggingId === ev.uid
+                                  ? "0 10px 24px -6px rgba(29,29,28,.45)"
+                                  : groupFull
+                                    ? `inset 0 0 0 2px ${CAPACITY_FULL}, 0 1px 2px rgba(29,29,28,.18)`
+                                    : "0 1px 2px rgba(29,29,28,.18)",
                               cursor: canEdit ? (draggingId === ev.uid ? "grabbing" : "grab") : "default",
                               zIndex: draggingId === ev.uid ? 3 : 2,
-                              borderLeft: "3px solid rgba(255,255,255,.35)",
+                              borderLeft: closedEp
+                                ? "3px dashed rgba(255,255,255,.55)"
+                                : "3px solid rgba(255,255,255,.35)",
                             }}
                             title={ev.title}
+                            aria-label={
+                              isGroup
+                                ? `${ev.title}, ${ev.bookedCount} de ${ev.capacity} plazas reservadas`
+                                : ev.bookedCount > 0
+                                  ? `${ev.title}, reservada por ${ev.bookedMemberName ?? "un socio"}`
+                                  : `${ev.title}, libre${ev.selfBookable ? "" : ", no reservable por el socio"}`
+                            }
                           >
-                            <div className="h-full overflow-hidden" style={{ padding: mobileDayOnly ? "4px 9px" : "3px 7px" }}>
-                              <div className={`font-semibold leading-tight truncate ${mobileDayOnly ? "text-[13px]" : "text-xs"}`}>
-                                {ev.title}
-                                {ev.isRecurring ? " ↻" : ""}
-                              </div>
-                              <div className="text-[11px] opacity-90 truncate">
-                                {fmtHHMM(ev.startMin)} – {fmtHHMM(ev.endMin)}
-                                {ev.type === "reduced" ? " · Grupo" : ""}
-                              </div>
-                              {showTrainer && (
-                                <div className="text-[11px] opacity-80 truncate mt-px">{trainerName[ev.trainerId] ?? "Sin entrenador"}</div>
+                            {/* El recorte va aquí y no en la tarjeta: el tooltip
+                                del entrenador se pinta FUERA de ella y un
+                                `overflow: hidden` en la tarjeta lo cortaría. */}
+                            <div className="relative h-full overflow-hidden rounded-md" style={{ padding: mobileDayOnly ? "4px 9px" : "3px 7px" }}>
+                              {/* Capa de plazas libres: aclara la parte NO
+                                  ocupada. `pointer-events-none` para no estorbar
+                                  al arrastre ni al tooltip. */}
+                              {occ.pct < 100 && (
+                                <span
+                                  aria-hidden
+                                  className="pointer-events-none absolute inset-y-0 right-0"
+                                  style={{
+                                    left: `${occ.pct}%`,
+                                    background: closedEp
+                                      ? "repeating-linear-gradient(45deg,rgba(255,255,255,.26) 0 6px,rgba(255,255,255,.08) 6px 12px)"
+                                      : "rgba(255,255,255,.26)",
+                                    borderLeft: occ.pct > 0 ? `2px solid ${edge}` : "none",
+                                  }}
+                                />
                               )}
+                              <div className="relative">
+                                <div className={`font-semibold leading-tight truncate ${mobileDayOnly ? "text-[13px]" : "text-xs"}`}>
+                                  {ev.title}
+                                  {ev.isRecurring ? " ↻" : ""}
+                                </div>
+                                <div className="flex items-center gap-[5px] overflow-hidden whitespace-nowrap text-[11px] leading-[1.35]">
+                                  <span className="opacity-90 truncate">
+                                    {fmtHHMM(ev.startMin)} – {fmtHHMM(ev.endMin)}
+                                  </span>
+                                  {isGroup ? (
+                                    <span
+                                      className="shrink-0 rounded-[4px] px-[5px] text-[10px] font-bold leading-[15px]"
+                                      style={{
+                                        background: occ.full
+                                          ? CAPACITY_FULL
+                                          : occ.lastSeats
+                                            ? CAPACITY_AMBER
+                                            : "rgba(0,0,0,.24)",
+                                        color: occ.full || occ.lastSeats ? "#2a1a12" : "rgba(255,255,255,.95)",
+                                      }}
+                                    >
+                                      {ev.bookedCount}/{ev.capacity}
+                                    </span>
+                                  ) : (
+                                    <span className="truncate" style={{ opacity: ev.bookedCount > 0 ? 0.9 : 0.78 }}>
+                                      {epLabel}
+                                    </span>
+                                  )}
+                                </div>
+                                {showTrainer && (
+                                  <div className="text-[11px] opacity-80 truncate mt-px">{trainerName[ev.trainerId] ?? "Sin entrenador"}</div>
+                                )}
+                              </div>
                             </div>
                           </TrainerTooltip>
                         );
@@ -647,6 +731,7 @@ export default function AgendaView({
           centerId={centerId}
           trainers={trainers}
           members={members}
+          defaultGroupCapacity={defaultGroupCapacity}
           currentUserId={currentUserId}
           isDirection={isDirection}
           onDone={() => {
@@ -739,6 +824,50 @@ function MiniCalendar({
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Leyenda de aforo: el relleno de las tarjetas es puramente visual, así que la
+ * barra lateral traduce cada estado a palabras. Las muestras usan el primer
+ * color de la paleta de entrenadores, que es el fondo sobre el que se leen.
+ */
+function CapacityLegend() {
+  const SWATCH = TRAINER_PALETTE[0];
+  const WASH = "rgba(255,255,255,.26)";
+  const rows: { label: string; fill: React.CSSProperties; card?: React.CSSProperties }[] = [
+    { label: "Plazas ocupadas", fill: { left: "60%", background: WASH, borderLeft: "2px solid rgba(255,255,255,.5)" } },
+    { label: "Última plaza libre", fill: { left: "83%", background: WASH, borderLeft: `2px solid ${CAPACITY_AMBER}` } },
+    { label: "Completo", fill: { display: "none" }, card: { boxShadow: `inset 0 0 0 2px ${CAPACITY_FULL}` } },
+    { label: "EP libre, reservable", fill: { left: 0, background: WASH } },
+    {
+      label: "EP libre, no reservable",
+      fill: {
+        left: 0,
+        background: "repeating-linear-gradient(45deg,rgba(255,255,255,.26) 0 6px,rgba(255,255,255,.08) 6px 12px)",
+      },
+      card: { borderLeft: "3px dashed rgba(255,255,255,.55)" },
+    },
+  ];
+
+  return (
+    <div className="pt-4 pb-1.5 border-t border-tz-sand mt-4">
+      <div className="text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-2.5">Aforo</div>
+      <div className="flex flex-col gap-2.5">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-2.5">
+            <span
+              aria-hidden
+              className="relative block h-[18px] w-[34px] shrink-0 overflow-hidden rounded-[4px]"
+              style={{ background: SWATCH, ...r.card }}
+            >
+              <span className="absolute inset-y-0 right-0" style={r.fill} />
+            </span>
+            <span className="text-[11.5px] text-text-2">{r.label}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
