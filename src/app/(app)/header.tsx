@@ -58,7 +58,13 @@ export default function Header({
         </button>
         <span className="hidden sm:block w-1.5 h-[34px] bg-tz-black rounded-[2px] shrink-0" />
         <div className="min-w-0">
-          <div className="font-display font-extrabold text-lg sm:text-[22px] leading-none tracking-[-.01em] uppercase text-brand-text truncate">
+          {/* `key` por ruta: cada aterrizaje remonta el título y retriggerea
+              `tzRollUp`, en el mismo compás que la píldora del sidebar. */}
+          <div
+            key={pathname}
+            className="font-display font-extrabold text-lg sm:text-[22px] leading-none tracking-[-.01em] uppercase text-brand-text truncate"
+            style={{ animation: "tzRollUp .42s var(--ease-out-soft) both" }}
+          >
             {title}
           </div>
           <div className="text-xs sm:text-[13px] text-brand-muted mt-[3px] truncate">{subtitle}</div>

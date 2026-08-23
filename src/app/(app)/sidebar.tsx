@@ -1,9 +1,11 @@
 "use client";
 
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
-import { groupNav, type NavItem } from "@/lib/rbac";
+import NavIconSvg from "@/components/nav-icons";
+import { groupNav, NAV_SECTIONS_COLLAPSED_BY_DEFAULT, type NavItem, type NavSection } from "@/lib/rbac";
 import { useMobileNav } from "./mobile-nav";
 import { AccountMenuTrigger, initials } from "./account-menu";
 
@@ -24,21 +26,72 @@ export type MemberSidebarData = {
   bono: MemberBonoCard;
 };
 
+const RAIL_KEY = "tz-nav-rail";
+const GROUPS_KEY = "tz-nav-groups";
+
 /**
- * Punto de 7×7 px del item de navegación. Mientras el `<Link>` que lo contiene
- * está pendiente pasa a oro y pulsa con `tzLiveDot`: el usuario ve *qué* item
- * ha pulsado mientras la ruta carga. `useLinkStatus` exige vivir dentro del
- * `<Link>`, de ahí el componente aparte.
+ * Preferencias de la nav en `localStorage`, leídas con `useSyncExternalStore`:
+ * el snapshot del servidor es `null` (rail desplegado, Administración plegada),
+ * así que el primer render del cliente coincide con el del servidor y React
+ * repinta con lo guardado justo después. Sin efecto que sincronice a mano.
  */
-function NavDot({ activeClass }: { activeClass: string }) {
+const listeners = new Set<() => void>();
+
+function subscribeToPrefs(listener: () => void) {
+  listeners.add(listener);
+  // "storage" mantiene en sintonía las pestañas abiertas del mismo usuario.
+  window.addEventListener("storage", listener);
+  return () => {
+    listeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+function readPref(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    // localStorage inaccesible (modo privado, cookies bloqueadas): defaults.
+    return null;
+  }
+}
+
+function writePref(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* la preferencia no sobrevive al refresco, pero la sesión sigue */
+  }
+  for (const listener of listeners) listener();
+}
+
+const NO_PREF = () => null;
+
+const GOLD_BAR = "linear-gradient(180deg,#e3cfa2,#b58e52)";
+const GOLD_DOT = "linear-gradient(135deg,#e3cfa2,#b58e52)";
+
+/**
+ * Icono del item de navegación. Mientras el `<Link>` que lo contiene está
+ * pendiente pasa a oro y pulsa con `tzLiveDot`: el usuario ve *qué* item ha
+ * pulsado mientras la ruta carga. Es lo que hacía el punto de 7 px del diseño
+ * anterior; `useLinkStatus` exige vivir dentro del `<Link>`, de ahí el
+ * componente aparte.
+ */
+function NavItemIcon({ item, active }: { item: NavItem; active: boolean }) {
   const { pending } = useLinkStatus();
   return (
-    <span
-      aria-hidden="true"
-      className={`w-[7px] h-[7px] rounded-[2px] shrink-0 transition-colors duration-[180ms] ${
-        pending ? "bg-apta-gold" : activeClass
+    <NavIconSvg
+      name={item.icon}
+      className={`shrink-0 w-[19px] h-[19px] lg:w-[18px] lg:h-[18px] ${
+        pending ? "text-apta-gold" : active ? "text-apta-gold" : ""
       }`}
-      style={pending ? { animation: "tzLiveDot 1.1s ease-in-out infinite" } : undefined}
+      style={
+        pending
+          ? { animation: "tzLiveDot 1.1s ease-in-out infinite" }
+          : active
+            ? { animation: "tzIconPop .44s var(--ease-spring) both" }
+            : undefined
+      }
     />
   );
 }
@@ -63,7 +116,55 @@ export default function Sidebar({
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => pathname === item.href || pathname.startsWith(item.href + "/"))?.href;
   const groups = groupNav(nav);
-  const premium = !!member;
+  // Un solo grupo no necesita cabecera: por debajo de 7 items (entrenador,
+  // recepción, RRHH, admin de plataforma) rotular cuesta más de lo que ordena.
+  const flat = groups.length === 1;
+
+  // El rail recupera 180 px para las tablas densas (Socios, Cobros): es una
+  // herramienta de staff. El socio conserva su sidebar con tarjeta de bono.
+  const railable = !member;
+  const railPref = useSyncExternalStore(subscribeToPrefs, () => readPref(RAIL_KEY), NO_PREF);
+  const groupsPref = useSyncExternalStore(subscribeToPrefs, () => readPref(GROUPS_KEY), NO_PREF);
+
+  const openSections = useMemo<Partial<Record<NavSection, boolean>>>(() => {
+    if (!groupsPref) return {};
+    try {
+      const saved: unknown = JSON.parse(groupsPref);
+      return saved && typeof saved === "object" ? (saved as Partial<Record<NavSection, boolean>>) : {};
+    } catch {
+      return {};
+    }
+  }, [groupsPref]);
+
+  const rail = railable && railPref === "1";
+
+  const toggleRail = useCallback(() => {
+    writePref(RAIL_KEY, readPref(RAIL_KEY) === "1" ? "0" : "1");
+  }, []);
+
+  const sectionOpenByDefault = (section: NavSection) => !NAV_SECTIONS_COLLAPSED_BY_DEFAULT.includes(section);
+
+  const toggleSection = (section: NavSection) => {
+    const current = openSections[section] ?? sectionOpenByDefault(section);
+    writePref(GROUPS_KEY, JSON.stringify({ ...openSections, [section]: !current }));
+  };
+
+  const isSectionOpen = (section: NavSection) =>
+    // En 76 px no hay cabecera que pulsar: si una sección quedara plegada, sus
+    // items serían inalcanzables. El rail las fuerza todas a abiertas.
+    rail || flat || (openSections[section] ?? sectionOpenByDefault(section));
+
+  // Tooltip del rail: cuelga del <aside> (el <nav> recorta en horizontal), así
+  // que se guarda el centro de la fila relativo al propio <aside>.
+  const asideRef = useRef<HTMLElement>(null);
+  const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
+  const showTip = (label: string) => (e: React.MouseEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => {
+    if (!rail || !asideRef.current) return;
+    const row = e.currentTarget.getBoundingClientRect();
+    const box = asideRef.current.getBoundingClientRect();
+    setTip({ label, top: row.top - box.top + row.height / 2 });
+  };
+  const hideTip = () => setTip(null);
 
   return (
     <>
@@ -75,121 +176,213 @@ export default function Sidebar({
         aria-hidden="true"
       />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 ${premium ? "w-[272px]" : "w-64"} bg-tz-sand text-text-2 border-r border-tz-linen flex flex-col h-dvh transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] ${
+        ref={asideRef}
+        className={`fixed inset-y-0 left-0 z-50 w-[304px] bg-tz-sand text-text-2 border-r border-tz-linen flex flex-col h-dvh transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] ${
           open ? "translate-x-0" : "-translate-x-full"
-        } lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 lg:shrink-0 lg:transition-none`}
+        } lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 lg:shrink-0 lg:transition-[width] lg:duration-[260ms] lg:ease-[cubic-bezier(.2,.8,.2,1)] ${
+          rail ? "lg:w-[76px]" : "lg:w-64"
+        }`}
       >
         <div
-          className={`relative h-[72px] lg:h-[88px] flex items-center border-b border-tz-linen shrink-0 ${
-            premium ? "justify-start px-4 lg:px-6" : "justify-center px-4"
-          }`}
+          className={`relative h-[72px] lg:h-[88px] flex items-center justify-center border-b border-tz-linen shrink-0 px-4`}
           style={{ animation: "tzNavIn .5s cubic-bezier(.2,.8,.2,1) both" }}
         >
+          {/*
+            El rail solo existe en `lg`: el cajón móvil conserva el lockup
+            completo aunque el estado plegado esté activo, de ahí las dos
+            variantes con sus breakpoints en vez de un ternario a secas.
+          */}
           {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático
-            <img
-              src={logoUrl}
-              alt={brandName ?? "Logo"}
-              className={`w-auto max-w-[190px] object-contain block ${premium ? "h-[26px] lg:h-[30px]" : "h-[26px] lg:h-[34px]"}`}
-            />
+            <>
+              {rail && (
+                // Isotipo: el mismo lockup recortado a sus primeros 26 px (las
+                // dos medias lunas). Ver docs/BRANDING.md §1.
+                <span className="hidden lg:block w-[26px] h-[34px] overflow-hidden shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático */}
+                  <img
+                    src={logoUrl}
+                    alt={brandName ?? "Logo"}
+                    className="h-[34px] w-[202px] max-w-none object-cover object-left"
+                  />
+                </span>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático */}
+              <img
+                src={logoUrl}
+                alt={brandName ?? "Logo"}
+                className={`h-[26px] lg:h-[34px] w-auto max-w-[190px] object-contain block ${rail ? "lg:hidden" : ""}`}
+              />
+            </>
           ) : (
-            <AptaLogo variant="dark" className="text-2xl lg:text-3xl" />
+            <>
+              {rail && (
+                // Isotipo del wordmark: su "A" con el punto de oro. El lockup
+                // completo no cabe en 76 px. Ver docs/BRANDING.md §1.
+                <span
+                  role="img"
+                  aria-label={brandName ?? "Apta"}
+                  className="hidden lg:flex items-end gap-[3px] h-[34px] shrink-0 font-display font-extrabold text-[28px] leading-[34px] tracking-[-.02em] text-tz-black"
+                >
+                  <span aria-hidden="true">A</span>
+                  <span className="w-1.5 h-1.5 rounded-full mb-[7px]" style={{ background: GOLD_DOT }} aria-hidden="true" />
+                </span>
+              )}
+              {/* El envoltorio lleva el `lg:hidden`: `.apta-logo` fija su
+                  `display` fuera de las capas de Tailwind y ganaría a la
+                  utilidad si se pusiera en el propio componente. */}
+              <span className={rail ? "lg:hidden" : undefined}>
+                <AptaLogo variant="dark" className="text-2xl lg:text-3xl" />
+              </span>
+            </>
           )}
           <button
             onClick={() => setOpen(false)}
             aria-label="Cerrar menú"
-            className="absolute right-2 top-1/2 -translate-y-1/2 lg:hidden flex items-center justify-center w-8 h-8 rounded-[10px] text-text-2 transition-colors duration-[180ms] hover:bg-tz-linen/60"
+            className="absolute right-2 top-1/2 -translate-y-1/2 lg:hidden flex items-center justify-center w-11 h-11 rounded-[10px] text-text-2 transition-colors duration-[180ms] hover:bg-tz-linen/60"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
         </div>
 
-        {premium ? (
-          <nav className="flex-1 px-3.5 pt-[22px] pb-3.5 flex flex-col gap-[22px] overflow-y-auto">
-            {groups.map((group, gi) => (
+        <nav className="flex-1 pt-[18px] px-3 pb-3.5 flex flex-col gap-5 overflow-y-auto overflow-x-hidden">
+          {groups.map((group, gi) => {
+            const sectionOpen = isSectionOpen(group.section);
+            const holdsActive = group.items.some((i) => i.href === activeHref);
+            return (
               <div key={group.section} className="flex flex-col gap-0.5">
-                <div
-                  className="flex items-center gap-2.5 px-3 pb-2.5"
-                  style={{ animation: `tzNavIn .5s ${(gi * 0.04).toFixed(2)}s both` }}
-                >
-                  <span className="font-display font-bold text-[10.5px] tracking-[.18em] uppercase text-muted whitespace-nowrap">
-                    {group.section}
-                  </span>
-                  <span className="flex-1 h-px bg-tz-linen" />
-                </div>
-                {group.items.map((item, i) => {
-                  const active = item.href === activeHref;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`group relative flex items-center gap-3 rounded-xl px-3.5 py-3 text-sm transition-[background-color,color] duration-[180ms] ${
-                        active
-                          ? "bg-tz-black text-tz-bone font-bold"
-                          : "bg-transparent text-text-2 font-medium hover:bg-tz-linen/50"
-                      }`}
-                      style={{ animation: `tzNavIn .45s ${(0.1 + i * 0.04).toFixed(2)}s both` }}
+                {!flat &&
+                  (rail ? (
+                    // Sin cabeceras en 76 px: un filete de 28 px separa grupos.
+                    gi > 0 ? <span className="hidden lg:block w-7 h-px bg-tz-linen mx-auto mb-1.5" aria-hidden="true" /> : null
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(group.section)}
+                      aria-expanded={sectionOpen}
+                      className="flex items-center gap-2.5 px-3 pb-2.5 select-none cursor-pointer text-left"
+                      style={{ animation: `tzNavIn .5s ${(gi * 0.04).toFixed(2)}s both` }}
                     >
-                      {active && (
-                        <span
-                          className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r-[3px]"
-                          style={{ background: "linear-gradient(180deg,#e3cfa2,#b58e52)" }}
-                        />
+                      <span className="font-display font-bold text-[10.5px] tracking-[.18em] uppercase text-muted whitespace-nowrap shrink-0">
+                        {group.section}
+                      </span>
+                      {/* Punto oro: la sección está plegada y esconde el item activo. */}
+                      {!sectionOpen && holdsActive && (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: GOLD_DOT }} aria-hidden="true" />
                       )}
-                      <NavDot activeClass={active ? "bg-apta-gold" : "bg-faint"} />
-                      <span className="flex-1">{item.label}</span>
-                      {item.meta && <span className="text-[11px] font-bold tracking-[.06em] text-muted">{item.meta}</span>}
-                      {!!item.badge && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-critical text-white text-[11px] font-extrabold flex items-center justify-center">
-                          {item.badge}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
-              </div>
-            ))}
+                      <span className="flex-1 h-px bg-tz-linen" aria-hidden="true" />
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="#a8a296"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        className={`shrink-0 transition-transform duration-200 ease-[cubic-bezier(.2,.8,.2,1)] ${
+                          sectionOpen ? "" : "rotate-180"
+                        }`}
+                      >
+                        <path d="M6 15l6-6 6 6" />
+                      </svg>
+                    </button>
+                  ))}
 
-            {member?.bono && <BonoCard bono={member.bono} />}
-          </nav>
-        ) : (
-          <nav className="flex-1 px-3 flex flex-col gap-1 overflow-y-auto">
-            {groups.map((group, gi) => (
-              <div key={group.section}>
-                <div
-                  className="px-3.5 pt-4 pb-1.5 font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted"
-                  style={{ animation: `tzNavIn .5s ${(gi * 0.04).toFixed(2)}s both` }}
-                >
-                  {group.section}
-                </div>
-                {group.items.map((item, i) => {
-                  const active = item.href === activeHref;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={`group flex items-center gap-3 rounded-[10px] px-3.5 py-[11px] text-sm transition-[background-color,color,transform] duration-[180ms] ${
-                        active
-                          ? "bg-tz-black text-tz-bone font-bold"
-                          : "bg-transparent text-text-2 font-medium hover:bg-tz-linen/40 hover:translate-x-1"
-                      }`}
-                      style={{ animation: `tzNavIn .45s ${(0.1 + i * 0.04).toFixed(2)}s both` }}
-                    >
-                      <NavDot activeClass={active ? "bg-tz-bone" : "bg-faint"} />
-                      <span className="flex-1">{item.label}</span>
-                      {!!item.badge && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-critical text-white text-[11px] font-extrabold flex items-center justify-center">
-                          {item.badge}
-                        </span>
-                      )}
-                    </Link>
-                  );
-                })}
+                {sectionOpen &&
+                  group.items.map((item, i) => {
+                    const active = item.href === activeHref;
+                    return (
+                      <div
+                        key={item.href}
+                        className={rail ? "lg:flex lg:justify-center" : undefined}
+                        style={{ animation: `tzNavIn .45s ${(0.1 + i * 0.04).toFixed(2)}s both` }}
+                      >
+                        <Link
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                          onMouseEnter={showTip(item.label)}
+                          onMouseLeave={hideTip}
+                          onFocus={showTip(item.label)}
+                          onBlur={hideTip}
+                          className={`group relative flex items-center rounded-xl text-[15px] lg:text-sm min-h-12 lg:min-h-[42px] ${
+                            rail
+                              ? "gap-3.5 px-3.5 py-3 lg:gap-0 lg:justify-center lg:w-11 lg:h-10 lg:min-h-0 lg:px-0 lg:py-2.5"
+                              : "gap-3.5 lg:gap-3 px-3.5 lg:px-3 py-3 lg:py-2.5"
+                          } ${
+                            active
+                              ? "bg-tz-black text-tz-bone font-bold"
+                              : "bg-transparent text-text-2 font-medium hover:bg-tz-linen/55 hover:text-tz-black"
+                          }`}
+                          // El hover es instantáneo a propósito: el cambio de
+                          // estado lo cuenta la animación de activación.
+                          style={active ? { animation: "tzPillIn .34s var(--ease-out-soft) both" } : undefined}
+                        >
+                          {active && (
+                            <>
+                              <span
+                                className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-[3px]"
+                                style={{ background: GOLD_BAR, animation: "tzBarGrow .42s var(--ease-spring) .06s both" }}
+                                aria-hidden="true"
+                              />
+                              {/*
+                                El destello es una capa propia con su
+                                `overflow:hidden`: ponerlo en la fila entera
+                                recortaría el tooltip del rail.
+                              */}
+                              <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl" aria-hidden="true">
+                                <span
+                                  className="absolute inset-y-0 left-0 w-[42%]"
+                                  style={{
+                                    background: "linear-gradient(105deg,transparent,rgba(200,171,114,.42) 50%,transparent)",
+                                    animation: "tzPillSheen .85s var(--ease-out-soft) .1s both",
+                                  }}
+                                />
+                              </span>
+                            </>
+                          )}
+                          <NavItemIcon item={item} active={active} />
+                          <span
+                            className={rail ? "lg:sr-only flex-1" : "flex-1"}
+                            style={active ? { animation: "tzLabelIn .34s var(--ease-out-soft) .04s both" } : undefined}
+                          >
+                            {item.label}
+                          </span>
+                          {item.meta && (
+                            <span className={`text-[11px] font-bold tracking-[.06em] text-muted ${rail ? "lg:hidden" : ""}`}>
+                              {item.meta}
+                            </span>
+                          )}
+                          {!!item.badge && (
+                            <span
+                              className={`min-w-[20px] h-5 px-1.5 rounded-full bg-critical text-white text-[11px] font-bold flex items-center justify-center ${
+                                rail ? "lg:hidden" : ""
+                              }`}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </Link>
+                      </div>
+                    );
+                  })}
               </div>
-            ))}
-          </nav>
+            );
+          })}
+
+          {member?.bono && <BonoCard bono={member.bono} />}
+        </nav>
+
+        {tip && (
+          <span
+            role="tooltip"
+            className="hidden lg:block absolute left-[88px] -translate-y-1/2 z-10 whitespace-nowrap rounded-lg bg-tz-black text-tz-bone text-[11.5px] font-semibold px-2.5 py-1.5 pointer-events-none"
+            style={{ top: tip.top, boxShadow: "0 10px 24px -12px rgba(29,29,28,.6)" }}
+          >
+            {tip.label}
+          </span>
         )}
 
         {member ? (
@@ -218,10 +411,36 @@ export default function Sidebar({
           </div>
         ) : (
           <div
-            className="px-5 py-4 border-t border-tz-linen text-xs text-muted tracking-[.04em] shrink-0"
+            className="px-3.5 py-3 border-t border-tz-linen shrink-0 flex items-center gap-2"
             style={{ animation: "tzNavIn .5s .5s both" }}
           >
-            <span className="text-tz-black font-bold">TZ</span> · {footerLabel}
+            <span className={`flex-1 text-xs text-muted tracking-[.04em] truncate ${rail ? "lg:hidden" : ""}`}>
+              <span className="text-tz-black font-bold">TZ</span> · {footerLabel}
+            </span>
+            <button
+              type="button"
+              onClick={toggleRail}
+              aria-label={rail ? "Desplegar menú" : "Plegar menú"}
+              aria-pressed={rail}
+              className={`hidden lg:flex items-center justify-center w-8 h-8 shrink-0 rounded-[10px] border border-tz-linen text-text-2 transition-colors duration-[180ms] hover:bg-tz-linen/60 hover:text-tz-black ${
+                rail ? "lg:mx-auto" : ""
+              }`}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`transition-transform duration-[260ms] ease-[cubic-bezier(.2,.8,.2,1)] ${rail ? "rotate-180" : ""}`}
+              >
+                <path d="M13 8l-4 4 4 4" />
+                <path d="M18 8l-4 4 4 4" />
+              </svg>
+            </button>
           </div>
         )}
       </aside>
@@ -241,7 +460,7 @@ function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
   return (
     <div className="mt-auto p-4 rounded-2xl bg-white border border-tz-linen">
       <div className="flex items-center gap-[7px] text-[10.5px] font-bold tracking-[.14em] uppercase text-gold">
-        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "linear-gradient(135deg,#e3cfa2,#b58e52)" }} />
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: GOLD_DOT }} />
         Tu bono
       </div>
       <div className="text-[13.5px] font-bold text-tz-black mt-2 leading-[1.35]">

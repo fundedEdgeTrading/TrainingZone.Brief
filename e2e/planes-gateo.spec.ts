@@ -39,6 +39,10 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
     const sidebar = page.locator("aside, nav").first();
     await expect(sidebar.getByRole("link", { name: "Retención" })).toBeVisible();
     await expect(sidebar.getByRole("link", { name: "Feedback" })).toBeVisible();
+    // Auditoría cuelga de "Administración", que arranca plegada (rediseño del
+    // NavBar): se despliega antes de mirar. Lo que verifica el test es que el
+    // plan Élite deja el módulo EN el menú, no dónde estaba el scroll.
+    await sidebar.getByRole("button", { name: "Administración" }).click();
     await expect(sidebar.getByRole("link", { name: "Auditoría" })).toBeVisible();
   });
 
