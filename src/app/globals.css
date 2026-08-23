@@ -149,6 +149,14 @@
     transform: none;
   }
 }
+@keyframes tzSheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
 .tz-wiz-a {
   animation: wizA 0.45s var(--ease-out-soft) both;
 }
@@ -431,6 +439,9 @@
 }
 .tz-select-pop {
   animation: tzSelectPop 0.16s var(--ease-out-soft) both;
+}
+.tz-select-sheet {
+  animation: tzSheetUp 0.26s var(--ease-out-soft) both;
 }
 
 .tz-logo-shine {
@@ -919,6 +930,21 @@ textarea:focus-visible {
   ::view-transition-new(*),
   ::view-transition-image-pair(*) {
     animation: none !important;
+  }
+}
+
+/* ===== Rail de secciones de la ficha de socio =====
+   En móvil el rail es una fila con desplazamiento por arrastre. La barra de
+   scroll se oculta (el propio recorte de las pastillas ya indica que hay más),
+   pero el scroll sigue existiendo. De `lg` en adelante es una columna y no hay
+   desbordamiento que ocultar. */
+@media (max-width: 1023px) {
+  .tz-rail-scroll {
+    scrollbar-width: none;
+  }
+  .tz-rail-scroll::-webkit-scrollbar {
+    height: 0;
+    width: 0;
   }
 }
 

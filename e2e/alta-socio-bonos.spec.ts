@@ -58,16 +58,18 @@ test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
 
     await page.goto(`/members?q=${encodeURIComponent(email)}`);
     await page.getByRole("link", { name: /Playwright MultiBono/ }).click();
-    await page.getByRole("button", { name: "Contratación" }).click();
+    await page.getByRole("tab", { name: "Plan y pagos" }).click();
 
-    const epHeader = page.getByRole("heading", { name: `Gestión de bono · ${EP_PLAN}` });
-    const groupHeader = page.getByRole("heading", { name: `Gestión de bono · ${GROUP_PLAN}` });
+    // Una tarjeta por bono, cada una con su plan y su centro — el motivo mismo
+    // de la fase. El centro va en la línea meta, hermana del título dentro de
+    // la cabecera de la tarjeta.
+    const epHeader = page.getByRole("heading", { name: EP_PLAN, exact: true });
+    const groupHeader = page.getByRole("heading", { name: GROUP_PLAN, exact: true });
     await expect(epHeader).toBeVisible();
     await expect(groupHeader).toBeVisible();
 
-    // Cada bono muestra su propio centro — el motivo mismo de la fase.
-    await expect(epHeader.locator("xpath=..")).toContainText(CENTER_A);
-    await expect(groupHeader.locator("xpath=..")).toContainText(CENTER_B);
+    await expect(epHeader.locator("xpath=../..")).toContainText(CENTER_A);
+    await expect(groupHeader.locator("xpath=../..")).toContainText(CENTER_B);
   });
 
   test("dirección añade un bono más a un socio ya existente desde su ficha", async ({ page }) => {
@@ -90,10 +92,14 @@ test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
 
     await page.goto(`/members?q=${encodeURIComponent(email)}`);
     await page.getByRole("link", { name: /Playwright AddBono/ }).click();
-    await page.getByRole("button", { name: "Contratación" }).click();
-    await expect(page.getByRole("heading", { name: `Gestión de bono · ${EP_PLAN}` })).toBeVisible();
+    await page.getByRole("tab", { name: "Plan y pagos" }).click();
+    await expect(page.getByRole("heading", { name: EP_PLAN, exact: true })).toBeVisible();
 
-    // "Añadir bono": un segundo bono, de grupos, en el otro centro.
+    // "Añadir bono": un segundo bono, de grupos, en el otro centro. El
+    // formulario ya no está montado en la página: lo despliega el botón de la
+    // cabecera de la sección (el primero con ese nombre; el segundo es el
+    // submit del propio formulario).
+    await page.getByRole("button", { name: "Añadir bono" }).first().click();
     // Se ancla por el <p> del kicker (texto exacto) y se sube a su div
     // contenedor: un filtro `hasText` sobre "div" también capturaría el propio
     // botón "Añadir bono" (mismo texto) y resolvía a un contenedor demasiado
@@ -104,12 +110,11 @@ test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
     await addBonoSection.getByRole("button", { name: "Añadir bono" }).click();
 
     await expect(page.getByText("Bono añadido.")).toBeVisible({ timeout: 15_000 });
-    const groupHeader = page.getByRole("heading", { name: `Gestión de bono · ${GROUP_PLAN}` });
+    const groupHeader = page.getByRole("heading", { name: GROUP_PLAN, exact: true });
     await expect(groupHeader).toBeVisible();
-    await expect(groupHeader.locator("xpath=..")).toContainText(CENTER_B);
+    await expect(groupHeader.locator("xpath=../..")).toContainText(CENTER_B);
 
-    // "Datos" resume ambos bonos en vez de mostrar solo el primero.
-    await page.getByRole("button", { name: "Datos" }).click();
-    await expect(page.getByText("2 bonos activos")).toBeVisible();
+    // La meta del rail resume ambos bonos en vez de contar solo el primero.
+    await expect(page.getByRole("tab", { name: "Plan y pagos" })).toContainText("2 bonos activos");
   });
 });

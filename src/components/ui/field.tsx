@@ -14,6 +14,8 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { useMediaQuery } from "@/lib/use-media-query";
+
 const CONTROL =
   "w-full rounded-control border border-brand-border bg-white px-3.5 py-2.5 text-sm text-brand-text placeholder:text-faint transition-[border-color,box-shadow] duration-200 focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none hover:border-brand-border-hover";
 
@@ -87,14 +89,30 @@ function optionsFromChildren(children: ReactNode): Option[] {
 }
 
 /** Alto máximo de la lista: nunca ocupa más que el hueco libre en pantalla. */
-const MENU_MAX_HEIGHT = 288;
+const MENU_MAX_HEIGHT = 300;
 const MENU_GAP = 6;
 /** Ancho mínimo de la lista, aunque el disparador sea más estrecho. */
-const MENU_MIN_WIDTH = 200;
+const MENU_MIN_WIDTH = 260;
 /** Margen mínimo con los bordes del viewport (también evita la barra de gestos). */
-const VIEWPORT_MARGIN = 8;
+const VIEWPORT_MARGIN = 10;
+/** Alto aproximado de una opción y del buscador: sirve para estimar si la lista
+    cabe debajo del campo. Es una estimación al alza a propósito. */
+const OPTION_ROW = 44;
+const SEARCH_ROW = 48;
+/** A partir de tantas opciones el buscador aparece solo. */
+const SEARCH_FROM = 8;
+/** Por debajo de este ancho la lista se pinta como hoja inferior. */
+const MOBILE_QUERY = "(max-width: 639px)";
 
-type MenuPosition = { left: number; top: number; width: number; maxHeight: number; flipped: boolean };
+type MenuPosition = {
+  left: number;
+  width: number;
+  maxHeight: number;
+  side: "top" | "bottom";
+  /** Volteada se ancla por `bottom` (ver comentario en placeMenu). */
+  top?: number;
+  bottom?: number;
+};
 
 const noopSubscribe = () => () => {};
 function useMounted() {
@@ -113,9 +131,19 @@ function useMounted() {
  * La lista se pinta en un portal a `document.body` con `position: fixed`: dentro
  * de un drawer, un modal o una tabla con `overflow`, un popover `absolute` lo
  * recortaba el ancestro con scroll (y de paso le añadía barras de scroll a ese
- * ancestro). Al salir del flujo, la lista se coloca con las coordenadas reales
- * del botón, se voltea hacia arriba si no cabe debajo y limita su alto al hueco
- * libre, así que siempre se ven los valores y nunca desborda la pantalla.
+ * ancestro).
+ *
+ * Reglas de colocación (ver docs del handoff):
+ * 1. Abre hacia abajo. Solo se voltea si el alto REAL estimado de sus opciones
+ *    no cabe debajo y arriba hay más hueco — antes se comparaba contra el
+ *    máximo fijo (288 px), así que dentro de un drawer se volteaba casi siempre.
+ * 2. El lado se decide al abrir y no cambia mientras está abierta: en
+ *    scroll/resize se recalculan las coordenadas con el mismo `side`.
+ * 3. Volteada se ancla por `bottom` al borde superior del campo, no por un
+ *    `top` calculado con la estimación: si el contenido real mide menos, la
+ *    lista sigue pegada al campo en vez de flotar por encima.
+ * 4. El valor y las opciones se parten en dos líneas antes de recortar.
+ * 5. Por debajo de 640 px la lista se pinta como hoja inferior.
  */
 export function Select({
   className,
@@ -126,8 +154,8 @@ export function Select({
   onChange,
   required,
   disabled,
-  searchable = false,
-  placeholder = "Seleccionar...",
+  searchable,
+  placeholder,
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; placeholder?: string }) {
   const options = useMemo(() => optionsFromChildren(children), [children]);
   const isControlled = value !== undefined;
@@ -136,15 +164,28 @@ export function Select({
     return options.find((o) => !o.disabled)?.value ?? "";
   });
   const currentValue = isControlled ? String(value ?? "") : internalValue;
-  const selected = options.find((o) => o.value === currentValue);
+  const selected = options.find((o) => o.value === currentValue && !o.disabled);
+  // Media app usa `<option value="" disabled>` con su propio texto de marcador
+  // («Selecciona...», «Selecciona un motivo...»). Como esa opción no cuenta
+  // como valor elegido, su etiqueta es la que hace de marcador; el prop
+  // explícito, si lo hay, sigue mandando sobre ella.
+  const placeholderText =
+    placeholder ?? options.find((o) => o.value === currentValue)?.label ?? "Seleccionar...";
 
   const mounted = useMounted();
+  // La hoja inferior entra por debajo de 640px, no en el breakpoint `lg`
+  // del `useIsMobile` compartido: por eso la consulta va explícita.
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  const withSearch = searchable ?? options.length >= SEARCH_FROM;
+
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState<MenuPosition | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  /** Lado elegido al abrir: se conserva hasta cerrar (regla 2). */
+  const sideRef = useRef<"top" | "bottom">("bottom");
 
   const close = useCallback(() => {
     setOpen(false);
@@ -152,26 +193,37 @@ export function Select({
     setPosition(null);
   }, []);
 
-  /** Coloca la lista a partir del rect del botón, volteando si no cabe debajo. */
-  const updatePosition = useCallback(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-    const rect = trigger.getBoundingClientRect();
-    const viewportH = window.innerHeight;
-    const viewportW = window.innerWidth;
-    const below = viewportH - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
-    const above = rect.top - MENU_GAP - VIEWPORT_MARGIN;
-    // Se voltea solo si arriba se gana sitio de verdad, no por unos pocos píxeles.
-    const flipped = below < Math.min(MENU_MAX_HEIGHT, above) && above > below;
-    const space = Math.max(120, flipped ? above : below);
-    const maxHeight = Math.min(MENU_MAX_HEIGHT, space);
-    // Nunca más estrecha que MENU_MIN_WIDTH: hay disparadores muy cortos (la
-    // hora en el diálogo de agenda) donde las etiquetas no cabrían.
-    const width = Math.min(Math.max(rect.width, MENU_MIN_WIDTH), viewportW - VIEWPORT_MARGIN * 2);
-    const left = Math.min(Math.max(VIEWPORT_MARGIN, rect.left), viewportW - width - VIEWPORT_MARGIN);
-    const top = flipped ? rect.top - MENU_GAP - maxHeight : rect.bottom + MENU_GAP;
-    setPosition({ left, top, width, maxHeight, flipped });
-  }, []);
+  const placeMenu = useCallback(
+    (keepSide: boolean) => {
+      const trigger = triggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const vw = window.innerWidth;
+
+      const needed = Math.min(
+        MENU_MAX_HEIGHT,
+        options.length * OPTION_ROW + (withSearch ? SEARCH_ROW : 0) + 12,
+      );
+      const below = vh - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
+      const above = rect.top - MENU_GAP - VIEWPORT_MARGIN;
+
+      const side = keepSide ? sideRef.current : below < needed && above > below ? "top" : "bottom";
+      sideRef.current = side;
+
+      const space = Math.max(140, side === "top" ? above : below);
+      const maxHeight = Math.min(needed, space);
+      const width = Math.min(Math.max(rect.width, MENU_MIN_WIDTH), vw - VIEWPORT_MARGIN * 2);
+      const left = Math.min(Math.max(VIEWPORT_MARGIN, rect.left), vw - width - VIEWPORT_MARGIN);
+
+      setPosition(
+        side === "top"
+          ? { side, left, width, maxHeight, bottom: Math.max(VIEWPORT_MARGIN, vh - rect.top + MENU_GAP) }
+          : { side, left, width, maxHeight, top: Math.min(rect.bottom + MENU_GAP, vh - VIEWPORT_MARGIN - maxHeight) },
+      );
+    },
+    [options.length, withSearch],
+  );
 
   // La posición se calcula al abrir (en el propio manejador) y se recalcula en
   // scroll/resize, no en un efecto: así no hay un render extra con la lista
@@ -182,9 +234,9 @@ export function Select({
       return;
     }
     setQuery("");
-    updatePosition();
+    if (!isMobile) placeMenu(false);
     setOpen(true);
-  }, [open, close, updatePosition]);
+  }, [open, close, placeMenu, isMobile]);
 
   useEffect(() => {
     if (!open) return;
@@ -198,7 +250,10 @@ export function Select({
     };
     // `true` en captura: así también se recoloca cuando el scroll ocurre en un
     // ancestro (el cuerpo de un drawer, una tabla), que no burbujea a window.
-    const onReflow = () => updatePosition();
+    // `keepSide`: se recolocan coordenadas, nunca el lado.
+    const onReflow = () => {
+      if (!isMobile) placeMenu(true);
+    };
     document.addEventListener("mousedown", onDocMouseDown);
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("scroll", onReflow, true);
@@ -209,7 +264,18 @@ export function Select({
       window.removeEventListener("scroll", onReflow, true);
       window.removeEventListener("resize", onReflow);
     };
-  }, [open, close, updatePosition]);
+  }, [open, close, placeMenu, isMobile]);
+
+  // En móvil la hoja ocupa la pantalla: se bloquea el scroll de fondo, igual
+  // que hace el Drawer.
+  useEffect(() => {
+    if (!open || !isMobile) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [open, isMobile]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -225,67 +291,97 @@ export function Select({
 
   const hasWidthOverride = /(^|\s)w-/.test(className ?? "");
 
-  const menu =
-    open && position ? (
+  const optionList = (
+    <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden [scrollbar-color:var(--color-tz-linen)_transparent]">
+      {filtered.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          disabled={opt.disabled}
+          onClick={() => selectOption(opt)}
+          className={clsx(
+            "flex w-full items-start justify-between gap-2.5 rounded-lg px-3 text-left transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-40",
+            isMobile ? "min-h-[48px] py-3 text-[15px]" : "py-2.5 text-sm",
+            opt.value === currentValue ? "bg-tz-bone font-semibold" : "font-medium hover:bg-tz-bone",
+          )}
+        >
+          <span className="inline-flex min-w-0 items-start gap-2.5">
+            {opt.tone && <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[opt.tone])} />}
+            {/* Dos líneas antes de recortar: los nombres de centro y de plan son largos. */}
+            <span className="line-clamp-2 leading-[1.35]">{opt.label}</span>
+          </span>
+          {opt.value === currentValue && (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#8a6d2f"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="mt-0.5 shrink-0"
+            >
+              <path d="M20 6L9 17l-5-5" />
+            </svg>
+          )}
+        </button>
+      ))}
+      {filtered.length === 0 && <div className="px-3 py-3.5 text-center text-[13px] text-faint">Sin resultados</div>}
+    </div>
+  );
+
+  const searchBox = withSearch ? (
+    <div className="shrink-0 p-0.5 pb-1.5">
+      <input
+        autoFocus={!isMobile}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Buscar..."
+        className="w-full box-border rounded-[9px] border border-brand-border bg-tz-bone px-[11px] py-2 text-[13px] text-brand-text outline-none"
+      />
+    </div>
+  ) : null;
+
+  const menu = !open ? null : isMobile ? (
+    // Hoja inferior: no hay posición que calcular, la lista no cabe junto al
+    // campo y el teclado del sistema taparía media pantalla.
+    <div className="fixed inset-0 z-[200]">
+      <div aria-hidden="true" onClick={close} className="absolute inset-0 bg-tz-black/45" />
       <div
         ref={menuRef}
-        className="tz-select-pop fixed z-[200] flex flex-col rounded-[13px] border border-brand-border bg-white p-1.5 shadow-pop"
-        style={{
-          left: position.left,
-          top: position.top,
-          width: position.width,
-          maxHeight: position.maxHeight,
-          transformOrigin: position.flipped ? "bottom center" : "top center",
-        }}
+        className="tz-select-sheet absolute inset-x-0 bottom-0 flex max-h-[82%] flex-col rounded-t-[22px] border-t border-brand-border bg-white px-3 pb-4 pt-2.5 shadow-pop"
       >
-        {searchable && (
-          <div className="shrink-0 p-0.5 pb-1.5">
-            <input
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar..."
-              className="w-full box-border rounded-[9px] border border-brand-border bg-tz-bone px-[11px] py-2 text-[13px] text-brand-text outline-none"
-            />
-          </div>
-        )}
-        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overflow-x-hidden [scrollbar-color:var(--color-tz-linen)_transparent]">
-          {filtered.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              disabled={opt.disabled}
-              onClick={() => selectOption(opt)}
-              className={clsx(
-                "flex w-full items-center justify-between gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm transition-colors duration-100 disabled:cursor-not-allowed disabled:opacity-40",
-                opt.value === currentValue ? "bg-tz-bone font-semibold" : "font-medium hover:bg-tz-bone",
-              )}
-            >
-              <span className="inline-flex min-w-0 items-center gap-2.5">
-                {opt.tone && <span className={clsx("h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[opt.tone])} />}
-                <span className="truncate">{opt.label}</span>
-              </span>
-              {opt.value === currentValue && (
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#8a6d2f"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="shrink-0"
-                >
-                  <path d="M20 6L9 17l-5-5" />
-                </svg>
-              )}
-            </button>
-          ))}
-          {filtered.length === 0 && <div className="px-3 py-3.5 text-center text-[13px] text-faint">Sin resultados</div>}
+        <div className="flex shrink-0 justify-center py-1.5">
+          <span className="h-1 w-11 rounded-full bg-brand-border" />
         </div>
+        <div className="flex shrink-0 items-center justify-between gap-3 px-2 pb-2.5">
+          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-muted">{placeholderText}</span>
+          <button type="button" onClick={close} className="px-1.5 py-1 text-[13.5px] font-semibold text-brand-text-2">
+            Cerrar
+          </button>
+        </div>
+        {searchBox}
+        {optionList}
       </div>
-    ) : null;
+    </div>
+  ) : position ? (
+    <div
+      ref={menuRef}
+      className="tz-select-pop fixed z-[200] flex flex-col rounded-[13px] border border-brand-border bg-white p-1.5 shadow-pop"
+      style={{
+        left: position.left,
+        top: position.top,
+        bottom: position.bottom,
+        width: position.width,
+        maxHeight: position.maxHeight,
+        transformOrigin: position.side === "top" ? "bottom center" : "top center",
+      }}
+    >
+      {searchBox}
+      {optionList}
+    </div>
+  ) : null;
 
   return (
     <div ref={rootRef} className={clsx("relative", !hasWidthOverride && "w-full", className)}>
@@ -301,14 +397,16 @@ export function Select({
         disabled={disabled}
         onClick={toggle}
         className={clsx(
-          "box-border flex w-full cursor-pointer items-center justify-between gap-2 rounded-control bg-white px-3.5 py-2.5 text-left text-sm transition-[border-color,box-shadow] duration-200 disabled:cursor-not-allowed disabled:opacity-50",
+          // `items-start` y sin alto fijo: el campo crece a dos líneas cuando el
+          // valor es largo, en vez de recortarlo con puntos suspensivos.
+          "box-border flex w-full cursor-pointer items-start justify-between gap-2 rounded-control bg-white px-3.5 py-2.5 text-left text-sm transition-[border-color,box-shadow] duration-200 disabled:cursor-not-allowed disabled:opacity-50",
           open ? "border border-brand-ink ring-2 ring-tz-black/10" : "border border-brand-border hover:border-brand-border-hover",
         )}
       >
-        <span className="inline-flex min-w-0 items-center gap-2">
-          {selected?.tone && <span className={clsx("h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />}
-          <span className={clsx("truncate font-medium", selected ? "text-brand-text" : "text-faint")}>
-            {selected ? selected.label : placeholder}
+        <span className="inline-flex min-w-0 items-start gap-2">
+          {selected?.tone && <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />}
+          <span className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}>
+            {selected ? selected.label : placeholderText}
           </span>
         </span>
         <svg
@@ -320,7 +418,10 @@ export function Select({
           strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={clsx("shrink-0 text-brand-muted transition-transform duration-[180ms] ease-out-soft", open && "rotate-180")}
+          className={clsx(
+            "mt-[3px] shrink-0 text-brand-muted transition-transform duration-[180ms] ease-out-soft",
+            open && "rotate-180",
+          )}
         >
           <path d="M6 9l6 6 6-6" />
         </svg>
