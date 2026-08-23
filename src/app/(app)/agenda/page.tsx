@@ -80,6 +80,9 @@ export default async function AgendaPage({
       recurrence: s.recurrence,
       recUntilISO: s.recUntil ? formatDateParam(s.recUntil) : null,
       bookedMemberId: active[0]?.memberId ?? null,
+      bookedMemberName: active[0]?.member
+        ? `${active[0].member.firstName} ${active[0].member.lastName}`
+        : null,
       bookedCount: active.length,
       status: s.status,
     });

@@ -70,7 +70,10 @@ async function createSessionInAgenda(
     await page.locator(".tz-select-pop").getByRole("button", { name: RECURRENCE_LABEL[opts.recurrence], exact: true }).click();
   }
 
-  await page.getByRole("button", { name: `Entrenador ${TRAINER_NAME}` }).click();
+  // El entrenador ya no son círculos de color: es el desplegable del sistema
+  // de diseño (botón + popover), igual que "Se repite".
+  await page.locator('[data-field="trainer"]').getByRole("button").first().click();
+  await page.locator(".tz-select-pop").getByRole("button", { name: TRAINER_NAME, exact: true }).click();
   await page.getByRole("button", { name: "Guardar" }).click();
   await expect(toast(page).getByText("Sesión creada")).toBeVisible({ timeout: 15_000 });
 }

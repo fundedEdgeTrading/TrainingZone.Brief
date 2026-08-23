@@ -79,6 +79,48 @@ export type SessionType = "personal" | "reduced";
 export const DEFAULT_GROUP_CAPACITY = 6;
 export const MAX_GROUP_CAPACITY = 30;
 
+/** Umbral de aviso: plazas libres a partir de las cuales se marca en ámbar. */
+export const CAPACITY_WARN_AT = 1;
+
+/**
+ * Ámbar y rojo de aforo sobre el color del entrenador (variantes claras de
+ * `--color-warning` y `--color-critical`). La tarjeta siempre lleva de fondo el
+ * color del entrenador, y estas son las únicas variantes legibles sobre él.
+ */
+export const CAPACITY_AMBER = "#f0b357";
+export const CAPACITY_FULL = "#e08a6f";
+
+export type Occupancy = {
+  /** 0–100. En EP la capacidad es siempre 1, así que da 0 o 100. */
+  pct: number;
+  free: number;
+  full: boolean;
+  /** Queda CAPACITY_WARN_AT o menos, pero no está llena. */
+  lastSeats: boolean;
+};
+
+/**
+ * Regla única de aforo: rejilla y diálogo citan esta misma fuente en vez de
+ * recalcular cada uno su porcentaje.
+ */
+export function occupancyOf(o: { capacity: number; bookedCount: number }): Occupancy {
+  const capacity = Math.max(1, o.capacity);
+  const free = capacity - o.bookedCount;
+  const full = free <= 0;
+  return {
+    pct: Math.max(0, Math.min(100, (o.bookedCount / capacity) * 100)),
+    free,
+    full,
+    lastSeats: !full && free <= CAPACITY_WARN_AT,
+  };
+}
+
+/** Nombre corto para la tarjeta: "Marta García López" → "Marta G." */
+export function shortMemberName(name: string) {
+  const p = name.trim().split(/\s+/);
+  return p[1] ? `${p[0]} ${p[1][0]}.` : p[0];
+}
+
 export type WeekOccurrence = {
   id: string;
   /**
@@ -105,6 +147,8 @@ export type WeekOccurrence = {
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recUntilISO: string | null;
   bookedMemberId: string | null;
+  /** Nombre completo del socio de la reserva activa (solo EP). */
+  bookedMemberName: string | null;
   bookedCount: number;
   status: string;
 };

@@ -63,7 +63,20 @@ const TONE_DOT: Record<Tone, string> = {
   neutral: "bg-neutral",
 };
 
-type Option = { value: string; label: string; disabled?: boolean; tone?: Tone };
+type Option = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  tone?: Tone;
+  /** Color del distintivo cuadrado (entrenadores). Gana sobre `tone`. */
+  swatch?: string;
+  /** Texto dentro del distintivo (iniciales). */
+  swatchLabel?: string;
+  /** Color del texto del distintivo; por defecto blanco. */
+  swatchTextColor?: string;
+  /** Distintivo redondo (avatar de socio) en vez de cuadrado (entrenador). */
+  swatchRound?: boolean;
+};
 
 function textOf(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
@@ -77,13 +90,23 @@ function optionsFromChildren(children: ReactNode): Option[] {
   const options: Option[] = [];
   Children.forEach(children, (child) => {
     if (!isValidElement(child) || child.type !== "option") return;
-    const props = child.props as React.OptionHTMLAttributes<HTMLOptionElement> & { "data-tone"?: Tone };
+    const props = child.props as React.OptionHTMLAttributes<HTMLOptionElement> & {
+      "data-tone"?: Tone;
+      "data-swatch"?: string;
+      "data-swatch-label"?: string;
+      "data-swatch-text"?: string;
+      "data-swatch-round"?: boolean | "true";
+    };
     const label = textOf(props.children);
     options.push({
       value: props.value != null ? String(props.value) : label,
       label,
       disabled: props.disabled,
       tone: props["data-tone"],
+      swatch: props["data-swatch"],
+      swatchLabel: props["data-swatch-label"],
+      swatchTextColor: props["data-swatch-text"],
+      swatchRound: props["data-swatch-round"] === true || props["data-swatch-round"] === "true",
     });
   });
   return options;
@@ -266,7 +289,20 @@ export function Select({
           )}
         >
           <span className="inline-flex min-w-0 items-start gap-2.5">
-            {opt.tone && <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[opt.tone])} />}
+            {opt.swatch ? (
+              <span
+                aria-hidden
+                className={clsx(
+                  "mt-px flex h-6 w-6 shrink-0 items-center justify-center text-[10.5px] font-bold",
+                  opt.swatchRound ? "rounded-full" : "rounded-[7px]",
+                )}
+                style={{ background: opt.swatch, color: opt.swatchTextColor ?? "#fff" }}
+              >
+                {opt.swatchLabel}
+              </span>
+            ) : opt.tone ? (
+              <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[opt.tone])} />
+            ) : null}
             {/* Dos líneas antes de recortar: los nombres de centro y de plan son largos. */}
             <span className="line-clamp-2 leading-[1.35]">{opt.label}</span>
           </span>
@@ -364,7 +400,20 @@ export function Select({
         )}
       >
         <span className="inline-flex min-w-0 items-start gap-2">
-          {selected?.tone && <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />}
+          {selected?.swatch ? (
+            <span
+              aria-hidden
+              className={clsx(
+                "mt-px flex h-6 w-6 shrink-0 items-center justify-center text-[10.5px] font-bold",
+                selected.swatchRound ? "rounded-full" : "rounded-[7px]",
+              )}
+              style={{ background: selected.swatch, color: selected.swatchTextColor ?? "#fff" }}
+            >
+              {selected.swatchLabel}
+            </span>
+          ) : selected?.tone ? (
+            <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />
+          ) : null}
           <span className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}>
             {selected ? selected.label : placeholderText}
           </span>

@@ -57,7 +57,17 @@ export async function getWeekSessions(orgId: string, centerId: string, weekStart
     },
     include: {
       trainer: { select: { name: true } },
-      bookings: { select: { id: true, status: true, memberId: true, occurrenceDate: true } },
+      bookings: {
+        select: {
+          id: true,
+          status: true,
+          memberId: true,
+          occurrenceDate: true,
+          // El nombre es lo único que falta para que la tarjeta de EP diga
+          // quién ocupa la franja en vez de un genérico "reservada".
+          member: { select: { firstName: true, lastName: true } },
+        },
+      },
     },
     orderBy: { date: "asc" },
   });
@@ -109,6 +119,27 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
         MAX_GROUP_CAPACITY,
         Math.max(1, Math.round(input.capacity || center.defaultGroupCapacity || DEFAULT_GROUP_CAPACITY))
       );
+  // Bajar el aforo por debajo de las reservas que ya existen dejaba el grupo
+  // sobrevendido en silencio (la rejilla lo pintaba al 100% y el socio 5 se
+  // quedaba sin plaza sin enterarse). Se mide la ocurrencia más llena de la
+  // serie: el aforo es de la sesión, no de un día suelto.
+  if (!isPersonal && input.id) {
+    const existing = await prisma.classSession.findFirst({
+      where: { id: input.id, orgId },
+      select: { bookings: { select: { status: true, occurrenceDate: true } } },
+    });
+    const perDay = new Map<number, number>();
+    for (const b of existing?.bookings ?? []) {
+      if (b.status !== "BOOKED" && b.status !== "ATTENDED" && b.status !== "NO_SHOW") continue;
+      const key = new Date(b.occurrenceDate).setHours(0, 0, 0, 0);
+      perDay.set(key, (perDay.get(key) ?? 0) + 1);
+    }
+    const busiest = Math.max(0, ...perDay.values());
+    if (busiest > capacity) {
+      return { ok: false as const, error: `Ya hay ${busiest} reservas: no puedes bajar el aforo de ${busiest}.` };
+    }
+  }
+
   const data = {
     centerId: input.centerId,
     trainerId: input.trainerId,
