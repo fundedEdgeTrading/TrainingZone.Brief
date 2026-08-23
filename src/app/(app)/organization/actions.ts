@@ -57,6 +57,18 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   const slug = slugify(String(formData.get("slug") ?? "").trim() || name);
   if (!name || !slug) return { ok: false, error: "Indica al menos el nombre del centro." };
 
+  // Coordenadas del centro (opcionales): sitúan el centro en el mapa de
+  // barrios. O van las dos o no va ninguna — media coordenada no ubica nada, y
+  // guardarla dejaría el marcador en mitad del Atlántico.
+  const lat = parseCoordinate(formData.get("lat"), -90, 90);
+  const lng = parseCoordinate(formData.get("lng"), -180, 180);
+  if (lat === "invalid" || lng === "invalid") {
+    return { ok: false, error: "Las coordenadas tienen que ser números (latitud -90..90, longitud -180..180)." };
+  }
+  if ((lat === null) !== (lng === null)) {
+    return { ok: false, error: "Indica latitud y longitud, o ninguna de las dos." };
+  }
+
   const existing = await prisma.center.findFirst({
     where: { orgId: session.user.orgId, slug },
     select: { id: true },
@@ -68,9 +80,18 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   const allowed = await canAddCenter(session.user.orgId);
   if (!allowed.ok) return { ok: false, error: allowed.error };
 
-  await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, logoUrl } });
+  await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, lat, lng, logoUrl } });
   revalidatePath("/organization");
   return { ok: true };
+}
+
+/** Coordenada opcional de un formulario: `null` si viene vacía, `"invalid"` si no es un número del rango. */
+function parseCoordinate(raw: FormDataEntryValue | null, min: number, max: number): number | null | "invalid" {
+  const text = String(raw ?? "").trim().replace(",", ".");
+  if (!text) return null;
+  const value = Number(text);
+  if (!Number.isFinite(value) || value < min || value > max) return "invalid";
+  return value;
 }
 
 // Editar el logo de un centro (si es null, hereda el de la organización / Apta).

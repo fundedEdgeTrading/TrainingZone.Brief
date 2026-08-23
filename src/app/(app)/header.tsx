@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { getPageTitle } from "@/lib/rbac";
+import { getPageTitle, PARENT_ROUTE } from "@/lib/rbac";
 import UserMenu, { type OrgOption } from "./user-menu";
 import { useMobileNav } from "./mobile-nav";
 import { NotificationBell } from "./notification-bell";
 import { AccountMenuTrigger, initials } from "./account-menu";
+import { HeaderActionsTarget, useHeaderSubtitleOverride } from "./header-slot";
 
 export default function Header({
   nav,
@@ -41,6 +43,12 @@ export default function Header({
   const { setOpen } = useMobileNav();
   const title = getPageTitle(nav, pathname);
   const showChip = centerChip && pathname === "/dashboard";
+  // Pantallas que cuelgan de otra (el mapa de barrios, del panel): el header
+  // pinta la vuelta, que si no solo existiría en el botón atrás del navegador.
+  const parentRoute = PARENT_ROUTE[pathname];
+  // Una pantalla con estado propio puede contar el suyo (ciudad activa, nº de
+  // centros) en vez del subtítulo de sesión que pone el layout.
+  const subtitleOverride = useHeaderSubtitleOverride();
 
   return (
     <header
@@ -56,6 +64,17 @@ export default function Header({
             <path d="M4 7h16M4 12h16M4 17h16" />
           </svg>
         </button>
+        {parentRoute && (
+          <Link
+            href={parentRoute}
+            aria-label="Volver"
+            className="flex items-center justify-center w-[38px] h-[38px] shrink-0 rounded-[10px] border border-brand-border text-brand-text-2 transition-colors duration-150 hover:bg-brand-bg hover:text-brand-text"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 6l-6 6 6 6" />
+            </svg>
+          </Link>
+        )}
         <span className="hidden sm:block w-1.5 h-[34px] bg-tz-black rounded-[2px] shrink-0" />
         <div className="min-w-0">
           {/* `key` por ruta: cada aterrizaje remonta el título y retriggerea
@@ -67,10 +86,11 @@ export default function Header({
           >
             {title}
           </div>
-          <div className="text-xs sm:text-[13px] text-brand-muted mt-[3px] truncate">{subtitle}</div>
+          <div className="text-xs sm:text-[13px] text-brand-muted mt-[3px] truncate">{subtitleOverride ?? subtitle}</div>
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+        <HeaderActionsTarget className="contents" />
         {showChip && (
           <div className="hidden md:flex items-center gap-2 bg-brand-bg border border-brand-border rounded-full px-3.5 py-[7px] text-[13px] font-semibold text-brand-text-2 cursor-pointer transition-colors duration-[180ms] hover:border-brand-ink hover:bg-white">
             <span className="w-2 h-2 rounded-full bg-brand-ink" />
