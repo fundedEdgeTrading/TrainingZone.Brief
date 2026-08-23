@@ -75,7 +75,6 @@ model Organization {
   selfAssessments        SelfAssessment[]
   conversations          Conversation[]
   timeClockEntries       TimeClockEntry[]
-  staffProposals         StaffProposal[]
   personalizedOffers     PersonalizedOffer[]
   trainerRatings         TrainerRating[]
   checkinScheduleConfigs CheckinScheduleConfig[]
@@ -216,7 +215,6 @@ model User {
   mobileRefreshTokens      MobileRefreshToken[]
   notifications            Notification[]       @relation("NotificationRecipient")
   timeClockEntries         TimeClockEntry[]
-  staffProposalsAuthored   StaffProposal[]
   offersProposed           PersonalizedOffer[]  @relation("OfferProposedBy")
   offersApproved           PersonalizedOffer[]  @relation("OfferApprovedBy")
   trainerRatingsReceived   TrainerRating[]      @relation("TrainerRatingSubject")
@@ -1144,7 +1142,7 @@ model Notification {
   @@index([resolvedAt])
 }
 
-// ---------- F13: RRHH — fichaje y buzón de propuestas ----------
+// ---------- F13: RRHH — fichaje ----------
 
 model TimeClockEntry {
   id        String    @id @default(cuid())
@@ -1163,20 +1161,6 @@ model TimeClockEntry {
 
   @@index([orgId])
   @@index([userId])
-}
-
-model StaffProposal {
-  id           String   @id @default(cuid())
-  orgId        String
-  authorUserId String
-  body         String
-  status       String   @default("OPEN") // OPEN | REVIEWED
-  createdAt    DateTime @default(now())
-
-  organization Organization @relation(fields: [orgId], references: [id])
-  author       User         @relation(fields: [authorUserId], references: [id])
-
-  @@index([orgId])
 }
 
 // ---------- F14: Motor de ofertas y valoración de entrenadores ----------

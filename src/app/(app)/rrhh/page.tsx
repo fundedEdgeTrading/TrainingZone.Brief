@@ -1,25 +1,25 @@
 import { requireRole } from "@/lib/guard";
-import { canReviewStaffProposals, canViewTrainerRatings, canManageOrg } from "@/lib/rbac";
-import { listStaffProposals } from "@/lib/staff-proposals";
+import { canViewTrainerRatings, canManageOrg } from "@/lib/rbac";
 import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
 import { getSalesRanking, currentMonthRange } from "@/lib/sales-ranking";
 import { getCheckinConfigs } from "@/lib/checkin-schedule";
 import { Card } from "@/components/kpi-card";
 import { PageHeader } from "@/components/ui/page-header";
-import { ProposalForm, ProposalReviewList, CheckinConfigForm } from "./rrhh-client";
+import { CheckinConfigForm } from "./rrhh-client";
 
 function fmtEuros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 }
 
 export default async function RrhhPage() {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
-  const isReviewer = canReviewStaffProposals(session.user.role);
+  // Entrenadores y recepción entraban aquí solo por el buzón de propuestas.
+  // Retirado el buzón, lo que queda es material de dirección: el guard se ciñe
+  // a los mismos roles que ven la entrada en el nav.
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "HR_MANAGER"]);
   const isDirection = canManageOrg(session.user.role) || session.user.role === "CENTER_DIRECTOR";
 
   const monthRange = currentMonthRange();
-  const [proposals, ratingSummary, checkinConfigs, salesRanking] = await Promise.all([
-    isReviewer ? listStaffProposals(session.user.orgId) : Promise.resolve([]),
+  const [ratingSummary, checkinConfigs, salesRanking] = await Promise.all([
     canViewTrainerRatings(session.user.role) ? getTrainerRatingSummary(session.user.orgId, session.user.role) : Promise.resolve(null),
     isDirection ? getCheckinConfigs(session.user.orgId) : Promise.resolve([]),
     isDirection ? getSalesRanking(session.user.orgId, monthRange) : Promise.resolve([]),
@@ -27,14 +27,7 @@ export default async function RrhhPage() {
 
   return (
     <div className="tz-page space-y-4">
-      <PageHeader description="Buzón de propuestas y herramientas de dirección de equipo." />
-
-      <Card title="Buzón de propuestas" meta="RB-RRHH-003">
-        <div className="space-y-4">
-          <ProposalForm />
-          {isReviewer && <ProposalReviewList proposals={proposals} />}
-        </div>
-      </Card>
+      <PageHeader description="Herramientas de dirección de equipo." />
 
       {ratingSummary && (
         <Card title="Valoración de entrenadores" meta="RB-RRHH-011/012 — exclusivo dirección">

@@ -390,10 +390,14 @@ horas fichadas no cuadran con las sesiones dirigidas registradas ese día (ni po
 defecto). Es una herramienta de verificación para dirección, no un bloqueo automático de
 nóminas.
 
-### 8.3. Propuestas y mejoras
+### 8.3. Propuestas y mejoras — RETIRADA (23-08-2026)
 
-**`RB-RRHH-003`** — Los entrenadores pueden enviar propuestas/mejoras que llegan
-directamente al director (bandeja tipo buzón de sugerencias, con notificación a dirección).
+**`RB-RRHH-003`** — ~~Los entrenadores pueden enviar propuestas/mejoras que llegan
+directamente al director (bandeja tipo buzón de sugerencias, con notificación a dirección).~~
+
+La regla queda **sin efecto**: el buzón se ha eliminado del producto (modelo
+`StaffProposal`, su tabla, `lib/staff-proposals.ts`, las acciones de `/rrhh` y la
+tarjeta del panel). Si vuelve a hacer falta, se replantea desde cero.
 
 ### 8.4. Ventas del mes
 
@@ -551,7 +555,7 @@ registro histórico; cada una ya está reflejada como regla concreta en su secci
 | Entrenador que dirige la sesión | `ClassSession.trainerId` en el momento de check-in | ➕ ya existe el campo, se confirma que puede diferir del asignado originalmente |
 | RPE + nota post-sesión | `SessionDebrief` | ➕ ya existe, cubre el requisito tal cual |
 | Registro horario | `TimeClockEntry` | 🆕 nueva |
-| Propuestas/mejoras al director | `StaffProposal` | 🆕 nueva |
+| ~~Propuestas/mejoras al director~~ | ~~`StaffProposal`~~ | 🗑️ retirada (23-08-2026) |
 | Venta atribuida a trabajador | Campo `soldByUserId` en `Payment`/`Subscription` | 🆕 nuevo campo |
 | Oferta personalizada | `PersonalizedOffer` | 🆕 nueva |
 | Valoración de entrenador (confidencial) | `TrainerRating` | 🆕 nueva, visibilidad restringida a `OWNER` |

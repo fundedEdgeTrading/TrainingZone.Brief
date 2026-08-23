@@ -5,7 +5,6 @@ import { requireRole } from "@/lib/guard";
 import { canManageOrg } from "@/lib/rbac";
 import { clockIn, clockOut, signEntry } from "@/lib/timeclock-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
-import { submitStaffProposal, markProposalReviewed } from "@/lib/staff-proposals";
 import { updateCheckinConfig } from "@/lib/checkin-schedule";
 import type { ServiceKind } from "@prisma/client";
 
@@ -32,22 +31,6 @@ export async function clockOutAction(): Promise<RrhhActionResult> {
 export async function signEntryAction(entryId: string): Promise<RrhhActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
   const result = await signEntry(session.user.orgId, session.user.id, entryId);
-  if (!result.ok) return result;
-  revalidatePath("/rrhh");
-  return { ok: true };
-}
-
-export async function submitProposalAction(formData: FormData): Promise<RrhhActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER"]);
-  const result = await submitStaffProposal(session.user.orgId, session.user.id, String(formData.get("body") ?? ""));
-  if (!result.ok) return result;
-  revalidatePath("/rrhh");
-  return { ok: true };
-}
-
-export async function markProposalReviewedAction(proposalId: string): Promise<RrhhActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "HR_MANAGER"]);
-  const result = await markProposalReviewed(session.user.orgId, proposalId);
   if (!result.ok) return result;
   revalidatePath("/rrhh");
   return { ok: true };
