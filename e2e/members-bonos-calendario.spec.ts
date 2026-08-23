@@ -4,8 +4,8 @@ import { createBookingMember, deleteBookingMembers, type Fixture } from "./fixtu
 import { prisma } from "@/lib/prisma";
 
 /**
- * RB-PAGO-008: ajuste manual del saldo de un bono desde la pestaña "Bonos y
- * calendario" de la ficha del socio, y calendario mensual de sus
+ * RB-PAGO-008: ajuste manual del saldo de un bono desde la sección "Plan y
+ * pagos" de la ficha del socio, y calendario mensual de sus
  * entrenamientos. Del lado de pista el permiso es del Entrenador Admin (F1),
  * no de cualquier entrenador, así que el caso principal se prueba con su
  * cuenta y el entrenador normal se comprueba en negativo.
@@ -48,23 +48,29 @@ async function makeSubscriptionUnlimited(memberId: string) {
   });
 }
 
-async function openBonosTab(page: Page, memberId: string) {
+async function openPlanSection(page: Page, memberId: string) {
   await page.goto(`/members/${memberId}`);
-  await page.getByRole("button", { name: "Bonos y calendario" }).click();
+  await page.getByRole("tab", { name: "Plan y pagos" }).click();
   await expect(page.getByText("Bonos vigentes")).toBeVisible();
+}
+
+/** El stepper del saldo vive tras el botón "Ajustar sesiones" de la tarjeta. */
+async function openAdjust(page: Page) {
+  await page.getByRole("button", { name: "Ajustar sesiones" }).first().click();
 }
 
 function balanceInput(page: Page) {
   return page.getByLabel("Sesiones restantes").first();
 }
 
-test.describe("Bonos y calendario en la ficha del socio", () => {
+test.describe("Plan y pagos en la ficha del socio", () => {
   test("un Entrenador Admin ajusta el saldo de un bono y persiste", async ({ page }) => {
     const fixture = await createBookingMember({ tag: `bonos${Date.now()}`, service: "EP" });
     fixtures.push(fixture);
 
     await loginAs(page, "marcos.iglesias@trainingzone.es");
-    await openBonosTab(page, fixture.memberId);
+    await openPlanSection(page, fixture.memberId);
+    await openAdjust(page);
 
     const input = balanceInput(page);
     const before = Number(await input.inputValue());
@@ -78,7 +84,8 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
 
     // El saldo tiene que haber ido a la base de datos, no solo al estado local.
     await page.reload();
-    await page.getByRole("button", { name: "Bonos y calendario" }).click();
+    await page.getByRole("tab", { name: "Plan y pagos" }).click();
+    await openAdjust(page);
     await expect(balanceInput(page)).toHaveValue(String(before + 2));
   });
 
@@ -87,9 +94,11 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     fixtures.push(fixture);
 
     await loginAs(page, "entrenador@trainingzone.es");
-    await openBonosTab(page, fixture.memberId);
+    await openPlanSection(page, fixture.memberId);
 
-    await expect(page.getByText("Sesiones restantes").first()).toBeVisible();
+    await expect(page.getByText(/sesiones restantes/i).first()).toBeVisible();
+    // Sin permiso de ajuste no hay ni disclosure ni stepper.
+    await expect(page.getByRole("button", { name: "Ajustar sesiones" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Sumar una sesión" })).toHaveCount(0);
     await expect(balanceInput(page)).toHaveCount(0);
   });
@@ -99,7 +108,8 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     fixtures.push(fixture);
 
     await loginAs(page, "sergio@trainingzone.es");
-    await openBonosTab(page, fixture.memberId);
+    await openPlanSection(page, fixture.memberId);
+    await openAdjust(page);
 
     const input = balanceInput(page);
     const before = Number(await input.inputValue());
@@ -114,11 +124,9 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     await expect(page.getByText("Saldo actualizado.")).toBeVisible();
     await expect(balanceInput(page)).toHaveValue("0");
 
-    // Contratación lee el mismo campo y debe coincidir. Ese bloque solo lo ve
-    // quien pasa `canManageBilling`, de ahí que se compruebe con dirección y no
-    // con el Entrenador Admin del primer test.
-    await page.getByRole("button", { name: "Contratación" }).click();
-    await expect(page.getByText("0 sesiones")).toBeVisible();
+    // La meta del rail lee el mismo campo y debe coincidir: es el contador que
+    // se ve sin abrir la sección.
+    await expect(page.getByRole("tab", { name: "Plan y pagos" })).toContainText("0 sesiones");
   });
 
   test("un bono ilimitado no ofrece controles de ajuste", async ({ page }) => {
@@ -127,9 +135,10 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     await makeSubscriptionUnlimited(fixture.memberId);
 
     await loginAs(page, "sergio@trainingzone.es");
-    await openBonosTab(page, fixture.memberId);
+    await openPlanSection(page, fixture.memberId);
 
     await expect(page.getByText("Ilimitado", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ajustar sesiones" })).toHaveCount(0);
     // Ni stepper ni Guardar: la UI nunca ofrece un camino para convertir un
     // saldo null en numérico.
     await expect(page.getByRole("button", { name: "Sumar una sesión" })).toHaveCount(0);
@@ -150,7 +159,7 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     });
 
     await loginAs(page, "sergio@trainingzone.es");
-    await openBonosTab(page, fixture.memberId);
+    await openPlanSection(page, fixture.memberId);
     await expect(page.getByText("Calendario de entrenamientos")).toBeVisible();
 
     const urlBefore = page.url();
@@ -166,7 +175,9 @@ test.describe("Bonos y calendario en la ficha del socio", () => {
     await expect(page.getByRole("button", { name: "Mes anterior" })).toBeEnabled();
 
     // La regresión que sostiene el diseño: sin cambio de URL no se re-renderiza
-    // la página (y no se escribe una fila falsa de HEALTH_RECORD_READ).
+    // la página (y no se escribe una fila falsa de HEALTH_RECORD_READ). El
+    // `?s=plan` que escribe el rail ya está en `urlBefore`: pasar de mes no
+    // debe cambiar nada más.
     expect(page.url()).toBe(urlBefore);
     await expect(page.getByText("Bonos vigentes")).toBeVisible();
     await expect(page.getByText("Calendario de entrenamientos")).toBeVisible();

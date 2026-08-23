@@ -5,6 +5,7 @@ import { addHealthRecord, resolveHealthRecordAction, addMemberNote, resendMember
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { useFocusRequest } from "./section-rail";
 
 // Mismas clases que el control de field.tsx, para los <textarea> multilínea.
 const CONTROL =
@@ -31,7 +32,7 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
           }
         })
       }
-      className="border border-tz-linen rounded-lg p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end bg-tz-bone/40"
+      className="border border-brand-border rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end bg-brand-bg"
     >
       <input type="hidden" name="memberId" value={memberId} />
       <Field label="Tipo">
@@ -103,9 +104,9 @@ export function ResolveHealthButton({ recordId, memberId }: { recordId: string; 
       <button
         disabled={pending}
         onClick={handleResolve}
-        className="text-xs font-semibold text-good hover:opacity-80 transition-opacity"
+        className="text-xs font-semibold text-good underline underline-offset-[3px] hover:opacity-80 transition-opacity"
       >
-        ¿Marcar resuelta?
+        ¿Confirmar?
       </button>
     );
   }
@@ -114,9 +115,9 @@ export function ResolveHealthButton({ recordId, memberId }: { recordId: string; 
     <button
       disabled={pending}
       onClick={() => setConfirming(true)}
-      className="text-xs text-faint hover:text-good transition-colors duration-150"
+      className="text-xs font-semibold text-brand-text-2 underline underline-offset-[3px] hover:text-good transition-colors duration-150"
     >
-      Resolver
+      Marcar resuelta
     </button>
   );
 }
@@ -147,8 +148,12 @@ export function ResendWelcomeButton({ memberId }: { memberId: string }) {
 
 export function AddNoteForm({ memberId }: { memberId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
+
+  // "Nueva nota" de la cabecera trae aquí el foco: el composer es el mismo.
+  useFocusRequest("note", () => textareaRef.current?.focus());
 
   return (
     <form
@@ -164,20 +169,24 @@ export function AddNoteForm({ memberId }: { memberId: string }) {
           }
         })
       }
-      className="space-y-2"
+      className="bg-brand-bg border border-brand-border rounded-xl p-3.5 flex flex-col gap-2.5"
     >
       <input type="hidden" name="memberId" value={memberId} />
       <textarea
+        ref={textareaRef}
         name="body"
         required
-        rows={3}
-        className={CONTROL}
-        placeholder="Añadir observación de bitácora (visible para todo el staff)..."
+        rows={2}
+        className={`${CONTROL} text-[13px]`}
+        placeholder="Escribe una observación de la sesión…"
       />
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <span className="text-[11px] text-brand-faint">
+          Visible para el equipo del centro. No se comparte con el socio.
+        </span>
         <Button type="submit" size="sm" disabled={pending}>
           {pending && <ButtonSpinner />}
-          {pending ? "Guardando..." : "Añadir a la bitácora"}
+          {pending ? "Guardando..." : "Guardar nota"}
         </Button>
       </div>
     </form>

@@ -39,7 +39,7 @@ function isCancelled(ev: MemberCalendarEvent) {
  * /members/[id] entera y `getHealthRecordsForMember` escribe una fila de
  * AuditLog (HEALTH_RECORD_READ, Art. 9 RGPD) en CADA lectura, así que pasar de
  * mes ensuciaría el registro de accesos a datos de salud con accesos que nadie
- * ha hecho. Además la pestaña activa vive en el useState de tabs.tsx.
+ * ha hecho. Además la sección activa vive en el useState de section-rail.tsx.
  *
  * No reutiliza AgendaView: aquello es la rejilla SEMANAL de todo el centro, con
  * arrastrar y soltar, filtro de entrenadores, diálogo de alta y navegación a
@@ -134,24 +134,24 @@ export function MemberSessionsCalendar({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h4 className="text-xs font-semibold text-muted uppercase">Calendario de entrenamientos</h4>
+        <h3 className="text-[13px] font-bold uppercase tracking-[.08em] text-brand-text">Calendario de entrenamientos</h3>
         <div className="flex items-center gap-2">
           <button
             type="button"
             aria-label="Mes anterior"
-            className="rounded-control border border-brand-border bg-white px-2.5 py-1 text-sm text-brand-text hover:border-brand-ink disabled:opacity-40 disabled:pointer-events-none"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-lg border border-brand-border bg-white text-sm text-brand-text hover:border-brand-ink transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
             disabled={pending || month <= minMonth}
             onClick={() => goToMonth(shiftMonth(month, -1))}
           >
             ‹
           </button>
-          <span className="text-sm font-semibold text-brand-text min-w-[10rem] text-center">
+          <span className="text-[13px] font-bold text-brand-text min-w-[9rem] text-center">
             {MONTHS[monthIdx]} {year}
           </span>
           <button
             type="button"
             aria-label="Mes siguiente"
-            className="rounded-control border border-brand-border bg-white px-2.5 py-1 text-sm text-brand-text hover:border-brand-ink disabled:opacity-40 disabled:pointer-events-none"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-lg border border-brand-border bg-white text-sm text-brand-text hover:border-brand-ink transition-colors duration-150 disabled:opacity-40 disabled:pointer-events-none"
             disabled={pending}
             onClick={() => goToMonth(shiftMonth(month, 1))}
           >
