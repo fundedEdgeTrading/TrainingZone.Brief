@@ -933,6 +933,21 @@ textarea:focus-visible {
   }
 }
 
+/* ===== Rail de secciones de la ficha de socio =====
+   En móvil el rail es una fila con desplazamiento por arrastre. La barra de
+   scroll se oculta (el propio recorte de las pastillas ya indica que hay más),
+   pero el scroll sigue existiendo. De `lg` en adelante es una columna y no hay
+   desbordamiento que ocultar. */
+@media (max-width: 1023px) {
+  .tz-rail-scroll {
+    scrollbar-width: none;
+  }
+  .tz-rail-scroll::-webkit-scrollbar {
+    height: 0;
+    width: 0;
+  }
+}
+
 /* ===== Tablas que se apilan en móvil =====
    Una tabla de 5–7 columnas no cabe en un teléfono: obligaba a arrastrar en
    horizontal dentro de la tarjeta para leer cada registro. Por debajo de `sm`

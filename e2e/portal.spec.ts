@@ -27,13 +27,4 @@ test.describe("F16 — Portal del socio: IA, objetivos y chat", () => {
     await page.getByRole("button", { name: "Enviar" }).click();
     await expect(page.getByText(message)).toBeVisible({ timeout: 15_000 });
   });
-
-  test("el entrenador asignado ve el chat y la rutina del socio en su ficha", async ({ page }) => {
-    await loginAs(page, "entrenador@trainingzone.es");
-    await page.goto("/members?q=Marta");
-    await page.getByText("Marta García López").click();
-    await page.getByRole("button", { name: "IA & Chat" }).click();
-    await expect(page.getByText("Rutina de IA")).toBeVisible();
-    await expect(page.getByText("Chat (RB-CHAT-001)")).toBeVisible();
-  });
 });

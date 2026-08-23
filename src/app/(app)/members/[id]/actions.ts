@@ -90,7 +90,7 @@ export async function addMemberNote(formData: FormData): Promise<MemberActionRes
   return { ok: true };
 }
 
-// Ficha del socio (pestaña "Datos"): identidad, dirección postal y contacto.
+// Ficha del socio (sección "Socio"): identidad, dirección postal y contacto.
 // Los consentimientos NO se editan aquí — los firma el propio socio en su
 // onboarding. El estado (ACTIVE/FROZEN/...) tampoco: lo derivan las
 // suscripciones (lib/subscription-jobs.ts, billing/subscription-actions.ts).
@@ -253,7 +253,7 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
 // Baja definitiva del socio (C4 — derecho de supresión del RGPD). Reglas:
 //  · solo dirección (canDeleteMembers);
 //  · nunca con una suscripción viva (ACTIVE o FROZEN, que es una activa en
-//    pausa): primero hay que cancelarla desde "Contratación";
+//    pausa): primero hay que cancelarla desde "Plan y pagos";
 //  · borra en cascada manual todo lo que cuelga del socio — el esquema no
 //    declara onDelete, así que el orden importa (hijos antes que padres);
 //  · el AuditLog no tiene FK a Member: se conserva como registro append-only
@@ -277,7 +277,7 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
   if (member.subscriptions.length > 0) {
     return {
       ok: false,
-      error: "Este socio tiene una suscripción activa. Cancélala desde «Contratación» antes de eliminarlo.",
+      error: "Este socio tiene una suscripción activa. Cancélala desde «Plan y pagos» antes de eliminarlo.",
     };
   }
 

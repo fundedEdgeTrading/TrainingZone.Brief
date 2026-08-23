@@ -234,7 +234,7 @@ export async function getMemberAttendanceStats(memberId: string) {
 }
 
 // ---------- Calendario de entrenamientos del socio ----------
-// Pestaña "Bonos y calendario" de la ficha del socio.
+// Sección "Plan y pagos" de la ficha del socio.
 //
 // Se consulta BOOKING, no CLASSSESSION: `Booking.occurrenceDate` ya materializa
 // el día concreto de cada ocurrencia de una serie recurrente, así que aquí NO

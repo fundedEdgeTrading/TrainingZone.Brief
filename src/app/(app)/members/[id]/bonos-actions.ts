@@ -9,8 +9,8 @@ import { getMemberSessionCalendar, type MemberCalendarEvent } from "@/lib/member
 import { parseDateParam } from "@/lib/date-utils";
 
 /**
- * Ajuste manual del saldo de un bono + paginación del calendario de la pestaña
- * "Bonos y calendario" de la ficha del socio.
+ * Ajuste manual del saldo de un bono + paginación del calendario de la sección
+ * "Plan y pagos" de la ficha del socio.
  *
  * Vive aquí y NO en billing/subscription-actions.ts a propósito: aquel fichero
  * comparte un `ALLOWED_ROLES` de módulo (OWNER/CENTER_DIRECTOR/RECEPTION) entre
@@ -82,7 +82,7 @@ export async function adjustSubscriptionSessions(
   // Mismo conjunto que `manageableSubscriptions` en la ficha. Recargar un bono
   // CANCELLED lo resucitaría a medias: tendría saldo, pero el motor de reservas
   // (activeBookingSubscriptions) lo seguiría ignorando. Para vender más
-  // sesiones ya está "Añadir bono" en Contratación.
+  // sesiones ya está "Añadir bono" en Plan y pagos.
   if (sub.status !== "ACTIVE" && sub.status !== "FROZEN") {
     return { ok: false, error: "Solo se puede ajustar el saldo de bonos activos o congelados." };
   }

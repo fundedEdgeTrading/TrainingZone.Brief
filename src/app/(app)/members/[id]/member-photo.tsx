@@ -55,7 +55,7 @@ export function EditableMemberPhoto({
       // navegador reconoce que es el mismo objeto y lo lleva de un sitio a otro
       // en vez de hacerlo desaparecer y aparecer.
       style={{ viewTransitionName: `member-avatar-${memberId}` }}
-      className="relative w-14 h-14 rounded-full bg-tz-sand text-brand-text-2 font-display font-extrabold text-lg flex items-center justify-center shrink-0 overflow-hidden group"
+      className="relative w-[76px] h-[76px] rounded-full bg-tz-sand border border-brand-border text-brand-text-2 font-display font-extrabold text-[22px] flex items-center justify-center shrink-0 overflow-hidden group"
     >
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element -- foto subida por el usuario (data URL)
