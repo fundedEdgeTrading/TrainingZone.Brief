@@ -485,8 +485,11 @@ Dos puntos, no más:
 
 1. **Navegación** — `src/lib/rbac.ts`: cada `NavItem` admite `feature?: PlatformFeature`. El
    sidebar filtra por `orgHasFeature`. Lo no contratado **no se enseña**.
-   Mapa: `/health/*` y `/brief` → `salud_aptitud`; `/retention` → `retencion`; `/feedback` →
+   Mapa: `/health/*` y `/brief` → `salud_aptitud`; `/feedback` →
    `feedback_direccion`; `/dashboard` → `bi_avanzado`; `/audit` → `exportaciones`.
+   `retencion` no está en el mapa porque no gatea una ruta: la pantalla `/retention` se
+   retiró y el motor (`src/lib/retention.ts`) comprueba la feature él mismo antes de
+   calcular, así que sin plan no hay alertas que enseñar en Socios ni en la ficha.
 2. **Página** — cada ruta gateada empieza con `await requireFeature("…")`. Sin esto, la URL directa
    se salta el filtro del menú.
 
@@ -521,7 +524,8 @@ Retirar `PLATFORM_PENDING_TTL_DAYS` (DEP-5, se consuma en F3).
 - `/planes` accesible sin sesión y coherente con o sin precios configurados.
 - Con el seed (`platformPlan` nulo) nada premium aparece en el menú; asignando `avanzado_ano` a la
   organización, aparece salud, retención, feedback, panel y auditoría, y no aparece IA.
-- Entrar por URL directa a `/retention` sin la feature redirige a `/planes?feature=retencion`.
+- Sin la feature `retencion`, el cron no calcula alertas para esa organización y ningún socio
+  aparece marcado en el listado ni en su ficha.
 - **El seed pone `platformPlan: "elite_ano"`** a las dos organizaciones demo, para que la demo siga
   enseñando el producto completo.
 

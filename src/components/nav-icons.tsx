@@ -46,12 +46,6 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
     </>
   ),
   leads: <path d="M3.5 5h17l-6.6 7.6v6.2L10 20.5v-7.9z" />,
-  retencion: (
-    <>
-      <path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1" />
-      <path d="M20.5 4.2v4.4h-4.4" />
-    </>
-  ),
   anuncios: (
     <>
       <path d="M3.5 10v4l10.5 4.4V5.6z" />
