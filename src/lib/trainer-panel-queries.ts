@@ -547,3 +547,9 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     epSlotsReserved,
   };
 }
+
+/** Datos del panel del entrenador tal y como los consume la página. */
+export type TrainerPanelData = Awaited<ReturnType<typeof getTrainerPanelData>>;
+
+/** Una sesión de la tarjeta "Agenda de hoy" (también la de un día navegado). */
+export type TrainerAgendaSession = TrainerPanelData["agendaSessions"][number];
