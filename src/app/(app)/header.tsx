@@ -14,7 +14,6 @@ export default function Header({
   subtitle,
   userName,
   roleLabel,
-  centerChip,
   notifications,
   organizations,
   activeOrgId,
@@ -24,7 +23,6 @@ export default function Header({
   subtitle: string;
   userName: string;
   roleLabel: string;
-  centerChip?: string;
   notifications: {
     id: string;
     title: string;
@@ -42,7 +40,6 @@ export default function Header({
   const pathname = usePathname();
   const { setOpen } = useMobileNav();
   const title = getPageTitle(nav, pathname);
-  const showChip = centerChip && pathname === "/dashboard";
   // Pantallas que cuelgan de otra (el mapa de barrios, del panel): el header
   // pinta la vuelta, que si no solo existiría en el botón atrás del navegador.
   const parentRoute = PARENT_ROUTE[pathname];
@@ -91,12 +88,10 @@ export default function Header({
       </div>
       <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         <HeaderActionsTarget className="contents" />
-        {showChip && (
-          <div className="hidden md:flex items-center gap-2 bg-brand-bg border border-brand-border rounded-full px-3.5 py-[7px] text-[13px] font-semibold text-brand-text-2 cursor-pointer transition-colors duration-[180ms] hover:border-brand-ink hover:bg-white">
-            <span className="w-2 h-2 rounded-full bg-brand-ink" />
-            {centerChip}
-          </div>
-        )}
+        {/* El chip "Todos los centros" que vivía aquí desaparece: decía
+            siempre lo mismo y no se podía cambiar. El panel de control tiene
+            ahora su propio selector de centro en la barra de contexto, y ese
+            sí filtra de verdad. */}
         <NotificationBell notifications={notifications} />
         {isMember ? (
           <AccountMenuTrigger id="header-account" placement="down">

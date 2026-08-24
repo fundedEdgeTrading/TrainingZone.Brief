@@ -21,9 +21,14 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
 
     await expect(page.getByText("LTV medio por cliente")).toBeVisible();
     await expect(page.getByText("Ticket medio")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Nicho principal (ocupación)" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Objetivos (agregado)" })).toBeVisible();
+    // El rediseño del panel acortó los títulos: "Nicho principal (ocupación)" y
+    // "Objetivos (agregado)" perdieron el paréntesis, que era jerga interna.
+    await expect(page.getByRole("heading", { name: "Nicho principal" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Objetivos" })).toBeVisible();
     // El panel por provincia se sustituyó por el mapa de calor por barrio (CP completo).
     await expect(page.getByText(/Mapa de calor/).first()).toBeVisible();
+    // El insight y los selectores de la barra de contexto son la cabecera nueva.
+    await expect(page.getByText("Ocupación media")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Todos", exact: true })).toBeVisible();
   });
 });

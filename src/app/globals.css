@@ -925,6 +925,13 @@ main:has(> [data-full-bleed]) {
 .tz-map-bubble-hi .tz-map-bubble-core {
   transform: scale(calc(var(--s, 1) * 1.22));
   box-shadow: 0 9px 24px -5px rgba(29, 29, 28, 0.7);
+  border-color: var(--color-apta-gold);
+  border-width: 3px;
+}
+/* Con un barrio activo, el resto se apaga: el acento solo funciona si lo que
+   no es acento se aparta. */
+.tz-map-bubble-dim .tz-map-bubble-core {
+  opacity: 0.28;
 }
 .leaflet-tooltip.tz-map-tip {
   background: var(--color-tz-black);

@@ -4,15 +4,20 @@
  * El panel hacía las 19 consultas en un único `Promise.all`, así que la página
  * no pintaba hasta que terminaba la más lenta. Aquí cada bloque es su propio
  * Server Component asíncrono con su consulta: la página los envuelve en
- * `<Suspense>` y lo importante (la fila de KPIs) llega primero mientras el
- * resto sigue en vuelo. La lógica de las consultas no cambia — solo dónde se
- * esperan.
+ * `<Suspense>` y lo importante (el insight y la fila de KPIs) llega primero
+ * mientras el resto sigue en vuelo.
+ *
+ * Rediseño 2026-08: los 19 paneles siguen estando, reordenados por jerarquía, y
+ * se suman el insight del día y las altas/bajas por semana. Tres gráficas de
+ * Recharts desaparecen a favor de HTML —método de pago, socios por estado y el
+ * ranking de socios— porque a estos anchos una barra horizontal con etiqueta de
+ * categoría o se solapa o se recorta, y el dato cabe mejor en una fila.
  */
 import { cache } from "react";
 import Link from "next/link";
 import {
-  getKpis,
-  getRevenueByMonth,
+  getKpiTiles,
+  getRevenueSeries,
   getMemberStateBreakdown,
   getOccupancyByCenter,
   getNoShowRate,
@@ -22,7 +27,7 @@ import {
   getLtvAndTicket,
   getMemberDemographics,
   getGoalsAggregate,
-  getPostalCodeStats,
+  getPostalPanelData,
   getAgeBrackets,
   getMembersByService,
   getAcquisitionChannels,
@@ -30,165 +35,226 @@ import {
   getMemberRanking,
   getLeadCloseRate,
   getSexDistribution,
+  getWeeklyChurn,
+  getDailyInsight,
+  getAverageOccupancy,
+  type DashboardRange,
 } from "@/lib/dashboard-queries";
+import { OCCUPANCY_TARGET_PCT, RETENTION_TARGET_PCT } from "@/lib/dashboard-targets";
+import { MEMBER_STATE_COLOR, MEMBER_STATE_LABEL, PAYMENT_METHOD_COLOR, PAYMENT_METHOD_LABEL, SERIES } from "@/lib/chart-colors";
 import PostalMapPanel from "./postal-map-panel";
-import { KpiCard, Card } from "@/components/kpi-card";
+import { KpiCard } from "@/components/kpi-card";
 import { EUR_FORMAT } from "@/components/ui/count-up";
+import { PanelCard, BarRow, BarBlock, LegendSwatch, FUNNEL_COLORS } from "./panel-card";
+import { dashboardHref, type DashboardParams } from "./params";
+import { ExportRankingButton } from "./export-ranking-button";
 import {
-  RevenueByMonthChart,
-  MemberStateChart,
-  OccupancyByCenterChart,
+  RevenueChart,
   OccupancyByWeekdayChart,
   RetentionCohortChart,
-  RevenueByMethodChart,
   NoShowRateCard,
   AgeBracketsChart,
   DonutChart,
-  MemberRankingChart,
-  TopServicesChart,
+  WeeklyChurnChart,
 } from "./charts";
-
-export const RANKING_DIMENSION_LABEL: Record<string, string> = {
-  mixed: "Mixto",
-  ltv: "LTV",
-  adherence: "Adherencia",
-  tenure: "Antigüedad",
-};
 
 export const eur = (cents: number) =>
   (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 
+const int = (n: number) => n.toLocaleString("es-ES");
+
 /**
  * `getMemberDemographics` alimenta tres paneles distintos. Con `cache()` la
  * consulta sigue ejecutándose una sola vez por petición aunque cada panel la
- * pida por su cuenta.
+ * pida por su cuenta. Los argumentos son primitivos a propósito: `cache()`
+ * compara por identidad, así que un objeto de opciones fallaría siempre.
  */
-const demographicsFor = cache((orgId: string) => getMemberDemographics(orgId));
+const demographicsFor = cache((orgId: string, centerId: string | null) =>
+  getMemberDemographics(orgId, { centerId })
+);
 
-type PanelProps = { orgId: string };
+/** Ámbito activo del panel. Se pasa desestructurado para que `cache()` funcione. */
+export type PanelProps = { orgId: string; centerId: string | null; range: DashboardRange };
 
-/* ---------- Fila 1: KPIs de cabecera ---------- */
+const optsOf = ({ centerId, range }: PanelProps) => ({ centerId, range });
 
-export async function KpiRow({ orgId }: PanelProps) {
-  const kpis = await getKpis(orgId);
+/* ---------- 1. Insight del día ---------- */
+
+export async function InsightPanel({ orgId, centerId, range }: PanelProps) {
+  const insight = await getDailyInsight(orgId, { centerId, range });
+  // Sin datos suficientes no se escribe una frase de relleno: el bloque no sale.
+  if (!insight) return null;
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
-      <KpiCard label="Socios activos" value={String(kpis.activeMembers)} numericValue={kpis.activeMembers} delay={0.04} />
-      <KpiCard
-        label="Morosos"
-        value={String(kpis.delinquent)}
-        numericValue={kpis.delinquent}
-        tone={kpis.delinquent > 0 ? "critical" : "default"}
-        hint={kpis.delinquent > 0 ? "recibos fallidos" : ""}
-        delay={0.1}
+    <div className="relative overflow-hidden bg-brand-ink rounded-[18px] px-6 py-5 flex flex-wrap items-center gap-5 tz-fade-up">
+      <span
+        className="absolute left-0 inset-y-0 w-[3px]"
+        style={{ background: "linear-gradient(180deg, #e3cfa2, #b58e52)" }}
       />
-      <KpiCard label="Congelados" value={String(kpis.frozen)} numericValue={kpis.frozen} tone="warning" delay={0.16} />
-      <KpiCard
-        label="Ingresos del mes"
-        value={eur(kpis.monthRevenueCents)}
-        numericValue={kpis.monthRevenueCents}
-        format={EUR_FORMAT}
-        tone="good"
-        delay={0.22}
-      />
-      <KpiCard
-        label="Sesiones este mes"
-        value={String(kpis.sessionsThisMonth)}
-        numericValue={kpis.sessionsThisMonth}
-        delay={0.28}
-      />
-      <KpiCard
-        label="Socios en riesgo de fuga"
-        value={String(kpis.openAlerts)}
-        numericValue={kpis.openAlerts}
-        tone={kpis.openAlerts > 0 ? "warning" : "default"}
-        // El módulo "Retención" ya no existe: la señal se trabaja en el listado
-        // de socios, donde cada uno lleva su marca y su caída.
-        hint="marcados en Socios"
-        delay={0.34}
-      />
+      <div className="flex-1 min-w-[280px]">
+        <div className="flex items-center gap-2 mb-2">
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "linear-gradient(135deg, #e3cfa2, #b58e52)" }}
+          />
+          <span className="text-[10px] font-bold tracking-[.18em] uppercase text-apta-gold whitespace-nowrap">
+            Insight del día
+          </span>
+        </div>
+        <p className="text-[15.5px] leading-[1.55] text-tz-bone text-pretty max-w-[78ch]">{insight.text}</p>
+      </div>
+      <Link
+        href={insight.ctaHref}
+        className="flex items-center gap-[7px] flex-none border border-brand-border-dark rounded-pill px-4 py-[9px] text-[12.5px] font-semibold text-apta-gold transition-colors duration-150 hover:bg-brand-border-dark"
+      >
+        {insight.ctaLabel}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 6l6 6-6 6" />
+        </svg>
+      </Link>
     </div>
   );
 }
 
-/* ---------- Fila 2: ingresos y estado ---------- */
+/* ---------- 2. Fila de KPIs ---------- */
 
-export async function RevenuePanel({ orgId }: PanelProps) {
-  const revenueByMonth = await getRevenueByMonth(orgId);
+const KPI_FORMAT = {
+  eur: EUR_FORMAT,
+  pct: { suffix: "%" },
+  int: undefined,
+  signed: undefined,
+} as const;
+
+export async function KpiRow({ orgId, centerId, range }: PanelProps) {
+  const tiles = await getKpiTiles(orgId, { centerId, range });
+
   return (
-    <Card title="Ingresos por mes" meta="Últimos 6 meses" delay={0.12}>
-      <RevenueByMonthChart data={revenueByMonth} />
-    </Card>
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+      {tiles.map((t, i) => (
+        <KpiCard
+          key={t.key}
+          label={t.label}
+          value={t.value}
+          // "Altas − bajas" puede ser negativo y el signo forma parte del dato:
+          // ahí se pinta el valor ya formateado en vez de animar el contador.
+          numericValue={t.format === "signed" ? undefined : t.numericValue}
+          format={KPI_FORMAT[t.format]}
+          // Sin histórico del que salir (morosos, congelados: `MemberState` no
+          // guarda cambios de estado) el chip dice "—", no "=": "sin cambios"
+          // sería una afirmación que nadie ha comprobado.
+          delta={t.delta ?? { text: "—", tone: "flat" }}
+          spark={t.spark}
+          accent={t.accent}
+          hint={t.hint}
+          size="kpi"
+          delay={0.04 + i * 0.035}
+        />
+      ))}
+    </div>
   );
 }
 
-export async function MemberStatePanel({ orgId }: PanelProps) {
-  const stateBreakdown = await getMemberStateBreakdown(orgId);
+/* ---------- 3. Mapa de calor por barrio ---------- */
+
+export async function PostalPanel({ orgId, centerId, range }: PanelProps) {
+  const { points, opportunity } = await getPostalPanelData(orgId, { centerId, range });
+  return <PostalMapPanel points={points} opportunity={opportunity} />;
+}
+
+/* ---------- 4. Dinero ---------- */
+
+export async function RevenuePanel(props: PanelProps) {
+  const { rows, average, meta } = await getRevenueSeries(props.orgId, optsOf(props));
   return (
-    <Card title="Socios por estado" delay={0.18}>
-      <MemberStateChart data={stateBreakdown} />
-    </Card>
+    <PanelCard
+      title="Ingresos"
+      meta={meta}
+      delay={0.12}
+      action={
+        <div className="flex items-center gap-3.5">
+          <LegendSwatch color={SERIES.gold} label="periodo actual" />
+          <LegendSwatch color={SERIES.goldSoft} label="media" line />
+        </div>
+      }
+    >
+      {rows.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin cobros registrados en este periodo.</p>
+      ) : (
+        <RevenueChart data={rows} average={average} />
+      )}
+    </PanelCard>
   );
 }
 
-/* ---------- Fila 3: ocupación ---------- */
+const METHOD_ORDER = ["SEPA", "CARD", "BIZUM", "CASH", "TRANSFER"];
 
-export async function OccupancyByCenterPanel({ orgId }: PanelProps) {
-  const occupancyByCenter = await getOccupancyByCenter(orgId);
+export async function RevenueByMethodPanel(props: PanelProps) {
+  const data = await getRevenueByMethod(props.orgId, optsOf(props));
+  const rows = data
+    .map((d) => ({ ...d, label: PAYMENT_METHOD_LABEL[d.method] ?? d.method }))
+    .sort((a, b) => METHOD_ORDER.indexOf(a.method) - METHOD_ORDER.indexOf(b.method));
+  const total = rows.reduce((s, r) => s + r.totalEuros, 0);
+  const max = Math.max(1, ...rows.map((r) => r.totalEuros));
+  const recurring = rows.find((r) => r.method === "SEPA");
+  const worstFailing = [...rows].sort((a, b) => b.failedCount - a.failedCount)[0];
+
   return (
-    <Card title="Ocupación por centro" meta="30 días" delay={0.24}>
-      <OccupancyByCenterChart data={occupancyByCenter} />
-    </Card>
+    <PanelCard
+      title="Método de pago"
+      delay={0.18}
+      footer={
+        total > 0 && recurring ? (
+          <>
+            El {Math.round((recurring.totalEuros / total) * 100)}% del cobro va por SEPA.
+            {worstFailing && worstFailing.failedCount > 0
+              ? ` ${worstFailing.label} es el método que más recibos fallidos deja: ${worstFailing.failedCount}.`
+              : " Ningún método acumula recibos fallidos ahora mismo."}
+          </>
+        ) : undefined
+      }
+    >
+      {rows.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin cobros registrados todavía.</p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {rows.map((r, i) => (
+            <BarRow
+              key={r.method}
+              label={r.label}
+              labelWidth={104}
+              pct={(r.totalEuros / max) * 100}
+              color={PAYMENT_METHOD_COLOR[r.method] ?? SERIES.sand}
+              value={`${(r.totalEuros / 1000).toLocaleString("es-ES", { maximumFractionDigits: 1 })}k €`}
+              valueWidth={52}
+              height={20}
+              rounded="rounded-r-[7px]"
+              delay={0.2 + i * 0.06}
+            />
+          ))}
+        </div>
+      )}
+    </PanelCard>
   );
 }
 
-export async function OccupancyByWeekdayPanel({ orgId }: PanelProps) {
-  const occupancyByWeekday = await getOccupancyByWeekday(orgId);
+/* ---------- 5. LTV y ticket ---------- */
+
+export async function LtvRow(props: PanelProps) {
+  const [ltvTicket, demographics] = await Promise.all([
+    getLtvAndTicket(props.orgId, optsOf(props)),
+    demographicsFor(props.orgId, props.centerId),
+  ]);
+
   return (
-    <Card title="Ocupación por día" meta="60 días" delay={0.3}>
-      <OccupancyByWeekdayChart data={occupancyByWeekday} />
-    </Card>
-  );
-}
-
-export async function NoShowPanel({ orgId }: PanelProps) {
-  const noShowRate = await getNoShowRate(orgId);
-  return <NoShowRateCard rate={noShowRate} />;
-}
-
-/* ---------- Fila 4: retención y método de pago ---------- */
-
-export async function RetentionPanel({ orgId }: PanelProps) {
-  const cohorts = await getCohortRetention(orgId);
-  return (
-    <Card title="Retención por cohorte" meta="% aún activos por mes de alta" delay={0.42}>
-      <RetentionCohortChart data={cohorts} />
-    </Card>
-  );
-}
-
-export async function RevenueByMethodPanel({ orgId }: PanelProps) {
-  const revenueByMethod = await getRevenueByMethod(orgId);
-  return (
-    <Card title="Ingresos por método de pago" delay={0.48}>
-      <RevenueByMethodChart data={revenueByMethod} />
-    </Card>
-  );
-}
-
-/* ---------- Fila 5: LTV y demografía ---------- */
-
-export async function LtvRow({ orgId }: PanelProps) {
-  const [ltvTicket, demographics] = await Promise.all([getLtvAndTicket(orgId), demographicsFor(orgId)]);
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <KpiCard
         label="LTV medio por cliente"
         value={eur(ltvTicket.ltvEuros * 100)}
         numericValue={Math.round(ltvTicket.ltvEuros * 100)}
         format={EUR_FORMAT}
         hint={`${ltvTicket.payingMembers} clientes con cobros`}
-        tone="good"
+        accent="gold"
+        size="ltv"
         delay={0.5}
       />
       <KpiCard
@@ -196,6 +262,14 @@ export async function LtvRow({ orgId }: PanelProps) {
         value={eur(ltvTicket.avgTicketEuros * 100)}
         numericValue={Math.round(ltvTicket.avgTicketEuros * 100)}
         format={EUR_FORMAT}
+        // El pie deja de ser un código de regla y dice quién lidera.
+        hint={
+          ltvTicket.ticketLeader
+            ? `${ltvTicket.ticketLeader.center} lidera con ${eur(ltvTicket.ticketLeader.avgTicketEuros * 100)}`
+            : ""
+        }
+        accent="ink"
+        size="ltv"
         delay={0.54}
       />
       <KpiCard
@@ -203,174 +277,419 @@ export async function LtvRow({ orgId }: PanelProps) {
         value={demographics.avgAge ? `${demographics.avgAge} años` : "—"}
         numericValue={demographics.avgAge ?? undefined}
         format={{ suffix: " años" }}
+        hint={`muestra: ${demographics.sampleSize}`}
+        accent="ink"
+        size="ltv"
         delay={0.58}
       />
       <KpiCard
         label="% con hijos / empresarios"
         value={`${demographics.pctWithChildren ?? "—"}% / ${demographics.pctBusinessOwners ?? "—"}%`}
+        hint="el nicho que más repite"
+        accent="ink"
+        size="ltv"
         delay={0.62}
       />
     </div>
   );
 }
 
-/* ---------- Fila 6: sexo, ocupación, objetivos ---------- */
+/* ---------- 6. Ocupación y actividad ---------- */
 
-export async function SexPanel({ orgId }: PanelProps) {
-  const sexDistribution = await getSexDistribution(orgId);
-  return (
-    <Card title="Sexo" meta={`RB-BI-005 · ${sexDistribution.unspecified} sin especificar`} delay={0.52}>
-      {sexDistribution.answered.length === 0 ? (
-        <p className="text-sm text-brand-muted">Sin datos de sexo todavía.</p>
-      ) : (
-        <DonutChart data={sexDistribution.answered.map((s) => ({ label: s.label, value: s.count }))} metric="socios" />
-      )}
-    </Card>
-  );
-}
+export async function OccupancyByCenterPanel(props: PanelProps) {
+  const [data, average] = await Promise.all([
+    getOccupancyByCenter(props.orgId, optsOf(props)),
+    getAverageOccupancy(props.orgId, optsOf(props)),
+  ]);
+  const rows = [...data]
+    .map((d) => ({ ...d, label: d.center.replace(/^TRAINING ZONE\s*/i, "") }))
+    .sort((a, b) => b.occupancyPct - a.occupancyPct);
 
-export async function OccupationPanel({ orgId }: PanelProps) {
-  const demographics = await demographicsFor(orgId);
   return (
-    <Card title="Nicho principal (ocupación)" meta={`muestra: ${demographics.sampleSize}`} delay={0.56}>
-      {demographics.topOccupations.length === 0 ? (
-        <p className="text-sm text-brand-muted">Sin datos de ocupación todavía.</p>
+    <PanelCard
+      title="Ocupación por centro"
+      meta="30 días"
+      delay={0.24}
+      footer={
+        rows.length > 0 ? (
+          <>
+            Media de la organización: <strong className="font-bold text-brand-text">{average}%</strong>. El objetivo
+            interno son {OCCUPANCY_TARGET_PCT}%.
+          </>
+        ) : undefined
+      }
+    >
+      {rows.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin sesiones en los últimos 30 días.</p>
       ) : (
-        <ul className="space-y-2">
-          {demographics.topOccupations.map((o) => (
-            <li key={o.occupation} className="flex items-center justify-between text-sm">
-              <span className="capitalize text-brand-text-2">{o.occupation}</span>
-              <span className="tz-nums font-semibold text-brand-text">{o.count}</span>
-            </li>
+        <div className="flex flex-col gap-4">
+          {rows.map((r, i) => (
+            <BarBlock
+              key={r.center}
+              label={r.label}
+              value={`${r.occupancyPct}%`}
+              pct={r.occupancyPct}
+              color={i === 0 ? SERIES.gold : SERIES.sand}
+              valueColor={i === 0 ? SERIES.gold : "var(--color-brand-text-2)"}
+              height={10}
+              valueSize="text-sm"
+              delay={0.2 + i * 0.06}
+            />
           ))}
-        </ul>
+        </div>
       )}
-    </Card>
+    </PanelCard>
   );
 }
 
-export async function GoalsPanel({ orgId }: PanelProps) {
-  const goalsAggregate = await getGoalsAggregate(orgId);
+export async function OccupancyByWeekdayPanel(props: PanelProps) {
+  const data = await getOccupancyByWeekday(props.orgId, optsOf(props));
   return (
-    <Card title="Objetivos (agregado)" meta="RB-BI-004" delay={0.6}>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <div className="font-display font-extrabold text-xl text-brand-text tz-nums">
-            {goalsAggregate.achievedGoals}/{goalsAggregate.totalGoals}
-          </div>
-          <div className="text-brand-muted">Objetivos conseguidos</div>
+    <PanelCard title="Ocupación por día" meta="60 días" delay={0.3}>
+      <OccupancyByWeekdayChart data={data} />
+    </PanelCard>
+  );
+}
+
+export async function NoShowPanel(props: PanelProps) {
+  const { rate, deltaPts } = await getNoShowRate(props.orgId, optsOf(props));
+  return <NoShowRateCard rate={rate} deltaPts={deltaPts} />;
+}
+
+/* ---------- 7. Altas y bajas + estados ---------- */
+
+export async function WeeklyChurnPanel(props: PanelProps) {
+  const churn = await getWeeklyChurn(props.orgId, optsOf(props));
+  return (
+    <PanelCard
+      title="Altas y bajas por semana"
+      meta={`${churn.weeks} semanas`}
+      delay={0.34}
+      action={
+        <div className="flex items-center gap-3.5">
+          <LegendSwatch color={SERIES.gold} label="altas" />
+          <LegendSwatch color={SERIES.critical} label="bajas" />
         </div>
-        <div>
-          <div className="font-display font-extrabold text-xl text-brand-text tz-nums">{goalsAggregate.checkins}</div>
-          <div className="text-brand-muted">Check-ins recibidos</div>
+      }
+      footer={
+        <div className="flex flex-wrap gap-6">
+          <FooterStat label={`Altas ${churn.weeks} sem.`} value={int(churn.joins)} color={SERIES.gold} />
+          <FooterStat label={`Bajas ${churn.weeks} sem.`} value={int(churn.cancels)} color={SERIES.critical} />
+          <FooterStat
+            label="Neto"
+            value={`${churn.net > 0 ? "+" : ""}${int(churn.net)}`}
+            color="var(--color-brand-text)"
+          />
         </div>
-        <div>
-          <div className="font-display font-extrabold text-xl text-critical tz-nums">{goalsAggregate.stalledCount}</div>
-          <div className="text-brand-muted">Se sienten estancados</div>
-        </div>
-        <div>
-          <div className="font-display font-extrabold text-xl text-good tz-nums">{goalsAggregate.wantsMoreCount}</div>
-          <div className="text-brand-muted">Piden &quot;más&quot;</div>
-        </div>
+      }
+    >
+      <WeeklyChurnChart data={churn.rows} />
+    </PanelCard>
+  );
+}
+
+function FooterStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div>
+      <div className="text-[10px] font-bold tracking-[.1em] uppercase text-brand-muted">{label}</div>
+      <div className="font-display font-bold text-xl tabular-nums mt-0.5" style={{ color }}>
+        {value}
       </div>
-    </Card>
+    </div>
   );
 }
 
-/* ---------- Fila 7: edad y canal ---------- */
+export async function MemberStatePanel(props: PanelProps) {
+  const data = await getMemberStateBreakdown(props.orgId, optsOf(props));
+  // Por volumen, no por el orden canónico de estados: en una lista de seis
+  // filas lo que se busca es "¿qué pesa más?", no el orden del enum.
+  const rows = [...data].sort((a, b) => b.count - a.count);
+  const max = Math.max(1, ...rows.map((r) => r.count));
 
-export async function AgeBracketsPanel({ orgId }: PanelProps) {
-  const [ageBrackets, demographics] = await Promise.all([getAgeBrackets(orgId), demographicsFor(orgId)]);
   return (
-    <Card title="Franjas de edad" meta={`muestra: ${demographics.sampleSize}`} delay={0.66}>
-      <AgeBracketsChart data={ageBrackets} />
-    </Card>
-  );
-}
-
-export async function ChannelsPanel({ orgId }: PanelProps) {
-  const acquisitionChannels = await getAcquisitionChannels(orgId);
-  return (
-    <Card title="Canal de origen" meta="RB-BI-008 — todos los leads" delay={0.7}>
-      {acquisitionChannels.length === 0 ? (
-        <p className="text-sm text-brand-muted">Sin leads registrados todavía.</p>
+    <PanelCard title="Socios por estado" delay={0.38}>
+      {rows.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin socios todavía.</p>
       ) : (
-        <DonutChart data={acquisitionChannels.map((c) => ({ label: c.channel, value: c.count }))} metric="leads" />
+        <div className="flex flex-col gap-2.5">
+          {rows.map((r, i) => (
+            <BarRow
+              key={r.state}
+              label={MEMBER_STATE_LABEL[r.state] ?? r.state}
+              labelWidth={84}
+              pct={(r.count / max) * 100}
+              color={MEMBER_STATE_COLOR[r.state] ?? SERIES.sand}
+              value={int(r.count)}
+              valueWidth={30}
+              valueColor={r.state === "DELINQUENT" ? SERIES.critical : undefined}
+              delay={0.2 + i * 0.06}
+            />
+          ))}
+        </div>
       )}
-    </Card>
+    </PanelCard>
   );
 }
 
-/* ---------- Fila 8: embudo, servicios ---------- */
+/* ---------- 8. Retención ---------- */
 
-export async function FunnelPanel({ orgId }: PanelProps) {
-  const leadCloseRate = await getLeadCloseRate(orgId);
-  const maxFunnel = Math.max(1, ...Object.values(leadCloseRate.funnel));
+export async function RetentionPanel(props: PanelProps) {
+  const cohorts = await getCohortRetention(props.orgId, optsOf(props));
+  return (
+    <PanelCard
+      title="Retención por cohorte"
+      meta="% aún activos por mes de alta"
+      delay={0.42}
+      action={<LegendSwatch color={SERIES.goldSoft} label={`objetivo ${RETENTION_TARGET_PCT}%`} line />}
+    >
+      <RetentionCohortChart data={cohorts} />
+    </PanelCard>
+  );
+}
+
+/* ---------- 9. Ranking de socios ---------- */
+
+const RANK_COLUMNS = [
+  { key: "ltv", label: "LTV" },
+  { key: "adherence", label: "Adherencia" },
+  { key: "tenure", label: "Antigüedad" },
+  { key: "mixed", label: "Score mixto" },
+] as const;
+
+export type RankSort = (typeof RANK_COLUMNS)[number]["key"];
+
+const GRID_TEMPLATE =
+  "34px minmax(150px,1.3fr) minmax(150px,1fr) minmax(140px,0.9fr) 92px minmax(130px,0.85fr)";
+
+function initialsOf(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+export async function RankingPanel({
+  orgId,
+  centerId,
+  range,
+  sort,
+  dir,
+  params,
+}: PanelProps & { sort: RankSort; dir: "asc" | "desc"; params: DashboardParams }) {
+  const ranking = await getMemberRanking(orgId, { centerId, range, dimension: sort, dir });
+  const maxLtv = ranking.maxLtvEuros;
+  const maxScore = ranking.maxScore;
+
+  return (
+    <PanelCard
+      title="Ranking de socios"
+      meta="LTV, adherencia y antigüedad"
+      delay={0.46}
+      action={<span className="text-[11.5px] text-brand-faint">Pulsa una columna para ordenar</span>}
+      footer={
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-brand-muted">
+            Mostrando {ranking.items.length} de {ranking.total} socios
+          </span>
+          <div className="flex gap-1.5">
+            <Link
+              href="/members"
+              className="rounded-lg border border-brand-border px-3.5 py-1.5 text-xs font-semibold text-brand-text-2 transition-colors duration-150 hover:bg-brand-bg"
+            >
+              Ver todos
+            </Link>
+            <ExportRankingButton rows={ranking.items} />
+          </div>
+        </div>
+      }
+    >
+      {ranking.items.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin socios activos todavía.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <div
+            className="grid items-center gap-x-4 text-[13.5px] min-w-[720px]"
+            style={{ gridTemplateColumns: GRID_TEMPLATE }}
+          >
+            <div className="pb-[11px] text-right text-[10px] font-bold tracking-[.1em] uppercase text-brand-faint">#</div>
+            <div className="pb-[11px] text-[10px] font-bold tracking-[.1em] uppercase text-brand-faint">Socio</div>
+            {RANK_COLUMNS.map((c) => {
+              const isActive = c.key === sort;
+              // Primera pulsación descendente; la siguiente sobre la misma
+              // columna invierte. Todo en la URL, como el resto del panel.
+              const nextDir = isActive && dir === "desc" ? "asc" : "desc";
+              return (
+                <Link
+                  key={c.key}
+                  href={dashboardHref(params, {
+                    rankSort: c.key === "mixed" ? undefined : c.key,
+                    rankDir: nextDir === "desc" ? undefined : nextDir,
+                  })}
+                  scroll={false}
+                  className={`pb-[11px] text-left text-[10px] font-bold tracking-[.1em] uppercase transition-colors duration-150 ${
+                    isActive ? "text-brand-text" : "text-brand-faint hover:text-brand-text-2"
+                  }`}
+                >
+                  {c.label}
+                  {isActive && (dir === "desc" ? " ↓" : " ↑")}
+                </Link>
+              );
+            })}
+
+            {ranking.items.map((m, i) => (
+              <div
+                key={m.memberId}
+                className="grid col-span-full grid-cols-subgrid items-center border-t border-tz-sand py-[11px]"
+                style={{ animation: `tzRowIn .28s ${Math.min(i, 10) * 0.02}s both` }}
+              >
+                <div className={`text-right font-bold text-xs tabular-nums ${i < 3 ? "text-gold" : "text-brand-faint"}`}>
+                  {i + 1}
+                </div>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span
+                    className={`w-7 h-7 flex-none rounded-full flex items-center justify-center text-[10.5px] font-bold ${
+                      i < 3 ? "bg-gold-bg text-gold" : "bg-brand-bg text-brand-muted"
+                    }`}
+                  >
+                    {initialsOf(m.memberName)}
+                  </span>
+                  <span className="font-semibold text-brand-text truncate">{m.memberName}</span>
+                </div>
+                <CellBar
+                  pct={(m.ltvEuros / maxLtv) * 100}
+                  color={SERIES.gold}
+                  value={eur(m.ltvEuros * 100)}
+                  valueWidth={56}
+                />
+                <CellBar pct={m.adherencePct} color={SERIES.ink} value={`${m.adherencePct}%`} valueWidth={38} />
+                <div className="tabular-nums text-brand-text-2">{m.tenureDays} d</div>
+                <CellBar
+                  pct={(m.mixedScore / maxScore) * 100}
+                  color={SERIES.goldSoft}
+                  value={String(m.mixedScore)}
+                  valueWidth={26}
+                  bold
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </PanelCard>
+  );
+}
+
+/** Barra dentro de la celda: la métrica se compara sin salir de la fila. */
+function CellBar({
+  pct,
+  color,
+  value,
+  valueWidth,
+  bold = false,
+}: {
+  pct: number;
+  color: string;
+  value: string;
+  valueWidth: number;
+  bold?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-[9px]">
+      <div className="flex-1 h-[7px] rounded-pill bg-brand-bg overflow-hidden">
+        <div
+          className="h-full rounded-pill"
+          style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }}
+        />
+      </div>
+      <span
+        className={`flex-none text-right tabular-nums text-brand-text ${bold ? "font-bold" : "font-semibold"}`}
+        style={{ width: valueWidth }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/* ---------- 10. Captación ---------- */
+
+export async function FunnelPanel(props: PanelProps) {
+  const leadCloseRate = await getLeadCloseRate(props.orgId, { centerId: props.centerId });
+  const max = Math.max(1, ...Object.values(leadCloseRate.funnel));
   const rows = [
     ["Sin contactar", leadCloseRate.funnel.sinContactar],
     ["Seguimiento", leadCloseRate.funnel.seguimiento],
-    ["Con fecha valoración", leadCloseRate.funnel.conFechaValoracion],
+    ["Con valoración", leadCloseRate.funnel.conFechaValoracion],
     ["Cerrado", leadCloseRate.funnel.cerrado],
     ["No cerrado", leadCloseRate.funnel.noCerrado],
   ] as const;
 
   return (
-    <Card
+    <PanelCard
       title="Embudo de leads"
       meta={leadCloseRate.closeRatePct != null ? `${leadCloseRate.closeRatePct}% de cierre` : "sin decisiones"}
-      delay={0.74}
+      delay={0.5}
     >
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2.5">
         {rows.map(([label, count], i) => (
-          <div key={label} className="flex items-center gap-2.5 text-sm">
-            <span className="w-32 shrink-0 text-text-2">{label}</span>
-            <div className="flex-1 h-2.5 rounded-full bg-tz-sand overflow-hidden">
-              {/*
-                El ancho se deja fijo al porcentaje final y lo que se anima es
-                `scaleX` (tzGrow): animar `width` está prohibido por el plan §0.6.
-              */}
-              <div
-                className="h-full bg-tz-black rounded-full origin-left"
-                style={{
-                  width: `${(count / maxFunnel) * 100}%`,
-                  animation: `tzGrow .8s var(--ease-out-soft) ${(0.26 + i * 0.06).toFixed(2)}s both`,
-                }}
-              />
-            </div>
-            <span className="w-6 shrink-0 text-xs text-brand-muted text-right tz-nums">{count}</span>
-          </div>
+          <BarRow
+            key={label}
+            label={label}
+            labelWidth={118}
+            pct={(count / max) * 100}
+            color={FUNNEL_COLORS[i]}
+            value={int(count)}
+            valueWidth={22}
+            valueColor={i === 3 ? SERIES.gold : i === 4 ? SERIES.critical : undefined}
+            height={9}
+            rounded="rounded-pill"
+            delay={0.2 + i * 0.06}
+          />
         ))}
       </div>
-    </Card>
+    </PanelCard>
   );
 }
 
-export async function MembersByServicePanel({ orgId }: PanelProps) {
-  const membersByService = await getMembersByService(orgId);
+export async function ChannelsPanel(props: PanelProps) {
+  const channels = await getAcquisitionChannels(props.orgId, optsOf(props));
   return (
-    <Card title="Socios por servicio" meta="RB-BI-007 — suscripciones activas" delay={0.78}>
-      {membersByService.length === 0 ? (
-        <p className="text-sm text-brand-muted">Sin suscripciones activas todavía.</p>
+    <PanelCard title="Canal de origen" meta="todos los leads" delay={0.54}>
+      {channels.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin leads registrados todavía.</p>
       ) : (
-        <DonutChart data={membersByService.map((s) => ({ label: s.name, value: s.count }))} metric="socios" />
+        <DonutChart
+          data={channels.map((c) => ({ label: c.channel, value: c.count }))}
+          metric="leads"
+          showTotal
+          totalLabel="leads"
+        />
       )}
-    </Card>
+    </PanelCard>
   );
 }
 
 export async function TopServicesPanel({
   orgId,
+  centerId,
+  range,
   servicesOrderBy,
-  rankingDimensionParam,
-}: PanelProps & { servicesOrderBy: "count" | "revenue"; rankingDimensionParam?: string }) {
-  const topServices = await getTopServices(orgId, { orderBy: servicesOrderBy });
+  params,
+}: PanelProps & { servicesOrderBy: "count" | "revenue"; params: DashboardParams }) {
+  const services = await getTopServices(orgId, { centerId, range, orderBy: servicesOrderBy });
+  const rows = services.slice(0, 5);
+  const valueOf = (s: (typeof rows)[number]) =>
+    servicesOrderBy === "revenue" ? Math.round(s.revenueEuros) : s.subscriptionsCount;
+  const max = Math.max(1, ...rows.map(valueOf));
+
   return (
-    <Card
+    <PanelCard
       title="Servicio más vendido"
-      meta="RB-BI-010"
-      delay={0.82}
+      delay={0.58}
       action={
-        <div className="flex flex-wrap gap-1 text-xs">
+        <div className="flex gap-[3px] bg-brand-bg rounded-pill p-[3px]">
           {(
             [
               ["count", "Altas"],
@@ -379,10 +698,10 @@ export async function TopServicesPanel({
           ).map(([value, label]) => (
             <Link
               key={value}
-              href={`/dashboard?servicesOrderBy=${value}${rankingDimensionParam ? `&rankingDimension=${rankingDimensionParam}` : ""}`}
+              href={dashboardHref(params, { servicesOrderBy: value === "count" ? undefined : value })}
               scroll={false}
-              className={`px-2 py-1 rounded-md transition-colors duration-150 ${
-                servicesOrderBy === value ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"
+              className={`px-[11px] py-1 rounded-pill text-[11.5px] font-semibold transition-colors duration-150 ${
+                servicesOrderBy === value ? "bg-brand-ink text-tz-bone" : "text-brand-muted hover:text-brand-text"
               }`}
             >
               {label}
@@ -391,121 +710,164 @@ export async function TopServicesPanel({
         </div>
       }
     >
-      {topServices.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-brand-muted">Sin planes configurados todavía.</p>
       ) : (
-        <TopServicesChart data={topServices} orderBy={servicesOrderBy} />
-      )}
-    </Card>
-  );
-}
-
-/* ---------- Ranking ---------- */
-
-export async function RankingPanel({
-  orgId,
-  rankingDimension,
-  rankingPage,
-  buildRankingUrl,
-  servicesOrderByParam,
-}: PanelProps & {
-  rankingDimension: "mixed" | "ltv" | "adherence" | "tenure";
-  rankingPage: number;
-  buildRankingUrl: (page: number) => string;
-  servicesOrderByParam?: string;
-}) {
-  const memberRanking = await getMemberRanking(orgId, { dimension: rankingDimension, page: rankingPage });
-  return (
-    <Card
-      title="Ranking de socios"
-      meta="RB-BI-011 — LTV, adherencia y antigüedad"
-      delay={0.86}
-      action={
-        <div className="flex flex-wrap gap-1 text-xs">
-          {(Object.keys(RANKING_DIMENSION_LABEL) as (keyof typeof RANKING_DIMENSION_LABEL)[]).map((dim) => (
-            <Link
-              key={dim}
-              href={`/dashboard?rankingDimension=${dim}${servicesOrderByParam ? `&servicesOrderBy=${servicesOrderByParam}` : ""}`}
-              scroll={false}
-              className={`px-2 py-1 rounded-md transition-colors duration-150 ${
-                rankingDimension === dim ? "bg-tz-sand text-tz-black font-semibold" : "text-muted hover:bg-tz-sand"
-              }`}
-            >
-              {RANKING_DIMENSION_LABEL[dim]}
-            </Link>
+        <div className="flex flex-col gap-3.5">
+          {rows.map((s, i) => (
+            <BarBlock
+              key={s.planId}
+              label={s.name}
+              value={servicesOrderBy === "revenue" ? `${int(Math.round(s.revenueEuros))} €` : int(s.subscriptionsCount)}
+              pct={(valueOf(s) / max) * 100}
+              color={
+                i === 0
+                  ? servicesOrderBy === "revenue"
+                    ? SERIES.gold
+                    : SERIES.ink
+                  : servicesOrderBy === "revenue"
+                  ? SERIES.linen
+                  : SERIES.sand
+              }
+              delay={0.2 + i * 0.06}
+            />
           ))}
         </div>
-      }
-    >
-      {memberRanking.items.length === 0 ? (
-        <p className="text-sm text-brand-muted">Sin socios activos todavía.</p>
-      ) : (
-        <div className="space-y-5">
-          <MemberRankingChart data={memberRanking.items} dimension={rankingDimension} />
-          <div className="sm:overflow-x-auto">
-            <table className="tz-stack-table w-full text-sm">
-              <thead className="text-xs text-faint text-left">
-                <tr>
-                  <th className="pb-2">Socio</th>
-                  <th className="pb-2">LTV</th>
-                  <th className="pb-2">Adherencia</th>
-                  <th className="pb-2">Antigüedad</th>
-                  <th className="pb-2">Score mixto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {memberRanking.items.map((m, i) => (
-                  <tr
-                    key={m.memberId}
-                    className="border-t border-tz-sand"
-                    style={{ animation: `tzRowIn .28s ${Math.min(i, 10) * 0.02}s both` }}
-                  >
-                    <td data-label="" className="py-2 font-semibold">{m.memberName}</td>
-                    <td data-label="LTV" className="py-2 tz-nums">{eur(m.ltvEuros * 100)}</td>
-                    <td data-label="Adherencia" className="py-2 tz-nums">{m.adherencePct}%</td>
-                    <td data-label="Antigüedad" className="py-2 tz-nums text-text-2">{m.tenureDays} d</td>
-                    <td data-label="Score mixto" className="py-2 tz-nums font-semibold">{m.mixedScore}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {memberRanking.totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-2 border-t border-tz-sand">
-              {memberRanking.page > 1 && (
-                <Link href={buildRankingUrl(1)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
-                  Primero
-                </Link>
-              )}
-              {memberRanking.page > 1 && (
-                <Link href={buildRankingUrl(memberRanking.page - 1)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
-                  ← Anterior
-                </Link>
-              )}
-              <span className="text-xs text-brand-muted mx-2">
-                Página {memberRanking.page} de {memberRanking.totalPages}
-              </span>
-              {memberRanking.page < memberRanking.totalPages && (
-                <Link href={buildRankingUrl(memberRanking.page + 1)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
-                  Siguiente →
-                </Link>
-              )}
-              {memberRanking.page < memberRanking.totalPages && (
-                <Link href={buildRankingUrl(memberRanking.totalPages)} scroll={false} className="px-3 py-1 text-xs rounded-md bg-tz-sand text-tz-black hover:bg-opacity-80 transition-all">
-                  Último
-                </Link>
-              )}
-            </div>
-          )}
-        </div>
       )}
-    </Card>
+    </PanelCard>
   );
 }
 
-/* ---------- Mapa de calor por código postal ---------- */
+/* ---------- 11. Quién es nuestro socio ---------- */
 
-export async function PostalPanel({ orgId }: PanelProps) {
-  const postalCodeStats = await getPostalCodeStats(orgId);
-  return <PostalMapPanel points={postalCodeStats} />;
+export async function MembersByServicePanel(props: PanelProps) {
+  const services = await getMembersByService(props.orgId, optsOf(props));
+  const total = services.reduce((s, x) => s + x.count, 0);
+  const max = Math.max(1, ...services.map((s) => s.count));
+  const colors = [SERIES.ink, SERIES.gold, SERIES.sand, SERIES.ink2, SERIES.linen];
+
+  return (
+    <PanelCard title="Socios por servicio" meta="activas" delay={0.62} size="sm">
+      {services.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin suscripciones activas todavía.</p>
+      ) : (
+        <div className="flex flex-col gap-3.5">
+          {services.slice(0, 5).map((s, i) => (
+            <BarBlock
+              key={s.planId}
+              label={s.name}
+              value={`${int(s.count)} · ${Math.round((s.count / (total || 1)) * 100)}%`}
+              pct={(s.count / max) * 100}
+              color={colors[i % colors.length]}
+              delay={0.2 + i * 0.06}
+            />
+          ))}
+        </div>
+      )}
+    </PanelCard>
+  );
+}
+
+export async function SexPanel(props: PanelProps) {
+  const sex = await getSexDistribution(props.orgId, optsOf(props));
+  return (
+    <PanelCard title="Sexo" meta={`${sex.unspecified} sin especificar`} delay={0.66} size="sm">
+      {sex.answered.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin datos de sexo todavía.</p>
+      ) : (
+        <DonutChart data={sex.answered.map((s) => ({ label: s.label, value: s.count }))} metric="socios" size={126} />
+      )}
+    </PanelCard>
+  );
+}
+
+export async function OccupationPanel(props: PanelProps) {
+  const demographics = await demographicsFor(props.orgId, props.centerId);
+  const rows = demographics.topOccupations.slice(0, 5);
+  const max = Math.max(1, ...rows.map((o) => o.count));
+  const colors = [SERIES.ink, SERIES.ink2, SERIES.gold, SERIES.goldSoft, SERIES.sand];
+
+  return (
+    <PanelCard title="Nicho principal" meta={`muestra ${demographics.sampleSize}`} delay={0.7} size="sm">
+      {rows.length === 0 ? (
+        <p className="text-sm text-brand-muted">Sin datos de ocupación todavía.</p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {rows.map((o, i) => (
+            <BarRow
+              key={o.occupation}
+              label={o.occupation}
+              labelWidth={86}
+              pct={(o.count / max) * 100}
+              color={colors[i % colors.length]}
+              value={int(o.count)}
+              valueWidth={22}
+              height={7}
+              rounded="rounded-pill"
+              delay={0.2 + i * 0.06}
+            />
+          ))}
+        </div>
+      )}
+    </PanelCard>
+  );
+}
+
+/* ---------- 12. Edad y objetivos ---------- */
+
+export async function AgeBracketsPanel(props: PanelProps) {
+  const [ageBrackets, demographics] = await Promise.all([
+    getAgeBrackets(props.orgId, optsOf(props)),
+    demographicsFor(props.orgId, props.centerId),
+  ]);
+  return (
+    <PanelCard title="Franjas de edad" meta={`muestra ${demographics.sampleSize}`} delay={0.74} size="sm">
+      <AgeBracketsChart data={ageBrackets} />
+    </PanelCard>
+  );
+}
+
+export async function GoalsPanel(props: PanelProps) {
+  const goals = await getGoalsAggregate(props.orgId, optsOf(props));
+  return (
+    <PanelCard title="Objetivos" delay={0.78} size="sm">
+      <div className="grid grid-cols-2 gap-3.5">
+        <GoalTile
+          background="bg-brand-bg"
+          color={SERIES.gold}
+          value={
+            <>
+              {goals.achievedGoals}
+              <span className="text-sm text-brand-muted">/{goals.totalGoals}</span>
+            </>
+          }
+          label="Objetivos conseguidos"
+        />
+        <GoalTile background="bg-brand-bg" color="var(--color-brand-text)" value={goals.checkins} label="Check-ins recibidos" />
+        <GoalTile background="bg-critical-bg" color={SERIES.critical} value={goals.stalledCount} label="Se sienten estancados" />
+        <GoalTile background="bg-gold-bg" color={SERIES.gold} value={goals.wantsMoreCount} label="Piden «más»" />
+      </div>
+    </PanelCard>
+  );
+}
+
+function GoalTile({
+  background,
+  color,
+  value,
+  label,
+}: {
+  background: string;
+  color: string;
+  value: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <div className={`rounded-xl px-3.5 py-[13px] ${background}`}>
+      <div className="font-display font-bold text-[21px] leading-none tabular-nums" style={{ color }}>
+        {value}
+      </div>
+      <div className="text-[11.5px] text-brand-muted mt-1.5">{label}</div>
+    </div>
+  );
 }

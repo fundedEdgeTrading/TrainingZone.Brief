@@ -2,26 +2,50 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Card } from "@/components/kpi-card";
 import { postalCityLabel } from "@/lib/postal-codes";
+import { SERIES } from "@/lib/chart-colors";
+import { PanelCard } from "./panel-card";
 import PostalHeatmap, { type MapMetric } from "./postal-heatmap-loader";
 
 type PostalCodeStat = { code: string; name: string; lat: number; lng: number; leads: number; members: number; total: number };
 
 const SEGMENTS: { key: MapMetric; label: string }[] = [
   { key: "all", label: "Todos" },
-  { key: "leads", label: "Leads" },
   { key: "members", label: "Clientes" },
+  { key: "leads", label: "Leads" },
 ];
+
+const METRIC_LABEL: Record<MapMetric, string> = {
+  all: "clientes + leads",
+  members: "clientes",
+  leads: "leads",
+};
 
 /** BI-3: mapa de calor + ranking de barrios fusionados en una única tarjeta
  * (sustituye a la antigua pareja "Mapa de calor" / "Distribución por provincia"):
  * comparten estado (barrio resaltado/seleccionado) para el cruce mapa↔lista, y
- * ambos leen del mismo dataset (getPostalCodeStats) así que sus totales nunca
+ * ambos leen del mismo dataset (getPostalPanelData) así que sus totales nunca
  * pueden divergir entre sí. Granularidad de CP completo (no provincia): a escala
  * de ciudad la provincia no distingue nada, y el encuadre del mapa ya se adapta
- * solo a las ciudades que haya en los datos. */
-export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
+ * solo a las ciudades que haya en los datos.
+ *
+ * Rediseño 2026-08: la tarjeta sube a la segunda fila de la página —era lo que
+ * más destaca y estaba al final— y gana el chip de "oportunidad", la tarjeta
+ * flotante del barrio activo y la barra apilada clientes+leads del ranking.
+ *
+ * La métrica sigue siendo estado de cliente, no de URL, a diferencia del resto
+ * del panel: al cambiarla los marcadores no se desmontan, así que el radio de
+ * la burbuja interpola en vez de saltar. Reconsultar el servidor a cada clic se
+ * llevaría por delante justamente esa transición.
+ */
+export function PostalMapPanel({
+  points,
+  opportunity,
+}: {
+  points: PostalCodeStat[];
+  /** Barrio con más leads en proporción a sus clientes. `null` si no hay ninguno con volumen. */
+  opportunity: PostalCodeStat | null;
+}) {
   const [metric, setMetric] = useState<MapMetric>("all");
   const [hovered, setHovered] = useState<string | null>(null);
   const [flyToCode, setFlyToCode] = useState<string | null>(null);
@@ -44,6 +68,7 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   const totalMembers = points.reduce((s, p) => s + p.members, 0);
   const totalLeads = points.reduce((s, p) => s + p.leads, 0);
   const topName = rows[0]?.name ?? "—";
+  const active = rows.find((p) => p.code === hovered) ?? null;
   // Las ciudades presentes salen de los propios datos: la tarjeta no puede
   // prometer "Zaragoza" cuando la organización ya tiene un centro en Santander.
   const cities = useMemo(
@@ -57,10 +82,11 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
   };
 
   return (
-    <Card
-      title="Mapa de calor"
-      meta={`leads + clientes por barrio${cities ? ` (${cities})` : ""}`}
-      delay={0.64}
+    <PanelCard
+      title="Mapa de calor por barrio"
+      meta={["clientes y leads", cities].filter(Boolean).join(" · ")}
+      size="lg"
+      delay={0.1}
       action={
         <div className="flex items-center gap-2.5">
           {/* La tarjeta responde "dónde hay volumen"; el resto de preguntas
@@ -74,21 +100,21 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
             // el mismo segmento, y la que se aborta puede dejar el `main`
             // vacío—, que es un fallo que se reprodujo en los e2e.
             prefetch={false}
-            className="hidden sm:flex items-center gap-1.5 border border-tz-sand rounded-full px-3.5 py-1.5 font-display text-xs font-semibold text-brand-text-2 transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone hover:border-tz-black"
+            className="hidden sm:flex items-center gap-1.5 border border-tz-sand rounded-pill px-3.5 py-1.5 font-display text-xs font-semibold text-brand-text-2 transition-colors duration-150 hover:bg-brand-ink hover:text-tz-bone hover:border-brand-ink"
           >
             Mapa de barrios
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 6l6 6-6 6" />
             </svg>
           </Link>
-          <div className="flex gap-[5px] bg-tz-bone border border-tz-sand rounded-full p-1">
+          <div className="flex gap-[5px] bg-brand-bg border border-tz-sand rounded-pill p-1">
             {SEGMENTS.map((s) => (
               <button
                 key={s.key}
                 type="button"
                 onClick={() => setMetric(s.key)}
-                className={`px-3.5 py-1.5 rounded-full font-display text-xs font-semibold transition-all duration-150 ${
-                  metric === s.key ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
+                className={`px-3.5 py-1.5 rounded-pill font-display text-xs font-semibold transition-all duration-150 ${
+                  metric === s.key ? "bg-brand-ink text-tz-bone" : "text-brand-muted hover:text-brand-text"
                 }`}
               >
                 {s.label}
@@ -98,10 +124,6 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
         </div>
       }
     >
-      <div className="-mt-2 mb-4 text-[11px] font-semibold uppercase tracking-[.08em] text-brand-faint">
-        RB-LEAD-010 · distribución geográfica
-      </div>
-
       {points.length === 0 ? (
         <p className="text-sm text-brand-muted">Sin códigos postales geolocalizables todavía.</p>
       ) : rows.length === 0 ? (
@@ -111,17 +133,26 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
       ) : (
         <>
           <div className="flex flex-wrap gap-2.5 mb-4">
-            <SummaryChip value={totalMembers} label="clientes" />
+            <SummaryChip value={totalMembers} label="clientes" color={SERIES.gold} />
             <SummaryChip value={totalLeads} label="leads" />
             <SummaryChip value={rows.length} label="barrios" />
-            <div className="flex items-baseline gap-1.5 bg-tz-black rounded-xl px-3.5 py-2">
+            <div className="flex items-baseline gap-1.5 bg-brand-ink rounded-xl px-3.5 py-2">
               <span className="text-[11px] font-semibold uppercase tracking-[.05em] text-apta-gold">foco</span>
               <span className="font-display font-bold text-sm text-tz-bone">{topName}</span>
             </div>
+            {opportunity && (
+              // Demanda que existe y todavía no se ha convertido: el barrio con
+              // más leads por cliente. Es la única lectura accionable de la
+              // tarjeta que no se ve mirando tamaños de burbuja.
+              <div className="flex items-baseline gap-1.5 bg-critical-bg rounded-xl px-3.5 py-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[.05em] text-critical">oportunidad</span>
+                <span className="font-display font-bold text-sm text-critical">{opportunity.name}</span>
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-[1.55fr_1fr] gap-[18px]">
-            <div className="relative rounded-2xl overflow-hidden border border-tz-linen">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-[18px]">
+            <div className="relative rounded-[14px] overflow-hidden border border-brand-border min-h-[440px]">
               {/*
                 Se le pasa la lista completa y estable: el mapa filtra y
                 dimensiona por métrica sin rehacer los marcadores, para que el
@@ -136,20 +167,31 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                 flyToCode={flyToCode}
                 resetSignal={resetSignal}
               />
+              {/* Tarjeta del barrio activo: el hover del mapa deja de tener que
+                  competir con el tooltip de Leaflet para contar quién es. */}
+              <div className="absolute top-3 left-3 z-[500] bg-white/92 backdrop-blur-sm border border-tz-sand rounded-xl px-[13px] py-2.5 min-w-[150px]">
+                <div className="text-[9.5px] font-bold tracking-[.14em] uppercase text-brand-faint">
+                  {active ? `CP ${active.code}` : "Foco actual"}
+                </div>
+                <div className="text-[15px] font-bold text-brand-text mt-0.5">{active?.name ?? topName}</div>
+                <div className="text-[11.5px] text-brand-text-2 tz-nums mt-0.5">
+                  {(active ?? rows[0]).members} clientes · {(active ?? rows[0]).leads} leads
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setResetSignal((n) => n + 1);
                   setHovered(null);
                 }}
-                className="absolute top-3 right-3 z-[500] border border-tz-sand bg-white/90 backdrop-blur-sm rounded-full px-[13px] py-[7px] font-display text-[11px] font-semibold tracking-[.03em] text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
+                className="absolute top-3 right-3 z-[500] border border-tz-sand bg-white/90 backdrop-blur-sm rounded-pill px-[13px] py-[7px] font-display text-[11px] font-semibold tracking-[.03em] text-brand-text transition-colors duration-150 hover:bg-brand-ink hover:text-tz-bone"
               >
                 ↺ Vista general
               </button>
               <div className="absolute left-3 bottom-5 z-[500] flex items-center gap-3 bg-white/90 backdrop-blur-sm border border-tz-sand rounded-xl px-3 py-2">
                 <div className="flex items-center gap-1.5">
-                  <span className="w-[9px] h-[9px] rounded-full bg-tz-black" />
-                  <span className="w-[15px] h-[15px] rounded-full bg-tz-black" />
+                  <span className="w-[9px] h-[9px] rounded-full bg-brand-ink" />
+                  <span className="w-[15px] h-[15px] rounded-full bg-brand-ink" />
                   <span className="text-[10px] font-semibold text-brand-muted">volumen</span>
                 </div>
                 <div className="w-px h-4 bg-tz-sand" />
@@ -161,10 +203,15 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
             </div>
 
             <div className="flex flex-col">
-              <div className="text-[11px] font-semibold uppercase tracking-[.08em] text-brand-faint mb-2 px-1">
-                Ranking por barrio
+              <div className="flex items-baseline justify-between gap-2 mb-2 px-1">
+                <span className="text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint">
+                  Ranking por barrio
+                </span>
+                <span className="text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint">
+                  {METRIC_LABEL[metric]}
+                </span>
               </div>
-              <div className="flex-1 overflow-y-auto max-h-[412px] pr-1 flex flex-col gap-[3px]">
+              <div className="flex-1 overflow-y-auto max-h-[440px] pr-1 flex flex-col gap-[3px]">
                 {rows.map((p, i) => (
                   <button
                     key={p.code}
@@ -176,21 +223,37 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                       hovered === p.code ? "bg-tz-sand" : "hover:bg-tz-sand"
                     }`}
                   >
-                    <span className="w-5 shrink-0 text-right font-display text-xs font-bold text-brand-faint tz-nums">
+                    <span
+                      className={`w-5 shrink-0 text-right font-display text-xs font-bold tz-nums ${
+                        i === 0 ? "text-gold" : "text-brand-faint"
+                      }`}
+                    >
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-[13px] font-semibold text-brand-text truncate">{p.name}</span>
-                        <span className="text-[13px] font-extrabold text-brand-text tz-nums shrink-0">{metricValue(p)}</span>
+                        <span className="text-[13px] font-bold text-brand-text tz-nums shrink-0">{metricValue(p)}</span>
                       </div>
                       <div className="flex items-center gap-2 mt-[5px]">
-                        <div className="flex-1 h-[5px] rounded-full bg-tz-sand overflow-hidden">
+                        {/* Barra apilada: en la misma pista se ve cuánto del
+                            volumen del barrio es cliente y cuánto sigue siendo
+                            lead, que es la pregunta que se hace dirección. */}
+                        <div className="flex-1 flex h-1.5 rounded-pill bg-brand-bg overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-tz-black origin-left"
+                            className="h-full origin-left"
                             style={{
-                              width: `${(metricValue(p) / maxValue) * 100}%`,
+                              width: `${(p.members / maxValue) * 100}%`,
+                              background: SERIES.gold,
                               animation: `tzGrow .8s var(--ease-out-soft) ${(0.1 + Math.min(i, 8) * 0.04).toFixed(2)}s both`,
+                            }}
+                          />
+                          <div
+                            className="h-full origin-left"
+                            style={{
+                              width: `${(p.leads / maxValue) * 100}%`,
+                              background: SERIES.ink,
+                              animation: `tzGrow .8s var(--ease-out-soft) ${(0.14 + Math.min(i, 8) * 0.04).toFixed(2)}s both`,
                             }}
                           />
                         </div>
@@ -202,18 +265,36 @@ export function PostalMapPanel({ points }: { points: PostalCodeStat[] }) {
                   </button>
                 ))}
               </div>
+              <div className="flex items-center gap-4 border-t border-tz-sand pt-2.5 mt-1.5">
+                <LegendDot color={SERIES.gold} label="clientes" />
+                <LegendDot color={SERIES.ink} label="leads" />
+              </div>
             </div>
           </div>
         </>
       )}
-    </Card>
+    </PanelCard>
   );
 }
 
-function SummaryChip({ value, label }: { value: number; label: string }) {
+function LegendDot({ color, label }: { color: string; label: string }) {
   return (
-    <div className="flex items-baseline gap-1.5 bg-tz-bone border border-tz-sand rounded-xl px-3.5 py-2">
-      <span className="font-display font-extrabold text-lg text-brand-text tz-nums">{value}</span>
+    <span className="flex items-center gap-1.5 text-[10.5px] font-semibold text-brand-muted">
+      <span className="w-[9px] h-[9px] rounded-[2px]" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
+function SummaryChip({ value, label, color }: { value: number; label: string; color?: string }) {
+  return (
+    <div className="flex items-baseline gap-1.5 bg-brand-bg border border-tz-sand rounded-xl px-3.5 py-2">
+      <span
+        className="font-display font-bold text-lg tz-nums"
+        style={{ color: color ?? "var(--color-brand-text)" }}
+      >
+        {value}
+      </span>
       <span className="text-[11px] font-semibold uppercase tracking-[.05em] text-brand-muted">{label}</span>
     </div>
   );

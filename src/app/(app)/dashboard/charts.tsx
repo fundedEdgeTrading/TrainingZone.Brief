@@ -16,20 +16,18 @@ import {
   LabelList,
   PieChart,
   Pie,
+  ReferenceLine,
   type TooltipContentProps,
 } from "recharts";
-import {
-  BRAND,
-  INK,
-  MEMBER_STATE_COLOR,
-  MEMBER_STATE_LABEL,
-  PAYMENT_METHOD_COLOR,
-  PAYMENT_METHOD_LABEL,
-  CATEGORICAL,
-} from "@/lib/chart-colors";
+import { INK, SERIES, CATEGORICAL } from "@/lib/chart-colors";
+import { RETENTION_TARGET_PCT } from "@/lib/dashboard-targets";
 
-const axisStyle = { fontSize: 12, fontWeight: 600, fill: INK.muted };
+const axisStyle = { fontSize: 11.5, fontWeight: 600, fill: INK.muted };
 const gridProps = { stroke: INK.gridline, vertical: false };
+const labelStyle = { fontSize: 12.5, fontWeight: 700 };
+
+/** Miles con un decimal y coma decimal: `18,4k`. */
+const kFormat = (v: number) => `${(v / 1000).toLocaleString("es-ES", { maximumFractionDigits: 1, minimumFractionDigits: 1 })}k`;
 
 function TzTooltip({
   active,
@@ -60,9 +58,7 @@ function TzTooltip({
         <span className="text-[11px] font-semibold uppercase tracking-[.03em] text-brand-muted-2">
           {name} · {metric}
         </span>
-        <span className="font-display font-extrabold text-lg leading-[1.05] text-white">
-          {formatted}
-        </span>
+        <span className="font-display font-bold text-lg leading-[1.05] text-white">{formatted}</span>
       </div>
     </div>
   );
@@ -73,128 +69,82 @@ function useHover() {
   return { active, setActive };
 }
 
-export function RevenueByMonthChart({
+/**
+ * Tick del eje X que puede destacar uno de los valores. Lo usan la ocupación
+ * por día (el pico) y la retención (el mes más reciente): el rótulo del dato
+ * que hay que mirar va en 700 y con el color del acento, no solo la barra.
+ */
+function highlightTick(highlighted: string, color: string) {
+  // El tipo se declara "hacia arriba" (todo opcional) para que encaje con lo
+  // que Recharts pasa realmente al render del tick sin arrastrar su tipo entero.
+  return function Tick(props: { x?: number | string; y?: number | string; payload?: { value?: unknown } }) {
+    const value = String(props.payload?.value ?? "");
+    const on = value === highlighted;
+    return (
+      <text
+        x={props.x}
+        y={props.y}
+        dy={12}
+        textAnchor="middle"
+        fontSize={11.5}
+        fontWeight={on ? 700 : 600}
+        fill={on ? color : INK.muted}
+      >
+        {value}
+      </text>
+    );
+  };
+}
+
+/* ---------- Dinero ---------- */
+
+export function RevenueChart({
   data,
+  average,
 }: {
-  data: { month: Date; totalEuros: number }[];
+  data: { label: string; totalEuros: number; isCurrent: boolean }[];
+  average: number;
 }) {
   const { active, setActive } = useHover();
-  const rows = data.map((d, i) => ({
-    label: new Date(d.month).toLocaleDateString("es-ES", { month: "short", year: "2-digit" }),
+  const rows = data.map((d) => ({
+    label: d.label,
     total: Math.round(d.totalEuros),
-    isLast: i === data.length - 1,
+    isCurrent: d.isCurrent,
+    // Dos etiquetas y no una: `LabelList` no sabe de índices, así que el color
+    // por barra se consigue con una lista por color y el hueco en blanco.
+    labelCurrent: d.isCurrent ? kFormat(d.totalEuros) : "",
+    labelOther: d.isCurrent ? "" : kFormat(d.totalEuros),
   }));
 
   return (
-    <ResponsiveContainer width="100%" height={230}>
-      <BarChart data={rows} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={236}>
+      <BarChart data={rows} margin={{ top: 18, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid {...gridProps} />
         <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={44} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ingresos" unit="€" />} />
-        <Bar dataKey="total" radius={[6, 6, 0, 0]} maxBarSize={52} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
+        {/* La media del periodo: sin ella una barra alta no dice si es buena. */}
+        <ReferenceLine y={Math.round(average)} stroke={SERIES.goldSoft} strokeDasharray="6 4" strokeWidth={2} />
+        <Bar dataKey="total" radius={[7, 7, 0, 0]} maxBarSize={54} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((r, i) => (
             <Cell
               key={i}
               cursor="pointer"
-              fill={active === i || r.isLast ? BRAND.yellow : BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
+              fill={r.isCurrent ? SERIES.gold : SERIES.linen}
+              opacity={active !== null && active !== i ? 0.45 : 1}
               onMouseEnter={() => setActive(i)}
               onMouseLeave={() => setActive(null)}
             />
           ))}
-          <LabelList
-            dataKey="total"
-            position="top"
-            formatter={(v) => `${Math.round(Number(v) / 1000)}k`}
-            style={{ fill: INK.secondary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
+          <LabelList dataKey="labelCurrent" position="top" style={{ ...labelStyle, fill: SERIES.gold }} />
+          <LabelList dataKey="labelOther" position="top" style={{ ...labelStyle, fill: INK.muted }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-export function MemberStateChart({
-  data,
-}: {
-  data: { state: string; count: number }[];
-}) {
-  const { active, setActive } = useHover();
-  const order = ["ACTIVE", "DELINQUENT", "FROZEN", "TRIAL", "PROSPECT", "CANCELLED"];
-  const rows = order
-    .map((s) => data.find((d) => d.state === s))
-    .filter((d): d is { state: string; count: number } => !!d)
-    .map((d) => ({ label: MEMBER_STATE_LABEL[d.state], count: d.count, state: d.state }));
-
-  return (
-    <ResponsiveContainer width="100%" height={230}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 0 }}>
-        <CartesianGrid {...gridProps} horizontal={false} />
-        <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={80} />
-        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="socios" unit="" />} />
-        <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {rows.map((r, i) => (
-            <Cell
-              key={r.state}
-              cursor="pointer"
-              fill={MEMBER_STATE_COLOR[r.state]}
-              opacity={active !== null && active !== i ? 0.4 : 1}
-              style={{ filter: active === i ? "brightness(1.12)" : "none" }}
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-            />
-          ))}
-          <LabelList
-            dataKey="count"
-            position="right"
-            style={{ fill: INK.primary, fontSize: 14, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function OccupancyByCenterChart({
-  data,
-}: {
-  data: { center: string; occupancyPct: number; sessions: number }[];
-}) {
-  const { active, setActive } = useHover();
-  const maxIdx = data.reduce((best, d, i) => (d.occupancyPct > (data[best]?.occupancyPct ?? -1) ? i : best), 0);
-  const rows = data.map((d) => ({ ...d, label: d.center.replace(/^TRAINING ZONE\s*/i, "") }));
-
-  return (
-    <ResponsiveContainer width="100%" height={180}>
-      <BarChart data={rows} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
-        <CartesianGrid {...gridProps} />
-        <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
-        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" />
-        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ocupación" unit="%" />} />
-        <Bar dataKey="occupancyPct" radius={[6, 6, 0, 0]} maxBarSize={64} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {rows.map((_, i) => (
-            <Cell
-              key={i}
-              cursor="pointer"
-              fill={active === i || i === maxIdx ? BRAND.yellow : BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-            />
-          ))}
-          <LabelList
-            dataKey="occupancyPct"
-            position="top"
-            formatter={(v) => `${Number(v)}%`}
-            style={{ fill: INK.secondary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
+/* ---------- Ocupación ---------- */
 
 export function OccupancyByWeekdayChart({
   data,
@@ -202,51 +152,79 @@ export function OccupancyByWeekdayChart({
   data: { day: string; occupancyPct: number }[];
 }) {
   const { active, setActive } = useHover();
-  const short = data.map((d) => ({ ...d, label: d.day.slice(0, 3) }));
+  const peak = data.reduce((best, d, i) => (d.occupancyPct > (data[best]?.occupancyPct ?? -1) ? i : best), 0);
+  const rows = data.map((d, i) => ({
+    ...d,
+    label: d.day.slice(0, 3),
+    // Domingo y sábado: fin de semana, la serie más tenue.
+    weekend: i === 0 || i === 6,
+    peakLabel: i === peak ? `${d.occupancyPct}%` : "",
+  }));
+  const peakLabel = rows[peak]?.label ?? "";
+  // El eje llega hasta 80% salvo que algún día lo pase: con el tope fijo, un
+  // martes al 95% se salía del lienzo en vez de crecer la escala.
+  const top = Math.max(80, Math.ceil(Math.max(0, ...data.map((d) => d.occupancyPct)) / 20) * 20);
 
   return (
-    <ResponsiveContainer width="100%" height={180}>
-      <BarChart data={short} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={186}>
+      <BarChart data={rows} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid {...gridProps} />
-        <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
-        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" />
+        <XAxis dataKey="label" tick={highlightTick(peakLabel, SERIES.gold)} axisLine={{ stroke: INK.baseline }} tickLine={false} />
+        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" ticks={[0, top / 2, top]} domain={[0, top]} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ocupación" unit="%" />} />
-        <Bar dataKey="occupancyPct" radius={[6, 6, 0, 0]} maxBarSize={30} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {short.map((_, i) => (
+        <Bar dataKey="occupancyPct" radius={[7, 7, 0, 0]} maxBarSize={30} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
+          {rows.map((r, i) => (
             <Cell
               key={i}
               cursor="pointer"
-              fill={active === i ? BRAND.yellow : BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
+              fill={i === peak ? SERIES.gold : r.weekend ? INK.gridline : SERIES.sand}
+              opacity={active !== null && active !== i ? 0.45 : 1}
               onMouseEnter={() => setActive(i)}
               onMouseLeave={() => setActive(null)}
             />
           ))}
+          <LabelList dataKey="peakLabel" position="top" style={{ fontSize: 12, fontWeight: 700, fill: SERIES.gold }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-export function NoShowRateCard({ rate }: { rate: number }) {
+export function NoShowRateCard({ rate, deltaPts }: { rate: number; deltaPts: number | null }) {
   return (
     <div
-      className="relative overflow-hidden bg-brand-ink rounded-2xl p-[22px] flex flex-col justify-between h-full tz-fade-up"
+      className="relative overflow-hidden bg-brand-ink rounded-[18px] p-[22px] flex flex-col justify-between h-full tz-fade-up"
       style={{ animationDelay: "0.36s" }}
     >
-      <h3 className="relative z-10 font-display font-extrabold text-base uppercase text-white">
+      <h3 className="relative z-10 font-display font-bold text-base uppercase text-white">
         Tasa de no-show <span className="font-sans font-semibold text-xs normal-case text-brand-muted-2">· 30 días</span>
       </h3>
       <div className="relative z-10">
-        <div className="font-display font-extrabold text-[76px] leading-none text-tz-linen">{rate}%</div>
-        <p className="text-[13px] text-brand-muted-2 mt-2 max-w-[200px]">
+        <div className="flex items-end gap-2.5">
+          <span className="font-display font-bold text-[72px] leading-none tracking-[-.03em] text-apta-gold tz-nums">
+            {rate}%
+          </span>
+          {deltaPts !== null && deltaPts !== 0 && (
+            // Chip dorado sobre oscuro: se usan los tokens `gold-bg`/`gold`, que
+            // se invierten con el tema igual que la propia card oscura.
+            <span className="mb-2 rounded-pill bg-gold-bg text-gold px-2 py-[3px] text-[11px] font-bold tabular-nums">
+              {deltaPts > 0 ? "↑" : "↓"} {Math.abs(deltaPts)} pts
+            </span>
+          )}
+        </div>
+        <p className="text-[13px] text-brand-muted-2 mt-2 max-w-[220px]">
           de las reservas confirmadas no se presentaron
         </p>
       </div>
-      <div className="absolute -right-10 -bottom-10 w-[180px] h-[180px] rounded-full bg-brand-ink-circle" />
+      {/* El círculo decorativo iba al mismo tono que el fondo y no se veía.
+          `white` es un token que se invierte con el tema, así que un 6 % sobre
+          la card oscura la aclara en claro y la oscurece en oscuro. */}
+      <div className="absolute -right-12 -bottom-12 w-[190px] h-[190px] rounded-full bg-white/[0.06]" />
     </div>
   );
 }
+
+/* ---------- Retención ---------- */
 
 export function RetentionCohortChart({
   data,
@@ -254,21 +232,31 @@ export function RetentionCohortChart({
   data: { month: string; total: number; retainedPct: number }[];
 }) {
   const { active, setActive } = useHover();
-  const rows = data.map((d) => ({ ...d, label: d.month }));
+  // El tick del eje lleva el valor: leer "feb · 92%" ahorra cruzar la vista con
+  // el eje Y en la única gráfica de la página que es una línea. Sin el año: con
+  // él la primera etiqueta chocaba con el eje y Recharts la escondía entera.
+  const rows = data.map((d) => ({ ...d, label: `${d.month.split(" ")[0]} · ${d.retainedPct}%` }));
+  const lastLabel = rows[rows.length - 1]?.label ?? "";
 
   return (
-    <ResponsiveContainer width="100%" height={200}>
+    <ResponsiveContainer width="100%" height={210}>
       <ComposedChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} onMouseLeave={() => setActive(null)}>
+        <defs>
+          <linearGradient id="tzRetentionArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={SERIES.ink} stopOpacity={0.26} />
+            <stop offset="100%" stopColor={SERIES.ink} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
         <CartesianGrid {...gridProps} />
-        <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
-        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" domain={[0, 100]} />
+        <XAxis dataKey="label" tick={highlightTick(lastLabel, INK.primary)} axisLine={{ stroke: INK.baseline }} tickLine={false} />
+        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" domain={[0, 100]} ticks={[0, 50, 100]} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="retención" unit="%" />} />
+        <ReferenceLine y={RETENTION_TARGET_PCT} stroke={SERIES.goldSoft} strokeDasharray="6 4" strokeWidth={2} />
         <Area
           type="monotone"
           dataKey="retainedPct"
           stroke="none"
-          fill={BRAND.yellow}
-          fillOpacity={0.18}
+          fill="url(#tzRetentionArea)"
           isAnimationActive
           animationDuration={800}
           animationBegin={500}
@@ -276,35 +264,59 @@ export function RetentionCohortChart({
         <Line
           type="monotone"
           dataKey="retainedPct"
-          stroke={BRAND.ink}
+          stroke={SERIES.ink}
           strokeWidth={2.5}
           isAnimationActive
           animationDuration={1100}
           animationEasing="ease"
           dot={(props: { cx?: number; cy?: number; index?: number }) => {
             const i = props.index ?? 0;
+            const isLast = i === rows.length - 1;
             const isHover = active === i;
             return (
               <circle
                 key={i}
                 cx={props.cx}
                 cy={props.cy}
-                r={isHover ? 6.5 : 4.5}
-                fill={isHover ? BRAND.ink : BRAND.yellow}
-                stroke={BRAND.ink}
-                strokeWidth={2}
+                r={isHover ? 6.5 : isLast ? 6 : 5}
+                fill={isLast ? SERIES.goldSoft : INK.surface}
+                stroke={SERIES.ink}
+                strokeWidth={isLast ? 2 : 2.5}
                 cursor="pointer"
                 onMouseEnter={() => setActive(i)}
                 onMouseLeave={() => setActive(null)}
               />
             );
           }}
-          activeDot={{ r: 6.5, fill: BRAND.ink, stroke: BRAND.ink }}
+          activeDot={{ r: 6.5, fill: SERIES.ink, stroke: SERIES.ink }}
         />
       </ComposedChart>
     </ResponsiveContainer>
   );
 }
+
+/* ---------- Altas y bajas por semana ---------- */
+
+export function WeeklyChurnChart({
+  data,
+}: {
+  data: { label: string; joins: number; cancels: number }[];
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={186}>
+      <BarChart data={data} margin={{ top: 10, right: 4, left: 0, bottom: 0 }} barGap={4}>
+        <CartesianGrid {...gridProps} />
+        <XAxis dataKey="label" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
+        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="socios" unit="" />} />
+        <Bar dataKey="joins" name="altas" fill={SERIES.gold} radius={[4, 4, 0, 0]} maxBarSize={12} isAnimationActive animationDuration={700} animationBegin={200} />
+        <Bar dataKey="cancels" name="bajas" fill={SERIES.critical} radius={[4, 4, 0, 0]} maxBarSize={12} isAnimationActive animationDuration={700} animationBegin={280} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/* ---------- Demografía ---------- */
 
 export function AgeBracketsChart({
   data,
@@ -313,82 +325,117 @@ export function AgeBracketsChart({
 }) {
   const { active, setActive } = useHover();
   const maxIdx = data.reduce((best, d, i) => (d.count > (data[best]?.count ?? -1) ? i : best), 0);
+  const rows = data.map((d, i) => {
+    const distance = Math.abs(i - maxIdx);
+    return {
+      ...d,
+      // La franja dominante y sus dos vecinas son "el cuerpo" de la muestra; el
+      // resto son colas y se pintan en el tono más tenue.
+      tier: distance === 0 ? "peak" : distance === 1 ? "mid" : "tail",
+      labelPeak: i === maxIdx ? String(d.count) : "",
+      labelMid: distance === 1 ? String(d.count) : "",
+      labelTail: distance > 1 ? String(d.count) : "",
+    };
+  });
+  const fill = { peak: SERIES.gold, mid: SERIES.sand, tail: INK.gridline } as const;
 
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={data} margin={{ top: 10, right: 4, left: 0, bottom: 0 }}>
+    <ResponsiveContainer width="100%" height={180}>
+      <BarChart data={rows} margin={{ top: 16, right: 4, left: 0, bottom: 0 }}>
         <CartesianGrid {...gridProps} />
-        <XAxis dataKey="bracket" tick={axisStyle} axisLine={{ stroke: INK.baseline }} tickLine={false} />
-        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={32} />
+        <XAxis
+          dataKey="bracket"
+          tick={highlightTick(rows[maxIdx]?.bracket ?? "", SERIES.gold)}
+          axisLine={{ stroke: INK.baseline }}
+          tickLine={false}
+        />
+        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={32} allowDecimals={false} />
         <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="socios" unit="" />} />
-        <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {data.map((_, i) => (
+        <Bar dataKey="count" radius={[7, 7, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
+          {rows.map((r, i) => (
             <Cell
               key={i}
               cursor="pointer"
-              fill={active === i || i === maxIdx ? BRAND.yellow : BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
+              fill={fill[r.tier as keyof typeof fill]}
+              opacity={active !== null && active !== i ? 0.45 : 1}
               onMouseEnter={() => setActive(i)}
               onMouseLeave={() => setActive(null)}
             />
           ))}
-          <LabelList
-            dataKey="count"
-            position="top"
-            style={{ fill: INK.secondary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
+          <LabelList dataKey="labelPeak" position="top" style={{ fontSize: 12, fontWeight: 700, fill: SERIES.gold }} />
+          <LabelList dataKey="labelMid" position="top" style={{ fontSize: 12, fontWeight: 700, fill: INK.secondary }} />
+          <LabelList dataKey="labelTail" position="top" style={{ fontSize: 12, fontWeight: 700, fill: INK.muted }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
   );
 }
 
-/** BI-1: donut categórico (servicio/canal) — paleta monocromática de marca, identidad siempre reforzada con leyenda directa. */
+/** BI-1: donut categórico (servicio/canal), con leyenda directa y el total al centro. */
 export function DonutChart({
   data,
   metric,
+  size = 150,
+  showTotal = false,
+  totalLabel,
 }: {
   data: { label: string; value: number }[];
   metric: string;
+  size?: number;
+  /** Cifra grande en el hueco del donut: el total de la serie. */
+  showTotal?: boolean;
+  totalLabel?: string;
 }) {
   const { active, setActive } = useHover();
   const total = data.reduce((s, d) => s + d.value, 0) || 1;
   const rows = data.map((d, i) => ({ ...d, dotColor: CATEGORICAL[i % CATEGORICAL.length] }));
+  const outer = size / 2 - 6;
+  const inner = outer - 26;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-6">
-      <ResponsiveContainer width={170} height={170} className="shrink-0">
-        <PieChart>
-          <Pie
-            data={rows}
-            dataKey="value"
-            nameKey="label"
-            innerRadius={50}
-            outerRadius={76}
-            paddingAngle={2}
-            stroke="var(--color-brand-card)"
-            strokeWidth={2}
-            isAnimationActive
-            animationDuration={700}
-            animationBegin={150}
-            startAngle={90}
-            endAngle={-270}
-          >
-            {rows.map((r, i) => (
-              <Cell
-                key={r.label}
-                fill={r.dotColor}
-                cursor="pointer"
-                opacity={active !== null && active !== i ? 0.35 : 1}
-                onMouseEnter={() => setActive(i)}
-                onMouseLeave={() => setActive(null)}
-              />
-            ))}
-          </Pie>
-          <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric={metric} unit="" />} />
-        </PieChart>
-      </ResponsiveContainer>
-      <ul className="flex-1 w-full space-y-1.5 text-sm">
+    <div className="flex flex-col sm:flex-row items-center gap-5">
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <ResponsiveContainer width={size} height={size}>
+          <PieChart>
+            <Pie
+              data={rows}
+              dataKey="value"
+              nameKey="label"
+              innerRadius={inner}
+              outerRadius={outer}
+              paddingAngle={2}
+              stroke="var(--color-brand-card)"
+              strokeWidth={2}
+              isAnimationActive
+              animationDuration={700}
+              animationBegin={150}
+              startAngle={90}
+              endAngle={-270}
+            >
+              {rows.map((r, i) => (
+                <Cell
+                  key={r.label}
+                  fill={r.dotColor}
+                  cursor="pointer"
+                  opacity={active !== null && active !== i ? 0.35 : 1}
+                  onMouseEnter={() => setActive(i)}
+                  onMouseLeave={() => setActive(null)}
+                />
+              ))}
+            </Pie>
+            <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric={metric} unit="" />} />
+          </PieChart>
+        </ResponsiveContainer>
+        {showTotal && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="font-display font-bold text-2xl leading-none text-brand-text tz-nums">{total}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[1px] text-brand-muted mt-1">
+              {totalLabel ?? metric}
+            </span>
+          </div>
+        )}
+      </div>
+      <ul className="flex-1 w-full space-y-[7px] text-[13px]">
         {rows.map((r, i) => (
           <li
             key={r.label}
@@ -397,9 +444,9 @@ export function DonutChart({
             onMouseEnter={() => setActive(i)}
             onMouseLeave={() => setActive(null)}
           >
-            <span className="flex items-center gap-2 text-text-2 capitalize">
+            <span className="flex items-center gap-2 min-w-0 text-brand-text-2 capitalize">
               <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ background: r.dotColor }} />
-              {r.label}
+              <span className="truncate">{r.label}</span>
             </span>
             <span className="tz-nums font-semibold text-brand-text shrink-0">
               {r.value} · {Math.round((r.value / total) * 100)}%
@@ -408,139 +455,5 @@ export function DonutChart({
         ))}
       </ul>
     </div>
-  );
-}
-
-/** BI-1: top N socios por dimensión seleccionada (RB-BI-011). */
-export function MemberRankingChart({
-  data,
-  dimension,
-}: {
-  data: { memberName: string; ltvEuros: number; adherencePct: number; tenureDays: number; mixedScore: number }[];
-  dimension: "mixed" | "ltv" | "adherence" | "tenure";
-}) {
-  const { active, setActive } = useHover();
-  const valueOf = (d: (typeof data)[number]) =>
-    dimension === "ltv" ? d.ltvEuros : dimension === "adherence" ? d.adherencePct : dimension === "tenure" ? d.tenureDays : d.mixedScore;
-  const unit = dimension === "ltv" ? "€" : dimension === "adherence" ? "%" : "";
-  const metric = dimension === "ltv" ? "LTV" : dimension === "adherence" ? "adherencia" : dimension === "tenure" ? "antigüedad (días)" : "score";
-  const rows = data.slice(0, 8).map((d) => ({ label: d.memberName, value: Math.round(valueOf(d)) }));
-
-  return (
-    <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 30)}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 40, left: 10, bottom: 0 }}>
-        <CartesianGrid {...gridProps} horizontal={false} />
-        <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={120} />
-        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric={metric} unit={unit as "€" | "%" | ""} />} />
-        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={20} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {rows.map((_, i) => (
-            <Cell
-              key={i}
-              cursor="pointer"
-              fill={active === i || i === 0 ? BRAND.yellow : BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-            />
-          ))}
-          <LabelList
-            dataKey="value"
-            position="right"
-            formatter={(v) => `${v}${unit}`}
-            style={{ fill: INK.primary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-/** BI-1: ranking de servicios por altas o por ingresos (una sola métrica por eje, el toggle cambia cuál). */
-export function TopServicesChart({
-  data,
-  orderBy,
-}: {
-  data: { name: string; subscriptionsCount: number; revenueEuros: number }[];
-  orderBy: "count" | "revenue";
-}) {
-  const { active, setActive } = useHover();
-  const rows = data.map((d) => ({
-    label: d.name,
-    value: orderBy === "revenue" ? Math.round(d.revenueEuros) : d.subscriptionsCount,
-  }));
-  const unit = orderBy === "revenue" ? ("€" as const) : ("" as const);
-
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 46, left: 10, bottom: 0 }}>
-        <CartesianGrid {...gridProps} horizontal={false} />
-        <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={110} />
-        <Tooltip
-          cursor={false}
-          content={(props: TooltipContentProps) => <TzTooltip {...props} metric={orderBy === "revenue" ? "ingresos" : "altas"} unit={unit} />}
-        />
-        <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {rows.map((_, i) => (
-            <Cell
-              key={i}
-              cursor="pointer"
-              fill={active === i || i === 0 ? BRAND.yellow : BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-            />
-          ))}
-          <LabelList
-            dataKey="value"
-            position="right"
-            formatter={(v) => `${Number(v).toLocaleString("es-ES")}${unit}`}
-            style={{ fill: INK.primary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
-
-export function RevenueByMethodChart({
-  data,
-}: {
-  data: { method: string; totalEuros: number }[];
-}) {
-  const { active, setActive } = useHover();
-  const rows = data
-    .map((d) => ({ label: PAYMENT_METHOD_LABEL[d.method] ?? d.method, total: Math.round(d.totalEuros), method: d.method }))
-    .sort((a, b) => b.total - a.total);
-
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={rows} layout="vertical" margin={{ top: 10, right: 46, left: 10, bottom: 0 }}>
-        <CartesianGrid {...gridProps} horizontal={false} />
-        <XAxis type="number" tick={axisStyle} axisLine={false} tickLine={false} />
-        <YAxis type="category" dataKey="label" tick={axisStyle} axisLine={false} tickLine={false} width={100} />
-        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ingresos" unit="€" />} />
-        <Bar dataKey="total" radius={[0, 6, 6, 0]} maxBarSize={22} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
-          {rows.map((r, i) => (
-            <Cell
-              key={r.method}
-              cursor="pointer"
-              fill={PAYMENT_METHOD_COLOR[r.method] ?? BRAND.inkSoft}
-              opacity={active !== null && active !== i ? 0.4 : 1}
-              style={{ filter: active === i ? "brightness(1.15)" : "none" }}
-              onMouseEnter={() => setActive(i)}
-              onMouseLeave={() => setActive(null)}
-            />
-          ))}
-          <LabelList
-            dataKey="total"
-            position="right"
-            formatter={(v) => `${(Number(v) / 1000).toLocaleString("es-ES", { maximumFractionDigits: 1 })}k €`}
-            style={{ fill: INK.primary, fontSize: 13, fontWeight: 700, fontFamily: "'Barlow Semi Condensed'" }}
-          />
-        </Bar>
-      </BarChart>
-    </ResponsiveContainer>
   );
 }

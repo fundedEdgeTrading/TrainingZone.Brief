@@ -14,6 +14,11 @@ export const BRAND = {
   inkCircle: "var(--color-brand-ink-circle)",
 };
 
+/**
+ * Colores semánticos. Desde el rediseño del panel (2026-08) ya NO son la
+ * paleta de series de las gráficas —eso es `SERIES`, más abajo—: quedan para
+ * los estados que sí son un juicio (aprobado, vencido, fallido) fuera del panel.
+ */
 export const STATUS = {
   good: "var(--color-good)",
   warning: "var(--color-warning)",
@@ -31,13 +36,43 @@ export const INK = {
   surface: "var(--color-brand-card)",
 };
 
+/**
+ * Rampa de acento del panel de dirección (rediseño 2026-08).
+ *
+ * El panel se veía monocromático: todas las series compartían el mismo negro y
+ * el ojo no sabía dónde mirar. La regla nueva es una sola: **dorado sobre el
+ * dato que hay que mirar**, tinta para la serie principal y arena/lino para lo
+ * secundario. `--color-good` deja de usarse como color de serie.
+ *
+ * Siguen siendo referencias a tokens, no hexadecimales: el panel se invierte
+ * entero con el tema sin pasar el tema por props (ver cabecera del fichero).
+ */
+export const SERIES = {
+  /** El dato a mirar: mes en curso, líder de ocupación, pico del día, franja dominante. */
+  gold: "var(--color-gold)",
+  /** Acentos sobre oscuro, líneas de objetivo y de media, barra de score. */
+  goldSoft: "var(--color-apta-gold)",
+  /** Serie principal. */
+  ink: "var(--color-brand-ink)",
+  /** Segunda serie. */
+  ink2: "var(--color-brand-text-2)",
+  /** Serie secundaria. */
+  sand: "var(--color-brand-border-hover)",
+  /** Serie más tenue (colas del histograma, barras de relleno). */
+  linen: "var(--color-brand-border)",
+  /** Serie tenue intermedia. */
+  faint: "var(--color-brand-faint)",
+  /** Riesgo: morosos, bajas, no cerrado, estancados. */
+  critical: "var(--color-critical)",
+} as const;
+
 export const MEMBER_STATE_COLOR: Record<string, string> = {
-  ACTIVE: STATUS.good,
-  DELINQUENT: STATUS.critical,
-  FROZEN: STATUS.warning,
-  CANCELLED: INK.faint,
-  TRIAL: "var(--color-trial)",
-  PROSPECT: "var(--color-prospect)",
+  ACTIVE: SERIES.gold,
+  DELINQUENT: SERIES.critical,
+  FROZEN: SERIES.goldSoft,
+  CANCELLED: SERIES.faint,
+  TRIAL: SERIES.sand,
+  PROSPECT: SERIES.ink,
 };
 
 export const MEMBER_STATE_TONE: Record<string, "good" | "critical" | "warning" | "trial" | "prospect" | "neutral"> = {
@@ -74,23 +109,23 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
 };
 
 export const PAYMENT_METHOD_COLOR: Record<string, string> = {
-  CARD: BRAND.inkSoft,
-  SEPA: "var(--color-brand-border-dark)",
-  BIZUM: STATUS.good,
-  CASH: STATUS.warning,
-  TRANSFER: INK.faint,
+  SEPA: SERIES.ink,
+  CARD: SERIES.ink2,
+  BIZUM: SERIES.gold,
+  CASH: SERIES.goldSoft,
+  TRANSFER: SERIES.faint,
 };
 
-// BI-1: paleta categórica de marca para donuts (servicio/canal) — monocromática
-// beige/negro, sin degradados. Orden fijo, nunca ciclado por rango; identidad
+// BI-1: paleta categórica de marca para donuts (servicio/canal) — tinta, dorado
+// de marca y neutros cálidos, sin degradados. Orden fijo, nunca ciclado por rango; identidad
 // siempre reforzada con leyenda + etiqueta directa (nunca solo color). La rampa
 // va del sólido de contraste al borde más tenue, así que se invierte entera con
 // el tema sin perder la separación entre escalones.
 export const CATEGORICAL = [
-  "var(--color-brand-ink)",
-  "var(--color-brand-text-2)",
-  "var(--color-brand-muted)",
-  "var(--color-brand-faint)",
-  "var(--color-brand-border-hover)",
-  "var(--color-brand-border)",
+  SERIES.ink,
+  SERIES.ink2,
+  SERIES.gold,
+  SERIES.goldSoft,
+  SERIES.sand,
+  SERIES.linen,
 ];
