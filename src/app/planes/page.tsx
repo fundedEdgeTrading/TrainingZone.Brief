@@ -9,6 +9,7 @@ import {
   type PlatformPlan,
 } from "@/lib/platform-plans";
 import Hero from "./hero";
+import Tour from "./tour";
 import HowItWorks from "./how-it-works";
 import Testimonials from "./testimonials";
 import Faq from "./faq";
@@ -62,6 +63,8 @@ export default async function PlanesPage({
 
       <main className="px-4 pb-16 sm:px-8">
         <div className="max-w-5xl mx-auto">
+          <Tour />
+
           <HowItWorks />
 
           <div id="planes" className="text-center max-w-2xl mx-auto mb-8">
