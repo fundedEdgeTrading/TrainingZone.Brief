@@ -74,7 +74,11 @@ export function PostalHeatmap({
       minZoom: 5,
       maxZoom: 17,
       scrollWheelZoom: false,
+      // Arriba a la izquierda va ahora la tarjeta del barrio activo: el zoom se
+      // baja a la esquina contraria en vez de quedar debajo de ella.
+      zoomControl: false,
     });
+    L.control.zoom({ position: "bottomright" }).addTo(map);
     mapRef.current = map;
 
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
@@ -175,12 +179,14 @@ export function PostalHeatmap({
     }).addTo(map);
     heatRef.current = heat;
 
-    // Top-2 de la métrica activa: son los que llevan el anillo dorado.
+    // El barrio de mayor volumen de la métrica activa, y solo ese, lleva el
+    // dorado: el rediseño reserva el acento para "el dato que hay que mirar",
+    // y con dos anillos dorados ya no había uno que mirar.
     const top = new Set(
       [...points]
         .filter((p) => valueOf(p, metric) > 0)
         .sort((a, b) => valueOf(b, metric) - valueOf(a, metric))
-        .slice(0, 2)
+        .slice(0, 1)
         .map((p) => p.code)
     );
 
@@ -201,12 +207,15 @@ export function PostalHeatmap({
     };
   }, [points, metric]);
 
-  // Resalte sincronizado (mapa <-> lista): la provincia activa escala su
-  // burbuja y abre su popover; las demás cierran el suyo.
+  // Resalte sincronizado (mapa <-> lista): el barrio activo escala su burbuja,
+  // gana el anillo dorado y abre su popover; los demás bajan de opacidad para
+  // que el activo se lea sin buscarlo.
   useEffect(() => {
     markersRef.current.forEach((marker, code) => {
       const el = marker.getElement()?.querySelector<HTMLDivElement>(".tz-map-bubble");
-      el?.classList.toggle("tz-map-bubble-hi", code === hoveredCode);
+      if (!el) return;
+      el.classList.toggle("tz-map-bubble-hi", code === hoveredCode);
+      el.classList.toggle("tz-map-bubble-dim", Boolean(hoveredCode) && code !== hoveredCode);
       if (code !== hoveredCode) marker.closeTooltip();
     });
     if (hoveredCode) markersRef.current.get(hoveredCode)?.openTooltip();

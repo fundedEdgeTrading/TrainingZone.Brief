@@ -102,8 +102,6 @@ export default async function AppLayout({
       ? `Training Zone · ${centerName}`
       : `${ROLE_LABEL[role]} · ${centerName || "Toda la organización"}`;
 
-  const showCenterChip = role === "OWNER" || role === "PLATFORM_ADMIN";
-
   // Tarjeta de bono del sidebar premium (RB-VENTA): solo si hay suscripción activa.
   let memberSidebar: MemberSidebarData | undefined;
   if (role === "MEMBER" && member) {
@@ -147,7 +145,6 @@ export default async function AppLayout({
               subtitle={subtitle}
               userName={name ?? email ?? ""}
               roleLabel={ROLE_LABEL[role]}
-              centerChip={showCenterChip ? "Todos los centros" : undefined}
               notifications={notifications}
               organizations={memberships.map((m) => ({ orgId: m.orgId, orgName: m.orgName }))}
               activeOrgId={session.user.orgId}

@@ -119,6 +119,7 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
       <path d="M9 8h6M9 11.5h6" />
     </>
   ),
+  descargar: <path d="M12 3v12M7 11l5 5 5-5M4 20h16" />,
 };
 
 export default function NavIconSvg({

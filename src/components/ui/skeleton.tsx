@@ -34,9 +34,10 @@ export function SkeletonTable({ rows = 6 }: { rows?: number }) {
 }
 
 /** Fila de KPIs del panel de control: misma rejilla que la página real. */
-export function SkeletonKpiRow({ count = 6 }: { count?: number }) {
+export function SkeletonKpiRow({ count = 6, cols = 6 }: { count?: number; cols?: 4 | 5 | 6 }) {
+  const lg = { 4: "lg:grid-cols-4", 5: "lg:grid-cols-5", 6: "lg:grid-cols-6" }[cols];
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
+    <div className={`grid grid-cols-2 md:grid-cols-3 gap-3 ${lg}`}>
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} />
       ))}

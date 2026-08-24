@@ -318,11 +318,15 @@ export function leadIsArchived(status: LeadStatus) {
 }
 
 /** RB-BI-009: tasa de cierre y desglose del embudo (SIN_CONTACTAR → SEGUIMIENTO → CON_FECHA_VALORACION → CERRADO/NO_CERRADO). */
-export async function getLeadCloseRate(orgId: string, opts: { from?: Date; to?: Date } = {}) {
+export async function getLeadCloseRate(
+  orgId: string,
+  opts: { from?: Date; to?: Date; centerId?: string | null } = {}
+) {
   const rows = await prisma.lead.groupBy({
     by: ["status"],
     where: {
       orgId,
+      ...(opts.centerId ? { centerId: opts.centerId } : {}),
       ...(opts.from || opts.to ? { createdAt: { gte: opts.from, lte: opts.to } } : {}),
     },
     _count: { _all: true },

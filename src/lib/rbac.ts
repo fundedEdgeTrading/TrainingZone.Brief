@@ -47,7 +47,10 @@ export type NavIcon =
   | "reservar"
   | "evolucion"
   | "membresia"
-  | "facturas";
+  | "facturas"
+  // No es un item de menú: es el icono del botón "PDF" del panel de control.
+  // Vive aquí igual que el resto para que el mapa clave → SVG siga siendo uno.
+  | "descargar";
 
 export type NavItem = {
   href: string;
