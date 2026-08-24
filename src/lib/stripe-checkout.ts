@@ -92,6 +92,7 @@ async function reconcileMemberCheckoutSession(
             priceCents: plan.priceCents,
             status: "ACTIVE",
             sessionsRemaining: plan.sessionsIncluded ?? null,
+            sessionsIncluded: plan.sessionsIncluded ?? null,
           },
         });
         await prisma.payment.update({ where: { id: payment.id }, data: { subscriptionId: subscription.id } });

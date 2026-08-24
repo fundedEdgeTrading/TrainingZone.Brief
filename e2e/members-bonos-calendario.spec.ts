@@ -129,6 +129,37 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     await expect(page.getByRole("tab", { name: "Plan y pagos" })).toContainText("0 sesiones");
   });
 
+  test("añadir sesiones a un bono agotado no pinta el consumo anterior como si fuera saldo nuevo", async ({ page }) => {
+    // Regresión: un bono de 12 sesiones agotado (0 restantes) al que se le
+    // suman 2 mostraba "2 / 2" en vez de "2 / 14" — session-balance.ts fijaba
+    // el total al saldo en cuanto `sessionsRemaining` alcanzaba
+    // `sessionsIncluded`, y las 12 gastadas desaparecían de la pantalla.
+    const fixture = await createBookingMember({ tag: `bonosagotado${Date.now()}`, service: "EP" });
+    fixtures.push(fixture);
+
+    const sub = await prisma.subscription.findFirstOrThrow({
+      where: { memberId: fixture.memberId },
+      select: { id: true, sessionsIncluded: true },
+    });
+    const total = sub.sessionsIncluded!;
+    await prisma.subscription.update({ where: { id: sub.id }, data: { sessionsRemaining: 0 } });
+
+    await loginAs(page, "marcos.iglesias@trainingzone.es");
+    await openPlanSection(page, fixture.memberId);
+    await openAdjust(page);
+
+    await page.getByRole("button", { name: "Sumar una sesión" }).first().click();
+    await page.getByRole("button", { name: "Sumar una sesión" }).first().click();
+    await expect(balanceInput(page)).toHaveValue("2");
+
+    await page.getByRole("button", { name: "Guardar" }).first().click();
+    await expect(page.getByText("Saldo actualizado.")).toBeVisible();
+
+    const label = page.getByText("sesiones restantes", { exact: true });
+    const readout = label.locator("xpath=preceding-sibling::div[1]");
+    await expect(readout).toHaveText(new RegExp(`^2\\s*/\\s*${total + 2}$`));
+  });
+
   test("un bono ilimitado no ofrece controles de ajuste", async ({ page }) => {
     const fixture = await createBookingMember({ tag: `bonosilim${Date.now()}`, service: "EP" });
     fixtures.push(fixture);

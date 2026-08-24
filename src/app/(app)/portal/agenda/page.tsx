@@ -29,6 +29,7 @@ export default async function PortalAgendaPage() {
     member.subscriptions.map((s) => ({
       status: s.status,
       sessionsRemaining: s.sessionsRemaining,
+      sessionsIncluded: s.sessionsIncluded,
       plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
     }))
   );

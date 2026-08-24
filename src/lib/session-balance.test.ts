@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bonoUsage, getSessionBalances } from "./session-balance";
+import { bonoUsage, effectiveSessionsIncluded, getSessionBalances } from "./session-balance";
 
 // Lo que el socio ve en "Reservar clase" son tres cifras a la vez: las que le
 // quedan, las gastadas y el total del bono. Si no cuadran entre sí (el caso de
@@ -70,6 +70,26 @@ test("getSessionBalances: un bono sin sesiones contratadas también suma al tota
 test("getSessionBalances: un bono ilimitado deja la modalidad sin cifras que contar", () => {
   const [balance] = getSessionBalances([sub("MONTHLY", null, null), sub("SESSION_PACK", 8, 3)]);
   assert.deepEqual(balance, { serviceKind: "GROUP", remaining: null, unlimited: true, used: null, total: null });
+});
+
+test("effectiveSessionsIncluded: usa la capacidad propia del bono y cae al plan si falta", () => {
+  assert.equal(effectiveSessionsIncluded({ sessionsIncluded: 6, plan: { sessionsIncluded: 4 } }), 6);
+  assert.equal(effectiveSessionsIncluded({ sessionsIncluded: null, plan: { sessionsIncluded: 4 } }), 4);
+  assert.equal(effectiveSessionsIncluded({ plan: { sessionsIncluded: 4 } }), 4);
+});
+
+test("bonoUsage: un bono agotado (4/4) al que se le suman 2 sesiones queda en 4 gastadas de 6, no en 6/6", () => {
+  // Regresión del bug reportado: sumar sesiones a un bono agotado solo tocaba
+  // `sessionsRemaining` (que vive en Subscription), nunca la capacidad
+  // contratada (que antes de esta columna solo existía en el plan,
+  // compartido por todos los socios de ese plan). adjustSubscriptionSessions
+  // ahora sube `Subscription.sessionsIncluded` el mismo delta que el saldo.
+  const exhausted = bonoUsage(4, 0);
+  assert.deepEqual(exhausted, { total: 4, used: 4, remaining: 0 });
+
+  // sessionsIncluded (de la propia Subscription) sube de 4 a 6 junto con
+  // sessionsRemaining, que sube de 0 a 2.
+  assert.deepEqual(bonoUsage(6, 2), { total: 6, used: 4, remaining: 2 });
 });
 
 test("getSessionBalances: solo cuentan los bonos activos", () => {

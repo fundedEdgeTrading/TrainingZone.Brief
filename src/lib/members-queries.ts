@@ -150,6 +150,7 @@ export {
   planServiceKind,
   activeBookingSubscriptions,
   bonoUsage,
+  effectiveSessionsIncluded,
   getSessionBalances,
 } from "@/lib/session-balance";
 export type { ServiceKind, BonoUsage, SessionBalance } from "@/lib/session-balance";

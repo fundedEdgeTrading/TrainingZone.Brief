@@ -13,7 +13,7 @@ import {
 import { getActiveMembershipPlans } from "@/lib/public-membership-queries";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
-import { bonoUsage } from "@/lib/session-balance";
+import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
 import { zonedToday } from "@/lib/date-utils";
 import Link from "next/link";
@@ -81,7 +81,7 @@ export default async function PortalMembresiaPage({
   const recurring = activeSub ? isRecurring(activeSub.plan.type) : false;
   // Saldo y total salen de `bonoUsage`, que los cuadra: con `sessionsIncluded`
   // pelado, un bono con sesiones añadidas a mano se leía "13 de 12".
-  const usage = activeSub ? bonoUsage(activeSub.plan.sessionsIncluded, activeSub.sessionsRemaining) : null;
+  const usage = activeSub ? bonoUsage(effectiveSessionsIncluded(activeSub), activeSub.sessionsRemaining) : null;
   const sessionsIncluded = usage?.total ?? 0;
   const sessionsRemaining = usage?.remaining ?? 0;
   const sessionsPct = sessionsIncluded > 0 ? (sessionsRemaining / sessionsIncluded) * 100 : 0;

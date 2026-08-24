@@ -250,6 +250,7 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
       priceCents: plan.priceCents,
       status: "ACTIVE",
       sessionsRemaining: plan.sessionsIncluded ?? null,
+      sessionsIncluded: plan.sessionsIncluded ?? null,
     },
   });
 

@@ -8,6 +8,7 @@ import { membershipsFor } from "@/lib/identity";
 import { getMemberForUser, getPendingSessionFeedbackCountForUser, getMemberUpcomingBookings, isLiveBooking } from "@/lib/portal-queries";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
+import { effectiveSessionsIncluded } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
 import { logoUrlForTheme } from "@/lib/theme";
 import { TimezoneSync } from "@/components/timezone-sync";
@@ -118,7 +119,7 @@ export default async function AppLayout({
             planName: planNameWithoutService(activeSub.plan.name, serviceLabel),
             recurring: isRecurring(activeSub.plan.type),
             sessionsRemaining: activeSub.sessionsRemaining,
-            sessionsIncluded: activeSub.plan.sessionsIncluded,
+            sessionsIncluded: effectiveSessionsIncluded(activeSub),
             nextChargeLabel: activeSub.endDate
               ? activeSub.endDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
               : null,

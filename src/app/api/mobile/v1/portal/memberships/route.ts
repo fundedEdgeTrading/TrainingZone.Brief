@@ -1,6 +1,12 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSessionBalances, planServiceKind, sessionServiceKind, bonoUsage } from "@/lib/members-queries";
+import {
+  getSessionBalances,
+  planServiceKind,
+  sessionServiceKind,
+  bonoUsage,
+  effectiveSessionsIncluded,
+} from "@/lib/members-queries";
 import { formatDateParam } from "@/lib/date-utils";
 import { requireMember } from "../../_lib/require-member";
 import { apiOk } from "../../_lib/response";
@@ -31,6 +37,7 @@ export async function GET(req: NextRequest) {
     subscriptions.map((s) => ({
       status: s.status,
       sessionsRemaining: s.sessionsRemaining,
+      sessionsIncluded: s.sessionsIncluded,
       plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
     }))
   );
@@ -42,7 +49,7 @@ export async function GET(req: NextRequest) {
       // web: el anillo de "Mis bonos" se pinta con estas tres cifras y con el
       // total contratado a secas se pasaba del 100 % en cuanto un bono tenía
       // sesiones añadidas a mano.
-      const usage = bonoUsage(s.plan.sessionsIncluded, s.sessionsRemaining);
+      const usage = bonoUsage(effectiveSessionsIncluded(s), s.sessionsRemaining);
       return {
         id: s.id,
         planName: s.plan.name,

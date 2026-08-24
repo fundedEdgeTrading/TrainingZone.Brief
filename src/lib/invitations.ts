@@ -115,6 +115,7 @@ async function createBonoSubscription(
       priceCents: plan.priceCents,
       status: "ACTIVE",
       sessionsRemaining: plan.sessionsIncluded ?? null,
+      sessionsIncluded: plan.sessionsIncluded ?? null,
     },
   });
 }

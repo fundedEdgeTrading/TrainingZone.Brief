@@ -7,7 +7,7 @@ import {
   listCentersForOrg,
   listActivePlansForOrg,
 } from "@/lib/members-queries";
-import { bonoUsage } from "@/lib/session-balance";
+import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
 import { canManageMembers, canImportMembers } from "@/lib/rbac";
 import { parseFilterValues } from "@/lib/filter-params";
@@ -276,7 +276,7 @@ function memberToRow(
   // (gastadas + disponibles = total) aunque a recepción le haya dado saldo de
   // más — mismo criterio que `getSessionBalances`, para que la ficha del socio
   // y su portal no cuenten distinto.
-  const usage = sub ? bonoUsage(sub.plan.sessionsIncluded, remaining) : null;
+  const usage = sub ? bonoUsage(effectiveSessionsIncluded(sub), remaining) : null;
   const used = usage?.used ?? null;
   const pct = usage && usage.total > 0 ? Math.round((usage.used / usage.total) * 100) : 100;
 

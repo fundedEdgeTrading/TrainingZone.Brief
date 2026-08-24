@@ -12,7 +12,7 @@ import {
   listActivePlansForOrg,
   listClientGoalTemplates,
 } from "@/lib/members-queries";
-import { bonoUsage } from "@/lib/session-balance";
+import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
 import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
@@ -310,6 +310,7 @@ export default async function MemberDetailPage({
     member.subscriptions.map((s) => ({
       status: s.status,
       sessionsRemaining: s.sessionsRemaining,
+      sessionsIncluded: s.sessionsIncluded,
       plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
     }))
   );
@@ -329,7 +330,7 @@ export default async function MemberDetailPage({
   // quede por debajo del saldo cuando a un bono se le han añadido sesiones a
   // mano (si no, salía "13 / 12").
   const bonoUsages = manageableSubscriptions
-    .map((s) => bonoUsage(s.plan.sessionsIncluded, s.sessionsRemaining))
+    .map((s) => bonoUsage(effectiveSessionsIncluded(s), s.sessionsRemaining))
     .filter((u): u is NonNullable<typeof u> => u != null);
   const remainingTotal = bonoUsages.reduce((acc, u) => acc + u.remaining, 0);
   const includedTotal = bonoUsages.reduce((acc, u) => acc + u.total, 0);
@@ -668,7 +669,7 @@ export default async function MemberDetailPage({
               id: s.id,
               planName: s.plan.name,
               planType: s.plan.type,
-              sessionsIncluded: s.plan.sessionsIncluded,
+              sessionsIncluded: effectiveSessionsIncluded(s),
               sessionsRemaining: s.sessionsRemaining,
               status: s.status,
               centerName: s.center.name,
