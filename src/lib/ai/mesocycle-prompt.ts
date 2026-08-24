@@ -142,6 +142,14 @@ export function buildMesocycleBriefing(briefing: MesocycleBriefing): string {
   return lines.join("\n");
 }
 
+/**
+ * Marcador que separa el plan vigente de lo que ha pedido el entrenador. Vive
+ * aquí, junto al builder, porque `parseRefineRequest` lo usa para recuperar la
+ * petición humana de `aiConversation`: si el prompt cambia, las dos funciones
+ * cambian a la vez y el historial no se rompe en silencio.
+ */
+const REFINE_REQUEST_MARKER = "Cambio pedido por el entrenador:";
+
 /** El plan vigente que el refinado tiene que copiar salvo en lo que se pide. */
 export function buildRefineRequest(plan: MesocyclePlan, request: string): string {
   return [
@@ -149,9 +157,22 @@ export function buildRefineRequest(plan: MesocyclePlan, request: string): string
     "",
     JSON.stringify(plan),
     "",
-    "Cambio pedido por el entrenador:",
+    REFINE_REQUEST_MARKER,
     request,
   ].join("\n");
+}
+
+/**
+ * Lo contrario de `buildRefineRequest`: de un mensaje `user` de la conversación
+ * guardada saca lo que escribió el entrenador, sin el plan vigente que lo
+ * precede. `null` si el mensaje no es una petición de refinado (el primero de
+ * la conversación es el briefing de generación).
+ */
+export function parseRefineRequest(content: string): string | null {
+  const at = content.lastIndexOf(REFINE_REQUEST_MARKER);
+  if (at === -1) return null;
+  const request = content.slice(at + REFINE_REQUEST_MARKER.length).trim();
+  return request || null;
 }
 
 function bullets(values: string[], empty: string): string[] {
