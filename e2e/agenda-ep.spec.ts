@@ -82,4 +82,24 @@ test.describe("F11 — Agenda EP", () => {
     await expect(page.getByText(/Dirigida por/)).toBeVisible();
     await expect(page.getByText(/Autorreservable por el cliente/)).toBeVisible();
   });
+
+  /**
+   * La línea de "ahora" cruza la columna del día entera a la hora actual y se
+   * pinta por encima de las tarjetas. Si además recibe eventos de puntero, se
+   * come el clic de la sesión que le toque debajo — y cuál es esa sesión
+   * depende de la hora a la que se ejecute la suite, así que el fallo aparecía
+   * y desaparecía solo. Se comprueba la propiedad, no el síntoma: el síntoma no
+   * es reproducible a voluntad.
+   */
+  test("la línea de la hora actual no se come el clic de la sesión que tiene debajo", async ({ page }) => {
+    await loginAs(page, "sergio@trainingzone.es");
+    await page.goto("/agenda");
+
+    const nowLine = page.locator("div.z-\\[4\\]").first();
+    // Solo se pinta si hoy está a la vista y la hora cae dentro de la rejilla
+    // (06:00-22:00). Fuera de esa ventana no hay nada que comprobar.
+    if (!(await nowLine.isVisible().catch(() => false))) test.skip();
+
+    await expect(nowLine).toHaveCSS("pointer-events", "none");
+  });
 });

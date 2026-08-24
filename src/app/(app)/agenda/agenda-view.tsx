@@ -553,15 +553,22 @@ export default function AgendaView({
                       }}
                     >
                       {showNow && (
+                        // `pointer-events-none` en toda la marca, no solo en el
+                        // anillo: la línea de "ahora" cruza la columna entera a
+                        // la hora actual y se pinta por encima de las tarjetas
+                        // (z-4), así que se comía el clic de la sesión que le
+                        // tocara debajo. Es decoración —no tiene manejadores—,
+                        // y el fallo dependía de la hora del día: la sesión que
+                        // quedaba tapada cambiaba con el reloj.
                         <div
-                          className="absolute left-0 right-0 z-[4]"
+                          className="pointer-events-none absolute left-0 right-0 z-[4]"
                           style={{ top: ((nowMin - START_HOUR * 60) / 60) * rowHeight, height: 2, background: "var(--color-critical)" }}
                         >
                           <span className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full" style={{ background: "var(--color-critical)" }} />
                           {/* Anillo que late: marca "ahora" sin robar atención. */}
                           <span
                             aria-hidden="true"
-                            className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full pointer-events-none"
+                            className="absolute -left-1 -top-[3px] w-2 h-2 rounded-full"
                             style={{
                               border: "2px solid var(--color-critical)",
                               animation: "tzPulseRing 2.4s ease-out infinite",
