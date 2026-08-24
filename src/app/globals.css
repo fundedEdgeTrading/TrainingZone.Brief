@@ -1215,6 +1215,18 @@ main:has(> [data-full-bleed]) {
   animation: tzDraw 0.4s var(--ease-out-soft) both;
 }
 
+/* Entrada del velo de una espera larga y bloqueante (`BrandLoader`). Solo
+   opacidad: el velo tapa la app entera, y cualquier desplazamiento se leería
+   como que la pantalla de debajo se mueve. */
+@keyframes tzOverlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* ===== Morph del avatar del socio (lista → ficha) =====
    El desenfoque a mitad de vuelo tapa los artefactos de interpolación entre dos
    tamaños distintos del mismo retrato. ===== */

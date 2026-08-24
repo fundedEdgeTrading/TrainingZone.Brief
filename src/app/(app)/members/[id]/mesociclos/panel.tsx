@@ -4,10 +4,19 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { BrandLoader, MESOCYCLE_STEPS, usePacedLoader } from "@/components/ui/brand-loader";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { generateMesocycleAction } from "./actions";
+
+/**
+ * Duración esperada de la generación completa (medida: 60-120 s). Solo reparte
+ * los pasos por la barra: el nivel se para al 92 % de cada tramo y no se mueve
+ * de ahí hasta que el paso siguiente entra, así que pasarse de optimista no
+ * inventa progreso, únicamente deja la frase quieta un rato más.
+ */
+const EXPECTED_MS = 95_000;
 
 export const MESOCYCLE_STATUS_LABEL: Record<string, string> = {
   DRAFT: "Borrador",
@@ -44,6 +53,34 @@ export function MesocyclePanel({
   const [level, setLevel] = useState("");
   const [weeks, setWeeks] = useState("8");
   const [availability, setAvailability] = useState("");
+  // El velo no cuelga de `pending`: la transición termina en cuanto la acción
+  // resuelve, y entonces el nivel completo y el check no llegarían a verse.
+  const loader = usePacedLoader(MESOCYCLE_STEPS, EXPECTED_MS);
+
+  function generate() {
+    loader.start();
+
+    startTransition(async () => {
+      const result = await generateMesocycleAction(memberId, {
+        level,
+        weeks: Number(weeks),
+        availability,
+      });
+
+      if (!result.ok) {
+        // El error lo cuenta el toast, como en el resto de la app: el loader no
+        // tiene estado de error propio.
+        loader.abort();
+        toast.error(result.error);
+        return;
+      }
+
+      loader.finish(() => {
+        toast.success("Borrador generado. Revísalo antes de aprobarlo.");
+        router.push(`/members/${memberId}/mesociclos/${result.mesocycleId}`);
+      });
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -76,27 +113,12 @@ export function MesocyclePanel({
           </p>
         )}
 
-        <Button
-          disabled={pending || !aiConfigured}
-          onClick={() =>
-            startTransition(async () => {
-              const result = await generateMesocycleAction(memberId, {
-                level,
-                weeks: Number(weeks),
-                availability,
-              });
-              if (!result.ok) {
-                toast.error(result.error);
-                return;
-              }
-              toast.success("Borrador generado. Revísalo antes de aprobarlo.");
-              router.push(`/members/${memberId}/mesociclos/${result.mesocycleId}`);
-            })
-          }
-        >
-          {pending ? "Generando..." : "Generar borrador"}
+        <Button disabled={pending || loader.loading || !aiConfigured} onClick={generate}>
+          {pending || loader.loading ? "Generando..." : "Generar borrador"}
         </Button>
       </section>
+
+      {loader.loading && <BrandLoader steps={MESOCYCLE_STEPS} step={loader.step} done={loader.done} />}
 
       {mesocycles.length === 0 ? (
         <p className="text-sm text-brand-muted">Este socio todavía no tiene mesociclos.</p>

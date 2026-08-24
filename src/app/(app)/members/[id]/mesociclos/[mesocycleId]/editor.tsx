@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
+import { BrandLoader, MESOCYCLE_REFINE_STEPS, usePacedLoader } from "@/components/ui/brand-loader";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
@@ -18,6 +19,12 @@ import {
   updateMesocyclePhaseAction,
   type MesocycleActionResult,
 } from "../actions";
+
+/**
+ * Duración esperada del refinado (una sola llamada al modelo, sin la ficha ni
+ * el guardado completo de la generación). Solo reparte los pasos por la barra.
+ */
+const EXPECTED_REFINE_MS = 55_000;
 
 type Phase = MesocycleDetail["phases"][number];
 type Day = Phase["days"][number];
@@ -160,6 +167,11 @@ function MesocycleHeaderCard({ memberId, mesocycle }: { memberId: string; mesocy
   );
 }
 
+/**
+ * La otra espera larga con IA de la app: una sola llamada al modelo que
+ * reescribe el plan entero. Como la generación, se tapa con el loader de marca
+ * en vez de dejar un botón en «Refinando...» durante casi un minuto.
+ */
 function RefineCard({
   memberId,
   mesocycleId,
@@ -169,8 +181,27 @@ function RefineCard({
   mesocycleId: string;
   aiConfigured: boolean;
 }) {
-  const { pending, run } = useAction();
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
   const [request, setRequest] = useState("");
+  const loader = usePacedLoader(MESOCYCLE_REFINE_STEPS, EXPECTED_REFINE_MS);
+
+  function refine() {
+    loader.start();
+
+    startTransition(async () => {
+      const result = await refineMesocycleAction(memberId, mesocycleId, request);
+
+      if (!result.ok) {
+        loader.abort();
+        toast.error(result.error);
+        return;
+      }
+
+      setRequest("");
+      loader.finish(() => toast.success("Plan refinado. Vuelve a revisarlo antes de aprobarlo."));
+    });
+  }
 
   return (
     <section className="border border-brand-border rounded-card p-4 space-y-3">
@@ -182,19 +213,20 @@ function RefineCard({
         </p>
       </div>
       <Textarea rows={3} value={request} onChange={(e) => setRequest(e.target.value)} disabled={!aiConfigured} />
-      <Button
-        size="sm"
-        disabled={pending || !aiConfigured}
-        onClick={() =>
-          run(async () => {
-            const result = await refineMesocycleAction(memberId, mesocycleId, request);
-            if (result.ok) setRequest("");
-            return result;
-          }, "Plan refinado. Vuelve a revisarlo antes de aprobarlo.")
-        }
-      >
-        {pending ? "Refinando..." : "Pedir cambio"}
+      <Button size="sm" disabled={pending || loader.loading || !aiConfigured} onClick={refine}>
+        {pending || loader.loading ? "Refinando..." : "Pedir cambio"}
       </Button>
+
+      {loader.loading && (
+        <BrandLoader
+          steps={MESOCYCLE_REFINE_STEPS}
+          step={loader.step}
+          done={loader.done}
+          title="Refinando mesociclo"
+          doneLabel="Plan refinado"
+          hint="Suele tardar cerca de un minuto. No cierres esta ventana."
+        />
+      )}
     </section>
   );
 }
