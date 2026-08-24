@@ -3,7 +3,7 @@ import { loginAs } from "./helpers";
 
 test.describe("F10 — Notificaciones", () => {
   test("dirección ve la campana con notificaciones y puede resolverlas", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/dashboard");
 
     await page.getByRole("button", { name: "Notificaciones" }).click();

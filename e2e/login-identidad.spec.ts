@@ -3,7 +3,7 @@ import { loginAs } from "./helpers";
 
 test.describe("F1 — Identidad global y membresías por organización", () => {
   test("una identidad con una sola membresía entra directa, sin selector", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
 
     // RB-ID-002: con una única membresía no debe aparecer ningún paso intermedio.
     await expect(page.getByRole("heading", { name: "¿Dónde quieres entrar?" })).toHaveCount(0);

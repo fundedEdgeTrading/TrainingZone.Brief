@@ -107,7 +107,7 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     const fixture = await createBookingMember({ tag: `bonoscero${Date.now()}`, service: "EP" });
     fixtures.push(fixture);
 
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await openPlanSection(page, fixture.memberId);
     await openAdjust(page);
 
@@ -165,7 +165,7 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     fixtures.push(fixture);
     await makeSubscriptionUnlimited(fixture.memberId);
 
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await openPlanSection(page, fixture.memberId);
 
     await expect(page.getByText("Ilimitado", { exact: true })).toBeVisible();
@@ -189,7 +189,7 @@ test.describe("Plan y pagos en la ficha del socio", () => {
       data: { joinedAt: new Date(Date.now() - 2 * 365 * 24 * 60 * 60 * 1000) },
     });
 
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await openPlanSection(page, fixture.memberId);
     await expect(page.getByText("Calendario de entrenamientos")).toBeVisible();
 

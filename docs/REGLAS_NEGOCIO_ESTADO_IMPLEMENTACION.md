@@ -184,6 +184,7 @@ compara la percepción del cliente con la del entrenador, y no genera ni un solo
 | RB-RRHH-011 (valoración de entrenadores, trimestral configurable) | ✅ | `src/lib/checkin-schedule.ts:9-102`; `src/lib/trainer-rating-access.ts:43-70` | — |
 | RB-RRHH-012 (confidencial, solo dirección) | ✅ | `src/lib/trainer-rating-access.ts:1-33` (matriz invertida, nunca accesible al propio entrenador) | — |
 | ~~RB-RRHH-013 (aprobación obligatoria de ofertas)~~ | 🗑️ | Retirada con el motor de ofertas el 23-08-2026 | regla sin efecto |
+| RB-RRHH-014 (baja de plantilla, exclusiva de dirección) | ✅ | `src/lib/rbac.ts` (`canEditStaff`/`canDeleteStaff`), `src/lib/staff-queries.ts` (ámbito y rastro), `src/lib/staff-lifecycle.ts` (baja/reincorporación), `src/app/(app)/organization/actions.ts` | La baja corta el acceso en la puerta común (`src/lib/session.ts`), no solo en la pantalla; comparte núcleo con `DELETE /api/mobile/v1/staff/[id]` |
 
 ---
 

@@ -80,7 +80,7 @@ async function elegirCentro(drawer: Locator) {
 
 test.describe("Importación de socios con su cuota", () => {
   test("el CSV trae la cuota, y reimportarlo no la duplica", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/members");
 
     async function importar() {
@@ -117,7 +117,7 @@ test.describe("Importación de socios con su cuota", () => {
   });
 
   test("un plan que no existe omite la fila en vez de dejar al socio sin cobrar", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/members");
 
     const drawer = await abrirDrawer(page);

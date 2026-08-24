@@ -25,7 +25,7 @@ export async function getTrainerRatingSummary(orgId: string, actorRole: Role) {
     _avg: { score: true },
     _count: { _all: true },
   });
-  const trainers = await prisma.user.findMany({ where: { orgId, role: { in: ["TRAINER", "TRAINER_ADMIN"] } }, select: { id: true, name: true } });
+  const trainers = await prisma.user.findMany({ where: { orgId, role: { in: ["TRAINER", "TRAINER_ADMIN"] }, deactivatedAt: null }, select: { id: true, name: true } });
   return trainers.map((t) => {
     const row = rows.find((r) => r.trainerUserId === t.id);
     return { trainerUserId: t.id, name: t.name, avgScore: row?._avg.score ?? null, count: row?._count._all ?? 0 };

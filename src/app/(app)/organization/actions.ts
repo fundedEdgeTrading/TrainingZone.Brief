@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/guard";
+import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
+import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
+import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
+import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
 import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
@@ -131,8 +133,15 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
   // gimnasio de Apta no es un conflicto: se le añadirá una membresía aquí.
   const dup = await prisma.user.findUnique({
     where: { orgId_email: { orgId: session.user.orgId, email } },
-    select: { id: true },
+    select: { id: true, deactivatedAt: true },
   });
+  // Una baja con histórico conserva su fila, así que el email sigue ocupado:
+  // sin este mensaje el alta fallaba con un "ya existe" sobre alguien que no
+  // aparece en la plantilla, y no había forma de adivinar que hay que
+  // reincorporarla.
+  if (dup?.deactivatedAt) {
+    return { ok: false, error: "Esa persona está dada de baja en tu organización: reincorpórala desde la plantilla." };
+  }
   if (dup) return { ok: false, error: "Ya existe una persona con ese email en tu organización." };
 
   // Centro base: obligatorio y validado para roles de centro; null para RRHH/dirección global.
@@ -184,6 +193,139 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
   return { ok: true };
 }
 
+// ---------- Edición y baja de plantilla (CRUD del equipo) ----------
+// El alta y la imputación son de organización y RRHH; editar la ficha y sacar a
+// alguien del equipo bajan un escalón para que dirección de centro pueda
+// gestionar a los suyos (`canEditStaff` / `canDeleteStaff`). El ámbito no lo
+// pone el rol: cada acción vuelve a resolver a quién puede tocar quien la
+// llama con `findStaffInScope`, porque un id de otro centro llega igual de
+// bien por POST aunque la pantalla no lo enseñe.
+
+const EDIT_STAFF_ROLES: Role[] = ["OWNER", "PLATFORM_ADMIN", "HR_MANAGER", "CENTER_DIRECTOR"];
+
+export async function updateStaffUser(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(EDIT_STAFF_ROLES);
+  if (!canEditStaff(session.user.role)) return { ok: false, error: "No tienes permiso para editar la plantilla." };
+
+  const userId = String(formData.get("userId") ?? "");
+  const name = String(formData.get("name") ?? "").trim();
+  const roleRaw = String(formData.get("role") ?? "");
+  const primaryCenterId = String(formData.get("primaryCenterId") ?? "") || null;
+  const visibleInApp = String(formData.get("visibleInApp") ?? "") === "on";
+
+  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
+  if (!userId || !name || !role) return { ok: false, error: "Completa el nombre y el rol." };
+
+  const target = await findStaffInScope(session.user, userId);
+  if (!target) return { ok: false, error: "No se ha encontrado esa persona en tu plantilla." };
+
+  // Escalada de privilegios, en sus dos formas: dársela a otro y dártela a ti.
+  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
+    return { ok: false, error: "No tienes permiso para asignar ese rol." };
+  }
+  // Dirección de centro solo reparte roles de centro. Con RRHH fuera de esta
+  // lista, ascender a alguien a RRHH sería sacarlo de su propio alcance: un
+  // rol de ámbito organización al que ya no podría ni volver a bajar.
+  if (!canManageStaff(session.user.role) && !CENTER_SCOPED.includes(role)) {
+    return { ok: false, error: "Solo puedes asignar roles de centro." };
+  }
+  if (target.id === session.user.id && role !== target.role) {
+    return { ok: false, error: "No puedes cambiarte el rol a ti mismo." };
+  }
+  // Dejar la organización sin dirección la deja también sin quien pueda
+  // devolvérsela: el último OWNER no se degrada desde aquí.
+  if (target.role === "OWNER" && role !== "OWNER") {
+    const others = await countActiveWithRole(session.user.orgId, "OWNER", target.id);
+    if (others === 0) return { ok: false, error: "Es la única Dirección de organización: nombra otra antes de cambiarle el rol." };
+  }
+
+  // Centro base: obligatorio para roles de centro, y siempre uno de los que
+  // quien edita tiene a su cargo.
+  let centerId: string | null = null;
+  if (CENTER_SCOPED.includes(role)) {
+    if (!primaryCenterId) return { ok: false, error: "Este rol necesita un centro base." };
+    const center = await prisma.center.findFirst({
+      where: { id: primaryCenterId, orgId: session.user.orgId },
+      select: { id: true },
+    });
+    if (!center) return { ok: false, error: "No se ha encontrado el centro base seleccionado." };
+    if (!(await canActOnCenter(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
+    centerId = center.id;
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: target.id }, data: { name, role, centerId, visibleInApp } });
+
+    if (centerId) {
+      // La imputación primaria sigue al centro base: si no, la persona quedaba
+      // con rol nuevo y dedicación colgando del centro anterior.
+      await tx.centerMembership.updateMany({
+        where: { userId: target.id, isPrimary: true, centerId: { not: centerId } },
+        data: { isPrimary: false },
+      });
+      await tx.centerMembership.upsert({
+        where: { userId_centerId: { userId: target.id, centerId } },
+        create: {
+          orgId: session.user.orgId,
+          userId: target.id,
+          centerId,
+          role,
+          isPrimary: true,
+          allocationPct: 100,
+        },
+        update: { role, isPrimary: true },
+      });
+    } else {
+      // Pasa a un rol de ámbito organización: deja de estar imputado a centros.
+      await tx.centerMembership.deleteMany({ where: { userId: target.id } });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        orgId: session.user.orgId,
+        actorUserId: session.user.id,
+        action: "STAFF_UPDATED",
+        entityType: "User",
+        entityId: target.id,
+        metadata: { name, email: target.email, roleBefore: target.role, roleAfter: role, centerId },
+      },
+    });
+  });
+
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
+/**
+ * Baja de plantilla (RB-RRHH-014). La regla —qué se borra, qué se conserva y
+ * qué la bloquea— vive en `lib/staff-lifecycle.ts`, compartida con la API de la
+ * app nativa; aquí solo queda quién puede llamar y sobre quién.
+ */
+export async function removeStaffUser(userId: string): Promise<StaffRemovalResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "CENTER_DIRECTOR"]);
+  if (!canDeleteStaff(session.user.role)) return { ok: false, error: "No tienes permiso para dar de baja personal." };
+
+  const target = await findStaffInScope(session.user, userId);
+  if (!target) return { ok: false, error: "No se ha encontrado esa persona en tu plantilla." };
+
+  const result = await removeStaffMember({ orgId: session.user.orgId, actorUserId: session.user.id, target });
+  if (result.ok) revalidatePath("/organization");
+  return result;
+}
+
+/** Reincorporación: devuelve el acceso y rehace la imputación a su centro base. */
+export async function restoreStaffUser(userId: string): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "CENTER_DIRECTOR"]);
+  if (!canDeleteStaff(session.user.role)) return { ok: false, error: "No tienes permiso para reincorporar personal." };
+
+  const target = await findStaffInScope(session.user, userId);
+  if (!target) return { ok: false, error: "No se ha encontrado esa persona en tu plantilla." };
+
+  const result = await restoreStaffMember({ orgId: session.user.orgId, actorUserId: session.user.id, target });
+  if (result.ok) revalidatePath("/organization");
+  return result;
+}
+
 // ---------- Imputación de personal a centros ----------
 export async function assignUserToCenter(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
@@ -205,7 +347,12 @@ export async function assignUserToCenter(formData: FormData): Promise<OrgActionR
     : null;
 
   const [user, center] = await Promise.all([
-    prisma.user.findFirst({ where: { id: userId, orgId: session.user.orgId }, select: { id: true } }),
+    // `deactivatedAt: null`: a quien ya no está en plantilla no se le imputa
+    // trabajo nuevo — la baja acaba de borrarle todas sus imputaciones.
+    prisma.user.findFirst({
+      where: { id: userId, orgId: session.user.orgId, deactivatedAt: null },
+      select: { id: true },
+    }),
     prisma.center.findFirst({ where: { id: centerId, orgId: session.user.orgId }, select: { id: true } }),
   ]);
   if (!user || !center) return { ok: false, error: "No se ha encontrado la persona o el centro." };

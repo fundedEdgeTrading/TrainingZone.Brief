@@ -25,7 +25,7 @@ export async function reportJobFailures(failures: JobFailure[]): Promise<void> {
 
   for (const [orgId, orgFailures] of byOrg) {
     const recipients = await prisma.user.findMany({
-      where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } },
+      where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] }, deactivatedAt: null },
       select: { id: true },
     });
     for (const rule of new Set(orgFailures.map((f) => f.rule))) {

@@ -97,7 +97,7 @@ test.describe("Aterrizaje en la raíz", () => {
   });
 
   test("una persona con sesión aterriza en su panel, no en la landing comercial", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/");
     await expect(page).not.toHaveURL(/\/planes/);
     await expect(page).not.toHaveURL(/\/login/);
@@ -322,6 +322,6 @@ test.describe("Alta pago-primero completa: compra → puesta en marcha de la org
     const staffDialog = page.getByRole("dialog", { name: "Nueva persona" });
     await fieldByLabel(staffDialog, "Rol").getByRole("button").first().click();
     await expect(page.locator(".tz-select-pop").getByRole("button", { name: "RRHH" })).toBeVisible();
-    await expect(page.locator(".tz-select-pop").getByRole("button", { name: "Dirección (Sergio)" })).toHaveCount(0);
+    await expect(page.locator(".tz-select-pop").getByRole("button", { name: "Dirección de organización" })).toHaveCount(0);
   });
 });

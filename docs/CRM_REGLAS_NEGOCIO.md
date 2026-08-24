@@ -482,6 +482,27 @@ excepción explícita a la regla general de "el entrenador ve los datos de su cl
 dato es sobre el entrenador, no sobre el cliente, y su confidencialidad es una decisión de
 negocio explícita del cliente que ha pedido esto.
 
+### 8.10. Baja de plantilla
+
+**`RB-RRHH-014`** — **Sacar a un trabajador de la plantilla es de dirección** — de la
+organización o del centro —, nunca de RRHH: RRHH da de alta e imputa a centros, pero la baja
+corta el acceso y retira la imputación, y esa decisión es de quien dirige. Dirección de centro
+solo alcanza a **las personas imputadas a sus centros**, y nunca a un rol de ámbito organización
+(dirección, RRHH, soporte de plataforma). Nadie se da de baja a sí mismo, y la organización no se
+queda sin ninguna dirección.
+
+La baja **no destruye el trabajo hecho**. Quien sale pierde el acceso (sesión web y app), su
+invitación pendiente y su imputación a todos los centros; lo que hizo se conserva: fichajes (de
+conservación obligatoria), mesociclos y valoraciones de sus socios, clases impartidas y cobros
+atribuidos. Solo cuando de la persona **no cuelga nada** —el alta con el email mal escrito, la
+invitación que nadie canjeó— se borra la fila de verdad, lo que además libera su email para
+volver a invitarla. Una baja con histórico se puede **reincorporar**, que le devuelve el acceso y
+su imputación primaria.
+
+**Precondición:** no se da de baja a quien tiene **sesiones asignadas por delante** — dejarían
+huecos sin entrenador en la agenda. Se reasignan primero, igual que un socio con bono vivo exige
+cancelar la suscripción antes de la baja (`RB-SOCIO` / C4).
+
 ---
 
 ## 9. Analítica / BI para Dirección ➕

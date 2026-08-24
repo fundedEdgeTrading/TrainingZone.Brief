@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canManageStaff, canManageOrg } from "@/lib/rbac";
+import { removeStaffMember } from "@/lib/staff-lifecycle";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
 
@@ -26,7 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
 
   const user = await prisma.user.findFirst({
-    where: { id, orgId: claims.orgId, role: { not: "MEMBER" } },
+    where: { id, orgId: claims.orgId, role: { not: "MEMBER" }, deactivatedAt: null },
     select: { id: true, role: true },
   });
   if (!user) return apiError("No se ha encontrado a esa persona.", 404);
@@ -89,11 +90,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 /**
- * "Dar de baja del equipo": retira la imputación a centros y deja de mostrar a
- * la persona en la app del socio. No se borra el usuario — su histórico
- * (sesiones dirigidas, ventas, auditoría) tiene que seguir en pie — ni se le
- * quita la credencial, que vive en `Identity` y puede pertenecer a varias
- * organizaciones.
+ * "Dar de baja del equipo" (RB-RRHH-014). Hacía media baja —quitaba la
+ * imputación y la visibilidad en la app, pero la persona seguía pudiendo
+ * entrar—; ahora comparte núcleo con la sección Equipo de `/organization`
+ * (`lib/staff-lifecycle.ts`), así que también le corta el acceso, respeta las
+ * sesiones que tenga por delante y deja la baja en el registro de auditoría.
  */
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiRole(req, READ_ROLES);
@@ -102,24 +103,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!canManageStaff(claims.role)) return apiError("No tienes permiso para gestionar el equipo.", 403);
   const { id } = await params;
 
-  if (id === claims.sub) return apiError("No puedes darte de baja a ti misma.", 400);
-
   const user = await prisma.user.findFirst({
     where: { id, orgId: claims.orgId, role: { not: "MEMBER" } },
-    select: { id: true, role: true },
+    select: { id: true, name: true, email: true, role: true, centerId: true, deactivatedAt: true },
   });
   if (!user) return apiError("No se ha encontrado a esa persona.", 404);
   if (user.role === "OWNER" && !canManageOrg(claims.role)) return apiError("No tienes permiso para dar de baja a dirección.", 403);
 
-  if (user.role === "OWNER") {
-    const owners = await prisma.user.count({ where: { orgId: claims.orgId, role: "OWNER" } });
-    if (owners <= 1) return apiError("La organización necesita al menos una persona en dirección.", 400);
-  }
+  const result = await removeStaffMember({ orgId: claims.orgId, actorUserId: claims.sub, target: user });
+  if (!result.ok) return apiError(result.error, 400);
 
-  await prisma.$transaction([
-    prisma.centerMembership.deleteMany({ where: { userId: id, orgId: claims.orgId } }),
-    prisma.user.update({ where: { id }, data: { visibleInApp: false, centerId: null } }),
-  ]);
-
-  return apiOk({ removed: true });
+  return apiOk({ removed: true, purged: result.purged });
 }

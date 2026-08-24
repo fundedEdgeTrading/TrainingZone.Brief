@@ -66,7 +66,7 @@ test.describe("F11 — Agenda EP", () => {
   });
 
   test("director de sesión y autorreserva en el detalle de una sesión de EP", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/agenda");
 
     // Al detalle de sesión se llega desde el diálogo → brief → "volver".
@@ -92,7 +92,7 @@ test.describe("F11 — Agenda EP", () => {
    * es reproducible a voluntad.
    */
   test("la línea de la hora actual no se come el clic de la sesión que tiene debajo", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/agenda");
 
     const nowLine = page.locator("div.z-\\[4\\]").first();

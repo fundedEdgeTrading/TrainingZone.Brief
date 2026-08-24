@@ -585,7 +585,7 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
   // socios (billing/actions.ts) — createNotificationOnce evita duplicar el
   // aviso mientras la factura siga sin resolverse.
   const recipients = await prisma.user.findMany({
-    where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR", "RECEPTION"] } },
+    where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR", "RECEPTION"] }, deactivatedAt: null },
     select: { id: true },
   });
   const memberName = `${subscription.member.firstName} ${subscription.member.lastName}`;

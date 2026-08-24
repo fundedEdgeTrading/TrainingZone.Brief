@@ -34,7 +34,7 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
   });
 
   test("con plan Élite, dirección ve los módulos premium en el menú", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
 
     const sidebar = page.locator("aside, nav").first();
     await expect(sidebar.getByRole("link", { name: "Feedback" })).toBeVisible();
@@ -46,7 +46,7 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
   });
 
   test("una ruta gateada responde por URL directa cuando el plan la incluye", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     // `/feedback` en vez de `/retention`: aquella ruta se retiró junto con su
     // pantalla y el gateo de `retencion` pasó al motor (`src/lib/retention.ts`),
     // que no tiene URL que probar.
