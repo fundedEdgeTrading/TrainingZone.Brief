@@ -91,9 +91,22 @@ function Wordmark({ className, lightClassName, darkClassName }: { className: str
  * que no existe. El día que el servidor emita eventos reales, esto se cambia
  * por el `step` que llegue y el componente no se entera.
  *
- * `expectedMs` es la duración medida de la acción completa, no un límite.
+ * `expectedMs` es la duración medida de la acción completa, no un límite. Puede
+ * ser una función: entonces se lee en el instante de arrancar, que es lo que
+ * necesita quien la va calibrando sobre la marcha (el panel de control estima
+ * con la mediana de los cambios de filtro anteriores del propio navegador).
+ *
+ * `outroMs` es lo que el velo se queda con el trabajo terminado en pantalla.
+ * Para una espera de minuto y medio, 1150 ms son el único rato en que se ve el
+ * final; para una de medio segundo, esos mismos 1150 ms son casi todo el tiempo
+ * de espera y harían la operación más lenta de lo que es. Por eso se puede bajar.
  */
-export function usePacedLoader(steps: LoaderStep[], expectedMs: number) {
+export function usePacedLoader(
+  steps: LoaderStep[],
+  expectedMs: number | (() => number),
+  options: { outroMs?: number } = {}
+) {
+  const outroMs = options.outroMs ?? LOADER_OUTRO_MS;
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
@@ -112,10 +125,11 @@ export function usePacedLoader(steps: LoaderStep[], expectedMs: number) {
     setStep(0);
     setDone(false);
     setLoading(true);
+    const expected = typeof expectedMs === "function" ? expectedMs() : expectedMs;
     const total = steps.reduce((a, s) => a + s.weight, 0) || 1;
     let acc = 0;
     timers.current = steps.slice(0, -1).map((s, i) => {
-      acc += (expectedMs * s.weight) / total;
+      acc += (expected * s.weight) / total;
       return setTimeout(() => setStep(i + 1), acc);
     });
   }, [clear, expectedMs, steps]);
@@ -139,10 +153,10 @@ export function usePacedLoader(steps: LoaderStep[], expectedMs: number) {
         setTimeout(() => {
           setLoading(false);
           after();
-        }, LOADER_OUTRO_MS),
+        }, outroMs),
       ];
     },
-    [clear, steps.length]
+    [clear, outroMs, steps.length]
   );
 
   return { loading, step, done, start, abort, finish };
