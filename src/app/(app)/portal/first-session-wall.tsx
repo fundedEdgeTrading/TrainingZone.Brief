@@ -73,12 +73,17 @@ function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh bg-tz-black relative overflow-hidden flex items-center justify-center px-4 py-10">
-      <div className="absolute inset-0 pointer-events-none" aria-hidden="true">
+    // Cubre la pantalla entera, cabecera y menú incluidos. El layout de la app
+    // envuelve también al portal, así que sin `fixed` el muro salía como un
+    // panel oscuro encajado entre el menú lateral y el bono del socio: seguía
+    // bloqueando —todas las rutas del socio cuelgan de /portal y vuelven a
+    // pintarlo— pero no se leía como un muro, sino como una pantalla rota.
+    <div className="fixed inset-0 z-[100] bg-tz-black overflow-y-auto flex items-start justify-center px-4 py-10">
+      <div className="fixed inset-0 pointer-events-none" aria-hidden="true">
         <div className="tz-aurora-blob tz-aurora-a" />
         <div className="tz-aurora-blob tz-aurora-b" />
       </div>
-      <div className="relative z-10 w-full max-w-[560px] tz-fade-up">
+      <div className="relative z-10 w-full max-w-[560px] my-auto tz-fade-up">
         <div className="text-center mb-6">
           {/* eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización */}
           <img src={orgLogoUrl} alt={orgName} className="h-[34px] w-auto object-contain inline-block" />
@@ -144,16 +149,19 @@ function EssentialProfileStep({
       <form onSubmit={onSubmit} className="flex flex-col gap-3.5">
         {fields.map((f) => (
           <Field key={f.key} label={f.label} hint={f.why}>
+            {/* `Field` pinta su <label> sin `htmlFor`, así que sin esto el lector
+                de pantalla anuncia una caja de texto sin nombre — y este muro no
+                se puede saltar. */}
             {f.key === "birthDate" ? (
-              <Input name={f.key} type="date" required max={new Date().toISOString().slice(0, 10)} />
+              <Input aria-label={f.label} name={f.key} type="date" required max={new Date().toISOString().slice(0, 10)} />
             ) : f.key === "phone" ? (
-              <Input name={f.key} type="tel" required placeholder="+34 600 000 000" />
+              <Input aria-label={f.label} name={f.key} type="tel" required placeholder="+34 600 000 000" />
             ) : f.key === "postalCode" ? (
-              <Input name={f.key} required inputMode="numeric" maxLength={5} placeholder="50007" />
+              <Input aria-label={f.label} name={f.key} required inputMode="numeric" maxLength={5} placeholder="50007" />
             ) : f.key === "emergencyContact" ? (
-              <Input name={f.key} required placeholder="Nombre y teléfono" />
+              <Input aria-label={f.label} name={f.key} required placeholder="Nombre y teléfono" />
             ) : (
-              <Input name={f.key} required />
+              <Input aria-label={f.label} name={f.key} required />
             )}
           </Field>
         ))}
@@ -237,6 +245,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             <Field label="Edad">
               <Input
+                aria-label="Edad"
                 type="number"
                 required
                 min={14}
@@ -256,6 +265,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
             </Field>
             <Field label="Altura (cm)">
               <Input
+                aria-label="Altura en centímetros"
                 type="number"
                 required
                 min={120}
@@ -268,6 +278,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
 
           <Field label="Tu objetivo principal">
             <Input
+              aria-label="Tu objetivo principal"
               required
               maxLength={200}
               placeholder="Ej.: volver a correr 10 km sin dolor de rodilla"
@@ -277,6 +288,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
           </Field>
           <Field label="Objetivo secundario" hint="Opcional">
             <Input
+              aria-label="Objetivo secundario"
               maxLength={200}
               value={perfil.objetivoSecundario}
               onChange={(e) => setPerfil((p) => ({ ...p, objetivoSecundario: e.target.value }))}
@@ -327,6 +339,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <Field label="Años de experiencia">
                 <Input
+                  aria-label="Años de experiencia"
                   type="number"
                   min={0}
                   max={70}
@@ -380,6 +393,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             <Field label="Peso (kg)">
               <Input
+                aria-label="Peso en kilos"
                 type="number"
                 required
                 min={20}
@@ -391,6 +405,7 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
             </Field>
             <Field label="Dolor ahora mismo (0-10)" hint="0 = ninguno">
               <Input
+                aria-label="Dolor ahora mismo, de 0 a 10"
                 type="number"
                 required
                 min={0}
