@@ -6,7 +6,7 @@ import { needsReconsent } from "@/lib/consent";
 import { getDueAssessmentForMember } from "@/lib/assessment-jobs";
 import { getPendingBirthdayGreeting } from "@/lib/birthday-jobs";
 import { resolveTimezone } from "@/lib/timezone";
-import { resolveFirstSessionStep } from "@/lib/member-first-session";
+import { resolveFirstSessionStep } from "@/lib/member-first-session-queries";
 import { FloatingChat } from "./floating-chat";
 import { ReconsentBanner } from "./reconsent-banner";
 import { PendingAssessmentGate } from "./pending-assessment-gate";

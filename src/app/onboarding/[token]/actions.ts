@@ -3,7 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { MIN_PASSWORD_LENGTH, ensureIdentity, hashPassword, setPassword } from "@/lib/identity";
 import { CONSENT_VERSION } from "@/lib/consent";
-import { ensureInitialAssessment } from "@/lib/member-first-session";
+import { ensureInitialAssessment } from "@/lib/member-first-session-queries";
 
 export type OnboardingResult = { ok: true } | { ok: false; error: string };
 
