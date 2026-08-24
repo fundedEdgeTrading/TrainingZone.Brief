@@ -9,9 +9,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ComposedChart,
-  Area,
-  Line,
   Cell,
   LabelList,
   PieChart,
@@ -20,7 +17,6 @@ import {
   type TooltipContentProps,
 } from "recharts";
 import { INK, SERIES, CATEGORICAL } from "@/lib/chart-colors";
-import { RETENTION_TARGET_PCT } from "@/lib/dashboard-targets";
 
 const axisStyle = { fontSize: 11.5, fontWeight: 600, fill: INK.muted };
 const gridProps = { stroke: INK.gridline, vertical: false };
@@ -221,77 +217,6 @@ export function NoShowRateCard({ rate, deltaPts }: { rate: number; deltaPts: num
           la card oscura la aclara en claro y la oscurece en oscuro. */}
       <div className="absolute -right-12 -bottom-12 w-[190px] h-[190px] rounded-full bg-white/[0.06]" />
     </div>
-  );
-}
-
-/* ---------- Retención ---------- */
-
-export function RetentionCohortChart({
-  data,
-}: {
-  data: { month: string; total: number; retainedPct: number }[];
-}) {
-  const { active, setActive } = useHover();
-  // El tick del eje lleva el valor: leer "feb · 92%" ahorra cruzar la vista con
-  // el eje Y en la única gráfica de la página que es una línea. Sin el año: con
-  // él la primera etiqueta chocaba con el eje y Recharts la escondía entera.
-  const rows = data.map((d) => ({ ...d, label: `${d.month.split(" ")[0]} · ${d.retainedPct}%` }));
-  const lastLabel = rows[rows.length - 1]?.label ?? "";
-
-  return (
-    <ResponsiveContainer width="100%" height={210}>
-      <ComposedChart data={rows} margin={{ top: 10, right: 10, left: 0, bottom: 0 }} onMouseLeave={() => setActive(null)}>
-        <defs>
-          <linearGradient id="tzRetentionArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={SERIES.ink} stopOpacity={0.26} />
-            <stop offset="100%" stopColor={SERIES.ink} stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid {...gridProps} />
-        <XAxis dataKey="label" tick={highlightTick(lastLabel, INK.primary)} axisLine={{ stroke: INK.baseline }} tickLine={false} />
-        <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" domain={[0, 100]} ticks={[0, 50, 100]} />
-        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="retención" unit="%" />} />
-        <ReferenceLine y={RETENTION_TARGET_PCT} stroke={SERIES.goldSoft} strokeDasharray="6 4" strokeWidth={2} />
-        <Area
-          type="monotone"
-          dataKey="retainedPct"
-          stroke="none"
-          fill="url(#tzRetentionArea)"
-          isAnimationActive
-          animationDuration={800}
-          animationBegin={500}
-        />
-        <Line
-          type="monotone"
-          dataKey="retainedPct"
-          stroke={SERIES.ink}
-          strokeWidth={2.5}
-          isAnimationActive
-          animationDuration={1100}
-          animationEasing="ease"
-          dot={(props: { cx?: number; cy?: number; index?: number }) => {
-            const i = props.index ?? 0;
-            const isLast = i === rows.length - 1;
-            const isHover = active === i;
-            return (
-              <circle
-                key={i}
-                cx={props.cx}
-                cy={props.cy}
-                r={isHover ? 6.5 : isLast ? 6 : 5}
-                fill={isLast ? SERIES.goldSoft : INK.surface}
-                stroke={SERIES.ink}
-                strokeWidth={isLast ? 2 : 2.5}
-                cursor="pointer"
-                onMouseEnter={() => setActive(i)}
-                onMouseLeave={() => setActive(null)}
-              />
-            );
-          }}
-          activeDot={{ r: 6.5, fill: SERIES.ink, stroke: SERIES.ink }}
-        />
-      </ComposedChart>
-    </ResponsiveContainer>
   );
 }
 

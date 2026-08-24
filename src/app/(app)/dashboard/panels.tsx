@@ -22,7 +22,6 @@ import {
   getOccupancyByCenter,
   getNoShowRate,
   getOccupancyByWeekday,
-  getCohortRetention,
   getRevenueByMethod,
   getLtvAndTicket,
   getMemberDemographics,
@@ -40,7 +39,7 @@ import {
   getAverageOccupancy,
   type DashboardRange,
 } from "@/lib/dashboard-queries";
-import { OCCUPANCY_TARGET_PCT, RETENTION_TARGET_PCT } from "@/lib/dashboard-targets";
+import { OCCUPANCY_TARGET_PCT } from "@/lib/dashboard-targets";
 import { MEMBER_STATE_COLOR, MEMBER_STATE_LABEL, PAYMENT_METHOD_COLOR, PAYMENT_METHOD_LABEL, SERIES } from "@/lib/chart-colors";
 import PostalMapPanel from "./postal-map-panel";
 import { KpiCard } from "@/components/kpi-card";
@@ -51,7 +50,6 @@ import { ExportRankingButton } from "./export-ranking-button";
 import {
   RevenueChart,
   OccupancyByWeekdayChart,
-  RetentionCohortChart,
   NoShowRateCard,
   AgeBracketsChart,
   DonutChart,
@@ -431,23 +429,7 @@ export async function MemberStatePanel(props: PanelProps) {
   );
 }
 
-/* ---------- 8. Retención ---------- */
-
-export async function RetentionPanel(props: PanelProps) {
-  const cohorts = await getCohortRetention(props.orgId, optsOf(props));
-  return (
-    <PanelCard
-      title="Retención por cohorte"
-      meta="% aún activos por mes de alta"
-      delay={0.42}
-      action={<LegendSwatch color={SERIES.goldSoft} label={`objetivo ${RETENTION_TARGET_PCT}%`} line />}
-    >
-      <RetentionCohortChart data={cohorts} />
-    </PanelCard>
-  );
-}
-
-/* ---------- 9. Ranking de socios ---------- */
+/* ---------- 8. Ranking de socios ---------- */
 
 const RANK_COLUMNS = [
   { key: "ltv", label: "LTV" },
@@ -613,7 +595,7 @@ function CellBar({
   );
 }
 
-/* ---------- 10. Captación ---------- */
+/* ---------- 9. Captación ---------- */
 
 export async function FunnelPanel(props: PanelProps) {
   const leadCloseRate = await getLeadCloseRate(props.orgId, { centerId: props.centerId });
@@ -738,7 +720,7 @@ export async function TopServicesPanel({
   );
 }
 
-/* ---------- 11. Quién es nuestro socio ---------- */
+/* ---------- 10. Quién es nuestro socio ---------- */
 
 export async function MembersByServicePanel(props: PanelProps) {
   const services = await getMembersByService(props.orgId, optsOf(props));
@@ -813,7 +795,7 @@ export async function OccupationPanel(props: PanelProps) {
   );
 }
 
-/* ---------- 12. Edad y objetivos ---------- */
+/* ---------- 11. Edad y objetivos ---------- */
 
 export async function AgeBracketsPanel(props: PanelProps) {
   const [ageBrackets, demographics] = await Promise.all([

@@ -8,6 +8,3 @@
 
 /** Ocupación objetivo. Pie del KPI "Ocupación media" y del panel por centro. */
 export const OCCUPANCY_TARGET_PCT = 75;
-
-/** Retención objetivo por cohorte: la línea discontinua dorada de la gráfica. */
-export const RETENTION_TARGET_PCT = 70;
