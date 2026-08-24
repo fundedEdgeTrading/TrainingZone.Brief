@@ -7,7 +7,6 @@ import {
   getMemberForUser,
   getMemberPlanAdherence,
   getLastEpTrainerName,
-  getMemberPaymentHistory,
   getPendingSessionFeedback,
 } from "@/lib/portal-queries";
 import { getActiveMembershipPlans } from "@/lib/public-membership-queries";
@@ -16,7 +15,6 @@ import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
 import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
 import { zonedToday } from "@/lib/date-utils";
-import Link from "next/link";
 import PurchasePlanButton from "./purchase-plan-button";
 import { RenewalModal } from "./renewal-modal";
 import { PendingSessionsRating } from "./pending-sessions";
@@ -52,8 +50,12 @@ function relativeDayLabel(date: Date, today: Date) {
 
 /**
  * F6/F16: fusión de las antiguas /portal/plan (adherencia, valoración de
- * sesiones) y /portal/comprar (catálogo, facturación) en una sola pantalla
+ * sesiones) y /portal/comprar (catálogo, compra) en una sola pantalla
  * "producto contratado" — ver handoff NavBar premium 1b.
+ *
+ * El socio no ve aquí lo que lleva gastado: ni historial de pagos ni el precio
+ * de su cuota/bono en curso. Los precios del catálogo sí se enseñan, porque son
+ * los de la compra que va a hacer.
  */
 export default async function PortalMembresiaPage({
   searchParams,
@@ -68,11 +70,10 @@ export default async function PortalMembresiaPage({
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
   const today = zonedToday(timezone);
 
-  const [adherence, trainerName, plans, history, pending] = await Promise.all([
+  const [adherence, trainerName, plans, pending] = await Promise.all([
     getMemberPlanAdherence(member.id, timezone),
     getLastEpTrainerName(member.id),
     getActiveMembershipPlans(session.user.orgId),
-    getMemberPaymentHistory(member.id),
     getPendingSessionFeedback(member.id, timezone),
   ]);
 
@@ -177,9 +178,6 @@ export default async function PortalMembresiaPage({
                   {adherence.avgPerWeek} {adherence.avgPerWeek === 1 ? "día" : "días"} / semana
                 </span>
               )}
-              <span className="bg-brand-ink-soft rounded-full px-3.5 py-[7px] text-[12.5px] font-semibold text-tz-bone">
-                {euros(activeSub.priceCents)} / {recurring ? "mes" : "bono"}
-              </span>
             </div>
           )}
         </div>
@@ -226,75 +224,44 @@ export default async function PortalMembresiaPage({
       {/* Valora tus sesiones (F16) — el badge de "Mi membresía" en el sidebar cuenta estas pendientes */}
       <PendingSessionsRating pending={pendingItems} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-white border border-brand-border rounded-2xl p-[22px] tz-fade-up" style={{ animationDelay: "0.1s" }}>
-          <div className="font-display font-extrabold text-base uppercase text-brand-text">Renovar o ampliar</div>
-          <p className="text-[13px] text-brand-muted mt-1.5 mb-4">Mismo producto o cambio de modalidad, pago online.</p>
-          {sortedPlans.length === 0 ? (
-            <p className="text-sm text-brand-muted">No hay planes disponibles ahora mismo — contacta con recepción.</p>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {sortedPlans.map((plan) => {
-                const isCurrent = activeSub?.planId === plan.id;
-                return (
-                  <div
-                    key={plan.id}
-                    className="flex items-center justify-between gap-3 border border-brand-border rounded-xl px-4 py-3.5"
-                  >
-                    <div>
-                      <div className="text-[13.5px] font-bold text-brand-text">{plan.name}</div>
-                      <div className="text-xs text-brand-muted mt-0.5">
-                        {isCurrent ? "Renovar lo que ya tienes" : planPeriodLabel(plan)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-display font-extrabold text-base text-brand-text">{euros(plan.priceCents)}</span>
-                      <PurchasePlanButton
-                        planId={plan.id}
-                        className={
-                          isCurrent
-                            ? "bg-brand-ink text-tz-bone rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase disabled:opacity-60"
-                            : "border border-brand-border text-brand-text rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase transition-colors duration-150 hover:bg-tz-bone disabled:opacity-60"
-                        }
-                      >
-                        {isCurrent ? "Renovar" : "Elegir"}
-                      </PurchasePlanButton>
+      <div className="bg-white border border-brand-border rounded-2xl p-[22px] tz-fade-up" style={{ animationDelay: "0.1s" }}>
+        <div className="font-display font-extrabold text-base uppercase text-brand-text">Renovar o ampliar</div>
+        <p className="text-[13px] text-brand-muted mt-1.5 mb-4">Mismo producto o cambio de modalidad, pago online.</p>
+        {sortedPlans.length === 0 ? (
+          <p className="text-sm text-brand-muted">No hay planes disponibles ahora mismo — contacta con recepción.</p>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {sortedPlans.map((plan) => {
+              const isCurrent = activeSub?.planId === plan.id;
+              return (
+                <div
+                  key={plan.id}
+                  className="flex items-center justify-between gap-3 border border-brand-border rounded-xl px-4 py-3.5"
+                >
+                  <div>
+                    <div className="text-[13.5px] font-bold text-brand-text">{plan.name}</div>
+                    <div className="text-xs text-brand-muted mt-0.5">
+                      {isCurrent ? "Renovar lo que ya tienes" : planPeriodLabel(plan)}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white border border-brand-border rounded-2xl p-[22px] tz-fade-up" style={{ animationDelay: "0.14s" }}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="font-display font-extrabold text-base uppercase text-brand-text">Historial</div>
-            <Link href="/portal/membresia/facturas" className="text-xs font-bold text-brand-muted hover:text-brand-text uppercase tracking-[.04em]">
-              Ver todo →
-            </Link>
-          </div>
-          <p className="text-[13px] text-brand-muted mt-1.5 mb-4">Últimos movimientos de tu membresía.</p>
-          {history.length === 0 ? (
-            <p className="text-sm text-brand-muted">Todavía no hay pagos registrados.</p>
-          ) : (
-            <div className="flex flex-col">
-              {history.map((h, i) => (
-                <div
-                  key={h.id}
-                  className={`flex items-center justify-between gap-3 py-[11px] text-[13px] ${
-                    i < history.length - 1 ? "border-b border-tz-sand" : ""
-                  }`}
-                >
-                  <span className="text-brand-text">{h.concept}</span>
-                  <span className="text-brand-muted">
-                    {h.date.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" })} · {euros(h.amountCents)}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-display font-extrabold text-base text-brand-text">{euros(plan.priceCents)}</span>
+                    <PurchasePlanButton
+                      planId={plan.id}
+                      className={
+                        isCurrent
+                          ? "bg-brand-ink text-tz-bone rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase disabled:opacity-60"
+                          : "border border-brand-border text-brand-text rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase transition-colors duration-150 hover:bg-tz-bone disabled:opacity-60"
+                      }
+                    >
+                      {isCurrent ? "Renovar" : "Elegir"}
+                    </PurchasePlanButton>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {activeSub && !recurring && (

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { createMemberCheckout, createMemberBillingPortalSession } from "@/lib/member-billing";
+import { createMemberCheckout } from "@/lib/member-billing";
 import { submitTrainerRating } from "@/lib/trainer-rating-access";
 
 async function currentMember() {
@@ -28,14 +28,6 @@ export async function purchasePlan(planId: string): Promise<PortalBillingResult>
     centerId: ctx.member.primaryCenterId,
     origin: "portal",
   });
-}
-
-/** F6: mismo Billing Portal de Stripe que usa el enlace mágico sin login (A.1), aquí ya autenticado. */
-export async function manageMyBilling(): Promise<PortalBillingResult> {
-  const ctx = await currentMember();
-  if (!ctx) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
-
-  return createMemberBillingPortalSession(ctx.session.user.orgId, ctx.member.id);
 }
 
 export type PortalMembresiaResult = { ok: true } | { ok: false; error: string };

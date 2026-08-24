@@ -113,12 +113,6 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
       <path d="M3 9.5h18M7 14h4" />
     </>
   ),
-  facturas: (
-    <>
-      <path d="M6 3.5h12v17l-3-1.8-3 1.8-3-1.8-3 1.8z" />
-      <path d="M9 8h6M9 11.5h6" />
-    </>
-  ),
   descargar: <path d="M12 3v12M7 11l5 5 5-5M4 20h16" />,
 };
 
