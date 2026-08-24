@@ -13,7 +13,7 @@ import CenterSwitcher from "./center-switcher";
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ center?: string; week?: string; day?: string; view?: string }>;
+  searchParams: Promise<{ center?: string; week?: string; day?: string; view?: string; full?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
@@ -38,6 +38,9 @@ export default async function AgendaPage({
   // que el modo semana de móvil viaja en la URL igual que `day`, o se perdía
   // al pasar de semana.
   const initialMobileWeekView = params.view === "week";
+  // Igual que `view`: la agenda a pantalla completa sobrevive al salto de
+  // semana porque el modo viaja en la URL, no en el estado del componente.
+  const initialExpanded = params.full === "1";
 
   // Sin `?week`, la agenda abre en la semana en curso *del centro*: con la hora
   // del servidor (UTC) un domingo por la noche en España abría la semana anterior.
@@ -105,6 +108,7 @@ export default async function AgendaPage({
         key={formatDateParam(weekStart)}
         initialDayIndex={initialDayIndex}
         initialMobileWeekView={initialMobileWeekView}
+        initialExpanded={initialExpanded}
         weekStartISO={formatDateParam(weekStart)}
         centerId={centerId ?? ""}
         occurrences={occurrences}
