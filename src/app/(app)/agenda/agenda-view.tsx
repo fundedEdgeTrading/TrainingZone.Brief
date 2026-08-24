@@ -61,6 +61,7 @@ export default function AgendaView({
   isDirection,
   initialDayIndex,
   initialMobileWeekView,
+  initialExpanded,
   centerSwitcher,
 }: {
   weekStartISO: string;
@@ -75,6 +76,7 @@ export default function AgendaView({
   isDirection: boolean;
   initialDayIndex?: number | null;
   initialMobileWeekView?: boolean;
+  initialExpanded?: boolean;
   centerSwitcher?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -111,26 +113,49 @@ export default function AgendaView({
 
   // En móvil se puede alternar entre "un día" (rejilla táctil grande) y
   // "semana" (los 6 días a la vez, como escritorio, para arrastrar sesiones
-  // entre días). "expanded" oculta la cabecera de la app y usa toda la
-  // pantalla: la semana en miniatura necesita cada pixel posible.
+  // entre días).
   const [mobileWeekView, setMobileWeekView] = useState(initialMobileWeekView ?? false);
-  const [expanded, setExpanded] = useState(false);
-  const fullscreen = isMobile && expanded;
-
-  useEffect(() => {
-    if (!fullscreen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [fullscreen]);
+  // Pantalla completa: la agenda se saca de la tarjeta de la página y ocupa el
+  // viewport entero (tapa cabecera y menú lateral), con la rejilla y el resto
+  // de controles vivos —se sigue creando, editando y arrastrando sesiones—.
+  // La agenda es la única pantalla con una rejilla que se queda corta en
+  // cualquier tamaño, así que el modo va tanto en móvil como en escritorio.
+  // Como `mobileWeekView`, viaja en la URL: cada salto de semana remonta
+  // AgendaView (`key={weekStartISO}` en page.tsx) y el estado se perdería, así
+  // que la agenda se cerraba sola al pulsar una flecha estando ampliada.
+  const [expanded, setExpanded] = useState(initialExpanded ?? false);
+  const fullscreen = expanded;
 
   const [miniMonth, setMiniMonth] = useState(weekStartISO.slice(0, 7));
   const [dlg, setDlg] = useState<DialogState | null>(null);
 
+  const rootRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  // Mientras la agenda ocupa la pantalla, la página de debajo no scrollea y
+  // Escape sale del modo ampliado.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // Escape lo reclama primero lo que esté abierto *encima* de la rejilla:
+      // el diálogo de sesión y los desplegables de la barra (que traen su
+      // propio manejador). Sin esta guarda, una sola tecla cerraría el
+      // desplegable y la pantalla completa a la vez.
+      if (dlg) return;
+      if (rootRef.current?.querySelector('[aria-expanded="true"]')) return;
+      setExpanded(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [fullscreen, dlg]);
+
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
   const mobileDayOnly = isMobile && !mobileWeekView;
@@ -224,9 +249,10 @@ export default function AgendaView({
     // page.tsx), así que el modo semana de móvil se reenvía por la URL o se
     // perdía en cada salto de semana con las flechas.
     const viewParam = mobileWeekView ? "&view=week" : "";
+    const fullParam = expanded ? "&full=1" : "";
     // `scroll: false`: pasar de semana es mover la rejilla, no cambiar de
     // pantalla; sin esto la página saltaba arriba en cada flecha.
-    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}${viewParam}`, {
+    router.push(`/agenda?center=${centerId}&week=${formatDateParam(newWeekStart)}${dayParam}${viewParam}${fullParam}`, {
       scroll: false,
     });
   }
@@ -332,7 +358,10 @@ export default function AgendaView({
   const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
   const content = (
-    <div className={fullscreen ? "fixed inset-0 z-50 flex flex-col bg-white" : "flex flex-col h-full min-h-0"}>
+    <div
+      ref={rootRef}
+      className={fullscreen ? "fixed inset-0 z-[70] flex flex-col bg-white" : "flex flex-col h-full min-h-0"}
+    >
       <div className="shrink-0 border-b border-brand-border flex flex-wrap items-center gap-1.5 lg:gap-2.5 px-2.5 py-1.5 lg:min-h-[60px] lg:px-6 lg:py-2.5">
         <button
           onClick={goToday}
@@ -362,10 +391,7 @@ export default function AgendaView({
         <div className="flex-1" />
         <div className="flex lg:hidden items-center gap-0.5 h-9 rounded-control border border-brand-border p-0.5 text-[12px] font-semibold">
           <button
-            onClick={() => {
-              setMobileWeekView(false);
-              setExpanded(false);
-            }}
+            onClick={() => setMobileWeekView(false)}
             className={`h-full px-2.5 rounded-[7px] transition-colors ${!mobileWeekView ? "bg-tz-black text-tz-bone" : "text-brand-text"}`}
           >
             Día
@@ -377,15 +403,19 @@ export default function AgendaView({
             Semana
           </button>
         </div>
-        {mobileWeekView && (
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? "Salir de pantalla completa" : "Ver a pantalla completa"}
-            className="lg:hidden w-9 h-9 shrink-0 rounded-control border border-brand-border flex items-center justify-center text-text-2 text-base"
-          >
-            {expanded ? "⤡" : "⤢"}
-          </button>
-        )}
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          aria-pressed={expanded}
+          aria-label={expanded ? "Salir de pantalla completa" : "Ver a pantalla completa"}
+          title={expanded ? "Salir de pantalla completa (Esc)" : "Ver a pantalla completa"}
+          className={`w-9 h-9 shrink-0 rounded-control border flex items-center justify-center transition-colors ${
+            expanded
+              ? "border-brand-ink bg-tz-black text-tz-bone"
+              : "border-brand-border text-text-2 hover:bg-tz-bone hover:border-brand-border-hover"
+          }`}
+        >
+          <FullscreenIcon expanded={expanded} />
+        </button>
         <TrainerFilter
           className="lg:hidden"
           trainers={trainers}
@@ -761,6 +791,31 @@ export default function AgendaView({
   // pantalla completa dentro de la tarjeta. Un portal a `document.body` lo
   // esquiva sin depender de que ningún ancestro se quede sin transform.
   return fullscreen ? createPortal(content, document.body) : content;
+}
+
+/** Flechas hacia las esquinas (ampliar) o hacia el centro (minimizar). */
+function FullscreenIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.1"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {expanded ? (
+        // Flechas hacia dentro (minimizar).
+        <path d="M20 10h-6V4M4 14h6v6M14 10l7-7M10 14l-7 7" />
+      ) : (
+        // Flechas hacia las esquinas (ampliar).
+        <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+      )}
+    </svg>
+  );
 }
 
 function MiniCalendar({
