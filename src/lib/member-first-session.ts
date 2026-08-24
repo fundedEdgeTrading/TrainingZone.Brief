@@ -42,10 +42,6 @@ export type EssentialProfileField = (typeof ESSENTIAL_PROFILE_FIELDS)[number]["k
 /** Lo mínimo que hay que leer de un socio para saber si le falta algo. */
 export type EssentialProfileSource = Record<EssentialProfileField, unknown>;
 
-export const ESSENTIAL_PROFILE_SELECT = Object.fromEntries(
-  ESSENTIAL_PROFILE_FIELDS.map((f) => [f.key, true])
-) as Record<EssentialProfileField, true>;
-
 /**
  * Campos esenciales que este socio todavía no tiene. Una cadena en blanco
  * cuenta como ausente: la importación escribe `""` en el email cuando el CSV no
