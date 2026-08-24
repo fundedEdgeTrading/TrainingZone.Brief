@@ -11,6 +11,7 @@ import {
   getBookingCenterId,
 } from "@/lib/agenda-queries";
 import { parseDateParam } from "@/lib/date-utils";
+import { parseEditScope } from "@/lib/session-series";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
@@ -54,6 +55,10 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   const recurrenceRaw = String(formData.get("recurrence") ?? "NONE");
   const recurrence = recurrenceRaw === "WEEKLY" || recurrenceRaw === "WEEKDAYS" ? recurrenceRaw : "NONE";
   const recUntilRaw = String(formData.get("recUntil") ?? "");
+  // Alcance de la edición de una serie recurrente y día concreto al que se
+  // refiere: sin ellos, guardar cualquier cambio reescribía también el pasado.
+  const scope = parseEditScope(formData.get("scope"));
+  const occurrenceRaw = String(formData.get("occurrenceDate") ?? "");
   let title = String(formData.get("title") ?? "").trim();
 
   if (!centerId || !trainerId || !dateRaw || !startTime) return { ok: false, error: "Completa entrenador, fecha y hora." };
@@ -74,7 +79,9 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     if (endTime <= startTime) return { ok: false, error: "La hora de inicio es demasiado tardía: la sesión no cabe en el día." };
   }
 
-  if (!title) title = type === "reduced" ? "Grupo reducido" : "Sesión";
+  // Sin título, el que pone el tipo elegido (el mismo prefijo que escribe el
+  // diálogo al seleccionarlo: "EP …" / "Grupo …").
+  if (!title) title = type === "reduced" ? "Grupo reducido" : "EP";
   if (isTrial && !title.startsWith("Prueba · ")) title = `Prueba · ${title}`;
 
   const result = await saveSession(session.user.orgId, {
@@ -92,6 +99,8 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
     isTrial,
     recurrence,
     recUntil: recurrence !== "NONE" && recUntilRaw ? parseDateParam(recUntilRaw) : null,
+    scope,
+    occurrenceDate: occurrenceRaw ? parseDateParam(occurrenceRaw) : null,
   });
   if (!result.ok) return result;
 

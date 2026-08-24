@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { saveSession, deleteSession, type SaveSessionInput } from "@/lib/agenda-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { parseDateParam } from "@/lib/date-utils";
+import { parseEditScope } from "@/lib/session-series";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRole } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
@@ -21,6 +22,13 @@ type UpdateSessionBody = {
   isTrial?: boolean;
   recurrence?: "NONE" | "WEEKLY" | "WEEKDAYS";
   recUntil?: string | null;
+  /**
+   * Alcance de la edición si la sesión se repite (ver `session-series.ts`) y
+   * día de la serie al que se refiere. Sin ellos se edita la serie entera,
+   * incluidas las ocurrencias ya pasadas.
+   */
+  scope?: "all" | "future" | "single";
+  occurrenceDate?: string | null;
 };
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -53,6 +61,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     isTrial: Boolean(body.isTrial),
     recurrence: body.recurrence ?? "NONE",
     recUntil: body.recUntil ? parseDateParam(body.recUntil) : null,
+    scope: parseEditScope(body.scope),
+    occurrenceDate: body.occurrenceDate ? parseDateParam(body.occurrenceDate) : null,
   };
 
   const result = await saveSession(claims.orgId, input);

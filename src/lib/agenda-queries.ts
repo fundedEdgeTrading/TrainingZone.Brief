@@ -1,8 +1,17 @@
+import type { ClassSession, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { centerScopeFor, type ScopedUser } from "@/lib/center-scope";
-import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
+import { isSameDay, occursOn, resolveOccurrenceDate } from "@/lib/session-occurrences";
+import {
+  dayDelta,
+  effectiveScope,
+  nextOccurrenceAfter,
+  startOfDay,
+  truncatedRecUntil,
+  type EditScope,
+} from "@/lib/session-series";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
-import { DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
+import { addDays, DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
 
 /**
  * Centros visibles para un usuario según su imputación real:
@@ -76,7 +85,79 @@ export type SaveSessionInput = {
   isTrial: boolean;
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recUntil: Date | null;
+  /**
+   * Alcance de la edición cuando la sesión se repite en el tiempo (ver
+   * `session-series.ts`). Solo se tiene en cuenta al editar (`id`).
+   */
+  scope?: EditScope;
+  /**
+   * Día de la serie que se estaba editando (el que se pulsó en la agenda). Sin
+   * él la edición se aplicaba siempre desde la fecha base de la serie.
+   */
+  occurrenceDate?: Date | null;
 };
+
+/**
+ * Copia literal de una fila de sesión, lista para `create`. Al partir una serie
+ * hay que duplicar también lo que el diálogo no toca (plantilla, sala, estado,
+ * quién la dirigió): si no, el trozo nuevo nacía descolgado de su origen.
+ */
+function rowCopy(s: ClassSession) {
+  return {
+    orgId: s.orgId,
+    centerId: s.centerId,
+    templateId: s.templateId,
+    name: s.name,
+    classType: s.classType,
+    date: s.date,
+    startTime: s.startTime,
+    endTime: s.endTime,
+    capacity: s.capacity,
+    room: s.room,
+    trainerId: s.trainerId,
+    status: s.status,
+    selfBookable: s.selfBookable,
+    directedByUserId: s.directedByUserId,
+    recurrence: s.recurrence,
+    recUntil: s.recUntil,
+  };
+}
+
+/** Reservas afectadas por el alcance de la edición, dentro de una misma serie. */
+function bookingScopeWhere(scope: EditScope, day: Date) {
+  if (scope === "future") return { occurrenceDate: { gte: day } };
+  if (scope === "single") return { occurrenceDate: day };
+  return {};
+}
+
+/**
+ * Reengancha las reservas al trozo de serie que les corresponde y, si el día se
+ * ha movido, las lleva consigo. Sin esto, partir una serie dejaba a los socios
+ * apuntando a la fila vieja: desaparecían del roster y de "mis próximas
+ * reservas" sin que nadie los hubiera cancelado.
+ */
+async function moveBookings(
+  tx: Prisma.TransactionClient,
+  fromSessionId: string,
+  toSessionId: string,
+  delta: number,
+  where: Prisma.BookingWhereInput
+) {
+  if (delta === 0 && fromSessionId === toSessionId) return;
+  const rows = await tx.booking.findMany({
+    where: { sessionId: fromSessionId, ...where },
+    select: { id: true, occurrenceDate: true },
+  });
+  for (const b of rows) {
+    await tx.booking.update({
+      where: { id: b.id },
+      data: {
+        sessionId: toSessionId,
+        occurrenceDate: delta === 0 ? b.occurrenceDate : addDays(b.occurrenceDate, delta),
+      },
+    });
+  }
+}
 
 /** Crea o actualiza una sesión de la agenda (rediseño estilo Google Calendar). */
 export async function saveSession(orgId: string, input: SaveSessionInput) {
@@ -107,6 +188,9 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
     if (!member) return { ok: false as const, error: "Socio no encontrado." };
   }
 
+  const existing = input.id ? await prisma.classSession.findFirst({ where: { id: input.id, orgId } }) : null;
+  if (input.id && !existing) return { ok: false as const, error: "Sesión no encontrada." };
+
   const isPersonal = input.type === "personal";
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
   const capacity = isPersonal
@@ -115,17 +199,30 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
         MAX_GROUP_CAPACITY,
         Math.max(1, Math.round(input.capacity || center.defaultGroupCapacity || DEFAULT_GROUP_CAPACITY))
       );
+
+  // Qué día de la serie se estaba editando, qué alcance pidió el usuario y
+  // cuánto se ha movido ese día. `delta` se mide contra el día editado, no
+  // contra la fecha base: en una serie, la fecha del diálogo es la de la
+  // ocurrencia que se abrió.
+  const editedDay = existing
+    ? existing.recurrence !== "NONE" && input.occurrenceDate && occursOn(existing, input.occurrenceDate)
+      ? startOfDay(input.occurrenceDate)
+      : startOfDay(existing.date)
+    : startOfDay(input.date);
+  const scope: EditScope = existing ? effectiveScope(existing, editedDay, input.scope ?? "all") : "all";
+  const delta = existing ? dayDelta(editedDay, input.date) : 0;
+
   // Bajar el aforo por debajo de las reservas que ya existen dejaba el grupo
   // sobrevendido en silencio (la rejilla lo pintaba al 100% y el socio 5 se
-  // quedaba sin plaza sin enterarse). Se mide la ocurrencia más llena de la
-  // serie: el aforo es de la sesión, no de un día suelto.
-  if (!isPersonal && input.id) {
-    const existing = await prisma.classSession.findFirst({
-      where: { id: input.id, orgId },
-      select: { bookings: { select: { status: true, occurrenceDate: true } } },
+  // quedaba sin plaza sin enterarse). Se mide la ocurrencia más llena de LAS
+  // AFECTADAS: al editar un solo día no importa lo llena que estuviera otra.
+  if (!isPersonal && existing) {
+    const bookings = await prisma.booking.findMany({
+      where: { sessionId: existing.id, ...bookingScopeWhere(scope, editedDay) },
+      select: { status: true, occurrenceDate: true },
     });
     const perDay = new Map<number, number>();
-    for (const b of existing?.bookings ?? []) {
+    for (const b of bookings) {
       if (b.status !== "BOOKED" && b.status !== "ATTENDED" && b.status !== "NO_SHOW") continue;
       const key = new Date(b.occurrenceDate).setHours(0, 0, 0, 0);
       perDay.set(key, (perDay.get(key) ?? 0) + 1);
@@ -142,7 +239,7 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
     name: input.title,
     classType,
     capacity,
-    date: input.date,
+    date: startOfDay(input.date),
     startTime: input.startTime,
     endTime: input.endTime,
     // Solo el EP distingue entre franja abierta al socio y franja que gestiona
@@ -155,10 +252,57 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   };
 
   let session;
-  if (input.id) {
-    session = await prisma.classSession.update({ where: { id: input.id, orgId }, data });
-  } else {
+  if (!existing) {
     session = await prisma.classSession.create({ data: { ...data, orgId } });
+  } else if (scope === "all") {
+    // Toda la serie, incluido el pasado. La fecha del formulario es la del día
+    // que se abrió, así que la base se desplaza lo mismo que se movió ese día
+    // (con `delta` 0 no se toca y el pasado se queda donde estaba).
+    session = await prisma.$transaction(async (tx) => {
+      const updated = await tx.classSession.update({
+        where: { id: existing.id },
+        data: { ...data, date: addDays(startOfDay(existing.date), delta) },
+      });
+      await moveBookings(tx, existing.id, updated.id, delta, {});
+      return updated;
+    });
+  } else if (scope === "future") {
+    // El pasado se queda intacto en la fila original, recortada la víspera del
+    // día editado; lo nuevo nace como serie aparte con los cambios.
+    session = await prisma.$transaction(async (tx) => {
+      await tx.classSession.update({
+        where: { id: existing.id },
+        data: { recUntil: truncatedRecUntil(existing, editedDay) },
+      });
+      const created = await tx.classSession.create({ data: { ...rowCopy(existing), ...data } });
+      await moveBookings(tx, existing.id, created.id, delta, { occurrenceDate: { gte: editedDay } });
+      return created;
+    });
+  } else {
+    // Solo ese día: sale de la serie como sesión suelta y la serie se recompone
+    // alrededor (el tramo anterior y, si sigue, el posterior).
+    session = await prisma.$transaction(async (tx) => {
+      const next = nextOccurrenceAfter(existing, editedDay);
+      if (startOfDay(existing.date) < editedDay) {
+        await tx.classSession.update({
+          where: { id: existing.id },
+          data: { recUntil: truncatedRecUntil(existing, editedDay) },
+        });
+        if (next) {
+          const rest = await tx.classSession.create({ data: { ...rowCopy(existing), date: next } });
+          await moveBookings(tx, existing.id, rest.id, 0, { occurrenceDate: { gt: editedDay } });
+        }
+      } else if (next) {
+        // Se edita la primera ocurrencia: la fila original se queda con el
+        // resto de la serie (y con sus reservas, que ya apuntan ahí).
+        await tx.classSession.update({ where: { id: existing.id }, data: { date: next } });
+      }
+      const created = await tx.classSession.create({
+        data: { ...rowCopy(existing), ...data, recurrence: "NONE" as const, recUntil: null },
+      });
+      await moveBookings(tx, existing.id, created.id, delta, { occurrenceDate: editedDay });
+      return created;
+    });
   }
 
   // El campo "Socio" del diálogo es la reserva MANUAL de una franja de EP en
@@ -175,14 +319,14 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
       where: {
         sessionId: session.id,
         memberId: input.memberId,
-        occurrenceDate: input.date,
+        occurrenceDate: startOfDay(input.date),
         status: { notIn: ["CANCELLED"] },
       },
       select: { id: true },
     });
     if (!alreadyBooked) {
       await prisma.booking.create({
-        data: { sessionId: session.id, occurrenceDate: input.date, memberId: input.memberId, status: "BOOKED" },
+        data: { sessionId: session.id, occurrenceDate: startOfDay(input.date), memberId: input.memberId, status: "BOOKED" },
       });
     }
   }

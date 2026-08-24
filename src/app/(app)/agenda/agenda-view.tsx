@@ -26,6 +26,7 @@ import {
   CAPACITY_AMBER,
   CAPACITY_FULL,
   DEFAULT_GROUP_CAPACITY,
+  withTypePrefix,
   type WeekOccurrence,
 } from "./agenda-utils";
 import { moveSessionAction } from "./session-actions";
@@ -286,7 +287,9 @@ export default function AgendaView({
     setDlg({
       mode: "create",
       id: null,
-      title: "",
+      // El tipo por defecto es entrenamiento personal, y el título lo lleva
+      // escrito desde el principio ("EP …"); al cambiar de tipo se reescribe.
+      title: withTypePrefix("", "personal"),
       dateISO,
       startHHMM: fmtHHMM(min),
       endHHMM: fmtHHMM(Math.min(END_HOUR * 60, min + 60)),
@@ -302,6 +305,8 @@ export default function AgendaView({
       recurrence: "NONE",
       recEnd: "forever",
       recUntil: formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
+      occurrenceISO: dateISO,
+      isSeries: false,
       origin,
     });
   }
@@ -329,6 +334,10 @@ export default function AgendaView({
       recurrence: ev.recurrence,
       recEnd: ev.recUntilISO ? "until" : "forever",
       recUntil: ev.recUntilISO ?? formatDateParam(addDays(parseDateParam(dateISO), 12 * 7)),
+      // El día que se ha abierto de la serie: `dateISO` puede cambiarlo el
+      // usuario (mover la sesión), pero la edición sigue siendo sobre ESTE día.
+      occurrenceISO: dateISO,
+      isSeries: ev.recurrence !== "NONE",
       origin,
     });
   }
