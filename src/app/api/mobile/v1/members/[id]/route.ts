@@ -1,6 +1,13 @@
 import type { NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
-import { getMemberDetail, getMemberAttendanceStats, planServiceKind, sessionServiceKind, bonoUsage } from "@/lib/members-queries";
+import {
+  getMemberDetail,
+  getMemberAttendanceStats,
+  planServiceKind,
+  sessionServiceKind,
+  bonoUsage,
+  effectiveSessionsIncluded,
+} from "@/lib/members-queries";
 import { canManageMembers } from "@/lib/rbac";
 import { isMemberInScope } from "@/lib/center-scope";
 import { formatDateParam } from "@/lib/date-utils";
@@ -75,7 +82,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       // `total` es la capacidad real del bono, nunca por debajo del saldo (ver
       // bonoUsage): así "quedan R de T" no se contradice en la ficha del socio.
       remaining: s.sessionsRemaining,
-      total: bonoUsage(s.plan.sessionsIncluded, s.sessionsRemaining)?.total ?? null,
+      total: bonoUsage(effectiveSessionsIncluded(s), s.sessionsRemaining)?.total ?? null,
       priceCents: s.priceCents,
       centerName: s.center.name,
       renewsAt: s.endDate ? formatDateParam(s.endDate) : null,

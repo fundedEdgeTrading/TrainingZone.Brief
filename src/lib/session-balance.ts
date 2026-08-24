@@ -83,6 +83,21 @@ export function bonoUsage(
   return { total, used: total - remaining, remaining };
 }
 
+/**
+ * RB-RES-006: cuántas sesiones tiene contratadas ESTE bono, para pasárselo a
+ * `bonoUsage`. `Subscription.sessionsIncluded` es la capacidad propia del
+ * bono (bonos-actions.ts::adjustSubscriptionSessions la sube al sumar
+ * sesiones); `plan.sessionsIncluded` es el fallback para bonos de antes de
+ * esa columna, donde sigue valiendo lo que traía el plan en el momento del
+ * alta.
+ */
+export function effectiveSessionsIncluded(sub: {
+  sessionsIncluded?: number | null;
+  plan: { sessionsIncluded?: number | null };
+}): number | null {
+  return sub.sessionsIncluded ?? sub.plan.sessionsIncluded ?? null;
+}
+
 // RB-RES-006: saldo de sesiones que le queda al socio por tipo de servicio, a
 // partir de sus bonos activos. Un bono con `sessionsRemaining` null = ilimitado
 // (cuota mensual / online). Se agregan varios bonos del mismo servicio.
@@ -104,6 +119,7 @@ export function getSessionBalances(
   subscriptions: {
     status: string;
     sessionsRemaining: number | null;
+    sessionsIncluded?: number | null;
     plan: { type: string; sessionsIncluded?: number | null };
   }[]
 ): SessionBalance[] {
@@ -113,7 +129,7 @@ export function getSessionBalances(
     const kind = PLAN_TYPE_TO_SERVICE[s.plan.type];
     if (!kind) continue;
     const acc = byKind.get(kind) ?? { remaining: 0, unlimited: false, used: 0, total: 0 };
-    const usage = bonoUsage(s.plan.sessionsIncluded, s.sessionsRemaining);
+    const usage = bonoUsage(effectiveSessionsIncluded(s), s.sessionsRemaining);
     if (!usage) acc.unlimited = true;
     else {
       acc.remaining += usage.remaining;

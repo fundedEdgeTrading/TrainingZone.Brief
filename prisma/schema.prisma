@@ -584,6 +584,21 @@ model Subscription {
   sessionsRemaining Int?
   createdAt         DateTime           @default(now())
 
+  // RB-RES-006: capacidad contratada de ESTE bono, copiada de
+  // `plan.sessionsIncluded` al crearlo. Sin esto, "sesiones gastadas" se
+  // calculaba siempre contra el total del PLAN (compartido por todos los
+  // socios que lo tienen contratado), así que sumarle sesiones a un bono
+  // concreto (bonos-actions.ts::adjustSubscriptionSessions) solo podía subir
+  // `sessionsRemaining` — en cuanto el saldo alcanzaba lo contratado, la
+  // fórmula de session-balance.ts (`total = max(included, remaining)`)
+  // interpretaba el bono entero como recién estrenado y el consumo previo
+  // desaparecía de la pantalla (un bono de 4 agotado + 2 sesiones de regalo
+  // pasaba a verse "6/6" en vez de "4/6"). Nullable para no romper los bonos
+  // ilimitados (`sessionsRemaining` null); se hace fallback a
+  // `plan.sessionsIncluded` donde pueda faltar (bonos anteriores a esta
+  // columna).
+  sessionsIncluded Int?
+
   // PAGO-1 (RB-PAGO-004/006): congelación temporal y cancelación programada.
   pauseUntil DateTime? // null + status=FROZEN = congelación indefinida
   cancelAt   DateTime? // fecha futura en la que el job de F10 pasa a CANCELLED

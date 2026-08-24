@@ -74,6 +74,7 @@ export async function adjustSubscriptionSessions(
       centerId: true,
       status: true,
       sessionsRemaining: true,
+      sessionsIncluded: true,
       plan: { select: { id: true, name: true } },
     },
   });
@@ -105,6 +106,15 @@ export async function adjustSubscriptionSessions(
   // Con `sessionsRemaining` NULL ninguna de las dos condiciones casa (NULL >= n
   // es UNKNOWN en SQL), así que una carrera nunca convierte un bono ilimitado
   // en numérico. La lectura previa solo sirve para dar un error en castellano.
+  //
+  // RB-RES-006: sumar sesiones (delta > 0) sube `sessionsIncluded` el mismo
+  // importe, no solo `sessionsRemaining` — si no, en cuanto el saldo alcanza
+  // lo contratado, `bonoUsage` (session-balance.ts) trata el bono entero como
+  // recién estrenado y lo gastado hasta ese momento desaparece de la
+  // pantalla. Restar (delta < 0) SÍ deja `sessionsIncluded` fijo a propósito:
+  // es como se corrige a mano un consumo que la agenda no ha descontado
+  // (ej. una sesión presencial sin reserva), y ahí lo que debe subir es lo
+  // gastado, no encoger el bono contratado.
   const applied = await prisma.subscription.updateMany({
     where: {
       id: sub.id,
@@ -112,7 +122,10 @@ export async function adjustSubscriptionSessions(
       status: { in: ["ACTIVE", "FROZEN"] },
       sessionsRemaining: delta < 0 ? { gte: -delta } : { lte: MAX_SESSIONS_REMAINING - delta },
     },
-    data: { sessionsRemaining: { increment: delta } },
+    data: {
+      sessionsRemaining: { increment: delta },
+      ...(delta > 0 ? { sessionsIncluded: { increment: delta } } : {}),
+    },
   });
   if (applied.count === 0) {
     return { ok: false, error: "El saldo ha cambiado mientras editabas. Vuelve a intentarlo." };
@@ -121,7 +134,7 @@ export async function adjustSubscriptionSessions(
   // `updateMany` no devuelve la fila: se relee para auditar el valor real.
   const after = await prisma.subscription.findUniqueOrThrow({
     where: { id: sub.id },
-    select: { sessionsRemaining: true },
+    select: { sessionsRemaining: true, sessionsIncluded: true },
   });
 
   await prisma.auditLog.create({
@@ -136,6 +149,8 @@ export async function adjustSubscriptionSessions(
         delta,
         previousSessionsRemaining: sub.sessionsRemaining,
         newSessionsRemaining: after.sessionsRemaining ?? 0,
+        previousSessionsIncluded: sub.sessionsIncluded,
+        newSessionsIncluded: after.sessionsIncluded,
         planId: sub.plan.id,
         planName: sub.plan.name,
         centerId: sub.centerId,
