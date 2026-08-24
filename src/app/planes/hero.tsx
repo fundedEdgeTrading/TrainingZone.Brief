@@ -32,6 +32,12 @@ export default function Hero() {
           >
             Ver planes y precios <span aria-hidden="true">↓</span>
           </a>
+          <a
+            href="#tour"
+            className="inline-flex items-center gap-2 rounded-control border border-brand-border-dark text-apta-gold font-semibold text-[15px] px-6 py-3.5 transition-colors duration-200 hover:bg-brand-ink-soft"
+          >
+            Ver la app en 90 s
+          </a>
         </div>
 
         <ul className="mt-10 flex flex-wrap justify-center gap-2" aria-label="Incluido en cualquier plan">
