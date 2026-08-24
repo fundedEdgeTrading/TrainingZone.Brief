@@ -110,10 +110,21 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
  * Valoración vencida y sin cumplimentar de un socio, para el aviso de entrada
  * al portal (F4 §5.3). Devuelve la más antigua: si se acumulan dos, primero se
  * cierra la que lleva más tiempo esperando.
+ *
+ * F-ALTA: una inicial cuya parte de socio ya está rellenada no cuenta. El aviso
+ * existe para reclamarle algo a él, y ahí no le queda nada que hacer —falta el
+ * screening, las marcas y el PAR-Q, que son del entrenador—. Sin esta excepción
+ * el socio termina el muro de la primera sesión y lo siguiente que ve es un
+ * modal reclamándole la misma valoración que acaba de rellenar.
  */
 export async function getDueAssessmentForMember(memberId: string) {
   const assessment = await prisma.assessment.findFirst({
-    where: { memberId, completedAt: null, dueDate: { lte: new Date() } },
+    where: {
+      memberId,
+      completedAt: null,
+      dueDate: { lte: new Date() },
+      NOT: { kind: "INITIAL", memberPartAt: { not: null } },
+    },
     orderBy: { dueDate: "asc" },
     select: { id: true, kind: true, dueDate: true },
   });

@@ -20,7 +20,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import { POSTAL_CODES } from "@/lib/postal-codes";
+import { POSTAL_CODES, postalCityLabel } from "@/lib/postal-codes";
 import { CONSENT_VERSION } from "@/lib/consent";
 import { runRetentionAlertRule } from "@/lib/retention";
 import { dueDateForKind } from "@/lib/assessments/queries";
@@ -740,7 +740,28 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
             }
           : {}),
         // F9 (RB-PERFIL): perfil extendido para poder enseñar BI demográfico (RB-BI-003).
-        postalCode: m.state === MemberState.PROSPECT ? null : memberPostalFor(m.centerId),
+        ...(() => {
+          // F-ALTA: el domicilio va junto porque ciudad y provincia se derivan
+          // del CP; inventarlos por separado pondría a un socio con CP de
+          // Zaragoza viviendo en Lugo, y el mapa de barrios cruza por CP.
+          //
+          // Los socios de la demo son gente ya asentada en el centro, así que
+          // llegan con la ficha completa y NO se topan con el muro de la
+          // primera sesión: lo que ese muro retrata es a quien acaba de entrar
+          // por una importación, no a la cartera de siempre.
+          if (m.state === MemberState.PROSPECT) {
+            return { postalCode: null, address: null, city: null, province: null, emergencyContact: null };
+          }
+          const postalCode = memberPostalFor(m.centerId);
+          const city = postalCityLabel(postalCode);
+          return {
+            postalCode,
+            address: faker.location.streetAddress(),
+            city,
+            province: city,
+            emergencyContact: `${faker.person.firstName()} — ${faker.phone.number({ style: "national" })}`,
+          };
+        })(),
         occupation: m.state === MemberState.PROSPECT ? null : pick(OCCUPATIONS),
         hasChildren: m.state === MemberState.PROSPECT ? null : Math.random() < 0.85 ? Math.random() < 0.5 : null,
         // BI-2 (RB-BI-005): ~80% responde, el resto se queda "sin especificar" (sex=null).

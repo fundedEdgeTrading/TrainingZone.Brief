@@ -11,6 +11,7 @@ import {
   PAIN_ZONES,
   PAIN_ZONE_LABEL,
   PERFORMANCE_MARKS,
+  type MemberInitialPartAnswers,
   type PainZone,
   type PerformanceMarkKey,
 } from "@/lib/assessments/schemas";
@@ -77,10 +78,18 @@ export function AssessmentForm({
   assessmentId,
   memberId,
   kind,
+  draft = null,
 }: {
   assessmentId: string;
   memberId: string;
   kind: AssessmentKind;
+  /**
+   * F-ALTA: lo que el socio ya contestó por su cuenta al entrar en la app. El
+   * entrenador lo encuentra escrito y editable —no de solo lectura—: si al
+   * medir en el centro resulta que el socio se puso 4 cm de más, corregirlo
+   * ahora es más barato que arrastrar una altura falsa a todos sus IMC.
+   */
+  draft?: MemberInitialPartAnswers | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -88,28 +97,28 @@ export function AssessmentForm({
   const isInitial = kind === "INITIAL";
 
   // Constantes comunes a inicial y revisión: son la serie que se grafica.
-  const [pesoKg, setPesoKg] = useState("");
-  const [dolorActual, setDolorActual] = useState("0");
-  const [calidadSueno, setCalidadSueno] = useState("3");
-  const [estres, setEstres] = useState("3");
-  const [energia, setEnergia] = useState("3");
-  const [diasPorSemana, setDiasPorSemana] = useState("2");
+  const [pesoKg, setPesoKg] = useState(draft ? String(draft.pesoKg) : "");
+  const [dolorActual, setDolorActual] = useState(draft ? String(draft.dolorActual) : "0");
+  const [calidadSueno, setCalidadSueno] = useState(draft ? String(draft.calidadSueno) : "3");
+  const [estres, setEstres] = useState(draft ? String(draft.estres) : "3");
+  const [energia, setEnergia] = useState(draft ? String(draft.energia) : "3");
+  const [diasPorSemana, setDiasPorSemana] = useState(draft ? String(draft.diasPorSemana) : "2");
 
   const [perfil, setPerfil] = useState({
-    edad: "",
-    sexo: "MUJER",
-    alturaCm: "",
-    objetivoPrincipal: "",
-    objetivoSecundario: "",
-    motivacionReal: "",
-    queLeHariaAbandonar: "",
+    edad: draft ? String(draft.perfil.edad) : "",
+    sexo: draft ? String(draft.perfil.sexo) : "MUJER",
+    alturaCm: draft ? String(draft.perfil.alturaCm) : "",
+    objetivoPrincipal: draft?.perfil.objetivoPrincipal ?? "",
+    objetivoSecundario: draft?.perfil.objetivoSecundario ?? "",
+    motivacionReal: draft?.perfil.motivacionReal ?? "",
+    queLeHariaAbandonar: draft?.perfil.queLeHariaAbandonar ?? "",
   });
   const [experiencia, setExperiencia] = useState({
-    nivelActividad: "MEDIO",
-    haEntrenadoAntes: false,
-    anosExperiencia: "0",
-    tecnicaBasicos: "MEDIA",
-    ejerciciosNoTolera: "",
+    nivelActividad: draft ? String(draft.experiencia.nivelActividad) : "MEDIO",
+    haEntrenadoAntes: draft?.experiencia.haEntrenadoAntes ?? false,
+    anosExperiencia: draft ? String(draft.experiencia.anosExperiencia) : "0",
+    tecnicaBasicos: draft ? String(draft.experiencia.tecnicaBasicos) : "MEDIA",
+    ejerciciosNoTolera: draft?.experiencia.ejerciciosNoTolera ?? "",
   });
   const [screening, setScreening] = useState({
     cardiovascular: false,

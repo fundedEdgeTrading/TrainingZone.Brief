@@ -62,23 +62,50 @@ const marksSchema = z
   )
   .default([]);
 
+/**
+ * Las dos secciones que el socio contesta sobre sí mismo. Viven fuera del
+ * esquema completo porque son exactamente lo que él rellena en su primera
+ * sesión en la app (`memberInitialPartSchema`): si se declararan en línea, la
+ * parte del socio y la del entrenador podrían separarse sin que nada avisara, y
+ * el formulario de autoservicio empezaría a pedir campos que no le tocan.
+ */
+export const perfilSchema = z.object({
+  edad: z.number().int().min(14).max(100),
+  sexo: z.enum(["HOMBRE", "MUJER", "OTRO"]),
+  alturaCm: z.number().int().min(120).max(230),
+  objetivoPrincipal: text.min(1, "Indica el objetivo principal.").max(200),
+  objetivoSecundario: optionalText,
+  motivacionReal: optionalText,
+  queLeHariaAbandonar: optionalText,
+});
+
+export const experienciaSchema = z.object({
+  nivelActividad: z.enum(["BAJO", "MEDIO", "ALTO"]),
+  haEntrenadoAntes: z.boolean(),
+  anosExperiencia: z.number().min(0).max(70).default(0),
+  tecnicaBasicos: z.enum(["BAJA", "MEDIA", "ALTA"]),
+  ejerciciosNoTolera: optionalText,
+});
+
+/**
+ * Lo que el socio rellena por su cuenta al entrar por primera vez (F-ALTA):
+ * quién es, de dónde parte y cómo llega hoy. Deja fuera a propósito el
+ * screening, el PAR-Q y las marcas físicas — el screening es dato de salud que
+ * interpreta un profesional, el PAR-Q se firma con el entrenador delante y las
+ * marcas (dominadas, plancha, circuito) se miden en el centro, no se recuerdan
+ * desde el sofá. Es un subconjunto estricto de `initialAssessmentSchema`: lo
+ * que se guarda aquí es el borrador que el entrenador encuentra ya escrito.
+ */
+export const memberInitialPartSchema = vitalsSchema.extend({
+  perfil: perfilSchema,
+  experiencia: experienciaSchema,
+});
+
+export type MemberInitialPartAnswers = z.infer<typeof memberInitialPartSchema>;
+
 export const initialAssessmentSchema = vitalsSchema.extend({
-  perfil: z.object({
-    edad: z.number().int().min(14).max(100),
-    sexo: z.enum(["HOMBRE", "MUJER", "OTRO"]),
-    alturaCm: z.number().int().min(120).max(230),
-    objetivoPrincipal: text.min(1, "Indica el objetivo principal.").max(200),
-    objetivoSecundario: optionalText,
-    motivacionReal: optionalText,
-    queLeHariaAbandonar: optionalText,
-  }),
-  experiencia: z.object({
-    nivelActividad: z.enum(["BAJO", "MEDIO", "ALTO"]),
-    haEntrenadoAntes: z.boolean(),
-    anosExperiencia: z.number().min(0).max(70).default(0),
-    tecnicaBasicos: z.enum(["BAJA", "MEDIA", "ALTA"]),
-    ejerciciosNoTolera: optionalText,
-  }),
+  perfil: perfilSchema,
+  experiencia: experienciaSchema,
   screening: z.object({
     cardiovascular: z.boolean(),
     hipertension: z.boolean(),

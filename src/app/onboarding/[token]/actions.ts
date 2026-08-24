@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { MIN_PASSWORD_LENGTH, ensureIdentity, hashPassword, setPassword } from "@/lib/identity";
 import { CONSENT_VERSION } from "@/lib/consent";
+import { ensureInitialAssessment } from "@/lib/member-first-session-queries";
 
 export type OnboardingResult = { ok: true } | { ok: false; error: string };
 
@@ -136,6 +137,15 @@ export async function completeMemberOnboarding(
     });
     await tx.invitation.update({ where: { id: invitation.id }, data: { usedAt: now } });
   });
+
+  // F-ALTA: la valoración inicial se abre aquí y no espera al cron diario.
+  // El socio entra al portal inmediatamente después de esta llamada y el muro
+  // de la primera sesión necesita encontrarla ya abierta; con el cron, quien se
+  // diera de alta por la tarde entraría sin valoración que rellenar y el hito
+  // se perdería hasta el día siguiente. Fuera de la transacción a propósito:
+  // que fallara al crearla no puede deshacer una contraseña ya fijada ni una
+  // invitación ya consumida — dejaría al socio sin poder entrar.
+  await ensureInitialAssessment(member.orgId, member.id, member.joinedAt);
 
   return { ok: true };
 }
