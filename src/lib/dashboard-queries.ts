@@ -157,28 +157,6 @@ export async function getOccupancyByWeekday(orgId: string, opts: DashboardOpts =
   }));
 }
 
-export async function getCohortRetention(orgId: string, opts: DashboardOpts & { months?: number } = {}) {
-  const months = opts.months ?? 6;
-  const now = new Date();
-  const results = [];
-  for (let i = months - 1; i >= 0; i--) {
-    const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 1);
-    const cohort = await prisma.member.findMany({
-      where: { ...memberScope(orgId, opts.centerId), joinedAt: { gte: monthStart, lt: monthEnd } },
-      select: { state: true },
-    });
-    const total = cohort.length;
-    const stillActive = cohort.filter((m) => m.state === "ACTIVE" || m.state === "DELINQUENT" || m.state === "FROZEN").length;
-    results.push({
-      month: monthStart.toLocaleDateString("es-ES", { month: "short", year: "2-digit" }),
-      total,
-      retainedPct: total ? Math.round((stillActive / total) * 100) : 0,
-    });
-  }
-  return results;
-}
-
 export async function getRevenueByMethod(orgId: string, opts: DashboardOpts = {}) {
   const scope = paymentScope(orgId, opts.centerId);
   // Los fallidos van aparte del cobrado: el pie de la card dice qué método

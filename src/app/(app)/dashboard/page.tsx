@@ -16,7 +16,6 @@ import {
   OccupancyByCenterPanel,
   OccupancyByWeekdayPanel,
   NoShowPanel,
-  RetentionPanel,
   RevenueByMethodPanel,
   LtvRow,
   SexPanel,
@@ -174,10 +173,6 @@ export default async function DashboardPage({
       </div>
 
       <ZoneDivider label="Retención y valor" />
-
-      <Suspense fallback={<SkeletonChartCard height={300} />}>
-        <RetentionPanel {...panel} />
-      </Suspense>
 
       <Suspense fallback={<SkeletonChartCard height={420} />}>
         <RankingPanel {...panel} sort={rankSort} dir={rankDir} params={params} />
