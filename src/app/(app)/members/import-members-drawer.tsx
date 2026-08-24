@@ -37,7 +37,8 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
                   title: "Importación completada",
                   description:
                     `${result.summary.created} altas · ${result.summary.updated} actualizados · ` +
-                    `${result.summary.subscriptionsCreated} cuotas · ${result.summary.skipped} omitidos.`,
+                    `${result.summary.subscriptionsCreated} cuotas · ${result.summary.invitationsSent} invitados · ` +
+                    `${result.summary.skipped} omitidos.`,
                 });
               } else {
                 toast.error(result.error);
@@ -56,7 +57,6 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
               <strong>Plan, Cuota, Fecha de alta de la cuota</strong> y, en bonos,{" "}
               <strong>Sesiones restantes</strong>: el plan debe existir en Productos con ese mismo nombre.
               Reimportar el mismo archivo <strong>actualiza</strong> los socios y sus cuotas, no los duplica.
-              No se envían emails de bienvenida.
             </span>
           </div>
 
@@ -73,6 +73,25 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
             </Select>
           </Field>
 
+          <label className="flex gap-3 items-start rounded-xl border border-brand-border bg-white px-4 py-3.5 cursor-pointer hover:border-brand-border-hover transition-colors duration-200">
+            <input
+              type="checkbox"
+              name="sendInvitations"
+              defaultChecked
+              className="w-[17px] h-[17px] mt-0.5 accent-tz-black cursor-pointer shrink-0"
+            />
+            <span>
+              <span className="block text-[13px] font-bold text-brand-text">
+                Enviar el email de acceso a los socios nuevos
+              </span>
+              <span className="block text-[12.5px] text-brand-muted leading-snug mt-0.5">
+                Solo a los que se den de alta ahora y tengan email, nunca a los que ya estaban. Al entrar se les
+                pedirán los datos que el CSV no traiga (CP, dirección, teléfono…) y su parte de la valoración
+                inicial. Desmárcalo si estás cargando un histórico de fichas antiguas.
+              </span>
+            </span>
+          </label>
+
           <Field label="Archivo CSV">
             <input
               name="file"
@@ -85,10 +104,11 @@ export function ImportMembersDrawer({ centers }: { centers: { id: string; name: 
 
           {summary && (
             <div className="rounded-xl border border-brand-border overflow-hidden text-sm">
-              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-brand-border bg-tz-bone">
+              <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-brand-border bg-tz-bone">
                 <ResultStat label="Altas" value={summary.created} />
                 <ResultStat label="Actualizados" value={summary.updated} />
                 <ResultStat label="Cuotas dadas de alta" value={summary.subscriptionsCreated} />
+                <ResultStat label="Emails de acceso" value={summary.invitationsSent} />
                 <ResultStat label="Omitidos" value={summary.skipped} />
               </div>
               {summary.errors.length > 0 && (

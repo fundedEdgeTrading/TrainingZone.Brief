@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ESSENTIAL_PROFILE_FIELDS, type EssentialProfileField } from "@/lib/member-first-session";
@@ -90,11 +91,14 @@ function Shell({
           {children}
         </div>
 
+        {/* La única salida del muro. No es una escapatoria al portal —eso
+            volvería opcional lo que no lo es— pero tampoco se deja a nadie
+            encerrado en una pantalla sin puerta. */}
         <p className="text-center text-xs text-muted mt-4.5">
           Solo te lo preguntamos una vez ·{" "}
-          <a href="/api/auth/signout" className="text-faint">
+          <button type="button" onClick={() => signOut({ callbackUrl: "/login" })} className="text-faint underline">
             Cerrar sesión
-          </a>
+          </button>
         </p>
       </div>
     </div>

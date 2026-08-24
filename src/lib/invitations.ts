@@ -179,15 +179,35 @@ export async function createMemberWithInvitation(
     );
   }
 
-  const invitation = await tx.invitation.create({
+  const invitation = await createMemberInvitation(tx, {
+    orgId: params.orgId,
+    memberId: member.id,
+    email: params.email,
+  });
+  return { member, invitation, subscriptions };
+}
+
+/**
+ * Invitación de acceso para un socio que YA existe en la base.
+ *
+ * La necesita la importación por CSV (RB-IMPORT): allí el socio se crea a partir
+ * de una fila, no del formulario de alta, así que no pasa por
+ * `createMemberWithInvitation`. Separada de ella para que ambas vías emitan
+ * exactamente el mismo tipo de token y el onboarding no tenga que distinguir de
+ * dónde vino el socio.
+ */
+export async function createMemberInvitation(
+  tx: Tx,
+  params: { orgId: string; memberId: string; email: string }
+) {
+  return tx.invitation.create({
     data: {
       orgId: params.orgId,
       type: "MEMBER",
       token: generateInvitationToken(),
       email: params.email,
-      memberId: member.id,
+      memberId: params.memberId,
       expiresAt: invitationExpiry(),
     },
   });
-  return { member, invitation, subscriptions };
 }
