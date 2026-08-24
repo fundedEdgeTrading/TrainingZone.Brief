@@ -174,30 +174,6 @@ export async function getMemberPlanAdherence(memberId: string, timeZone: string)
   return { pct, attended, committed, avgPerWeek, weekAttended, weekCommitted, streakWeeks };
 }
 
-// Historial de "Mi membresía": últimos movimientos de pago del socio, con el
-// nombre del plan que originó cada cobro (si se sabe — un pago puntual sin
-// `subscriptionId` de antes de F5 no tiene plan asociado).
-export async function getMemberPaymentHistory(memberId: string, take = 8) {
-  const payments = await prisma.payment.findMany({
-    where: { memberId, status: "PAID" },
-    orderBy: { date: "desc" },
-    take,
-    select: {
-      id: true,
-      amountCents: true,
-      date: true,
-      notes: true,
-      subscription: { select: { plan: { select: { name: true } } } },
-    },
-  });
-  return payments.map((p) => ({
-    id: p.id,
-    amountCents: p.amountCents,
-    date: p.date,
-    concept: p.subscription?.plan.name ?? p.notes ?? "Pago",
-  }));
-}
-
 export async function getMemberProgress(memberId: string, timeZone: string) {
   const bookings = await prisma.booking.findMany({
     where: { memberId, status: "ATTENDED" },

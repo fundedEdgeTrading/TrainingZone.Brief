@@ -133,8 +133,8 @@ export async function createMemberCheckout(params: {
   // /portal/membresia a los que volver: aterriza en una confirmación pública
   // genérica, igual que el checkout anónimo de organizaciones vuelve a
   // /activar en vez de a un panel (platform-billing.ts). "portal" (F6) vuelve
-  // a /portal/membresia (hero + renovar/ampliar + historial, fusión de las
-  // antiguas /portal/plan y /portal/comprar).
+  // a /portal/membresia (hero + renovar/ampliar, fusión de las antiguas
+  // /portal/plan y /portal/comprar).
   const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
 
   const checkoutSession = await stripe.checkout.sessions.create(

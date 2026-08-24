@@ -51,7 +51,7 @@ const OWNER_NAV: NavGroup[] = [
 /** Menú del socio (`navFor` con rol MEMBER). */
 const MEMBER_NAV: NavGroup[] = [
   { section: "Entrenar", items: [["Mi actividad", "actividad"], ["Reservar clase", "reservar", "MAÑ 19:00"], ["Mi evolución", "evolucion"]] },
-  { section: "Membresía", items: [["Mi membresía", "membresia"], ["Facturas y pagos", "facturas"]] },
+  { section: "Membresía", items: [["Mi membresía", "membresia"]] },
 ];
 
 function SectionHead({ label, collapsed }: { label: string; collapsed?: boolean }) {

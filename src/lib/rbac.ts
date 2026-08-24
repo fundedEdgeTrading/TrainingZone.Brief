@@ -47,7 +47,6 @@ export type NavIcon =
   | "reservar"
   | "evolucion"
   | "membresia"
-  | "facturas"
   // No es un item de menú: es el icono del botón "PDF" del panel de control.
   // Vive aquí igual que el resto para que el mapa clave → SVG siga siendo uno.
   | "descargar";
@@ -163,13 +162,13 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   ],
   // "Mi perfil" ya no vive en el nav: se accede desde el bloque de usuario del
   // pie del sidebar y desde el chip de usuario del header (menú de cuenta).
-  // "Mi plan" + "Comprar/renovar" se fusionan en "Mi membresía".
+  // "Mi plan" + "Comprar/renovar" se fusionan en "Mi membresía". El socio no ve
+  // su gasto: ni historial de pagos ni "Facturas y pagos" — eso vive en recepción.
   MEMBER: [
     { href: "/portal", label: "Mi actividad", section: "Entrenar", icon: "actividad" },
     { href: "/portal/agenda", label: "Reservar clase", section: "Entrenar", icon: "reservar" },
     { href: "/portal/evolucion", label: "Mi evolución", section: "Entrenar", icon: "evolucion" },
     { href: "/portal/membresia", label: "Mi membresía", section: "Membresía", icon: "membresia" },
-    { href: "/portal/membresia/facturas", label: "Facturas y pagos", section: "Membresía", icon: "facturas" },
   ],
   HR_MANAGER: [
     { href: "/organization", label: "Organización", section: "Administración", icon: "organizacion" },
