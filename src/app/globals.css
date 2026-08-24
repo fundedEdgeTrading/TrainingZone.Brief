@@ -110,6 +110,16 @@
 
   /* Acento dorado del wordmark Apta */
   --color-apta-gold: #c8ab72;
+
+  /* Semánticos SOBRE TINTA. La cabecera del mesociclo es negra en los dos
+     temas, así que sus pastillas no pueden usar `warning`/`good`/`critical`:
+     en tema claro esos tokens valen su versión clara y sobre `#1d1d1c` no se
+     leen. Estos son la pareja del tema oscuro, fija en ambos temas. */
+  --color-ink-good: #a3bb5c;
+  --color-ink-good-bg: #2b3318;
+  --color-ink-warning: #d9a24a;
+  --color-ink-warning-bg: #3a2c12;
+  --color-ink-critical: #e08a6f;
 }
 
 /* ===== Tema oscuro por usuario =====
@@ -583,6 +593,16 @@
 }
 .tz-select-sheet {
   animation: tzSheetUp 0.26s var(--ease-out-soft) both;
+}
+
+/* Oro de marca en superficie: la barra vertical del item activo (rail, sidebar)
+   y el punto de acento. Son gradientes, así que no caben en un token de color
+   de Tailwind (`bg-*` emite `background-color`) y viven como utilidad. */
+.tz-gold-bar {
+  background: linear-gradient(180deg, #e3cfa2, #b58e52);
+}
+.tz-gold-dot {
+  background: linear-gradient(135deg, #e3cfa2, #b58e52);
 }
 
 .tz-logo-shine {
@@ -1332,5 +1352,85 @@ main:has(> [data-full-bleed]) {
   }
   .tz-stack-table > tbody > tr > td[data-label=""]::before {
     content: none;
+  }
+}
+
+/* ===== Impresión: el PDF del socio =====
+   `PDF para el socio` en el mesociclo no imprime la pantalla, imprime un
+   documento aparte (`.tz-print-doc`) que solo existe en papel. Aquí se apaga el
+   armazón de la app y se le devuelve el flujo normal al `<main>`, que tiene
+   scroll propio y recortaría la impresión a una sola página.
+
+   El `:has()` acota las reglas a la página que trae documento imprimible: el
+   resto de la app sigue imprimiéndose tal cual se ve. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  html,
+  body {
+    background: #fff;
+    height: auto;
+    overflow: visible;
+  }
+
+  body:has(.tz-print-doc) aside,
+  body:has(.tz-print-doc) header {
+    display: none !important;
+  }
+  body:has(.tz-print-doc) main {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+  /* El armazón pinta hueso (`bg-brand-bg`) hasta el borde: sobre papel eso es un
+     cartucho de tinta, y deja invisibles las bandas de fase, que son de ese
+     mismo hueso. Se apaga hasta dejar ver el blanco del `body`; en `transparent`
+     y no en `#fff`, que sobre estos contenedores con scroll le cuesta a Chrome
+     y deja la impresión en blanco. */
+  body:has(.tz-print-doc) > div,
+  body:has(.tz-print-doc) main {
+    background: transparent !important;
+  }
+  /* El armazón pinta hueso (`bg-brand-bg`) hasta el borde: sobre papel el fondo
+     de la app se lleva un cartucho de tinta y deja las bandas de fase, que son
+     de ese mismo hueso, invisibles. */
+  .tz-print-screen {
+    display: none !important;
+  }
+
+  /* El documento se imprime siempre en claro, mande el tema que mande en
+     pantalla: sobre papel blanco los tokens oscuros son ilegibles. */
+  .tz-print-doc {
+    --color-brand-text: #1d1d1c;
+    --color-brand-text-2: #5b5748;
+    --color-brand-muted: #8a8574;
+    --color-brand-bg: #f4f0e8;
+    --color-brand-subtle-2: #e7dfd2;
+    --color-gold: #8a6d2f;
+    --color-critical: #8a3420;
+    position: relative;
+    color: #1d1d1c;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Nada impedía imprimir un plan sin firmar y darselo al socio como definitivo. */
+  .tz-print-watermark {
+    /* `absolute` y no `fixed`: un elemento fijo en impresión lo repite Chrome en
+       cada página, Firefox en ninguna, y el compositor lo saca a su propia capa.
+       Anclado al documento se comporta igual en todos. */
+    position: absolute;
+    top: 38%;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 76pt;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(138, 52, 32, 0.1);
+    rotate: -24deg;
+    pointer-events: none;
   }
 }
