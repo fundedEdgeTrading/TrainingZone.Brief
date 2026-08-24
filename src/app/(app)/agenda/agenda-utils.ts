@@ -85,6 +85,23 @@ export function initials(name: string) {
 
 export type SessionType = "personal" | "reduced";
 
+/**
+ * Prefijo que lleva el título según el tipo elegido en el diálogo: "EP " para
+ * entrenamiento personal y "Grupo " para grupo reducido. La agenda se lee de
+ * un vistazo (qué es cada tarjeta) sin que nadie tenga que teclearlo.
+ */
+export const TYPE_PREFIX: Record<SessionType, string> = { personal: "EP ", reduced: "Grupo " };
+
+/**
+ * Reescribe el título con el prefijo del tipo, quitando antes el del otro tipo
+ * (o el mismo repetido): cambiar de "Entrenamiento personal" a "Grupo
+ * reducido" y volver no deja "Grupo EP Marta".
+ */
+export function withTypePrefix(title: string, type: SessionType): string {
+  const rest = title.replace(/^\s*(EP|Grupo)\b\s*/i, "").trim();
+  return `${TYPE_PREFIX[type]}${rest}`;
+}
+
 /** Plazas por defecto de un grupo reducido nuevo (el EP es siempre 1 a 1). */
 export const DEFAULT_GROUP_CAPACITY = 6;
 export const MAX_GROUP_CAPACITY = 30;

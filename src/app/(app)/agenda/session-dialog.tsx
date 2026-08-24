@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useTransition, useSyncExternalStore } from "react";
+import { useMemo, useState, useTransition, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
@@ -9,8 +9,11 @@ import {
   occupancyOf,
   DEFAULT_GROUP_CAPACITY,
   MAX_GROUP_CAPACITY,
+  withTypePrefix,
 } from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
+import SessionScopeDialog from "./session-scope-dialog";
+import type { EditScope } from "@/lib/session-series";
 import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/field";
 
@@ -39,6 +42,18 @@ export type DialogState = {
   recurrence: "NONE" | "WEEKLY" | "WEEKDAYS";
   recEnd: "forever" | "until";
   recUntil: string;
+  /**
+   * Día de la serie que se abrió ("YYYY-MM-DD"). `dateISO` es editable (mover la
+   * sesión), este no: es el que le dice al servidor a qué ocurrencia se refiere
+   * la edición.
+   */
+  occurrenceISO: string;
+  /**
+   * La sesión YA GUARDADA se repite en el tiempo. No vale mirar `recurrence`,
+   * que es lo que hay ahora en el formulario: quitar la repetición y guardar
+   * seguiría afectando a toda la serie, así que hay que preguntar igual.
+   */
+  isSeries: boolean;
   /**
    * Coordenadas de cliente del punto pulsado. El diálogo escala desde ahí, de
    * modo que el usuario ve de dónde sale. Sin origen, escala desde el centro.
@@ -82,6 +97,7 @@ export default function SessionDialog({
   const pending = saving || deleting;
   const toast = useToast();
   const mounted = useMounted();
+  const [scopeOpen, setScopeOpen] = useState(false);
 
   function patch(p: Partial<DialogState>) {
     setDlg((d) => (d ? { ...d, ...p } : d));
@@ -97,7 +113,7 @@ export default function SessionDialog({
   const occ = occupancyOf({ capacity: dlg.capacity, bookedCount: dlg.bookedCount });
   const overbooked = dlg.bookedCount > dlg.capacity;
 
-  function handleSave() {
+  function submit(scope: EditScope) {
     const fd = new FormData();
     if (dlg.id) fd.set("id", dlg.id);
     fd.set("centerId", centerId);
@@ -113,16 +129,33 @@ export default function SessionDialog({
     if (dlg.isTrial) fd.set("isTrial", "on");
     fd.set("recurrence", dlg.recurrence);
     if (dlg.recurrence !== "NONE" && dlg.recEnd === "until") fd.set("recUntil", dlg.recUntil);
+    // Qué ocurrencia se estaba editando y hasta dónde llega el cambio.
+    fd.set("occurrenceDate", dlg.occurrenceISO);
+    fd.set("scope", scope);
 
     startSaveTransition(async () => {
       const res = await saveSessionAction(fd);
       if (res.ok) {
+        setScopeOpen(false);
         toast.success(dlg.mode === "edit" ? "Sesión actualizada" : "Sesión creada");
         onDone();
       } else {
         toast.error(res.error);
       }
     });
+  }
+
+  /**
+   * Guardar sobre una serie ya existente no puede aplicarse a ciegas: elegir
+   * "Prueba" en la clase del martes que viene reescribía también los martes ya
+   * pasados. Se pregunta el alcance antes de tocar nada.
+   */
+  function handleSave() {
+    if (dlg.mode === "edit" && dlg.isSeries) {
+      setScopeOpen(true);
+      return;
+    }
+    submit("all");
   }
 
   function handleDelete() {
@@ -147,6 +180,7 @@ export default function SessionDialog({
   if (!mounted) return null;
 
   return createPortal(
+    <>
     <div
       onMouseDown={onClose}
       className="fixed inset-0 z-[100] flex items-center justify-center p-5"
@@ -194,7 +228,7 @@ export default function SessionDialog({
               <div className="flex gap-2">
                 <button
                   className={`${SEG_BASE} whitespace-nowrap ${dlg.type === "personal" ? SEG_ACTIVE : SEG_INACTIVE}`}
-                  onClick={() => patch({ type: "personal" })}
+                  onClick={() => patch({ type: "personal", title: withTypePrefix(dlg.title, "personal") })}
                 >
                   Entrenamiento personal
                 </button>
@@ -203,7 +237,7 @@ export default function SessionDialog({
                   onClick={() =>
                     patch({
                       type: "reduced",
-                      title: "Grupo",
+                      title: withTypePrefix(dlg.title, "reduced"),
                       memberId: null,
                       // Al convertir un EP en grupo, el aforo heredado es 1 y el
                       // campo Plazas nacía con un 1 sin sentido.
@@ -249,7 +283,10 @@ export default function SessionDialog({
                   onChange={(e) => {
                     const id = e.target.value;
                     const m = members.find((x) => x.id === id);
-                    patch({ memberId: id || null, title: m ? `${m.firstName} ${m.lastName}` : dlg.title });
+                    patch({
+                      memberId: id || null,
+                      title: m ? withTypePrefix(`${m.firstName} ${m.lastName}`, dlg.type) : dlg.title,
+                    });
                   }}
                 >
                   {members.map((m) => (
@@ -428,7 +465,17 @@ export default function SessionDialog({
           </div>
         </div>
       </div>
-    </div>,
+    </div>
+    {/* Hermano del overlay, no hijo: un portal propaga los eventos por el árbol
+        de React, así que colgado dentro heredaba el `onMouseDown` que cierra el
+        diálogo y pulsar fuera del modal de alcance se llevaba la edición. */}
+    <SessionScopeDialog
+      open={scopeOpen}
+      pending={saving}
+      onCancel={() => setScopeOpen(false)}
+      onConfirm={(scope) => submit(scope)}
+    />
+    </>,
     document.body
   );
 }
