@@ -1450,6 +1450,13 @@ model Assessment {
   kind           AssessmentKind
   dueDate        DateTime
   completedAt    DateTime?
+  /// Cuándo el socio rellenó SU parte de la valoración inicial (F-ALTA: perfil,
+  /// experiencia y constantes). Es una marca propia y no un `completedAt` a
+  /// medias porque la valoración sigue abierta después: el screening, el PAR-Q
+  /// y las marcas físicas los añade el entrenador con el socio delante (F3
+  /// §4.2), y hasta entonces no hay nada que propagar a salud ni a objetivos.
+  /// Null en las revisiones (M1/M3/…), que no tienen parte de autoservicio.
+  memberPartAt   DateTime?
   answers        Json
   filledByUserId String? // quién la cumplimentó; null si la rellenó el propio socio
   createdAt      DateTime       @default(now())

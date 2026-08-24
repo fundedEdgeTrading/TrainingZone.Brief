@@ -10,6 +10,7 @@ import {
   PAIN_ZONE_LABEL,
   PERFORMANCE_MARKS,
   isInitialAnswers,
+  memberInitialPartSchema,
   type PainZone,
   type PerformanceMarkKey,
 } from "@/lib/assessments/schemas";
@@ -47,6 +48,15 @@ export default async function AssessmentDetailPage({
   const answers = assessment.completedAt ? parseAnswers(assessment.kind, assessment.answers) : null;
   const marks = answers?.marcas ?? [];
 
+  // F-ALTA: si el socio ya contestó su parte al entrar en la app, el formulario
+  // arranca con ella escrita. Se valida en vez de confiarse: un borrador
+  // guardado con una versión anterior del cuestionario se descarta sin ruido y
+  // el entrenador rellena de cero, que es justo lo que hacía antes.
+  const memberDraft =
+    !assessment.completedAt && assessment.memberPartAt
+      ? (memberInitialPartSchema.safeParse(assessment.answers).data ?? null)
+      : null;
+
   return (
     <div className="tz-page space-y-4">
       <div className="space-y-1.5">
@@ -66,7 +76,18 @@ export default async function AssessmentDetailPage({
       </div>
 
       {!assessment.completedAt ? (
-        <AssessmentForm assessmentId={assessment.id} memberId={id} kind={assessment.kind} />
+        <>
+          {memberDraft && (
+            <div className="bg-good-bg border border-good/30 rounded-card px-5 py-3.5">
+              <p className="text-sm text-brand-text">
+                <b>{assessment.member.firstName} ya rellenó su parte</b> el{" "}
+                {formatInstantDate(assessment.memberPartAt!, timeZone)}: perfil, experiencia y constantes vienen
+                de sus respuestas y puedes corregirlas. Quedan el screening de salud, las marcas y el PAR-Q.
+              </p>
+            </div>
+          )}
+          <AssessmentForm assessmentId={assessment.id} memberId={id} kind={assessment.kind} draft={memberDraft} />
+        </>
       ) : !answers ? (
         <div className="bg-brand-card border border-brand-border rounded-card shadow-card">
           <EmptyState

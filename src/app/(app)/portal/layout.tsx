@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { getMemberForUser } from "@/lib/portal-queries";
 import { getOrCreateConversation, listMessages } from "@/lib/chat";
@@ -5,10 +6,12 @@ import { needsReconsent } from "@/lib/consent";
 import { getDueAssessmentForMember } from "@/lib/assessment-jobs";
 import { getPendingBirthdayGreeting } from "@/lib/birthday-jobs";
 import { resolveTimezone } from "@/lib/timezone";
+import { resolveFirstSessionStep } from "@/lib/member-first-session";
 import { FloatingChat } from "./floating-chat";
 import { ReconsentBanner } from "./reconsent-banner";
 import { PendingAssessmentGate } from "./pending-assessment-gate";
 import { BirthdayGreetingScreen } from "./birthday-greeting";
+import { FirstSessionWall } from "./first-session-wall";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -24,6 +27,26 @@ export default async function PortalLayout({ children }: { children: React.React
   if (session.user.role === "MEMBER") {
     const member = await getMemberForUser(session.user.id);
     if (member) {
+      // F-ALTA: el muro de la primera sesión va ANTES que nada y se devuelve en
+      // lugar del portal, no encima. Un socio importado por CSV llega sin CP ni
+      // teléfono y sin valoración: pedírselo en un modal sobre un portal que
+      // sigue siendo navegable con el tabulador es pedirlo de mentira.
+      const firstStep = await resolveFirstSessionStep(member);
+      if (firstStep) {
+        const org = await prisma.organization.findUnique({
+          where: { id: session.user.orgId },
+          select: { name: true, logoUrl: true },
+        });
+        return (
+          <FirstSessionWall
+            step={firstStep.step}
+            missing={firstStep.step === "profile" ? firstStep.missing : []}
+            orgName={org?.name ?? "Training Zone"}
+            orgLogoUrl={member.primaryCenter.logoUrl || org?.logoUrl || "/brand/tz-logo-white.png"}
+          />
+        );
+      }
+
       reconsentNeeded = needsReconsent(member);
       const conversation = await getOrCreateConversation(session.user.orgId, member.id);
       const messages = await listMessages(conversation.id);
