@@ -1,8 +1,10 @@
 import type { Role } from "@prisma/client";
 import { logoUrlForTheme } from "@/lib/theme";
 import { requireRole } from "@/lib/guard";
-import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
+import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { getOrganization, getCentersWithCounts, getStaffWithMemberships } from "@/lib/org-queries";
+import { staffScopeFilter } from "@/lib/staff-queries";
+import { centerScopeFor } from "@/lib/center-scope";
 import {
   updateOrganization,
   createCenter,
@@ -12,6 +14,7 @@ import {
 import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
 import { StaffDrawer } from "./staff-drawer";
+import { StaffRowActions, StaffActionsProvider } from "./staff-row-actions";
 import AptaLogo from "@/components/apta-logo";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
@@ -49,19 +52,36 @@ export default async function OrganizationPage({
 }: {
   searchParams: Promise<{ stripe_connect?: string }>;
 }) {
-  const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
+  // Dirección de centro entra solo por la plantilla de sus centros: el resto de
+  // la pantalla (marca, cobros, productos, centros, alta e imputación) sigue
+  // siendo de organización y RRHH, y se gatea sección a sección más abajo.
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER", "CENTER_DIRECTOR"]);
   const canOrg = canManageOrg(session.user.role);
+  const canStaffAdmin = canManageStaff(session.user.role);
+  const canEdit = canEditStaff(session.user.role);
+  const canDelete = canDeleteStaff(session.user.role);
   const params = await searchParams;
 
-  const [org, centers, staff, plans] = await Promise.all([
+  const [org, allCenters, staff, plans, centerScope] = await Promise.all([
     getOrganization(session.user.orgId),
     getCentersWithCounts(session.user.orgId),
-    getStaffWithMemberships(session.user.orgId),
-    prisma.membershipPlan.findMany({
-      where: { orgId: session.user.orgId },
-      orderBy: [{ active: "desc" }, { name: "asc" }],
+    // `includeInactive`: la plantilla es el único sitio donde una baja se
+    // sigue viendo — marcada y con la opción de reincorporarla.
+    getStaffWithMemberships(session.user.orgId, {
+      includeInactive: true,
+      scope: await staffScopeFilter(session.user),
     }),
+    canOrg
+      ? prisma.membershipPlan.findMany({
+          where: { orgId: session.user.orgId },
+          orderBy: [{ active: "desc" }, { name: "asc" }],
+        })
+      : Promise.resolve([]),
+    centerScopeFor(session.user),
   ]);
+
+  // Los selectores de centro no ofrecen más de lo que quien mira gestiona.
+  const centers = canStaffAdmin || centerScope === null ? allCenters : allCenters.filter((c) => centerScope.includes(c.id));
 
   const createRoles: Role[] = [
     "TRAINER",
@@ -71,7 +91,13 @@ export default async function OrganizationPage({
     "HR_MANAGER",
     ...((canOrg ? ["OWNER"] : []) as Role[]),
   ];
+  // Dirección de centro edita a los suyos, y los suyos son de centro: no puede
+  // convertir a nadie en dirección de organización, RRHH ni soporte.
+  const editRoles: Role[] = canStaffAdmin ? createRoles : ["TRAINER", "TRAINER_ADMIN", "RECEPTION", "CENTER_DIRECTOR"];
   const assignRoles: Role[] = ["TRAINER", "TRAINER_ADMIN", "RECEPTION", "CENTER_DIRECTOR"];
+
+  const inactiveStaff = staff.filter((u) => u.deactivatedAt).length;
+  const activeStaff = staff.length - inactiveStaff;
 
   return (
     <div className="tz-page space-y-6">
@@ -262,91 +288,114 @@ export default async function OrganizationPage({
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h2 className={SECTION_TITLE}>Equipo</h2>
-            <p className="text-xs text-brand-muted mt-0.5">{staff.length} personas</p>
+            <p className="text-xs text-brand-muted mt-0.5">
+              {activeStaff} en plantilla
+              {inactiveStaff > 0 && ` · ${inactiveStaff} de baja`}
+            </p>
           </div>
-          <StaffDrawer centers={centers} createRoles={createRoles} />
+          {canStaffAdmin && <StaffDrawer centers={centers} createRoles={createRoles} />}
         </div>
 
         <div className="bg-tz-bone border border-brand-border rounded-xl px-4.5 py-3 text-[13px] text-text-2 flex gap-2.5 items-center">
           <span className="w-2 h-2 rounded-full bg-apta-gold shrink-0" />
-          Solo Dirección de organización y RRHH pueden dar de alta personal y asignar roles; Dirección de centro no
-          tiene acceso a esta sección.
+          {canStaffAdmin
+            ? "Dirección de organización y RRHH dan de alta personal y lo imputan a centros. La baja de un trabajador es de dirección (de la organización o del centro)."
+            : "Ves y gestionas a las personas imputadas a tus centros. El alta de personal y la imputación a centros son de Dirección de organización y RRHH."}
         </div>
 
-        <DataTable columns={staffColumns} rows={staff.map(staffToRow)} />
+        <StaffActionsProvider centers={centers} editRoles={editRoles}>
+          <DataTable
+            columns={staffColumns(canEdit || canDelete)}
+            rows={staff.map((u) => staffToRow(u, { canEdit, canDelete, canAssign: canStaffAdmin }))}
+          />
+        </StaffActionsProvider>
       </section>
 
       {/* ---------- Imputación ---------- */}
-      <section className="space-y-3">
-        <h2 className={SECTION_TITLE}>Imputar a un centro</h2>
-        <p className="text-sm text-brand-muted max-w-2xl">
-          Asigna a una persona a un centro (además de su centro base) con un rol y un porcentaje de
-          dedicación. Así un entrenador puede repartirse entre varios centros o una dirección
-          supervisar más de uno.
-        </p>
-        <ActionForm
-          action={assignUserToCenter}
-          successMessage="Imputación guardada."
-          className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
-        >
-          <Field label="Persona" className="md:col-span-2">
-            <Select name="userId" required defaultValue="">
-              <option value="">Seleccionar...</option>
-              {staff.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name} · {ROLE_LABEL[u.role]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Centro">
-            <Select name="centerId" required defaultValue="">
-              <option value="">Seleccionar...</option>
-              {centers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Rol en el centro">
-            <Select name="role" defaultValue="TRAINER">
-              {assignRoles.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Dedicación (%)" hint="Opcional">
-            <Input name="allocationPct" type="number" min="0" max="100" step="5" placeholder="40" />
-          </Field>
-          <Button type="submit" className="md:col-span-5 md:justify-self-start">
-            Imputar a centro
-          </Button>
-        </ActionForm>
-      </section>
+      {canStaffAdmin && (
+        <section className="space-y-3">
+          <h2 className={SECTION_TITLE}>Imputar a un centro</h2>
+          <p className="text-sm text-brand-muted max-w-2xl">
+            Asigna a una persona a un centro (además de su centro base) con un rol y un porcentaje de
+            dedicación. Así un entrenador puede repartirse entre varios centros o una dirección
+            supervisar más de uno.
+          </p>
+          <ActionForm
+            action={assignUserToCenter}
+            successMessage="Imputación guardada."
+            className={`${CARD} grid grid-cols-1 md:grid-cols-5 gap-3 items-end`}
+          >
+            <Field label="Persona" className="md:col-span-2">
+              <Select name="userId" required defaultValue="">
+                <option value="">Seleccionar...</option>
+                {staff
+                  .filter((u) => !u.deactivatedAt)
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} · {ROLE_LABEL[u.role]}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            <Field label="Centro">
+              <Select name="centerId" required defaultValue="">
+                <option value="">Seleccionar...</option>
+                {centers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Rol en el centro">
+              <Select name="role" defaultValue="TRAINER">
+                {assignRoles.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Dedicación (%)" hint="Opcional">
+              <Input name="allocationPct" type="number" min="0" max="100" step="5" placeholder="40" />
+            </Field>
+            <Button type="submit" className="md:col-span-5 md:justify-self-start">
+              Imputar a centro
+            </Button>
+          </ActionForm>
+        </section>
+      )}
     </div>
   );
 }
 
 type Staff = Awaited<ReturnType<typeof getStaffWithMemberships>>[number];
 
-const staffColumns: DataTableColumn[] = [
-  { key: "person", header: "Persona", sortable: true },
-  { key: "role", header: "Rol base", sortable: true, className: "text-text-2" },
-  { key: "centers", header: "Imputación a centros" },
-  { key: "access", header: "Estado de acceso", sortable: true },
-];
+function staffColumns(withActions: boolean): DataTableColumn[] {
+  return [
+    { key: "person", header: "Persona", sortable: true },
+    { key: "role", header: "Rol base", sortable: true, className: "text-text-2" },
+    { key: "centers", header: "Imputación a centros" },
+    { key: "access", header: "Acceso", sortable: true },
+    ...(withActions ? [{ key: "actions", header: "", align: "right" as const }] : []),
+  ];
+}
 
-function staffToRow(u: Staff): DataTableRow {
+function staffToRow(
+  u: Staff,
+  options: { canEdit: boolean; canDelete: boolean; canAssign: boolean }
+): DataTableRow {
+  const deactivated = !!u.deactivatedAt;
   const active = !u.invitation || !!u.invitation.usedAt;
   return {
     key: u.id,
+    // Una baja no es "otra persona más": se atenúa la fila entera para que se
+    // distinga de un vistazo de quien sí está en plantilla.
+    className: deactivated ? "opacity-60" : undefined,
     sortValues: {
       person: u.name,
       role: ROLE_LABEL[u.role],
-      access: active ? 1 : 0,
+      access: deactivated ? -1 : active ? 1 : 0,
     },
     cells: {
       person: (
@@ -358,7 +407,7 @@ function staffToRow(u: Staff): DataTableRow {
       role: ROLE_LABEL[u.role],
       centers:
         u.centerMemberships.length === 0 ? (
-          <span className="text-xs text-faint">Toda la organización</span>
+          <span className="text-xs text-faint">{deactivated ? "Sin imputación" : "Toda la organización"}</span>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {u.centerMemberships.map((m) => (
@@ -372,12 +421,35 @@ function staffToRow(u: Staff): DataTableRow {
                   {m.allocationPct != null ? ` · ${m.allocationPct}%` : ""}
                   {m.isPrimary ? " · base" : ""}
                 </span>
-                <RemoveMembershipButton id={m.id} />
+                {options.canAssign && <RemoveMembershipButton id={m.id} />}
               </span>
             ))}
           </div>
         ),
-      access: <Badge tone={active ? "good" : "warning"}>{active ? "Acceso activo" : "Invitación enviada"}</Badge>,
+      // Rótulos cortos: la columna de acciones se sale de la tarjeta si esta
+      // ocupa lo que ocupaba ("Acceso activo" / "Invitación enviada").
+      access: deactivated ? (
+        <Badge tone="critical">
+          Baja · {u.deactivatedAt!.toLocaleDateString("es-ES", { day: "numeric", month: "short" })}
+        </Badge>
+      ) : (
+        <Badge tone={active ? "good" : "warning"}>{active ? "Activo" : "Invitación"}</Badge>
+      ),
+      actions: (
+        <StaffRowActions
+          staff={{
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            centerId: u.centerId,
+            visibleInApp: u.visibleInApp,
+            deactivated,
+          }}
+          canEdit={options.canEdit}
+          canDelete={options.canDelete}
+        />
+      ),
     },
   };
 }

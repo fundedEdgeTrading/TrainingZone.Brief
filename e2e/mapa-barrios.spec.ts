@@ -10,7 +10,7 @@ import { loginAs } from "./helpers";
 test.describe("RB-LEAD-010 — Mapa de barrios", () => {
   test("dirección abre el mapa desde el panel y lee las seis métricas", async ({ page }) => {
     // Dirección aterriza en /dashboard al iniciar sesión.
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
 
     await page.getByRole("link", { name: "Mapa de barrios" }).click();
     await page.waitForURL("**/mapa-barrios");
@@ -45,7 +45,7 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
   });
 
   test("el ranking pone primero el peor barrio en Conversión y el mejor en Clientes", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios");
 
     const rows = page.locator("button", { has: page.locator("span.tz-nums") });
@@ -68,7 +68,7 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
   });
 
   test("el selector de ciudad reencuadra sobre los barrios de la otra ciudad", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios");
 
     await expect(page.getByText(/Zaragoza · \d+ centros?/)).toBeVisible();

@@ -30,7 +30,7 @@ function fieldByLabel(scope: Locator, label: string, nth = 0) {
 
 test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
   test("dirección da de alta un socio con dos bonos en centros distintos", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/members");
 
     await page.getByRole("button", { name: "+ Nuevo socio" }).click();
@@ -73,7 +73,7 @@ test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
   });
 
   test("dirección añade un bono más a un socio ya existente desde su ficha", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/members");
 
     // Alta con un único bono, para luego añadirle un segundo desde la ficha.

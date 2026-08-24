@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
 
   const [staff, centers] = await Promise.all([
     prisma.user.findMany({
-      where: { orgId: claims.orgId, role: { not: "MEMBER" } },
+      // La app nativa no tiene pantalla de reincorporación: enseña la plantilla
+      // viva y nada más (RB-RRHH-014).
+      where: { orgId: claims.orgId, role: { not: "MEMBER" }, deactivatedAt: null },
       orderBy: [{ role: "asc" }, { name: "asc" }],
       select: {
         id: true,

@@ -97,9 +97,15 @@ export async function authenticate(
   return { ok: true, identityId: identity.id, memberships };
 }
 
+/**
+ * `deactivatedAt: null` en las dos: una baja de plantilla (RB-RRHH-014) deja de
+ * ser una membresía a todos los efectos. Sin esto seguía sirviendo para entrar
+ * (y para saltar a esa organización desde otra), porque la baja con histórico
+ * conserva la fila del usuario a propósito.
+ */
 export async function membershipsFor(identityId: string): Promise<Membership[]> {
   const rows = await prisma.user.findMany({
-    where: { identityId },
+    where: { identityId, deactivatedAt: null },
     select: MEMBERSHIP_SELECT,
     orderBy: { createdAt: "asc" },
   });
@@ -109,7 +115,7 @@ export async function membershipsFor(identityId: string): Promise<Membership[]> 
 /** RB-ID-004: guarda del conmutador de organización — se verifica en servidor, nunca se confía del cliente. */
 export async function membershipIn(identityId: string, orgId: string): Promise<Membership | null> {
   const row = await prisma.user.findFirst({
-    where: { identityId, orgId },
+    where: { identityId, orgId, deactivatedAt: null },
     select: MEMBERSHIP_SELECT,
   });
   return row ? toMembership(row) : null;

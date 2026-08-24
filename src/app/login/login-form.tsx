@@ -10,8 +10,8 @@ import { resolveLoginTargets, type LoginTarget } from "./actions";
 
 const DEMO_USERS = [
   {
-    email: "sergio@trainingzone.es",
-    label: "Sergio — Dirección",
+    email: "direccion@trainingzone.es",
+    label: "Carmen — Dirección",
     desc: "Ámbito global, todos los centros",
   },
   {
@@ -54,6 +54,11 @@ const DEMO_USERS = [
     label: "Álvaro — Socio",
     desc: "Solo bono de entrenamiento personal",
   },
+  {
+    email: "sergio@trainingzone.es",
+    label: "Sergio — Admin plataforma",
+    desc: "Soporte de Apta: organizaciones, anuncios y auditoría",
+  },
 ];
 
 const DEMO_PASSWORD = "demo1234";
@@ -67,6 +72,11 @@ export default function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") ?? "/dashboard";
+  // `requireSession` manda aquí con `?baja=1` a quien conserva la cookie pero
+  // ya no está en plantilla (RB-RRHH-014). Sin este aviso, el reintento con
+  // credenciales correctas devolvía "credenciales incorrectas" y parecía un
+  // fallo de contraseña.
+  const removedFromStaff = params.get("baja") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -196,6 +206,12 @@ export default function LoginForm() {
           acceso demo
           <div className="h-px bg-tz-linen flex-1" />
         </div>
+
+        {removedFromStaff && (
+          <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">
+            Tu cuenta ya no tiene acceso a esta organización. Habla con la dirección de tu centro.
+          </p>
+        )}
 
         <form
           onSubmit={(e) => {

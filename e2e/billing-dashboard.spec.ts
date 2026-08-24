@@ -3,7 +3,7 @@ import { loginAs } from "./helpers";
 
 test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
   test("el cobro por Stripe muestra el aviso de configuración y el manual sigue disponible", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/billing");
 
     await expect(page.getByRole("heading", { name: "Cobro por Stripe" })).toBeVisible();
@@ -17,7 +17,7 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
     // Dirección ya aterriza en /dashboard al iniciar sesión: un `goto` aquí
     // repetiría la navegación que acaba de ocurrir en vez de esperar a que
     // termine (RB-E2E: no navegar a la ruta en la que ya estás).
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
 
     await expect(page.getByText("LTV medio por cliente")).toBeVisible();
     await expect(page.getByText("Ticket medio")).toBeVisible();

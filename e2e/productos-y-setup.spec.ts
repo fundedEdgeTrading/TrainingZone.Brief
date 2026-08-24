@@ -19,7 +19,7 @@ async function chooseType(page: Page, label: string) {
 
 test.describe("F4 — Productos y puesta en marcha", () => {
   test("dirección puede crear un producto y archivarlo sin perder el histórico", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/organization");
 
     const name = `Bono E2E ${Date.now()}`;
@@ -47,7 +47,7 @@ test.describe("F4 — Productos y puesta en marcha", () => {
   });
 
   test("un bono sin sesiones incluidas se rechaza con un motivo claro", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/organization");
 
     const form = newProductForm(page);
@@ -60,7 +60,7 @@ test.describe("F4 — Productos y puesta en marcha", () => {
   });
 
   test("un precio de 0 o negativo se rechaza", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/organization");
 
     const form = newProductForm(page);
@@ -72,7 +72,7 @@ test.describe("F4 — Productos y puesta en marcha", () => {
   });
 
   test("la puesta en marcha refleja el estado real de la organización", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/puesta-en-marcha");
 
     await expect(page.getByRole("heading", { name: /Pon en marcha tu centro|Todo listo/ })).toBeVisible();

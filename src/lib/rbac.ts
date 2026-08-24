@@ -129,6 +129,11 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
     { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },
+    // Dirección de centro entra en Organización solo por la plantilla: la ve
+    // acotada a SUS centros y sin marca, productos ni alta de personal (la
+    // página gatea esas secciones por `canManageOrg`/`canManageStaff`). Sin
+    // esta entrada no tendría desde dónde dar de baja a un trabajador suyo.
+    { href: "/organization", label: "Organización", section: "Administración", icon: "organizacion" },
     { href: "/rrhh", label: "RRHH", section: "Administración", icon: "rrhh" },
   ],
   // Un entrenador no gestiona personal: RRHH fuera. Sus 5 items caben en una
@@ -225,6 +230,23 @@ export function canManageMesocycles(role: Role): boolean {
 // Gestión de personal e imputación a centros (RRHH además de dirección/plataforma).
 export function canManageStaff(role: Role): boolean {
   return role === "OWNER" || role === "PLATFORM_ADMIN" || role === "HR_MANAGER";
+}
+
+// Ver la plantilla y editar la ficha de un trabajador (nombre, rol, centro
+// base, visibilidad en la app). Dirección de centro entra aquí —a diferencia
+// del alta, que sigue siendo de organización y RRHH— pero solo sobre las
+// personas de sus centros: el ámbito no lo da este predicado, lo aplica
+// `staffScopeFilter` (lib/staff-queries.ts) sobre cada consulta.
+export function canEditStaff(role: Role): boolean {
+  return canManageStaff(role) || role === "CENTER_DIRECTOR";
+}
+
+// Baja de plantilla (RB-RRHH-014): EXCLUSIVO de dirección —de la organización
+// o del centro—, igual que la baja de un socio. RRHH da de alta e imputa, pero
+// no saca a nadie del equipo: sacar a alguien le corta el acceso y le quita la
+// imputación en todos sus centros, y esa es una decisión de quien dirige.
+export function canDeleteStaff(role: Role): boolean {
+  return role === "OWNER" || role === "PLATFORM_ADMIN" || role === "CENTER_DIRECTOR";
 }
 
 // Alta de organización y centros: solo administración de la organización.
@@ -333,7 +355,7 @@ export function defaultRouteForRole(role: Role): string {
 }
 
 export const ROLE_LABEL: Record<Role, string> = {
-  OWNER: "Dirección (Sergio)",
+  OWNER: "Dirección de organización",
   CENTER_DIRECTOR: "Dirección de centro",
   TRAINER: "Entrenador",
   RECEPTION: "Recepción",

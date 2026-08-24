@@ -16,7 +16,10 @@ export async function POST(req: NextRequest) {
   if (!result.ok) return apiError("Sesión expirada, vuelve a iniciar sesión.", 401);
 
   const user = await prisma.user.findUnique({ where: { id: result.userId } });
-  if (!user) return apiError("Sesión expirada, vuelve a iniciar sesión.", 401);
+  // Una baja de plantilla (RB-RRHH-014) borra los refresh token de la persona,
+  // así que no debería llegar ninguno; se comprueba igual porque este es el
+  // único punto en el que la app nativa vuelve a pasar por la base de datos.
+  if (!user || user.deactivatedAt) return apiError("Sesión expirada, vuelve a iniciar sesión.", 401);
 
   const accessToken = await signAccessToken({ sub: user.id, role: user.role, orgId: user.orgId, centerId: user.centerId });
   return apiOk({ accessToken, refreshToken: result.token });

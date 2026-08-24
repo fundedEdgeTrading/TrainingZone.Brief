@@ -32,7 +32,7 @@ export async function requestWorkoutProgram(orgId: string, memberId: string): Pr
 
   // Ya no hay un entrenador fijo del socio al que avisar: la notificación va
   // siempre a dirección del centro (OWNER/CENTER_DIRECTOR de la organización).
-  const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] } }, select: { id: true } });
+  const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] }, deactivatedAt: null }, select: { id: true } });
   for (const director of directors) {
     await createNotificationOnce({
       orgId,

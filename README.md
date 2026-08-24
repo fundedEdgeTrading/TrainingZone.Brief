@@ -56,13 +56,14 @@ Abrir `http://localhost:3000` — redirige a `/login`.
 
 | Email | Rol | Qué ver |
 |---|---|---|
-| `sergio@trainingzone.es` | Dirección (Owner) | Panel de control, todos los centros, reglas de aptitud, auditoría |
+| `direccion@trainingzone.es` | Dirección de organización (Owner) | Panel de control, todos los centros, reglas de aptitud, auditoría |
 | `direccion.lajota@trainingzone.es` | Dirección de centro | Panel, socios, agenda, cobros, retención (ámbito de su centro) |
 | `marcos.iglesias@trainingzone.es` | Entrenador Admin | Aforo por defecto de su centro y ajuste de bonos |
 | `entrenador@trainingzone.es` | Entrenador (Dani Herrero) | Agenda, Session Brief + Debrief, semáforo de aptitud |
 | `recepcion.lajota@trainingzone.es` | Recepción | Socios, agenda, cobros — **sin acceso a datos de salud** |
 | `rrhh@trainingzone.es` | RRHH | Organización: alta de centros y personal, imputación multi-centro — **sin acceso a datos de salud** |
 | `socio@trainingzone.es` | Socio (Marta García López) | Portal: reservar clase, progreso, transparencia de adaptaciones |
+| `sergio@trainingzone.es` | Admin de plataforma | Soporte de Apta: organizaciones, anuncios y auditoría |
 
 Cada centro tiene **dos usuarios por rol** (dirección, entrenador admin,
 entrenador y recepción), para poder comprobar que el alcance se resuelve por

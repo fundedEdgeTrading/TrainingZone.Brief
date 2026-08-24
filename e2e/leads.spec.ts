@@ -24,13 +24,13 @@ test.describe("F8 — Embudo de leads", () => {
 
     await expect(page.getByText("¡Gracias!")).toBeVisible({ timeout: 10_000 });
 
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto(`/leads?q=${uniquePhone}`);
     await expect(page.getByText("Playwright Tester")).toBeVisible();
   });
 
   test("dirección puede ver el lead sin responsable y reclamarlo", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/leads?q=Marina");
     await expect(page.getByText("Marina Castillo")).toBeVisible();
     const card = page.locator("div", { hasText: "Marina Castillo" }).first();
@@ -42,7 +42,7 @@ test.describe("F8 — Embudo de leads", () => {
   });
 
   test("ficha de lead: bitácora y archivado por no cierre", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/leads?q=Pedro");
     await page.getByText("Pedro Salinas").click();
     await expect(page.getByRole("heading", { name: /Pedro Salinas|Seguimiento/i }).first()).toBeVisible().catch(() => {});

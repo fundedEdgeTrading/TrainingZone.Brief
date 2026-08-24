@@ -2948,9 +2948,11 @@ const ORGS: OrgSeedConfig[] = [
     // mismo centro es lo que revela si el alcance se resuelve por persona o por
     // centro (y deja probar traspasos sin inventar usuarios a mano). Los roles de
     // ámbito de organización no se replican por centro: OWNER es único y RRHH va
-    // en pareja para toda la organización. PLATFORM_ADMIN no es de la org.
+    // en pareja para toda la organización. PLATFORM_ADMIN no es de la org: es el
+    // soporte de Apta, y en esta demo lo lleva la misma persona que montó la
+    // plataforma (sergio@), no un usuario aparte.
     staff: [
-      { name: "Sergio Martín", email: "sergio@trainingzone.es", role: "OWNER", centerKey: null },
+      { name: "Carmen Otal", email: "direccion@trainingzone.es", role: "OWNER", centerKey: null },
       // La Jota
       { name: "Beatriz Ruiz", email: "direccion.lajota@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "lajota" },
       { name: "Hugo Lacasa", email: "direccion2.lajota@trainingzone.es", role: "CENTER_DIRECTOR", centerKey: "lajota" },
@@ -2981,7 +2983,7 @@ const ORGS: OrgSeedConfig[] = [
       // Organización y plataforma
       { name: "Cristina Molina", email: "rrhh@trainingzone.es", role: "HR_MANAGER", centerKey: null },
       { name: "Rosa Sainz", email: "rrhh2@trainingzone.es", role: "HR_MANAGER", centerKey: null },
-      { name: "Piensaenweb Admin", email: "admin@piensaenweb.dev", role: "PLATFORM_ADMIN", centerKey: null },
+      { name: "Sergio Martín", email: "sergio@trainingzone.es", role: "PLATFORM_ADMIN", centerKey: null },
     ],
     extraImputaciones: [
       { email: "entrenador@trainingzone.es", centerKey: "puertacarmen", role: "TRAINER", allocationPct: 40, primaryAllocationPct: 60 },
@@ -3108,10 +3110,10 @@ async function main() {
   console.log("TRAINING ZONE · centros: La Jota, Puerta del Carmen y Santander");
   console.log("Usuarios demo (contraseña: demo1234):");
   console.log("  Organización (roles de ámbito global, no por centro)");
-  console.log("    sergio@trainingzone.es                       Dirección de organización (Owner)");
+  console.log("    direccion@trainingzone.es                    Dirección de organización (Carmen Otal · Owner)");
   console.log("    rrhh@trainingzone.es                         RRHH (Cristina Molina)");
   console.log("    rrhh2@trainingzone.es                        RRHH (Rosa Sainz)");
-  console.log("    admin@piensaenweb.dev                        Admin de plataforma");
+  console.log("    sergio@trainingzone.es                       Admin de plataforma (Sergio Martín)");
   console.log("  La Jota — dos usuarios por rol");
   console.log("    direccion.lajota@trainingzone.es             Dirección de centro (Beatriz Ruiz)");
   console.log("    direccion2.lajota@trainingzone.es            Dirección de centro (Hugo Lacasa)");

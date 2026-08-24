@@ -17,7 +17,7 @@ const RSC_DASHBOARD = /\/dashboard\?[^ ]*_rsc=/;
 
 test.describe("Panel de control — filtros de centro y periodo", () => {
   test("el velo de marca cubre la recarga y la deja en la URL", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
 
     await page.route(RSC_DASHBOARD, async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -41,7 +41,7 @@ test.describe("Panel de control — filtros de centro y periodo", () => {
   });
 
   test("una recarga rápida no enseña el velo", async ({ page }) => {
-    await loginAs(page, "sergio@trainingzone.es");
+    await loginAs(page, "direccion@trainingzone.es");
 
     // Sin retardo: el panel se recarga muy por debajo del umbral de 400 ms, y
     // taparlo con un velo que aparece y se va sería peor que no poner nada.

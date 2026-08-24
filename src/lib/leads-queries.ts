@@ -290,7 +290,7 @@ export async function runLeadOwnerAlertRule(orgId: string) {
   if (!staleLeads.length) return 0;
 
   const directors = await prisma.user.findMany({
-    where: { orgId, OR: [{ role: "OWNER" }, { role: "CENTER_DIRECTOR" }] },
+    where: { orgId, OR: [{ role: "OWNER" }, { role: "CENTER_DIRECTOR" }], deactivatedAt: null },
     select: { id: true, role: true, centerId: true },
   });
 

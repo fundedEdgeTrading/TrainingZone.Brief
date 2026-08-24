@@ -196,6 +196,14 @@ model User {
   // `Identity` ni en `Member`): el personal no tiene ficha de socio y las
   // preferencias de interfaz ya se guardan por membresía.
   theme        ThemePreference @default(LIGHT)
+  // Baja de plantilla (RB-RRHH-014). Marcar en vez de borrar es lo único que
+  // permite sacar a alguien del equipo sin llevarse por delante lo que cuelga
+  // de su fila y no es suyo: el registro de jornada (de conservación
+  // obligatoria), los mesociclos de sus socios, las valoraciones que recibió o
+  // el debrief que firmó. Cuando no hay nada de eso, la baja sí borra la fila
+  // (ver `removeStaffMember` en lib/staff-lifecycle.ts). Quien está de baja no
+  // sale en la plantilla, no se puede asignar a nada y no puede entrar.
+  deactivatedAt DateTime?
   createdAt    DateTime @default(now())
 
   identity              Identity           @relation(fields: [identityId], references: [id], onDelete: Cascade)
@@ -233,6 +241,7 @@ model User {
   @@unique([orgId, email])
   @@index([identityId])
   @@index([orgId])
+  @@index([orgId, deactivatedAt])
 }
 
 // ---------- Invitaciones (F7 self-service + alta de personal/socios) ----------
