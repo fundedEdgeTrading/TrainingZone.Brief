@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { addHealthRecord, resolveHealthRecordAction, addMemberNote, resendMemberWelcome } from "./actions";
+import { useRef, useState, useTransition } from "react";
+import type { HealthStatus } from "@prisma/client";
+import { addHealthRecord, updateHealthRecordStatusAction, addMemberNote, resendMemberWelcome } from "./actions";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useFocusRequest } from "./section-rail";
+import { HEALTH_STATUSES, HEALTH_STATUS_HINT, HEALTH_STATUS_LABEL } from "@/lib/health-status";
 
 // Mismas clases que el control de field.tsx, para los <textarea> multilínea.
 const CONTROL =
@@ -15,6 +17,10 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [type, setType] = useState("INJURY");
+  // Con qué precisión se conoce la fecha de la lesión. Es un dato del socio, no
+  // del formulario: casi nadie recuerda el día exacto de una molestia que
+  // arrastra, y forzar un día inventado envenena el "hace X" de la ficha.
+  const [precision, setPrecision] = useState("UNKNOWN");
   const toast = useToast();
 
   return (
@@ -26,6 +32,7 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
           if (result.ok) {
             formRef.current?.reset();
             setType("INJURY");
+            setPrecision("UNKNOWN");
             toast.success("Registro de salud guardado.");
           } else {
             toast.error(result.error);
@@ -67,6 +74,29 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
           <option value="HIGH">Alta</option>
         </Select>
       </Field>
+      <Field
+        label="Fecha de la lesión"
+        hint="Cuándo se produjo, no cuándo se registra. De aquí sale el tiempo transcurrido de la ficha."
+      >
+        <Select name="injuryDatePrecision" value={precision} onChange={(e) => setPrecision(e.target.value)}>
+          <option value="UNKNOWN">No se conoce</option>
+          <option value="EXACT">Día exacto</option>
+          <option value="MONTH">Solo mes y año</option>
+        </Select>
+      </Field>
+      {precision !== "UNKNOWN" && (
+        <Field
+          label={precision === "MONTH" ? "Mes de la lesión" : "Día de la lesión"}
+          className="sm:col-span-2"
+          hint={precision === "MONTH" ? "El tiempo transcurrido se redondeará a meses." : undefined}
+        >
+          {precision === "MONTH" ? (
+            <Input type="month" name="injuryMonth" required max={currentMonth()} />
+          ) : (
+            <Input type="date" name="injuryDate" required max={currentDay()} />
+          )}
+        </Field>
+      )}
       <div className="sm:justify-self-end">
         <Button type="submit" disabled={pending}>
           {pending && <ButtonSpinner />}
@@ -77,48 +107,86 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
   );
 }
 
-export function ResolveHealthButton({ recordId, memberId }: { recordId: string; memberId: string }) {
+/** Hoy en el formato de `<input type="date">` / `type="month"`, para el tope `max`. */
+function currentDay() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Fase del registro de salud. Sustituye al botón único "Marcar resuelta", que
+ * solo sabía hacer un salto de los cuatro posibles: una lesión pasa por
+ * rehabilitación antes de estar resuelta, y algunas se quedan en crónicas.
+ *
+ * Cada cambio se audita (quién y cuándo) en `lib/health-access.ts`; por eso no
+ * hay paso de confirmación: volver atrás es elegir otra fase, y el rastro de lo
+ * que se tocó queda igualmente.
+ */
+export function HealthStatusSelect({
+  recordId,
+  memberId,
+  status,
+}: {
+  recordId: string;
+  memberId: string;
+  status: HealthStatus;
+}) {
   const [pending, startTransition] = useTransition();
-  const [confirming, setConfirming] = useState(false);
+  // Optimista: el desplegable enseña ya la fase elegida mientras el servidor
+  // revalida la ruta, en vez de saltar atrás y volver.
+  const [value, setValue] = useState<HealthStatus>(status);
   const toast = useToast();
 
-  useEffect(() => {
-    if (!confirming) return;
-    const t = setTimeout(() => setConfirming(false), 3000);
-    return () => clearTimeout(t);
-  }, [confirming]);
-
-  function handleResolve() {
+  function handleChange(next: string) {
+    const target = next as HealthStatus;
+    if (target === value) return;
+    const previous = value;
+    setValue(target);
     startTransition(async () => {
-      const result = await resolveHealthRecordAction(recordId, memberId);
+      const result = await updateHealthRecordStatusAction(recordId, memberId, target);
       if (result.ok) {
-        toast.success("Registro marcado como resuelto.");
+        toast.success(`Estado actualizado a "${HEALTH_STATUS_LABEL[target].toLowerCase()}".`);
       } else {
+        setValue(previous);
         toast.error(result.error);
       }
     });
   }
 
-  if (confirming) {
-    return (
-      <button
-        disabled={pending}
-        onClick={handleResolve}
-        className="text-xs font-semibold text-good underline underline-offset-[3px] hover:opacity-80 transition-opacity"
-      >
-        ¿Confirmar?
-      </button>
-    );
-  }
-
   return (
-    <button
-      disabled={pending}
-      onClick={() => setConfirming(true)}
-      className="text-xs font-semibold text-brand-text-2 underline underline-offset-[3px] hover:text-good transition-colors duration-150"
-    >
-      Marcar resuelta
-    </button>
+    <div className="flex items-center gap-2">
+      {pending && <ButtonSpinner />}
+      <Select
+        name={`status-${recordId}`}
+        value={value}
+        disabled={pending}
+        onChange={(e) => handleChange(e.target.value)}
+        className="w-[188px]"
+      >
+        {HEALTH_STATUSES.map((s) => (
+          <option key={s} value={s}>
+            {HEALTH_STATUS_LABEL[s]}
+          </option>
+        ))}
+      </Select>
+    </div>
+  );
+}
+
+/** Ayuda de las fases, para no tener que adivinar qué significa cada una. */
+export function HealthStatusLegend() {
+  return (
+    <ul className="text-[11px] text-brand-faint flex flex-col gap-0.5">
+      {HEALTH_STATUSES.map((s) => (
+        <li key={s}>
+          <span className="font-semibold text-brand-muted">{HEALTH_STATUS_LABEL[s]}</span>: {HEALTH_STATUS_HINT[s]}
+        </li>
+      ))}
+    </ul>
   );
 }
 
