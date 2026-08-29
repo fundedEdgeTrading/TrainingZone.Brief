@@ -262,7 +262,7 @@ dirigido efectivamente**, que puede ser distinto del entrenador asignado origina
 antes de cada sesión reservada (EP o grupo). La reserva confirmada debe aparecer siempre
 visible en "Mis próximas sesiones" dentro de su perfil.
 
-**`RB-RES-009`** — **Aviso automático a la lista de espera.** Cuando una cancelación (del cliente
+**`RB-RES-010`** — **Aviso automático a la lista de espera.** Cuando una cancelación (del cliente
 o del staff, `RB-AGENDA-008`) libera una plaza de una sesión que tenía lista de espera, se avisa
 por email a **todos** los que esperan ese día, a la vez. **No hay promoción automática**: la plaza
 es de quien la reclame primero, con el mismo botón "Reservar" de siempre — el orden de la cola
@@ -373,6 +373,24 @@ sesión que su entrenador no podía abrir ni editar. Las reservas de domingo
 **anteriores** siguen visibles y cancelables, para no dejar a nadie atrapado con
 una reserva que no puede soltar. El predicado único es `isOperatingDay`
 (`agenda-utils.ts`), que comparten rejilla y motor de reservas.
+
+**`RB-RES-009`** — Marcar una reserva como **"No asistió"** exige registrar el
+**motivo** (`Booking.noShowReason`: no avisó / avisó tarde / causa justificada /
+error del centro) y **decidir en ese momento si la sesión vuelve al bono**
+(`Booking.noShowRefunded`). Antes la falta no devolvía nunca —a diferencia de la
+cancelación a tiempo (`RB-RES-006`)— y no dejaba rastro del porqué: una gripe
+avisada y un plantón se contaban igual. La devolución reutiliza el saldo de
+`Subscription.sessionsRemaining` y se cierra sobre `noShowRefunded`, así que
+volver a marcar la misma falta no puede devolver la sesión dos veces;
+rectificarla (marcar check-in) la vuelve a descontar. Por defecto **no** se
+devuelve, que es el comportamiento que tenía el sistema.
+
+**Tres faltas seguidas sin avisar** del mismo cliente (motivo distinto de "avisó
+tarde" y "causa justificada"; una asistencia corta la racha, una cancelación a
+tiempo no) abren una tarea para **dirección** del centro, con el motor de
+`Notification`/`createNotificationOnce` que ya usan el resto de alertas
+automáticas. Se comprueba al marcar la falta y, como red de seguridad, en la
+pasada de `/api/jobs/run`.
 
 **`RB-PAGO-008`** — El saldo de sesiones de un bono (`Subscription.sessionsRemaining`) se puede
 **ajustar a mano** desde la pestaña "Bonos y calendario" de la ficha del socio. Es una corrección

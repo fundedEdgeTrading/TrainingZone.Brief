@@ -1,4 +1,4 @@
-import type { ClassSession, Prisma } from "@prisma/client";
+import type { ClassSession, NoShowReason, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { centerScopeFor, type ScopedUser } from "@/lib/center-scope";
 import { isSameDay, occursOn, resolveOccurrenceDate } from "@/lib/session-occurrences";
@@ -569,6 +569,116 @@ export async function bookSessionForMemberAsStaff(
     if (error instanceof StaffBookingError) return { ok: false as const, error: error.reason };
     throw error;
   }
+}
+
+/**
+ * RB-RES-009: marca la reserva como falta, con motivo, y aplica la decisión del
+ * entrenador sobre el bono.
+ *
+ * Hasta ahora una falta no devolvía nunca la sesión (a diferencia de la
+ * cancelación a tiempo, RB-RES-006) y tampoco dejaba rastro de por qué: una
+ * gripe avisada y un plantón acababan en el mismo `NO_SHOW`. Ahora el motivo es
+ * obligatorio y la devolución es una decisión explícita, caso a caso.
+ *
+ * La devolución reutiliza la misma mecánica que `cancelSessionBooking`
+ * (`Subscription.sessionsRemaining` + 1 sobre el bono del que salió la reserva),
+ * pero se cierra sobre `noShowRefunded` en vez de sobre `subscriptionId`: la
+ * reserva conserva su bono, así que rectificar la falta puede volver a
+ * descontarla (`clearBookingNoShow`). Que el incremento vaya condicionado a que
+ * la bandera pase de false a true es lo que impide devolver dos veces la misma
+ * sesión si se marca dos veces (o dos personas a la vez).
+ */
+export async function markBookingNoShow(
+  orgId: string,
+  bookingId: string,
+  opts: { sessionId: string; reason: NoShowReason; refundSession: boolean }
+) {
+  const booking = await prisma.booking.findFirst({
+    // Acotado a la sesión Y a la organización, igual que el check-in: el id de
+    // la reserva viaja desde el cliente y por sí solo no dice de quién es.
+    //
+    // WAITLISTED y CANCELLED quedan fuera: no hay asistencia que registrar en
+    // una reserva que nunca ocupó plaza. ATTENDED sí entra, porque marcar la
+    // falta es también rectificar un check-in dado por error.
+    where: {
+      id: bookingId,
+      sessionId: opts.sessionId,
+      session: { orgId },
+      status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] },
+    },
+    select: { id: true, memberId: true, subscriptionId: true, noShowRefunded: true },
+  });
+  if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  const refunded = await prisma.$transaction(async (tx) => {
+    const applied = await tx.booking.updateMany({
+      where: { id: booking.id, status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+      data: { status: "NO_SHOW", checkedInAt: null, noShowReason: opts.reason },
+    });
+    if (applied.count === 0) return null;
+
+    // Sin bono del que salió la reserva no hay nada que devolver (cuota
+    // ilimitada, o sesión agendada sin cargo).
+    if (!opts.refundSession || !booking.subscriptionId) return booking.noShowRefunded;
+
+    const claimed = await tx.booking.updateMany({
+      where: { id: booking.id, noShowRefunded: false },
+      data: { noShowRefunded: true },
+    });
+    if (claimed.count > 0) {
+      await tx.subscription.update({
+        where: { id: booking.subscriptionId },
+        data: { sessionsRemaining: { increment: 1 } },
+      });
+    }
+    return true;
+  });
+  if (refunded === null) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  return { ok: true as const, memberId: booking.memberId, refunded };
+}
+
+/**
+ * Deshace una falta: la reserva vuelve al estado que se le indique (asistió, o
+ * de nuevo reservada) y se borra el motivo. Si la falta había devuelto la
+ * sesión al bono, se vuelve a descontar — si no, rectificar un "No asistió"
+ * marcado por error regalaría una sesión cada vez.
+ */
+export async function clearBookingNoShow(orgId: string, bookingId: string, nextStatus: "BOOKED" | "ATTENDED") {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, session: { orgId } },
+    select: { id: true, subscriptionId: true, noShowRefunded: true },
+  });
+  if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  await prisma.$transaction(async (tx) => {
+    // La bandera es también aquí el cierre de la operación, en el mismo UPDATE
+    // que la baja: dos rectificaciones simultáneas no pueden descontar dos
+    // veces una sesión que solo se devolvió una.
+    const released = await tx.booking.updateMany({
+      where: { id: booking.id, noShowRefunded: true },
+      data: { noShowRefunded: false },
+    });
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        status: nextStatus,
+        checkedInAt: nextStatus === "ATTENDED" ? new Date() : null,
+        noShowReason: null,
+      },
+    });
+
+    if (released.count === 0 || !booking.subscriptionId) return;
+    // Solo se descuenta si el bono tiene saldo: dejarlo en negativo rompería
+    // las cuentas de `bonoUsage` (session-balance.ts). Un bono ilimitado
+    // (`sessionsRemaining` null) no se toca: NULL - 1 sigue siendo NULL.
+    await tx.subscription.updateMany({
+      where: { id: booking.subscriptionId, sessionsRemaining: { gt: 0 } },
+      data: { sessionsRemaining: { decrement: 1 } },
+    });
+  });
+
+  return { ok: true as const };
 }
 
 export async function deleteSession(orgId: string, sessionId: string) {

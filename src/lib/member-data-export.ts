@@ -89,7 +89,10 @@ export async function getMemberDataExport(memberId: string) {
       descripcion: h.description,
       severidad: h.severity,
       estado: h.status,
+      fechaLesion: h.injuryDate,
+      fechaLesionAproximada: h.injuryDateApprox,
       reportadoEl: h.reportedAt,
+      ultimoCambioDeEstado: h.statusChangedAt,
     })),
     progresoFisico: progressEntries.map((p) => ({
       fecha: p.date,
