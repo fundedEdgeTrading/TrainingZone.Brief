@@ -1137,6 +1137,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
 
   // ---------- Salud (A.2.4) ----------
+  const minDate = (a: Date, b: Date) => (a.getTime() < b.getTime() ? a : b);
   const trainerAndOwnerIds = staffUsers.filter((u) => u.role === "TRAINER" || u.role === "OWNER").map((u) => u.id);
   const healthRecords: {
     id: string;
@@ -1146,6 +1147,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     description: string;
     severity: HealthSeverity;
     status: HealthStatus;
+    injuryDate: Date | null;
+    injuryDateApprox: boolean;
+    statusChangedAt: Date | null;
     reportedByUserId: string;
     reportedAt: Date;
     consentSignedAt: Date;
@@ -1158,6 +1162,16 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const reportedAt = addDays(m.joinedAt, randInt(5, Math.max(6, Math.floor((TODAY.getTime() - m.joinedAt.getTime()) / DAY))));
     if (Math.random() < 0.6) {
       const zone = pick(INJURY_ZONES);
+      // La lesión es anterior al registro: casi nadie llega el mismo día. Una de
+      // cada tres solo se recuerda por el mes (injuryDateApprox).
+      const injuryDate = addDays(reportedAt, -randInt(0, 45));
+      const approx = Math.random() < 0.33;
+      const status = weightedPick([
+        [HealthStatus.ACTIVE, 35],
+        [HealthStatus.IN_REHAB, 25],
+        [HealthStatus.RESOLVED, 30],
+        [HealthStatus.CHRONIC, 10],
+      ]);
       healthRecords.push({
         id: id(),
         memberId: m.id,
@@ -1165,7 +1179,12 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         zone,
         description: `Lesión: ${zone}, ${pick(["tendinopatía", "sobrecarga muscular", "esguince leve", "molestia crónica"])}`,
         severity: weightedPick([[HealthSeverity.LOW, 40], [HealthSeverity.MEDIUM, 45], [HealthSeverity.HIGH, 15]]),
-        status: Math.random() < 0.6 ? HealthStatus.ACTIVE : HealthStatus.RESOLVED,
+        status,
+        injuryDate: approx ? new Date(injuryDate.getFullYear(), injuryDate.getMonth(), 1) : injuryDate,
+        injuryDateApprox: approx,
+        // Nunca en el futuro: un "resuelta desde" posterior a hoy se lee como un fallo.
+        statusChangedAt:
+          status === HealthStatus.ACTIVE ? null : minDate(addDays(reportedAt, randInt(7, 60)), TODAY),
         reportedByUserId: pick(trainerAndOwnerIds),
         reportedAt,
         consentSignedAt: reportedAt,
@@ -1180,6 +1199,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         description: c.desc,
         severity: c.severity,
         status: HealthStatus.ACTIVE,
+        injuryDate: null,
+        injuryDateApprox: false,
+        statusChangedAt: null,
         reportedByUserId: pick(trainerAndOwnerIds),
         reportedAt,
         consentSignedAt: reportedAt,
@@ -1198,7 +1220,33 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       zone: "cervicales",
       description: "Lesión: cervicales, contractura recurrente por trabajo de oficina",
       severity: HealthSeverity.MEDIUM,
-      status: HealthStatus.ACTIVE,
+      // En rehabilitación: sigue siendo vigente (enciende el mismo semáforo que
+      // ACTIVE) y de paso la demo enseña la fase intermedia.
+      status: HealthStatus.IN_REHAB,
+      injuryDate: addDays(reportedAt, -11),
+      injuryDateApprox: false,
+      statusChangedAt: minDate(addDays(reportedAt, 21), TODAY),
+      reportedByUserId: trainerAndOwnerIds.length ? pick(trainerAndOwnerIds) : ownerId,
+      reportedAt,
+      consentSignedAt: reportedAt,
+    });
+  }
+  // Lesión crónica del socio en riesgo: es el caso que enciende el aviso
+  // permanente de la cabecera de la ficha, así que la demo lo tiene siempre.
+  for (const m of members.filter((m) => m.showcase === "atRisk")) {
+    const reportedAt = addDays(m.joinedAt, 40);
+    healthRecords.push({
+      id: id(),
+      memberId: m.id,
+      type: HealthRecordType.INJURY,
+      zone: "zona lumbar",
+      description: "Lesión: zona lumbar, hernia discal L4-L5 con limitación permanente",
+      severity: HealthSeverity.HIGH,
+      status: HealthStatus.CHRONIC,
+      // Solo recuerda el mes: capturada como aproximada a propósito.
+      injuryDate: new Date(m.joinedAt.getFullYear() - 1, m.joinedAt.getMonth(), 1),
+      injuryDateApprox: true,
+      statusChangedAt: minDate(addDays(reportedAt, 30), TODAY),
       reportedByUserId: trainerAndOwnerIds.length ? pick(trainerAndOwnerIds) : ownerId,
       reportedAt,
       consentSignedAt: reportedAt,
