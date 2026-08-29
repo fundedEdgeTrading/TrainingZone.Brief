@@ -1,30 +1,67 @@
 import { prisma } from "@/lib/prisma";
 import type { AssessmentKind } from "@prisma/client";
 import { addMonthsClamped } from "@/lib/date-utils";
-import { isInitialAnswers, schemaForKind, type AssessmentAnswers } from "./schemas";
+import { isInitialAnswers, assessmentSchemaFor, type AssessmentAnswers } from "./schemas";
+import {
+  DEFAULT_ASSESSMENT_CONFIG,
+  STANDARD_MILESTONES,
+  dueDateForMilestone,
+  isTogglableQuestion,
+  lenientConfig,
+  resolveMilestones,
+  type AssessmentConfig,
+  type AssessmentMilestoneDef,
+} from "./config";
 
 /**
- * Hitos de revisión desde el alta (schema.prisma, enum AssessmentKind). El cron
- * de F4 crea la valoración que toca; aquí solo se ordenan para la ficha.
+ * Configuración de valoraciones de una organización (hitos, preguntas apagadas y
+ * preguntas propias).
+ *
+ * Sin filas devuelve exactamente el estándar de F3, así que una organización que
+ * nunca haya abierto la pantalla de configuración se comporta como siempre. Las
+ * preguntas bloqueadas se ignoran aunque alguien haya escrito su fila a mano:
+ * el catálogo manda sobre la base de datos, no al revés.
  */
-export const ASSESSMENT_KIND_ORDER: AssessmentKind[] = ["INITIAL", "M1", "M3", "M6", "M9", "Y1"];
+export async function getAssessmentConfig(orgId: string): Promise<AssessmentConfig> {
+  const [milestones, toggles, custom] = await Promise.all([
+    prisma.assessmentMilestone.findMany({
+      where: { orgId },
+      select: { key: true, label: true, months: true },
+    }),
+    prisma.assessmentQuestionToggle.findMany({ where: { orgId }, select: { questionKey: true } }),
+    prisma.assessmentCustomQuestion.findMany({
+      where: { orgId },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+      select: { key: true, label: true, type: true, scope: true, required: true, active: true },
+    }),
+  ]);
 
-/** Meses desde el alta a los que vence cada hito. */
-export const ASSESSMENT_KIND_MONTHS: Record<AssessmentKind, number> = {
-  INITIAL: 0,
-  M1: 1,
-  M3: 3,
-  M6: 6,
-  M9: 9,
-  Y1: 12,
-};
+  return {
+    milestones: resolveMilestones(milestones),
+    disabledQuestions: toggles.map((t) => t.questionKey).filter(isTogglableQuestion),
+    customQuestions: custom,
+  };
+}
 
-// El recorte al último día del mes NO es opcional: con `setMonth` a secas, el
-// hito de un mes de un alta el 31 de enero cae el 3 de marzo — otro mes — y la
-// valoración de febrero no existe para nadie (F4 §5.2, cubierto por
-// src/lib/date-utils.test.ts).
+export { dueDateForMilestone };
+
+/** Hitos de una organización, ya ordenados por vencimiento. */
+export async function getAssessmentMilestones(orgId: string): Promise<AssessmentMilestoneDef[]> {
+  const rows = await prisma.assessmentMilestone.findMany({
+    where: { orgId },
+    select: { key: true, label: true, months: true },
+  });
+  return resolveMilestones(rows);
+}
+
+/**
+ * Vencimiento de un hito estándar con la periodicidad por defecto. Solo para
+ * quien no tiene la configuración a mano y trabaja con la valoración inicial,
+ * que vence el mismo día del alta en cualquier configuración razonable.
+ */
 export function dueDateForKind(joinedAt: Date, kind: AssessmentKind): Date {
-  return addMonthsClamped(joinedAt, ASSESSMENT_KIND_MONTHS[kind]);
+  const milestone = STANDARD_MILESTONES.find((m) => m.kind === kind);
+  return addMonthsClamped(joinedAt, milestone?.months ?? 0);
 }
 
 export async function listAssessmentsForMember(orgId: string, memberId: string) {
@@ -50,8 +87,15 @@ export async function getAssessment(orgId: string, assessmentId: string) {
  * pueden no encajar en el esquema de hoy. Se devuelve null en vez de reventar la
  * ficha del socio: la valoración se sigue listando, solo que sin detalle.
  */
-export function parseAnswers(kind: AssessmentKind, answers: unknown): AssessmentAnswers | null {
-  const parsed = schemaForKind(kind).safeParse(answers);
+export function parseAnswers(
+  kind: AssessmentKind,
+  answers: unknown,
+  config: AssessmentConfig = DEFAULT_ASSESSMENT_CONFIG
+): AssessmentAnswers | null {
+  // Al LEER no se exige lo que hoy esté activado: una valoración cerrada hace
+  // seis meses se contestó con la configuración de entonces, y volver a pedirle
+  // una pregunta que se activó después la dejaría sin detalle en la ficha.
+  const parsed = assessmentSchemaFor(kind, lenientConfig(config)).safeParse(answers);
   return parsed.success ? (parsed.data as AssessmentAnswers) : null;
 }
 

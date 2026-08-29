@@ -4,6 +4,7 @@ import { getMemberForUser } from "@/lib/portal-queries";
 import { getOrCreateConversation, listMessages } from "@/lib/chat";
 import { needsReconsent } from "@/lib/consent";
 import { getDueAssessmentForMember } from "@/lib/assessment-jobs";
+import { getAssessmentConfig } from "@/lib/assessments/queries";
 import { getPendingBirthdayGreeting } from "@/lib/birthday-jobs";
 import { resolveTimezone } from "@/lib/timezone";
 import { resolveFirstSessionStep } from "@/lib/member-first-session-queries";
@@ -33,16 +34,22 @@ export default async function PortalLayout({ children }: { children: React.React
       // sigue siendo navegable con el tabulador es pedirlo de mentira.
       const firstStep = await resolveFirstSessionStep(member);
       if (firstStep) {
-        const org = await prisma.organization.findUnique({
-          where: { id: session.user.orgId },
-          select: { name: true, logoUrl: true },
-        });
+        const [org, config] = await Promise.all([
+          prisma.organization.findUnique({
+            where: { id: session.user.orgId },
+            select: { name: true, logoUrl: true },
+          }),
+          // El muro es la mitad de socio de la valoración inicial: pregunta lo
+          // que el centro haya dejado en el cuestionario, ni más ni menos.
+          getAssessmentConfig(session.user.orgId),
+        ]);
         return (
           <FirstSessionWall
             step={firstStep.step}
             missing={firstStep.step === "profile" ? firstStep.missing : []}
             orgName={org?.name ?? "Training Zone"}
             orgLogoUrl={member.primaryCenter.logoUrl || org?.logoUrl || "/brand/tz-logo-white.png"}
+            disabledQuestions={config.disabledQuestions}
           />
         );
       }

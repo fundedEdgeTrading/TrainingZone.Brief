@@ -17,8 +17,8 @@ import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { getHealthRecordsForMember } from "@/lib/health-access";
-import { listAssessmentsForMember } from "@/lib/assessments/queries";
-import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
+import { listAssessmentsForMember, getAssessmentMilestones } from "@/lib/assessments/queries";
+import { milestoneLabelOf } from "@/lib/assessments/config";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
 import {
   canAdjustSessionBalance,
@@ -242,8 +242,18 @@ export default async function MemberDetailPage({
 
   const canSeeMesocycles = canManageMesocycles(session.user.role);
 
-  const [stats, healthRecords, notes, goalTemplates, centers, plans, assessments, mesocycles, retentionAlerts] =
-    await Promise.all([
+  const [
+    stats,
+    healthRecords,
+    notes,
+    goalTemplates,
+    centers,
+    plans,
+    assessments,
+    milestones,
+    mesocycles,
+    retentionAlerts,
+  ] = await Promise.all([
       getMemberAttendanceStats(member.id),
       getHealthRecordsForMember({
         memberId: member.id,
@@ -256,6 +266,8 @@ export default async function MemberDetailPage({
       listCentersForOrg(session.user.orgId),
       listActivePlansForOrg(session.user.orgId),
       listAssessmentsForMember(session.user.orgId, member.id),
+      // Los nombres de los hitos son los que haya puesto el centro (F-VAL).
+      getAssessmentMilestones(session.user.orgId),
       canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
       openRetentionAlertsByMember([member.id]),
     ]);
@@ -405,7 +417,7 @@ export default async function MemberDetailPage({
         id: `assessment-${a.id}`,
         day: fmtShortDay(a.completedAt),
         time: fmtTime(a.completedAt),
-        title: `${ASSESSMENT_KIND_LABEL[a.kind]} completada`,
+        title: `${milestoneLabelOf(a, milestones)} completada`,
         badges: [],
         feeling: null,
         body: null,
@@ -868,7 +880,7 @@ export default async function MemberDetailPage({
                         href={`/members/${member.id}/valoraciones/${a.id}`}
                         className="flex items-center justify-between gap-3 flex-wrap rounded-xl border border-brand-border p-[13px_16px] hover:border-brand-ink transition-colors duration-200"
                       >
-                        <span className="text-sm font-semibold">{ASSESSMENT_KIND_LABEL[a.kind]}</span>
+                        <span className="text-sm font-semibold">{milestoneLabelOf(a, milestones)}</span>
                         <span className="flex items-center gap-3 text-xs text-brand-muted tz-nums">
                           {a.completedAt ? (
                             <>

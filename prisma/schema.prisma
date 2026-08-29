@@ -65,24 +65,27 @@ model Organization {
   memberNotes       MemberNote[]
   invitations       Invitation[]
 
-  leads                  Lead[]
-  leadNotes              LeadNote[]
-  leadChannels           LeadChannel[]
-  noCloseReasons         NoCloseReason[]
-  clientGoals            ClientGoal[]
-  notifications          Notification[]
-  workoutPrograms        WorkoutProgram[]
-  selfAssessments        SelfAssessment[]
-  conversations          Conversation[]
-  timeClockEntries       TimeClockEntry[]
-  trainerRatings         TrainerRating[]
-  checkinScheduleConfigs CheckinScheduleConfig[]
-  referenceRanges        ReferenceRange[]
-  announcements          Announcement[]
-  onlineWorkouts         OnlineWorkout[]
-  assessments            Assessment[]
-  performanceMetrics     PerformanceMetric[]
-  mesocycles             Mesocycle[]
+  leads                     Lead[]
+  leadNotes                 LeadNote[]
+  leadChannels              LeadChannel[]
+  noCloseReasons            NoCloseReason[]
+  clientGoals               ClientGoal[]
+  notifications             Notification[]
+  workoutPrograms           WorkoutProgram[]
+  selfAssessments           SelfAssessment[]
+  conversations             Conversation[]
+  timeClockEntries          TimeClockEntry[]
+  trainerRatings            TrainerRating[]
+  checkinScheduleConfigs    CheckinScheduleConfig[]
+  referenceRanges           ReferenceRange[]
+  announcements             Announcement[]
+  onlineWorkouts            OnlineWorkout[]
+  assessments               Assessment[]
+  assessmentMilestones      AssessmentMilestone[]
+  assessmentQuestionToggles AssessmentQuestionToggle[]
+  assessmentCustomQuestions AssessmentCustomQuestion[]
+  performanceMetrics        PerformanceMetric[]
+  mesocycles                Mesocycle[]
 }
 
 model Center {
@@ -181,21 +184,21 @@ enum ThemePreference {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  identityId   String
-  orgId        String
-  centerId     String?
-  name         String
-  email        String // desnormalizado desde Identity: evita un join en cada listado
-  role         Role
-  image        String?
+  id            String          @id @default(cuid())
+  identityId    String
+  orgId         String
+  centerId      String?
+  name          String
+  email         String // desnormalizado desde Identity: evita un join en cada listado
+  role          Role
+  image         String?
   // D7 del handoff: si está activo, su foto y su nombre acompañan a las
   // sesiones que dirige en la app del socio.
-  visibleInApp Boolean  @default(true)
+  visibleInApp  Boolean         @default(true)
   // Tema de la aplicación elegido por la persona. Vive en `User` (no en
   // `Identity` ni en `Member`): el personal no tiene ficha de socio y las
   // preferencias de interfaz ya se guardan por membresía.
-  theme        ThemePreference @default(LIGHT)
+  theme         ThemePreference @default(LIGHT)
   // Baja de plantilla (RB-RRHH-014). Marcar en vez de borrar es lo único que
   // permite sacar a alguien del equipo sin llevarse por delante lo que cuelga
   // de su fila y no es suyo: el registro de jornada (de conservación
@@ -204,7 +207,7 @@ model User {
   // (ver `removeStaffMember` en lib/staff-lifecycle.ts). Quien está de baja no
   // sale en la plantilla, no se puede asignar a nada y no puede entrar.
   deactivatedAt DateTime?
-  createdAt    DateTime @default(now())
+  createdAt     DateTime        @default(now())
 
   identity              Identity           @relation(fields: [identityId], references: [id], onDelete: Cascade)
   organization          Organization       @relation(fields: [orgId], references: [id])
@@ -361,14 +364,14 @@ model Member {
   // El correo estrictamente transaccional (acceso, contraseña, cobros) no se
   // puede desactivar: es parte del servicio contratado y sin él el socio se
   // queda sin poder pagar ni entrar. Lo que sí se puede parar es todo lo demás.
-  notifyVacancies    Boolean     @default(true) // avisos de plaza liberada
-  notifyBirthday     Boolean     @default(true) // felicitación de cumpleaños
-  notifyAssessments  Boolean     @default(true) // recordatorio de valoración pendiente
+  notifyVacancies   Boolean   @default(true) // avisos de plaza liberada
+  notifyBirthday    Boolean   @default(true) // felicitación de cumpleaños
+  notifyAssessments Boolean   @default(true) // recordatorio de valoración pendiente
   /// Baja global de todo el correo no imprescindible. Se guarda la fecha, no un
   /// booleano, porque es la prueba de cuándo se ejerció la oposición (Art. 21 RGPD).
-  emailOptOutAt      DateTime?
-  notes              String?
-  createdAt          DateTime    @default(now())
+  emailOptOutAt     DateTime?
+  notes             String?
+  createdAt         DateTime  @default(now())
 
   // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen.
   // Ya no hay entrenador responsable fijo: el socio puede hacer EP con distintos
@@ -1457,6 +1460,12 @@ model Assessment {
   orgId          String
   memberId       String
   kind           AssessmentKind
+  /// Hito al que responde, cuando el centro lo ha añadido por su cuenta
+  /// (`AssessmentMilestone.key`). Null en los seis estándar, que ya quedan
+  /// nombrados por `kind`. Los añadidos llevan `kind = CUSTOM` y se distinguen
+  /// entre sí por esta clave: son configuración de cada organización, así que
+  /// no pueden ser valores del enum.
+  milestoneKey   String?
   dueDate        DateTime
   completedAt    DateTime?
   /// Cuándo el socio rellenó SU parte de la valoración inicial (F-ALTA: perfil,
@@ -1478,7 +1487,10 @@ model Assessment {
   @@index([memberId, kind])
 }
 
-/// Hitos de revisión desde el alta: inicial, mes 1/3/6/9 y aniversario.
+/// Hitos de revisión desde el alta: inicial, mes 1/3/6/9 y aniversario. Son el
+/// catálogo estándar, el que se aplica a una organización que no ha configurado
+/// nada; `CUSTOM` cubre los hitos que cada centro añade (AssessmentMilestone),
+/// que no pueden ser valores del enum porque se crean desde la app.
 enum AssessmentKind {
   INITIAL
   M1
@@ -1486,6 +1498,87 @@ enum AssessmentKind {
   M6
   M9
   Y1
+  CUSTOM
+}
+
+// ---------- Valoraciones configurables por organización ----------
+// Mismo patrón que CheckinScheduleConfig: la fila solo existe cuando el centro
+// se aparta del estándar, y su ausencia ES el valor por defecto. Así una
+// organización que nunca abra la pantalla se comporta exactamente como antes de
+// que esto existiera, sin necesidad de sembrar seis filas por organización.
+
+/// Periodicidad de las valoraciones de una organización. Una fila con la clave
+/// de un hito estándar ("M6") reescribe sus meses o su nombre; una fila con
+/// clave propia añade un hito nuevo —el caso de un centro que quiere revisar a
+/// los 18 meses—. Esta historia no contempla borrar ni reordenar los estándar.
+model AssessmentMilestone {
+  id        String   @id @default(cuid())
+  orgId     String
+  key       String
+  label     String
+  months    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, key])
+  @@index([orgId])
+}
+
+/// Preguntas del cuestionario estándar que un centro apaga. Solo se guardan las
+/// desactivadas: sin fila, la pregunta se hace, que es el comportamiento de
+/// siempre. Las preguntas bloqueadas (peso, screening, PAR-Q) no llegan aquí —
+/// el catálogo de `lib/assessments/config.ts` las marca y la acción las rechaza.
+model AssessmentQuestionToggle {
+  id          String   @id @default(cuid())
+  orgId       String
+  questionKey String
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, questionKey])
+  @@index([orgId])
+}
+
+/// Tipo de respuesta de una pregunta propia del centro. Catálogo corto a
+/// propósito: es un constructor simple, no un generador de formularios.
+enum AssessmentQuestionType {
+  TEXT
+  NUMBER
+  SCALE_1_5
+}
+
+/// A qué valoraciones se le hace una pregunta propia.
+enum AssessmentQuestionScope {
+  ALL
+  INITIAL
+  REVIEW
+}
+
+/// Pregunta añadida por el centro. Se responde en el mismo formulario que las
+/// estándar y se guarda dentro de `Assessment.answers`, bajo `custom[key]`: el
+/// cuestionario ya era Json justamente para no migrar por pregunta nueva.
+model AssessmentCustomQuestion {
+  id        String                  @id @default(cuid())
+  orgId     String
+  /// Clave estable dentro de `answers.custom`. No cambia aunque se reescriba el
+  /// enunciado: si cambiara, las respuestas ya guardadas quedarían huérfanas.
+  key       String
+  label     String
+  type      AssessmentQuestionType
+  scope     AssessmentQuestionScope @default(ALL)
+  required  Boolean                 @default(false)
+  active    Boolean                 @default(true)
+  position  Int                     @default(0)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @default(now()) @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, key])
+  @@index([orgId])
 }
 
 // Serie temporal de marcas medibles ("simulacro dominadas: 2 reps", tiempos de

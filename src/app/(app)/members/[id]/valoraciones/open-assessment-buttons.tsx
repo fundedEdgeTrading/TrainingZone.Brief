@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { openAssessmentAction } from "./actions";
-import type { AssessmentKind } from "@prisma/client";
 
 /**
  * Apertura manual de un hito. El cron del aniversario (F4) abre los suyos solo;
@@ -13,12 +12,13 @@ import type { AssessmentKind } from "@prisma/client";
  */
 export function OpenAssessmentButton({
   memberId,
-  kind,
+  milestoneKey,
   label,
   variant = "secondary",
 }: {
   memberId: string;
-  kind: AssessmentKind;
+  /** Clave del hito en la configuración del centro: "INITIAL", "M6", "M18"… */
+  milestoneKey: string;
   label: string;
   variant?: "primary" | "secondary";
 }) {
@@ -33,7 +33,7 @@ export function OpenAssessmentButton({
       disabled={pending}
       onClick={() =>
         startTransition(async () => {
-          const result = await openAssessmentAction(memberId, kind);
+          const result = await openAssessmentAction(memberId, milestoneKey);
           if (!result.ok) {
             toast.error(result.error);
             return;
