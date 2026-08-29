@@ -2888,6 +2888,88 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     });
   }
 
+  // ---------- F10: Tareas manuales de ejemplo ----------
+  // El tablero de /tareas necesita algo que enseñar en la demo. Se siembran
+  // encargadas por dirección (`createdByUserId`), que es lo que distingue una
+  // tarea manual de las que levanta el motor de reglas: ahí no hay nadie detrás.
+  const trainersForTasks = staffUsers.filter((u) => u.role === "TRAINER" || u.role === "TRAINER_ADMIN");
+  if (directorForNotif && trainersForTasks.length > 0) {
+    const manualTasks: {
+      title: string;
+      body: string;
+      category: string;
+      priority: "BAJA" | "MEDIA" | "ALTA";
+      dueInDays: number | null;
+      startedDaysAgo: number | null;
+      resolvedHoursAgo: number | null;
+    }[] = [
+      {
+        title: "Llamar a la lista de espera de las 19:00",
+        body: "Han quedado tres huecos libres esta semana en el grupo de tarde.",
+        category: "Comercial",
+        priority: "ALTA",
+        dueInDays: 1,
+        startedDaysAgo: null,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Revisar el material de suspensión de la sala 2",
+        body: "Dos anclajes hacen ruido. Si no se puede arreglar, retirarlos del circuito.",
+        category: "Instalaciones",
+        priority: "MEDIA",
+        dueInDays: 4,
+        startedDaysAgo: 1,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Preparar el circuito de la jornada de puertas abiertas",
+        body: "Cuatro estaciones, 12 minutos por vuelta.",
+        category: "Operativa",
+        priority: "BAJA",
+        dueInDays: 12,
+        startedDaysAgo: null,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Actualizar las fichas de los socios nuevos de agosto",
+        body: "Faltan objetivos y antecedentes en varias altas del mes.",
+        category: "Operativa",
+        priority: "MEDIA",
+        dueInDays: -2,
+        startedDaysAgo: 3,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Cambiar el cartel de horarios de la entrada",
+        body: "Ya está impreso, solo hay que colocarlo.",
+        category: "Instalaciones",
+        priority: "BAJA",
+        dueInDays: -1,
+        startedDaysAgo: 2,
+        // Completada hace unas horas: sale del tablero activo, sigue dentro de
+        // la ventana de la columna "Hecha" y queda en el histórico.
+        resolvedHoursAgo: 3,
+      },
+    ];
+
+    await prisma.notification.createMany({
+      data: manualTasks.map((task, i) => ({
+        id: id(),
+        orgId,
+        recipientUserId: trainersForTasks[i % trainersForTasks.length].id,
+        createdByUserId: directorForNotif.id,
+        kind: "TASK" as const,
+        title: task.title,
+        body: task.body,
+        category: task.category,
+        priority: task.priority,
+        dueDate: task.dueInDays === null ? null : addDays(TODAY, task.dueInDays),
+        startedAt: task.startedDaysAgo === null ? null : addDays(TODAY, -task.startedDaysAgo),
+        resolvedAt: task.resolvedHoursAgo === null ? null : new Date(TODAY.getTime() - task.resolvedHoursAgo * 60 * 60 * 1000),
+      })),
+    });
+  }
+
   // ---------- Coherencia final de la agenda ----------
   // La parrilla semanal nace sin solapes, pero varios bloques posteriores montan
   // sesiones a medida encima (panel del entrenador demo, huecos de EP, sesiones

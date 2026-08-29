@@ -226,6 +226,7 @@ model User {
   workoutProgramsConfirmed WorkoutProgram[]     @relation("WorkoutConfirmedBy")
   mobileRefreshTokens      MobileRefreshToken[]
   notifications            Notification[]       @relation("NotificationRecipient")
+  notificationsCreated     Notification[]       @relation("NotificationCreator")
   timeClockEntries         TimeClockEntry[]
   trainerRatingsReceived   TrainerRating[]      @relation("TrainerRatingSubject")
   paymentsSold             Payment[]            @relation("SoldBy")
@@ -1233,25 +1234,59 @@ enum NotificationKind {
   INFO
 }
 
+/**
+ * Prioridad de una tarea. Solo la fija el alta manual: lo que crea el motor de
+ * reglas nace en MEDIA y no se toca, porque una regla no sabe lo que corre
+ * prisa en un centro concreto. Tres niveles a propósito — con cinco nadie usa
+ * los intermedios y el tablero deja de ordenar nada.
+ */
+enum TaskPriority {
+  BAJA
+  MEDIA
+  ALTA
+}
+
 model Notification {
   id              String           @id @default(cuid())
   orgId           String
   recipientUserId String
+  // Quién manda la tarea. Null en todo lo que genera el motor de reglas: ahí no
+  // hay una persona detrás, y firmar esas filas con el usuario del cron sería
+  // mentir sobre quién pidió el trabajo. Al reasignar NO se toca (RB-TASK-002):
+  // cambia quién la hace, no quién la encargó.
+  createdByUserId String?
   kind            NotificationKind @default(TASK)
   title           String
   body            String?
   entityType      String? // "Lead" | "Member" | "ClientFeedbackPrompt"...
   entityId        String?
+  // Categoría libre de la tarea manual ("Comercial", "Instalaciones"...). Texto
+  // y no enum: cada centro organiza su día a día a su manera, y un enum obliga a
+  // migrar el esquema para añadir una etiqueta.
+  category        String?
+  priority        TaskPriority     @default(MEDIA)
   dueDate         DateTime?
+  // Estado intermedio del tablero ("En curso"). El estado NO es una columna
+  // propia: se deriva de estas dos marcas de tiempo (ver `taskStatus` en
+  // lib/tasks-queries.ts). Con un campo `status` aparte habría dos fuentes de
+  // verdad para lo mismo y `resolveNotification` —el único camino a "Hecha",
+  // compartido con la campana y con el motor de reglas— tendría que mantener
+  // las dos en sincronía.
+  startedAt       DateTime?
   resolvedAt      DateTime?
   createdAt       DateTime         @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id])
   recipient    User         @relation("NotificationRecipient", fields: [recipientUserId], references: [id])
+  createdBy    User?        @relation("NotificationCreator", fields: [createdByUserId], references: [id])
 
   @@index([orgId])
   @@index([recipientUserId])
   @@index([resolvedAt])
+  // El tablero de tareas lee por organización + tipo + abiertas/histórico; sin
+  // este índice cada carga recorre la tabla entera de notificaciones.
+  @@index([orgId, kind, resolvedAt])
+  @@index([createdByUserId])
 }
 
 // ---------- F13: RRHH — fichaje ----------
