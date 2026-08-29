@@ -16,6 +16,7 @@ import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
 import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
+import { activeNotes, archivedNotes, highlightedNotes } from "@/lib/member-notes";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import {
   HEALTH_STATUS_LABEL,
@@ -39,6 +40,7 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import SectionRail, { SectionHead, SectionHeadDisclosure, type Section, type SectionKey } from "./section-rail";
 import { EditMemberDataButton, NewNoteButton } from "./member-header-actions";
 import { ActivityThread, type ActivityEntry } from "./activity-thread";
+import { ArchivedNotes, MemberNoteHighlights, type NoteView } from "./note-highlights";
 import { AddHealthRecordForm, HealthStatusSelect, HealthStatusLegend, AddNoteForm, ResendWelcomeButton } from "./member-forms";
 import { MemberDataPanel, DeleteMemberSection } from "./member-data-panel";
 import { EditableMemberPhoto } from "./member-photo";
@@ -352,9 +354,23 @@ export default async function MemberDetailPage({
     .filter((b) => b.status === "BOOKED" && formatDateParam(b.occurrenceDate) >= todayISO)
     .sort((a, b) => a.occurrenceDate.getTime() - b.occurrenceDate.getTime())[0];
 
+  // ---- Bitácora: qué se destaca, qué sigue en el hilo y qué se aparta ----
+  // Archivar no borra: la nota sale del hilo y del bloque de cabecera, pero se
+  // sigue consultando en "Notas archivadas" (lib/member-notes.ts).
+  const liveNotes = activeNotes(notes);
+  const filedNotes = archivedNotes(notes);
+  const noteView = (n: (typeof notes)[number]): NoteView => ({
+    id: n.id,
+    body: n.body,
+    footer: `${fmtShortDay(n.createdAt)} · ${n.author?.name ?? "—"}`,
+    important: n.important,
+    archived: n.archivedAt !== null,
+  });
+  const highlights = highlightedNotes(notes).map(noteView);
+
   // ---- Hilo de actividad (asistencia + bitácora en un solo orden) --------
   const notesByDay = new Map<string, typeof notes>();
-  for (const n of notes) {
+  for (const n of liveNotes) {
     const key = formatDateParam(n.createdAt);
     const list = notesByDay.get(key) ?? [];
     list.push(n);
@@ -394,8 +410,7 @@ export default async function MemberDetailPage({
         body: b.debrief?.note ?? null,
         footer: `Sesión · ${b.session.classType}`,
         notes: sameDayNotes.map((n) => ({
-          id: n.id,
-          body: n.body,
+          ...noteView(n),
           footer: `Nota de bitácora · ${n.author?.name ?? "—"}`,
         })),
       },
@@ -411,10 +426,11 @@ export default async function MemberDetailPage({
           day: fmtShortDay(n.createdAt),
           time: fmtTime(n.createdAt),
           title: "Nota de bitácora",
-          badges: [],
+          badges: n.important ? [{ label: "Importante", tone: "warning" as BadgeTone }] : [],
           feeling: null,
           body: n.body,
           footer: `Bitácora · ${n.author?.name ?? "—"}`,
+          note: noteView(n),
           notes: [],
         },
       });
@@ -481,7 +497,10 @@ export default async function MemberDetailPage({
         ? `${openInjuries} ${openInjuries === 1 ? "lesión vigente" : "lesiones vigentes"}`
         : "Contacto · Salud · Consentimientos",
     plan: planMeta,
-    actividad: notes.length > 0 ? `${notes.length} ${notes.length === 1 ? "nota" : "notas"}` : "Asistencia y bitácora",
+    actividad:
+      liveNotes.length > 0
+        ? `${liveNotes.length} ${liveNotes.length === 1 ? "nota" : "notas"}`
+        : "Asistencia y bitácora",
     entreno:
       pendingAssessments > 0 && canSeeAssessments
         ? `${pendingAssessments} ${pendingAssessments === 1 ? "valoración pendiente" : "valoraciones pendientes"}`
@@ -833,6 +852,8 @@ export default async function MemberDetailPage({
           <AddNoteForm memberId={member.id} />
 
           <ActivityThread entries={threadEntries} />
+
+          <ArchivedNotes notes={filedNotes.map(noteView)} />
         </>
       ),
     },
@@ -1123,6 +1144,9 @@ export default async function MemberDetailPage({
     </div>
   );
 
+  // Lo que se cuelga aquí se ve desde cualquier sección de la ficha: el aviso
+  // de lesión crónica (arriba del todo) y la bitácora destacada, que es lo que
+  // mira quien abre la ficha treinta segundos antes de la sesión.
   const header = (
     <div className="flex flex-col gap-4">
       {chronicNotice}
@@ -1193,6 +1217,7 @@ export default async function MemberDetailPage({
           />
         </div>
       </div>
+      <MemberNoteHighlights notes={highlights} />
     </div>
   );
 

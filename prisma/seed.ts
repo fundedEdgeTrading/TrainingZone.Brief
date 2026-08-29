@@ -1255,13 +1255,28 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   await prisma.healthRecord.createMany({ data: healthRecords });
 
   // ---------- Bitácora de observaciones (MemberNote) ----------
+  // Una de cada cinco nace destacada (sube al bloque de cabecera de la ficha) y
+  // lo más viejo de tres meses se siembra archivado: así la demo enseña las dos
+  // caras — lo que hay que saber antes de la sesión y lo que ya se apartó sin
+  // borrarlo.
   const noteAuthorIds = staffUsers.filter((u) => u.role !== "PLATFORM_ADMIN").map((u) => u.id);
-  const noteRows: { id: string; orgId: string; memberId: string; authorUserId: string; body: string; createdAt: Date }[] = [];
+  const noteRows: Prisma.MemberNoteCreateManyInput[] = [];
   for (const m of members) {
     if (m.state === MemberState.PROSPECT) continue;
     if (Math.random() > 0.3) continue;
     for (let k = 0; k < randInt(1, 2); k++) {
-      noteRows.push({ id: id(), orgId, memberId: m.id, authorUserId: pick(noteAuthorIds), body: pick(NOTE_BODIES), createdAt: addDays(TODAY, -randInt(1, 120)) });
+      const createdAt = addDays(TODAY, -randInt(1, 120));
+      const daysOld = Math.round((TODAY.getTime() - createdAt.getTime()) / 86_400_000);
+      noteRows.push({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        authorUserId: pick(noteAuthorIds),
+        body: pick(NOTE_BODIES),
+        important: Math.random() < 0.2,
+        archivedAt: daysOld > 90 ? addDays(createdAt, 30) : null,
+        createdAt,
+      });
     }
   }
   await prisma.memberNote.createMany({ data: noteRows });

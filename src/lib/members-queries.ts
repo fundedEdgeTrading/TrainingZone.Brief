@@ -181,12 +181,44 @@ export async function markClientGoalAchieved(orgId: string, goalId: string) {
   return { ok: true as const };
 }
 
+/**
+ * Bitácora del socio, archivadas incluidas. El reparto (hilo, bloque destacado
+ * y "archivadas") lo hace `lib/member-notes.ts` sobre esta misma lista: son
+ * pocas filas por socio y traerlas de una vez evita tres consultas para pintar
+ * una sola sección.
+ */
 export async function getMemberNotes(orgId: string, memberId: string) {
   return prisma.memberNote.findMany({
     where: { orgId, memberId },
     include: { author: { select: { name: true } } },
     orderBy: { createdAt: "desc" },
   });
+}
+
+/**
+ * Destaca o deja de destacar una nota. El `orgId` va en el `where` y no en una
+ * comprobación previa: un id de otra organización no actualiza nada en vez de
+ * confirmar que existe.
+ */
+export async function setMemberNoteImportant(orgId: string, noteId: string, important: boolean) {
+  const { count } = await prisma.memberNote.updateMany({
+    where: { id: noteId, orgId },
+    data: { important },
+  });
+  return count > 0;
+}
+
+/**
+ * Archiva o desarchiva. Archivar NO borra: la fila se queda y sigue saliendo en
+ * "Notas archivadas", solo deja de ocupar sitio en el hilo. Desarchivar la
+ * devuelve tal cual estaba, con su marca de importante incluida.
+ */
+export async function setMemberNoteArchived(orgId: string, noteId: string, archived: boolean) {
+  const { count } = await prisma.memberNote.updateMany({
+    where: { id: noteId, orgId },
+    data: { archivedAt: archived ? new Date() : null },
+  });
+  return count > 0;
 }
 
 /**

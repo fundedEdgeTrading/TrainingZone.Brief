@@ -7,11 +7,12 @@ import { prisma } from "@/lib/prisma";
 import { createHealthRecord, updateHealthRecordStatus } from "@/lib/health-access";
 import { HEALTH_STATUSES } from "@/lib/health-status";
 import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
+import { setMemberNoteArchived, setMemberNoteImportant } from "@/lib/members-queries";
 import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Sex } from "@prisma/client";
+import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -145,11 +146,18 @@ export async function updateHealthRecordStatusAction(
 }
 
 // Bitácora (observaciones no clínicas): cualquier rol de staff puede anotar.
+// Estas notas se ven con los permisos generales de la ficha, sin el
+// consentimiento ni la auditoría de `HealthRecord` (ADR-008), así que son para
+// observaciones puntuales y leves — lo clínico va a Salud como Lesión.
+const NOTE_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
+
 export async function addMemberNote(formData: FormData): Promise<MemberActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  const session = await requireRole(NOTE_ROLES);
 
   const memberId = String(formData.get("memberId") ?? "");
   const body = String(formData.get("body") ?? "").trim();
+  // La casilla del composer: el checkbox no viaja cuando está desmarcado.
+  const important = formData.get("important") != null;
   if (!memberId || !body) return { ok: false, error: "Escribe una observación antes de guardar." };
 
   // El socio debe pertenecer a la organización del actor (aislamiento tenant).
@@ -161,10 +169,54 @@ export async function addMemberNote(formData: FormData): Promise<MemberActionRes
   if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   await prisma.memberNote.create({
-    data: { orgId: session.user.orgId, memberId, authorUserId: session.user.id, body },
+    data: { orgId: session.user.orgId, memberId, authorUserId: session.user.id, body, important },
   });
 
   revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+/**
+ * Ámbito común de las acciones sobre una nota ya escrita. El socio se resuelve
+ * DESDE LA NOTA y no desde el `memberId` que llega del cliente: si no
+ * coincidieran, mandaría el de la nota (mismo criterio que
+ * `resolveHealthRecordAction`).
+ */
+async function noteInScope(noteId: string) {
+  const session = await requireRole(NOTE_ROLES);
+  const note = await prisma.memberNote.findFirst({
+    where: { id: noteId, orgId: session.user.orgId },
+    select: { memberId: true },
+  });
+  if (!note) return { ok: false as const, error: "No se ha encontrado esa nota." };
+  if (!(await memberIsInScope(session.user, note.memberId))) {
+    return { ok: false as const, error: OUT_OF_CENTER_SCOPE };
+  }
+  return { ok: true as const, orgId: session.user.orgId, memberId: note.memberId };
+}
+
+/** Marca o desmarca una nota como importante (sube al bloque destacado). */
+export async function setMemberNoteImportantAction(noteId: string, important: boolean): Promise<MemberActionResult> {
+  const scope = await noteInScope(noteId);
+  if (!scope.ok) return scope;
+
+  await setMemberNoteImportant(scope.orgId, noteId, important);
+
+  revalidatePath(`/members/${scope.memberId}`);
+  return { ok: true };
+}
+
+/**
+ * Archiva o desarchiva una nota. No es un borrado: la nota sale del hilo y del
+ * bloque destacado, pero se sigue consultando en "Notas archivadas".
+ */
+export async function setMemberNoteArchivedAction(noteId: string, archived: boolean): Promise<MemberActionResult> {
+  const scope = await noteInScope(noteId);
+  if (!scope.ok) return scope;
+
+  await setMemberNoteArchived(scope.orgId, noteId, archived);
+
+  revalidatePath(`/members/${scope.memberId}`);
   return { ok: true };
 }
 
