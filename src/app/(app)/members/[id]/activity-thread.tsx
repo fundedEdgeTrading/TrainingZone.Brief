@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { NoteActions, type NoteView } from "./note-highlights";
 
 export type ActivityEntry = {
   id: string;
@@ -18,10 +19,15 @@ export type ActivityEntry = {
   /** "origen · autor". */
   footer: string;
   /**
+   * La nota de bitácora que ES este hecho (las sueltas, sin sesión ese día).
+   * Trae sus controles de destacar/archivar; los demás hechos no son notas.
+   */
+  note?: NoteView;
+  /**
    * Notas de bitácora del mismo día que la sesión: una sesión con su
    * observación es un solo hecho, no dos.
    */
-  notes: { id: string; body: string; footer: string }[];
+  notes: NoteView[];
 };
 
 const PAGE = 20;
@@ -59,11 +65,22 @@ export function ActivityThread({ entries }: { entries: ActivityEntry[] }) {
               )}
             </div>
             {e.body && <p className="text-[13px] text-text-2 text-pretty mt-1.5 whitespace-pre-wrap">{e.body}</p>}
-            <p className="text-[11px] text-brand-faint mt-1.5">{e.footer}</p>
+            <div className="flex items-center justify-between gap-3 flex-wrap mt-1.5">
+              <p className="text-[11px] text-brand-faint">{e.footer}</p>
+              {e.note && <NoteActions note={e.note} />}
+            </div>
             {e.notes.map((n) => (
               <div key={n.id} className="mt-2.5 border-l-2 border-brand-subtle-2 pl-3">
+                {n.important && (
+                  <Badge tone="warning" dot={false} className="mb-1.5">
+                    Importante
+                  </Badge>
+                )}
                 <p className="text-[13px] text-text-2 text-pretty whitespace-pre-wrap">{n.body}</p>
-                <p className="text-[11px] text-brand-faint mt-1">{n.footer}</p>
+                <div className="flex items-center justify-between gap-3 flex-wrap mt-1">
+                  <p className="text-[11px] text-brand-faint">{n.footer}</p>
+                  <NoteActions note={n} />
+                </div>
               </div>
             ))}
           </div>

@@ -497,12 +497,24 @@ model ReferenceRange {
 // "nota + autor + fecha", DISTINTA de los datos clínicos de HealthRecord. No es
 // dato del Art. 9 RGPD, así que la ve cualquier rol de staff (no pasa por
 // health-access). Lo clínico va siempre a HealthRecord.
+// Bitácora interna del staff sobre el socio (RB-LEAD-008). Observaciones
+// puntuales y leves ("hoy venía con agujetas", "prefiere entrenar temprano"):
+// un diagnóstico médico o cualquier cosa persistente va a HealthRecord, que
+// tiene su propio control de acceso y auditoría (ADR-008). Esta bitácora se ve
+// con los permisos generales de la ficha, sin consentimiento ni registro de
+// lectura, así que no debe usarse como historial clínico encubierto.
 model MemberNote {
   id           String   @id @default(cuid())
   orgId        String
   memberId     String
   authorUserId String?
   body         String
+  // Destacada: sube al bloque de cabecera de Actividad y no caduca con el
+  // tiempo, para que el entrenador la vea antes de la sesión aunque sea vieja.
+  important    Boolean  @default(false)
+  // Archivada: deja de pintarse en el hilo y en el bloque destacado, pero la
+  // fila se conserva y sigue siendo consultable. Nunca se borra una nota.
+  archivedAt   DateTime?
   createdAt    DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id])
@@ -511,6 +523,9 @@ model MemberNote {
 
   @@index([orgId])
   @@index([memberId])
+  // El hilo y el bloque destacado piden siempre "las de este socio sin
+  // archivar, de la más nueva a la más vieja".
+  @@index([memberId, archivedAt, createdAt])
 }
 
 // Objetivos concretos de salud/rendimiento del socio (RB-PERFIL-003). Catálogo

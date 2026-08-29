@@ -6,6 +6,7 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useFocusRequest } from "./section-rail";
+import { NOTE_SCOPE_HINT } from "./note-highlights";
 
 // Mismas clases que el control de field.tsx, para los <textarea> multilínea.
 const CONTROL =
@@ -146,6 +147,12 @@ export function ResendWelcomeButton({ memberId }: { memberId: string }) {
   );
 }
 
+/**
+ * Composer de la bitácora. La casilla «Importante» sube la nota al bloque de
+ * cabecera de la ficha, donde se ve sin abrir nada — de ahí que el aviso de
+ * alcance esté aquí y no en una ayuda escondida: lo que no cabe en la bitácora
+ * (un diagnóstico, algo persistente) es justo lo que apetece destacar.
+ */
 export function AddNoteForm({ memberId }: { memberId: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -180,6 +187,10 @@ export function AddNoteForm({ memberId }: { memberId: string }) {
         className={`${CONTROL} text-[13px]`}
         placeholder="Escribe una observación de la sesión…"
       />
+      <label className="flex items-center gap-2 text-[13px] text-brand-text">
+        <input type="checkbox" name="important" className="w-4 h-4" />
+        Importante (se muestra arriba de la ficha antes de la sesión)
+      </label>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <span className="text-[11px] text-brand-faint">
           Visible para el equipo del centro. No se comparte con el socio.
@@ -189,6 +200,7 @@ export function AddNoteForm({ memberId }: { memberId: string }) {
           {pending ? "Guardando..." : "Guardar nota"}
         </Button>
       </div>
+      <p className="text-[11px] text-brand-muted">{NOTE_SCOPE_HINT}</p>
     </form>
   );
 }

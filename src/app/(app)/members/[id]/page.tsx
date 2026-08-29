@@ -16,6 +16,7 @@ import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
 import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
+import { activeNotes, archivedNotes, highlightedNotes } from "@/lib/member-notes";
 import { getHealthRecordsForMember } from "@/lib/health-access";
 import { listAssessmentsForMember } from "@/lib/assessments/queries";
 import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
@@ -31,6 +32,7 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import SectionRail, { SectionHead, SectionHeadDisclosure, type Section, type SectionKey } from "./section-rail";
 import { EditMemberDataButton, NewNoteButton } from "./member-header-actions";
 import { ActivityThread, type ActivityEntry } from "./activity-thread";
+import { ArchivedNotes, MemberNoteHighlights, type NoteView } from "./note-highlights";
 import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
 import { MemberDataPanel, DeleteMemberSection } from "./member-data-panel";
 import { EditableMemberPhoto } from "./member-photo";
@@ -340,9 +342,23 @@ export default async function MemberDetailPage({
     .filter((b) => b.status === "BOOKED" && formatDateParam(b.occurrenceDate) >= todayISO)
     .sort((a, b) => a.occurrenceDate.getTime() - b.occurrenceDate.getTime())[0];
 
+  // ---- Bitácora: qué se destaca, qué sigue en el hilo y qué se aparta ----
+  // Archivar no borra: la nota sale del hilo y del bloque de cabecera, pero se
+  // sigue consultando en "Notas archivadas" (lib/member-notes.ts).
+  const liveNotes = activeNotes(notes);
+  const filedNotes = archivedNotes(notes);
+  const noteView = (n: (typeof notes)[number]): NoteView => ({
+    id: n.id,
+    body: n.body,
+    footer: `${fmtShortDay(n.createdAt)} · ${n.author?.name ?? "—"}`,
+    important: n.important,
+    archived: n.archivedAt !== null,
+  });
+  const highlights = highlightedNotes(notes).map(noteView);
+
   // ---- Hilo de actividad (asistencia + bitácora en un solo orden) --------
   const notesByDay = new Map<string, typeof notes>();
-  for (const n of notes) {
+  for (const n of liveNotes) {
     const key = formatDateParam(n.createdAt);
     const list = notesByDay.get(key) ?? [];
     list.push(n);
@@ -370,8 +386,7 @@ export default async function MemberDetailPage({
         body: b.debrief?.note ?? null,
         footer: `Sesión · ${b.session.classType}`,
         notes: sameDayNotes.map((n) => ({
-          id: n.id,
-          body: n.body,
+          ...noteView(n),
           footer: `Nota de bitácora · ${n.author?.name ?? "—"}`,
         })),
       },
@@ -387,10 +402,11 @@ export default async function MemberDetailPage({
           day: fmtShortDay(n.createdAt),
           time: fmtTime(n.createdAt),
           title: "Nota de bitácora",
-          badges: [],
+          badges: n.important ? [{ label: "Importante", tone: "warning" as BadgeTone }] : [],
           feeling: null,
           body: n.body,
           footer: `Bitácora · ${n.author?.name ?? "—"}`,
+          note: noteView(n),
           notes: [],
         },
       });
@@ -451,7 +467,10 @@ export default async function MemberDetailPage({
         ? `${activeInjuries} ${activeInjuries === 1 ? "lesión activa" : "lesiones activas"}`
         : "Contacto · Salud · Consentimientos",
     plan: planMeta,
-    actividad: notes.length > 0 ? `${notes.length} ${notes.length === 1 ? "nota" : "notas"}` : "Asistencia y bitácora",
+    actividad:
+      liveNotes.length > 0
+        ? `${liveNotes.length} ${liveNotes.length === 1 ? "nota" : "notas"}`
+        : "Asistencia y bitácora",
     entreno:
       pendingAssessments > 0 && canSeeAssessments
         ? `${pendingAssessments} ${pendingAssessments === 1 ? "valoración pendiente" : "valoraciones pendientes"}`
@@ -783,6 +802,8 @@ export default async function MemberDetailPage({
           <AddNoteForm memberId={member.id} />
 
           <ActivityThread entries={threadEntries} />
+
+          <ArchivedNotes notes={filedNotes.map(noteView)} />
         </>
       ),
     },
@@ -1042,74 +1063,81 @@ export default async function MemberDetailPage({
     },
   ];
 
+  // La cabecera va fuera del rail, así que lo que se cuelgue de ella se ve
+  // desde cualquier sección. Ahí es donde tiene que estar la bitácora
+  // destacada: quien abre la ficha treinta segundos antes de la sesión no va a
+  // entrar a buscarla a Actividad.
   const header = (
-    <div className="bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden">
-      <div className="flex items-start justify-between gap-5 flex-wrap p-6 pl-[26px]">
-        <div className="flex items-center gap-[18px] min-w-0">
-          <EditableMemberPhoto
-            memberId={member.id}
-            photoUrl={member.photoUrl}
-            initials={initials(member.firstName, member.lastName)}
-          />
-          <div className="min-w-0">
-            <h1 className="font-display font-extrabold text-[27px] uppercase tracking-[-.015em] text-brand-text leading-none">
-              {member.firstName} {member.lastName}
-            </h1>
-            <p className="text-[13px] text-brand-muted mt-2">
-              {member.email} · {member.primaryCenter.name} · Alta {fmtDay(member.joinedAt)}
-            </p>
-            <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
-              {serviceKinds.map((k) => (
-                <Badge key={k} tone="neutral" dot={false}>
-                  {SERVICE_KIND_LABEL[k]}
-                </Badge>
-              ))}
-              <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
+    <>
+      <div className="bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden">
+        <div className="flex items-start justify-between gap-5 flex-wrap p-6 pl-[26px]">
+          <div className="flex items-center gap-[18px] min-w-0">
+            <EditableMemberPhoto
+              memberId={member.id}
+              photoUrl={member.photoUrl}
+              initials={initials(member.firstName, member.lastName)}
+            />
+            <div className="min-w-0">
+              <h1 className="font-display font-extrabold text-[27px] uppercase tracking-[-.015em] text-brand-text leading-none">
+                {member.firstName} {member.lastName}
+              </h1>
+              <p className="text-[13px] text-brand-muted mt-2">
+                {member.email} · {member.primaryCenter.name} · Alta {fmtDay(member.joinedAt)}
+              </p>
+              <div className="flex items-center gap-1.5 flex-wrap mt-2.5">
+                {serviceKinds.map((k) => (
+                  <Badge key={k} tone="neutral" dot={false}>
+                    {SERVICE_KIND_LABEL[k]}
+                  </Badge>
+                ))}
+                <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
+              </div>
             </div>
           </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {!member.userId && <ResendWelcomeButton memberId={member.id} />}
+            <EditMemberDataButton />
+            <NewNoteButton />
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {!member.userId && <ResendWelcomeButton memberId={member.id} />}
-          <EditMemberDataButton />
-          <NewNoteButton />
-        </div>
-      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-brand-subtle-2 bg-brand-bg">
-        <Metric position={0} label="Antigüedad" value={seniority(member.joinedAt)} foot={`Alta ${fmtDay(member.joinedAt)}`} />
-        <Metric
-          position={1}
-          label="Sesiones restantes"
-          value={
-            manageableSubscriptions.length === 0 ? (
-              "—"
-            ) : unlimitedBono ? (
-              "Ilimitadas"
-            ) : (
-              <>
-                {remainingTotal}
-                {includedTotal > 0 && (
-                  <span className="text-[13px] font-semibold text-brand-muted"> / {includedTotal}</span>
-                )}
-              </>
-            )
-          }
-          foot={activeSubscriptionSummary ?? "Sin bono activo"}
-        />
-        <Metric
-          position={2}
-          label="Asistencia"
-          value={stats.attended}
-          foot={`${stats.attended === 1 ? "sesión" : "sesiones"} · ${stats.noShow} no-shows`}
-        />
-        <Metric
-          position={3}
-          label="Próxima sesión"
-          value={nextBooking ? fmtShortDay(nextBooking.occurrenceDate) : "—"}
-          foot={nextBooking ? `${nextBooking.session.startTime} · ${nextBooking.session.name}` : "Sin reservas"}
-        />
+        <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-brand-subtle-2 bg-brand-bg">
+          <Metric position={0} label="Antigüedad" value={seniority(member.joinedAt)} foot={`Alta ${fmtDay(member.joinedAt)}`} />
+          <Metric
+            position={1}
+            label="Sesiones restantes"
+            value={
+              manageableSubscriptions.length === 0 ? (
+                "—"
+              ) : unlimitedBono ? (
+                "Ilimitadas"
+              ) : (
+                <>
+                  {remainingTotal}
+                  {includedTotal > 0 && (
+                    <span className="text-[13px] font-semibold text-brand-muted"> / {includedTotal}</span>
+                  )}
+                </>
+              )
+            }
+            foot={activeSubscriptionSummary ?? "Sin bono activo"}
+          />
+          <Metric
+            position={2}
+            label="Asistencia"
+            value={stats.attended}
+            foot={`${stats.attended === 1 ? "sesión" : "sesiones"} · ${stats.noShow} no-shows`}
+          />
+          <Metric
+            position={3}
+            label="Próxima sesión"
+            value={nextBooking ? fmtShortDay(nextBooking.occurrenceDate) : "—"}
+            foot={nextBooking ? `${nextBooking.session.startTime} · ${nextBooking.session.name}` : "Sin reservas"}
+          />
+        </div>
       </div>
-    </div>
+      <MemberNoteHighlights notes={highlights} />
+    </>
   );
 
   const initial = sections.some((s) => s.key === initialSection)
