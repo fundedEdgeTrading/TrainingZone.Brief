@@ -4,8 +4,8 @@ import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
 import { requireRole, memberIsInScope } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { listAssessmentsForMember, ASSESSMENT_KIND_ORDER } from "@/lib/assessments/queries";
-import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
+import { listAssessmentsForMember, getAssessmentMilestones } from "@/lib/assessments/queries";
+import { milestoneKeyOf, milestoneLabelOf } from "@/lib/assessments/config";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { OpenAssessmentButton } from "./open-assessment-buttons";
@@ -22,10 +22,14 @@ export default async function MemberAssessmentsPage({ params }: { params: Promis
   if (!member) notFound();
   if (!(await memberIsInScope(session.user, member.id))) notFound();
 
-  const assessments = await listAssessmentsForMember(session.user.orgId, member.id);
-  const doneKinds = new Set(assessments.filter((a) => a.completedAt).map((a) => a.kind));
-  const pendingKinds = new Set(assessments.filter((a) => !a.completedAt).map((a) => a.kind));
-  const openable = ASSESSMENT_KIND_ORDER.filter((k) => !doneKinds.has(k) && !pendingKinds.has(k));
+  const [assessments, milestones] = await Promise.all([
+    listAssessmentsForMember(session.user.orgId, member.id),
+    // La escalera es la del centro (F-VAL): sus meses, sus nombres y los hitos
+    // que haya añadido por encima del aniversario.
+    getAssessmentMilestones(session.user.orgId),
+  ]);
+  const usedKeys = new Set(assessments.map(milestoneKeyOf));
+  const openable = milestones.filter((m) => !usedKeys.has(m.key));
 
   return (
     <div className="tz-page space-y-4">
@@ -43,7 +47,14 @@ export default async function MemberAssessmentsPage({ params }: { params: Promis
           <EmptyState
             title="Sin valoraciones todavía"
             description="La valoración inicial es la que alimenta el Semáforo de Aptitud y el Session Brief de este socio."
-            action={<OpenAssessmentButton memberId={member.id} kind="INITIAL" label="Empezar valoración inicial" variant="primary" />}
+            action={
+              <OpenAssessmentButton
+                memberId={member.id}
+                milestoneKey="INITIAL"
+                label="Empezar valoración inicial"
+                variant="primary"
+              />
+            }
           />
         ) : (
           <ul className="list-none flex flex-col gap-2">
@@ -53,7 +64,7 @@ export default async function MemberAssessmentsPage({ params }: { params: Promis
                   href={`/members/${member.id}/valoraciones/${a.id}`}
                   className="flex items-center justify-between gap-3 flex-wrap rounded-control border border-brand-border px-4 py-3 hover:border-brand-ink transition-colors duration-200"
                 >
-                  <span className="font-semibold text-sm text-brand-text">{ASSESSMENT_KIND_LABEL[a.kind]}</span>
+                  <span className="font-semibold text-sm text-brand-text">{milestoneLabelOf(a, milestones)}</span>
                   <span className="flex items-center gap-3 text-xs text-brand-muted">
                     {a.completedAt ? (
                       <>
@@ -79,12 +90,12 @@ export default async function MemberAssessmentsPage({ params }: { params: Promis
         {openable.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 mt-5 pt-4 border-t border-tz-sand">
             <span className="text-xs text-brand-muted mr-1">Abrir hito:</span>
-            {openable.map((kind) => (
+            {openable.map((milestone) => (
               <OpenAssessmentButton
-                key={kind}
+                key={milestone.key}
                 memberId={member.id}
-                kind={kind}
-                label={ASSESSMENT_KIND_LABEL[kind]}
+                milestoneKey={milestone.key}
+                label={milestone.label}
               />
             ))}
           </div>

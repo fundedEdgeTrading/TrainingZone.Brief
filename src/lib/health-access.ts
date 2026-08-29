@@ -474,6 +474,11 @@ export async function getMesocycleBriefingForMember({
  * `parseAnswers` y aquí simplemente no aportan nada: el mesociclo se genera con
  * el resto de la ficha en vez de reventar.
  */
+/** La nota se lee entera en el Session Brief: empieza en mayúscula. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function assessmentContext(kind: AssessmentKind, answers: unknown) {
   const parsed = parseAnswers(kind, answers);
   if (!parsed) return null;
@@ -486,10 +491,17 @@ function assessmentContext(kind: AssessmentKind, answers: unknown) {
   let sex: string | null = null;
   let level: string | null = null;
 
-  notes.push(
-    `Entrena ${DAYS_PER_WEEK_LABEL[parsed.diasPorSemana] ?? parsed.diasPorSemana} por semana`,
-    `Sueño ${parsed.calidadSueno}/5, estrés ${parsed.estres}/5, energía ${parsed.energia}/5`
-  );
+  // Las constantes de escala son desactivables por organización (F-VAL): lo que
+  // el centro no pregunta no se inventa aquí, simplemente no entra en la nota.
+  if (parsed.diasPorSemana) {
+    notes.push(`Entrena ${DAYS_PER_WEEK_LABEL[parsed.diasPorSemana] ?? parsed.diasPorSemana} por semana`);
+  }
+  const escalas = [
+    parsed.calidadSueno ? `sueño ${parsed.calidadSueno}/5` : null,
+    parsed.estres ? `estrés ${parsed.estres}/5` : null,
+    parsed.energia ? `energía ${parsed.energia}/5` : null,
+  ].filter(Boolean);
+  if (escalas.length) notes.push(capitalize(escalas.join(", ")));
   clinical.push(`Dolor actual declarado: ${parsed.dolorActual}/10`);
 
   if (isInitialAnswers(kind, parsed)) {
@@ -497,9 +509,20 @@ function assessmentContext(kind: AssessmentKind, answers: unknown) {
 
     age = perfil.edad;
     sex = ASSESSMENT_SEX_LABEL[perfil.sexo] ?? null;
-    level = `actividad ${ACTIVITY_LEVEL_LABEL[experiencia.nivelActividad] ?? experiencia.nivelActividad}, técnica ${
-      TECHNIQUE_LABEL[experiencia.tecnicaBasicos] ?? experiencia.tecnicaBasicos
-    }, ${experiencia.haEntrenadoAntes ? `${experiencia.anosExperiencia} años de experiencia` : "sin experiencia previa"}`;
+    const rasgos = [
+      experiencia.nivelActividad
+        ? `actividad ${ACTIVITY_LEVEL_LABEL[experiencia.nivelActividad] ?? experiencia.nivelActividad}`
+        : null,
+      experiencia.tecnicaBasicos
+        ? `técnica ${TECHNIQUE_LABEL[experiencia.tecnicaBasicos] ?? experiencia.tecnicaBasicos}`
+        : null,
+      experiencia.haEntrenadoAntes === undefined
+        ? null
+        : experiencia.haEntrenadoAntes
+          ? `${experiencia.anosExperiencia} años de experiencia`
+          : "sin experiencia previa",
+    ].filter(Boolean);
+    level = rasgos.length ? rasgos.join(", ") : null;
 
     metrics.push(`altura: ${perfil.alturaCm} cm`);
     goals.push(perfil.objetivoPrincipal);
@@ -521,9 +544,11 @@ function assessmentContext(kind: AssessmentKind, answers: unknown) {
   } else {
     const { seguimiento, cierre } = parsed;
 
-    notes.push(
-      `Adherencia percibida ${seguimiento.adherenciaPercibida}/5, progreso percibido ${seguimiento.progresoPercibido}/5`
-    );
+    const percibido = [
+      seguimiento.adherenciaPercibida ? `adherencia percibida ${seguimiento.adherenciaPercibida}/5` : null,
+      seguimiento.progresoPercibido ? `progreso percibido ${seguimiento.progresoPercibido}/5` : null,
+    ].filter(Boolean);
+    if (percibido.length) notes.push(capitalize(percibido.join(", ")));
     if (seguimiento.queHaMejorado) notes.push(`Ha mejorado: ${seguimiento.queHaMejorado}`);
     if (seguimiento.obstaculos) notes.push(`Obstáculos: ${seguimiento.obstaculos}`);
     if (seguimiento.objetivoProximoPeriodo) goals.push(seguimiento.objetivoProximoPeriodo);

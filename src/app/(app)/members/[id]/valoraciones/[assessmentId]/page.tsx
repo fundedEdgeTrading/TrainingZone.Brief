@@ -3,9 +3,9 @@ import { resolveTimezone } from "@/lib/timezone";
 import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
 import { requireRole, memberIsInScope } from "@/lib/guard";
-import { getAssessment, parseAnswers } from "@/lib/assessments/queries";
+import { getAssessment, getAssessmentConfig, parseAnswers } from "@/lib/assessments/queries";
+import { milestoneLabelOf } from "@/lib/assessments/config";
 import {
-  ASSESSMENT_KIND_LABEL,
   DAYS_PER_WEEK_LABEL,
   PAIN_ZONE_LABEL,
   PERFORMANCE_MARKS,
@@ -28,8 +28,9 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function yesNo(value: boolean) {
-  return value ? "Sí" : "No";
+/** Una pregunta que el centro no hace no se pinta: `Row` ya ignora el undefined. */
+function yesNo(value: boolean | undefined) {
+  return value === undefined ? undefined : value ? "Sí" : "No";
 }
 
 export default async function AssessmentDetailPage({
@@ -41,12 +42,21 @@ export default async function AssessmentDetailPage({
   const { id, assessmentId } = await params;
   const timeZone = await resolveTimezone();
 
-  const assessment = await getAssessment(session.user.orgId, assessmentId);
+  const [assessment, config] = await Promise.all([
+    getAssessment(session.user.orgId, assessmentId),
+    getAssessmentConfig(session.user.orgId),
+  ]);
   if (!assessment || assessment.memberId !== id) notFound();
   if (!(await memberIsInScope(session.user, id))) notFound();
 
-  const answers = assessment.completedAt ? parseAnswers(assessment.kind, assessment.answers) : null;
+  const answers = assessment.completedAt ? parseAnswers(assessment.kind, assessment.answers, config) : null;
   const marks = answers?.marcas ?? [];
+  // Se listan TODAS las preguntas propias, también las retiradas: si el centro
+  // dejó de hacer una, lo que ya se contestó sigue formando parte de la
+  // valoración de aquel día.
+  const customAnswers = config.customQuestions
+    .map((q) => ({ question: q, answer: answers?.custom?.[q.key] }))
+    .filter((row) => row.answer !== undefined && row.answer !== "");
 
   // F-ALTA: si el socio ya contestó su parte al entrar en la app, el formulario
   // arranca con ella escrita. Se valida en vez de confiarse: un borrador
@@ -64,7 +74,7 @@ export default async function AssessmentDetailPage({
           ← Volver a las valoraciones
         </Link>
         <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
-          {ASSESSMENT_KIND_LABEL[assessment.kind]} · {assessment.member.firstName} {assessment.member.lastName}
+          {milestoneLabelOf(assessment, config.milestones)} · {assessment.member.firstName} {assessment.member.lastName}
         </h1>
         <p className="text-sm text-brand-muted">
           {assessment.completedAt
@@ -86,7 +96,13 @@ export default async function AssessmentDetailPage({
               </p>
             </div>
           )}
-          <AssessmentForm assessmentId={assessment.id} memberId={id} kind={assessment.kind} draft={memberDraft} />
+          <AssessmentForm
+            assessmentId={assessment.id}
+            memberId={id}
+            kind={assessment.kind}
+            config={config}
+            draft={memberDraft}
+          />
         </>
       ) : !answers ? (
         <div className="bg-brand-card border border-brand-border rounded-card shadow-card">
@@ -101,10 +117,13 @@ export default async function AssessmentDetailPage({
             <ul className="list-none">
               <Row label="Peso" value={`${answers.pesoKg} kg`} />
               <Row label="Dolor actual" value={`${answers.dolorActual}/10`} />
-              <Row label="Calidad del sueño" value={`${answers.calidadSueno}/5`} />
-              <Row label="Estrés" value={`${answers.estres}/5`} />
-              <Row label="Energía" value={`${answers.energia}/5`} />
-              <Row label="Días por semana" value={DAYS_PER_WEEK_LABEL[answers.diasPorSemana]} />
+              <Row label="Calidad del sueño" value={answers.calidadSueno && `${answers.calidadSueno}/5`} />
+              <Row label="Estrés" value={answers.estres && `${answers.estres}/5`} />
+              <Row label="Energía" value={answers.energia && `${answers.energia}/5`} />
+              <Row
+                label="Días por semana"
+                value={answers.diasPorSemana && DAYS_PER_WEEK_LABEL[answers.diasPorSemana]}
+              />
             </ul>
           </Card>
 
@@ -156,8 +175,14 @@ export default async function AssessmentDetailPage({
             <>
               <Card title="Seguimiento">
                 <ul className="list-none">
-                  <Row label="Adherencia percibida" value={`${answers.seguimiento.adherenciaPercibida}/5`} />
-                  <Row label="Progreso percibido" value={`${answers.seguimiento.progresoPercibido}/5`} />
+                  <Row
+                    label="Adherencia percibida"
+                    value={answers.seguimiento.adherenciaPercibida && `${answers.seguimiento.adherenciaPercibida}/5`}
+                  />
+                  <Row
+                    label="Progreso percibido"
+                    value={answers.seguimiento.progresoPercibido && `${answers.seguimiento.progresoPercibido}/5`}
+                  />
                   <Row label="Qué ha mejorado" value={answers.seguimiento.queHaMejorado} />
                   <Row label="Obstáculos" value={answers.seguimiento.obstaculos} />
                   <Row label="Objetivo del próximo periodo" value={answers.seguimiento.objetivoProximoPeriodo} />
@@ -169,6 +194,16 @@ export default async function AssessmentDetailPage({
                 </ul>
               </Card>
             </>
+          )}
+
+          {customAnswers.length > 0 && (
+            <Card title="Preguntas del centro">
+              <ul className="list-none">
+                {customAnswers.map(({ question, answer }) => (
+                  <Row key={question.key} label={question.label} value={String(answer)} />
+                ))}
+              </ul>
+            </Card>
           )}
 
           {marks.length > 0 && (

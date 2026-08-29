@@ -114,6 +114,9 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
     { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },
+    // Qué se pregunta en las valoraciones y cada cuánto (F-VAL). Cuelga de
+    // Organización porque es estructura del centro, no trabajo del día a día.
+    { href: "/organization/valoraciones", label: "Valoraciones", section: "Salud y aptitud", icon: "evolucion" },
     { href: "/organization", label: "Organización", section: "Administración", icon: "organizacion" },
     { href: "/rrhh", label: "RRHH", section: "Administración", icon: "rrhh" },
     { href: "/puesta-en-marcha", label: "Puesta en marcha", section: "Administración", icon: "puestaEnMarcha" },

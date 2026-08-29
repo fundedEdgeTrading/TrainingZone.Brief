@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { ESSENTIAL_PROFILE_FIELDS, type EssentialProfileField } from "@/lib/member-first-session";
+import { DEFAULT_ASSESSMENT_CONFIG, isQuestionEnabled } from "@/lib/assessments/config";
 import { completeEssentialProfileAction, submitMemberInitialPartAction } from "./first-session-actions";
 
 /**
@@ -177,7 +178,21 @@ function EssentialProfileStep({
   );
 }
 
-function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; orgName: string }) {
+function InitialAssessmentStep({
+  orgLogoUrl,
+  orgName,
+  disabledQuestions,
+}: {
+  orgLogoUrl: string;
+  orgName: string;
+  /**
+   * Preguntas que este centro ha quitado del cuestionario (F-VAL). El muro es
+   * la mitad de la valoración inicial que contesta el socio, así que tiene que
+   * preguntar lo mismo que el formulario del entrenador: si no, el socio
+   * respondería algo que su centro decidió no preguntar.
+   */
+  disabledQuestions: string[];
+}) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -208,6 +223,8 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
   });
 
   const num = (v: string) => (v.trim() === "" ? NaN : Number(v));
+  const on = (key: string) => isQuestionEnabled({ ...DEFAULT_ASSESSMENT_CONFIG, disabledQuestions }, key);
+  const only = <T extends object>(key: string, value: T) => (on(key) ? value : {});
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -216,12 +233,26 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
     const result = await submitMemberInitialPartAction({
       pesoKg: num(vitals.pesoKg),
       dolorActual: num(vitals.dolorActual),
-      calidadSueno: num(vitals.calidadSueno),
-      estres: num(vitals.estres),
-      energia: num(vitals.energia),
-      diasPorSemana: vitals.diasPorSemana,
-      perfil: { ...perfil, edad: num(perfil.edad), alturaCm: num(perfil.alturaCm) },
-      experiencia: { ...experiencia, anosExperiencia: num(experiencia.anosExperiencia) },
+      ...only("calidadSueno", { calidadSueno: num(vitals.calidadSueno) }),
+      ...only("estres", { estres: num(vitals.estres) }),
+      ...only("energia", { energia: num(vitals.energia) }),
+      ...only("diasPorSemana", { diasPorSemana: vitals.diasPorSemana }),
+      perfil: {
+        edad: num(perfil.edad),
+        sexo: perfil.sexo,
+        alturaCm: num(perfil.alturaCm),
+        objetivoPrincipal: perfil.objetivoPrincipal,
+        ...only("perfil.objetivoSecundario", { objetivoSecundario: perfil.objetivoSecundario }),
+        ...only("perfil.motivacionReal", { motivacionReal: perfil.motivacionReal }),
+        ...only("perfil.queLeHariaAbandonar", { queLeHariaAbandonar: perfil.queLeHariaAbandonar }),
+      },
+      experiencia: {
+        ...only("experiencia.nivelActividad", { nivelActividad: experiencia.nivelActividad }),
+        ...only("experiencia.haEntrenadoAntes", { haEntrenadoAntes: experiencia.haEntrenadoAntes }),
+        ...only("experiencia.anosExperiencia", { anosExperiencia: num(experiencia.anosExperiencia) }),
+        ...only("experiencia.tecnicaBasicos", { tecnicaBasicos: experiencia.tecnicaBasicos }),
+        ...only("experiencia.ejerciciosNoTolera", { ejerciciosNoTolera: experiencia.ejerciciosNoTolera }),
+      },
     });
     setPending(false);
     if (!result.ok) {
@@ -286,45 +317,54 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
               onChange={(e) => setPerfil((p) => ({ ...p, objetivoPrincipal: e.target.value }))}
             />
           </Field>
-          <Field label="Objetivo secundario" hint="Opcional">
-            <Input
-              aria-label="Objetivo secundario"
-              maxLength={200}
-              value={perfil.objetivoSecundario}
-              onChange={(e) => setPerfil((p) => ({ ...p, objetivoSecundario: e.target.value }))}
-            />
-          </Field>
-          <Field label="¿Por qué ahora?" hint="Opcional — lo que hay detrás del objetivo ayuda a sostenerlo">
-            <Textarea
-              rows={2}
-              value={perfil.motivacionReal}
-              onChange={(e) => setPerfil((p) => ({ ...p, motivacionReal: e.target.value }))}
-            />
-          </Field>
-          <Field label="¿Qué te haría abandonar?" hint="Opcional — saberlo por adelantado es lo que permite evitarlo">
-            <Textarea
-              rows={2}
-              value={perfil.queLeHariaAbandonar}
-              onChange={(e) => setPerfil((p) => ({ ...p, queLeHariaAbandonar: e.target.value }))}
-            />
-          </Field>
+          {on("perfil.objetivoSecundario") && (
+            <Field label="Objetivo secundario" hint="Opcional">
+              <Input
+                aria-label="Objetivo secundario"
+                maxLength={200}
+                value={perfil.objetivoSecundario}
+                onChange={(e) => setPerfil((p) => ({ ...p, objetivoSecundario: e.target.value }))}
+              />
+            </Field>
+          )}
+          {on("perfil.motivacionReal") && (
+            <Field label="¿Por qué ahora?" hint="Opcional — lo que hay detrás del objetivo ayuda a sostenerlo">
+              <Textarea
+                rows={2}
+                value={perfil.motivacionReal}
+                onChange={(e) => setPerfil((p) => ({ ...p, motivacionReal: e.target.value }))}
+              />
+            </Field>
+          )}
+          {on("perfil.queLeHariaAbandonar") && (
+            <Field label="¿Qué te haría abandonar?" hint="Opcional — saberlo por adelantado es lo que permite evitarlo">
+              <Textarea
+                rows={2}
+                value={perfil.queLeHariaAbandonar}
+                onChange={(e) => setPerfil((p) => ({ ...p, queLeHariaAbandonar: e.target.value }))}
+              />
+            </Field>
+          )}
         </section>
 
         <section className="flex flex-col gap-3.5 border-t border-brand-border pt-5">
           <h2 className="font-display font-bold text-[11px] tracking-[.14em] uppercase text-muted">De dónde partes</h2>
-          <Field label="Nivel de actividad actual">
-            <Select
-              value={experiencia.nivelActividad}
-              onChange={(e) => setExperiencia((x) => ({ ...x, nivelActividad: e.target.value }))}
-            >
-              {NIVEL_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          {on("experiencia.nivelActividad") && (
+            <Field label="Nivel de actividad actual">
+              <Select
+                value={experiencia.nivelActividad}
+                onChange={(e) => setExperiencia((x) => ({ ...x, nivelActividad: e.target.value }))}
+              >
+                {NIVEL_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
 
+          {on("experiencia.haEntrenadoAntes") && (
           <label className="flex gap-3 items-center rounded-xl border border-brand-border px-4 py-3 cursor-pointer hover:border-brand-border-hover transition-colors duration-200">
             <input
               type="checkbox"
@@ -334,9 +374,11 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
             />
             <span className="text-sm font-bold text-tz-black">He entrenado antes en un gimnasio</span>
           </label>
+          )}
 
-          {experiencia.haEntrenadoAntes && (
+          {experiencia.haEntrenadoAntes && (on("experiencia.anosExperiencia") || on("experiencia.tecnicaBasicos")) && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {on("experiencia.anosExperiencia") && (
               <Field label="Años de experiencia">
                 <Input
                   aria-label="Años de experiencia"
@@ -348,6 +390,8 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
                   onChange={(e) => setExperiencia((x) => ({ ...x, anosExperiencia: e.target.value }))}
                 />
               </Field>
+              )}
+              {on("experiencia.tecnicaBasicos") && (
               <Field label="Técnica en los básicos" hint="Sentadilla, peso muerto, empuje">
                 <Select
                   value={experiencia.tecnicaBasicos}
@@ -360,29 +404,37 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
                   ))}
                 </Select>
               </Field>
+              )}
             </div>
           )}
 
-          <Field label="Ejercicios que no toleras" hint="Opcional — si algo te da dolor, dilo aquí y no lo programamos">
-            <Textarea
-              rows={2}
-              value={experiencia.ejerciciosNoTolera}
-              onChange={(e) => setExperiencia((x) => ({ ...x, ejerciciosNoTolera: e.target.value }))}
-            />
-          </Field>
-
-          <Field label="¿Cuántos días por semana puedes entrenar?">
-            <Select
-              value={vitals.diasPorSemana}
-              onChange={(e) => setVitals((v) => ({ ...v, diasPorSemana: e.target.value }))}
+          {on("experiencia.ejerciciosNoTolera") && (
+            <Field
+              label="Ejercicios que no toleras"
+              hint="Opcional — si algo te da dolor, dilo aquí y no lo programamos"
             >
-              {DIAS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
+              <Textarea
+                rows={2}
+                value={experiencia.ejerciciosNoTolera}
+                onChange={(e) => setExperiencia((x) => ({ ...x, ejerciciosNoTolera: e.target.value }))}
+              />
+            </Field>
+          )}
+
+          {on("diasPorSemana") && (
+            <Field label="¿Cuántos días por semana puedes entrenar?">
+              <Select
+                value={vitals.diasPorSemana}
+                onChange={(e) => setVitals((v) => ({ ...v, diasPorSemana: e.target.value }))}
+              >
+                {DIAS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
         </section>
 
         <section className="flex flex-col gap-3.5 border-t border-brand-border pt-5">
@@ -416,36 +468,42 @@ function InitialAssessmentStep({ orgLogoUrl, orgName }: { orgLogoUrl: string; or
             </Field>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            <Field label="Calidad del sueño">
-              <Select
-                value={vitals.calidadSueno}
-                onChange={(e) => setVitals((v) => ({ ...v, calidadSueno: e.target.value }))}
-              >
-                {SCALE_1_5.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Nivel de estrés">
-              <Select value={vitals.estres} onChange={(e) => setVitals((v) => ({ ...v, estres: e.target.value }))}>
-                {SCALE_1_5.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Energía">
-              <Select value={vitals.energia} onChange={(e) => setVitals((v) => ({ ...v, energia: e.target.value }))}>
-                {SCALE_1_5.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            {on("calidadSueno") && (
+              <Field label="Calidad del sueño">
+                <Select
+                  value={vitals.calidadSueno}
+                  onChange={(e) => setVitals((v) => ({ ...v, calidadSueno: e.target.value }))}
+                >
+                  {SCALE_1_5.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            {on("estres") && (
+              <Field label="Nivel de estrés">
+                <Select value={vitals.estres} onChange={(e) => setVitals((v) => ({ ...v, estres: e.target.value }))}>
+                  {SCALE_1_5.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            {on("energia") && (
+              <Field label="Energía">
+                <Select value={vitals.energia} onChange={(e) => setVitals((v) => ({ ...v, energia: e.target.value }))}>
+                  {SCALE_1_5.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
           </div>
         </section>
 
@@ -465,9 +523,12 @@ export function FirstSessionWall({
   missing,
   orgLogoUrl,
   orgName,
+  disabledQuestions = [],
 }: {
   step: "profile" | "assessment";
   missing: EssentialProfileField[];
+  /** Preguntas que el centro ha quitado del cuestionario (F-VAL). */
+  disabledQuestions?: string[];
   orgLogoUrl: string;
   orgName: string;
 }) {
@@ -478,5 +539,5 @@ export function FirstSessionWall({
   if (step === "profile") {
     return <EssentialProfileStep missing={missing} orgLogoUrl={orgLogoUrl} orgName={orgName} />;
   }
-  return <InitialAssessmentStep orgLogoUrl={orgLogoUrl} orgName={orgName} />;
+  return <InitialAssessmentStep orgLogoUrl={orgLogoUrl} orgName={orgName} disabledQuestions={disabledQuestions} />;
 }

@@ -3,19 +3,10 @@ import { sendMail } from "@/lib/mailer";
 import { renderAssessmentDueEmail } from "@/lib/emails/templates";
 import { absoluteUrl } from "@/lib/invitations";
 import { zonedToday, DEFAULT_TIMEZONE } from "@/lib/date-utils";
-import { ASSESSMENT_KIND_ORDER, dueDateForKind } from "@/lib/assessments/queries";
-import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
+import { dueDateForMilestone, getAssessmentMilestones } from "@/lib/assessments/queries";
+import { milestoneKeyOf, milestoneLabelOf } from "@/lib/assessments/config";
 import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-
-/**
- * La escalera y sus vencimientos son los de F3 (`assessments/queries.ts`): si
- * el cron calculara los suyos, la fecha que ve el socio en el email y la que
- * ve el entrenador en la ficha podrían dejar de coincidir. Aquí solo se
- * recorre al revés, del hito más lejano al más cercano, porque la regla mira
- * el vigente (ver `runAssessmentDueRule`).
- */
-const LADDER = [...ASSESSMENT_KIND_ORDER].reverse();
 
 /** Ruta de la valoración en el portal del socio. */
 export function assessmentPortalPath(assessmentId: string): string {
@@ -35,8 +26,12 @@ export function assessmentPortalPath(assessmentId: string): string {
  * ese tipo para ese socio, ni se crea ni se reenvía el email.
  */
 export async function runAssessmentDueRule(orgId: string): Promise<number> {
-  const [org, members] = await Promise.all([
+  const [org, milestones, members] = await Promise.all([
     prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    // La escalera es la que ha configurado el centro (F-VAL), no una constante
+    // del código: si el cron calculara la suya, la fecha que ve el socio en el
+    // email y la que ve el entrenador en la ficha podrían dejar de coincidir.
+    getAssessmentMilestones(orgId),
     prisma.member.findMany({
       where: { orgId, state: "ACTIVE" },
       select: {
@@ -47,13 +42,16 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
         ...MEMBER_EMAIL_PREFERENCES_SELECT,
         primaryCenter: { select: { address: true, timezone: true } },
         user: { select: { email: true } },
-        assessments: { select: { kind: true } },
+        assessments: { select: { kind: true, milestoneKey: true } },
       },
     }),
   ]);
 
   const brandName = org?.name ?? "Training Zone";
   const brandLogoUrl = absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png");
+  // Del hito más lejano al más cercano: la regla abre el vigente, no todos los
+  // que hayan pasado (ver la nota de arriba).
+  const ladder = [...milestones].reverse();
 
   let created = 0;
   for (const member of members) {
@@ -62,15 +60,24 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
     const today = zonedToday(member.primaryCenter.timezone || DEFAULT_TIMEZONE);
     const joinedDay = new Date(member.joinedAt.getFullYear(), member.joinedAt.getMonth(), member.joinedAt.getDate());
 
-    const kind = LADDER.find((k) => dueDateForKind(joinedDay, k) <= today);
-    if (!kind) continue;
+    const milestone = ladder.find((m) => dueDateForMilestone(joinedDay, m) <= today);
+    if (!milestone) continue;
 
-    const alreadyExists = member.assessments.some((a) => a.kind === kind);
+    const alreadyExists = member.assessments.some((a) => milestoneKeyOf(a) === milestone.key);
     if (alreadyExists) continue;
 
-    const dueDate = dueDateForKind(joinedDay, kind);
+    const dueDate = dueDateForMilestone(joinedDay, milestone);
     const assessment = await prisma.assessment.create({
-      data: { orgId, memberId: member.id, kind, dueDate, answers: {} },
+      data: {
+        orgId,
+        memberId: member.id,
+        kind: milestone.kind,
+        // Los estándar se identifican por `kind`; solo los que ha añadido el
+        // centro necesitan clave propia.
+        milestoneKey: milestone.standard ? null : milestone.key,
+        dueDate,
+        answers: {},
+      },
       select: { id: true },
     });
     created++;
@@ -87,13 +94,13 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
     void sendMail({
       to,
       fromName: brandName,
-      subject: `${ASSESSMENT_KIND_LABEL[kind]} · ${brandName}`,
+      subject: `${milestone.label} · ${brandName}`,
       html: renderAssessmentDueEmail({
         memberFirstName: member.firstName,
         brandName,
         brandLogoUrl,
-        assessmentLabel: ASSESSMENT_KIND_LABEL[kind],
-        isInitial: kind === "INITIAL",
+        assessmentLabel: milestone.label,
+        isInitial: milestone.kind === "INITIAL",
         assessmentUrl: absoluteUrl(assessmentPortalPath(assessment.id)),
         dueDateLabel: dueDate.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" }),
         postalAddress: member.primaryCenter.address ?? undefined,
@@ -126,8 +133,13 @@ export async function getDueAssessmentForMember(memberId: string) {
       NOT: { kind: "INITIAL", memberPartAt: { not: null } },
     },
     orderBy: { dueDate: "asc" },
-    select: { id: true, kind: true, dueDate: true },
+    select: { id: true, orgId: true, kind: true, milestoneKey: true, dueDate: true },
   });
   if (!assessment) return null;
-  return { ...assessment, label: ASSESSMENT_KIND_LABEL[assessment.kind], portalPath: assessmentPortalPath(assessment.id) };
+  const milestones = await getAssessmentMilestones(assessment.orgId);
+  return {
+    ...assessment,
+    label: milestoneLabelOf(assessment, milestones),
+    portalPath: assessmentPortalPath(assessment.id),
+  };
 }

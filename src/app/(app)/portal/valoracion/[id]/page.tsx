@@ -2,7 +2,8 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
+import { getAssessmentMilestones } from "@/lib/assessments/queries";
+import { milestoneLabelOf } from "@/lib/assessments/config";
 
 /**
  * Destino del aviso de valoración vencida (F4 §5.3): la vista del socio.
@@ -21,15 +22,17 @@ export default async function PortalAssessmentPage({ params }: { params: Promise
   // Siempre acotada al socio de la sesión: un id ajeno no abre la ficha de otro.
   const assessment = await prisma.assessment.findFirst({
     where: { id, memberId: member.id },
-    select: { kind: true, dueDate: true, completedAt: true },
+    select: { kind: true, milestoneKey: true, dueDate: true, completedAt: true },
   });
   if (!assessment) redirect("/portal");
+
+  const milestones = await getAssessmentMilestones(member.orgId);
 
   return (
     <div className="max-w-[720px] mx-auto flex flex-col gap-[18px]">
       <div className="bg-white border border-brand-border rounded-[18px] p-7">
         <div className="text-[11px] font-bold tracking-[.12em] uppercase text-brand-muted">
-          {ASSESSMENT_KIND_LABEL[assessment.kind]}
+          {milestoneLabelOf(assessment, milestones)}
         </div>
         <h1 className="font-display font-extrabold text-[24px] text-brand-text mt-1.5 tracking-[-.01em]">
           {assessment.completedAt ? "Valoración ya entregada" : "Tienes una valoración pendiente"}
