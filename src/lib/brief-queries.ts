@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
 import type { Role, AptitudeLight } from "@prisma/client";
+import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 
 const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
 
@@ -54,8 +55,11 @@ export async function getSessionBrief({
   let aptitudeRules: { injuryZone: string; blockArea: string; light: AptitudeLight; adaptation: string | null }[] = [];
 
   if (canSeeHealth && memberIds.length) {
+    // Todo lo que sigue vigente, no solo lo "activo": una lesión en
+    // rehabilitación es justo la que más adaptación necesita, y una crónica no
+    // deja de limitar por ser antigua. Solo RESOLVED se cae del brief.
     const records = await prisma.healthRecord.findMany({
-      where: { memberId: { in: memberIds }, status: "ACTIVE" },
+      where: { memberId: { in: memberIds }, status: { in: OPEN_HEALTH_STATUSES } },
       select: { memberId: true, zone: true, description: true, type: true },
     });
     for (const r of records) {

@@ -113,6 +113,13 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
       <path d="M3 9.5h18M7 14h4" />
     </>
   ),
+  // Lista con una marca de hecho: es lo que hace el tablero de tareas.
+  tareas: (
+    <>
+      <path d="M4 6.5h9M4 12h9M4 17.5h6" />
+      <path d="m16 15.6 2.1 2.1 3.9-4.2" />
+    </>
+  ),
   descargar: <path d="M12 3v12M7 11l5 5 5-5M4 20h16" />,
 };
 

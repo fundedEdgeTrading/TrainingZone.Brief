@@ -415,6 +415,8 @@ export function renderSessionVacancyEmail(opts: {
   room?: string;
   prefsToken?: string;
   spotsLabel?: string;
+  /** El aviso va a quien estaba en lista de espera de ESA sesión, no al centro entero. */
+  fromWaitlist?: boolean;
   postalAddress?: string;
 }) {
   return shell({
@@ -424,9 +426,13 @@ export function renderSessionVacancyEmail(opts: {
     preheader: `Hay un hueco en ${esc(opts.sessionName)}, ${esc(opts.dateLabel)} a las ${esc(opts.startTime)}. Se cubre por orden de llegada.`,
     eyebrow: "Plaza liberada",
     title: `¡Hola, ${esc(opts.recipientFirstName)}!<br>Se ha liberado un hueco.`,
-    bodyHtml:
-      p("Alguien ha cancelado y ha quedado una plaza libre en una sesión de tu centro para la que tienes bono activo.", true) +
-      p("Las plazas se cubren por orden de llegada: si te interesa, resérvala cuanto antes desde tu portal."),
+    bodyHtml: opts.fromWaitlist
+      ? // A quien espera se le dice lo que le falta saber: que la plaza no es
+        // suya por estar el primero, sino de quien la reserve antes.
+        p("Ha quedado libre una plaza en la sesión en la que estabas en lista de espera.", true) +
+        p("Hemos avisado a toda la lista a la vez: la plaza es de quien la reserve primero, así que confírmala cuanto antes desde tu portal.")
+      : p("Alguien ha cancelado y ha quedado una plaza libre en una sesión de tu centro para la que tienes bono activo.", true) +
+        p("Las plazas se cubren por orden de llegada: si te interesa, resérvala cuanto antes desde tu portal."),
     rows: [
       { label: "Sesión", value: opts.sessionName },
       { label: "Fecha", value: opts.dateLabel },
@@ -440,7 +446,9 @@ export function renderSessionVacancyEmail(opts: {
     signOff: `Un saludo,<br>${strong(`El equipo de ${opts.centerName}`)}`,
     senderName: opts.centerName,
     postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
-    reason: "Recibes este email porque tienes un bono activo para este tipo de sesión en este centro.",
+    reason: opts.fromWaitlist
+      ? "Recibes este email porque estás en la lista de espera de esta sesión."
+      : "Recibes este email porque tienes un bono activo para este tipo de sesión en este centro.",
     footerLinksHtml: memberFooterLinks(opts.prefsToken, "Dejar de recibir avisos de plazas"),
   });
 }

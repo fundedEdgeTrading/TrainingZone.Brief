@@ -22,7 +22,8 @@ const ACTION_LABEL: Record<string, string> = {
   HEALTH_RECORD_READ: "Lectura de dato de salud",
   HEALTH_RECORD_CREATED: "Alta de dato de salud",
   HEALTH_RECORD_CREATED_FROM_ASSESSMENT: "Dato de salud desde una valoración",
-  HEALTH_RECORD_RESOLVED: "Dato de salud resuelto",
+  HEALTH_RECORD_RESOLVED: "Dato de salud resuelto", // histórico: hoy lo escribe HEALTH_RECORD_STATUS_CHANGED
+  HEALTH_RECORD_STATUS_CHANGED: "Cambio de estado de un dato de salud",
   LEAD_HEALTH_RECORD_READ: "Lectura de dato de salud de un lead",
   LEAD_HEALTH_RECORD_CREATED: "Alta de dato de salud de un lead",
   SESSION_BRIEF_OPENED: "Session Brief abierto",

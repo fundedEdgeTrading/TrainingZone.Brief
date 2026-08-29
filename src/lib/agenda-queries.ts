@@ -1,4 +1,4 @@
-import type { ClassSession, Prisma } from "@prisma/client";
+import type { ClassSession, NoShowReason, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { centerScopeFor, type ScopedUser } from "@/lib/center-scope";
 import { isSameDay, occursOn, resolveOccurrenceDate } from "@/lib/session-occurrences";
@@ -11,6 +11,15 @@ import {
   type EditScope,
 } from "@/lib/session-series";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
+import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import {
+  chargeSessionToSubscription,
+  claimWaitlistedBooking,
+  occupiedSpots,
+  pickBookingSubscription,
+  SERVICE_LABEL,
+  shouldNotifyVacancy,
+} from "@/lib/session-booking";
 import { addDays, DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
 
 /**
@@ -359,6 +368,10 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   const dayBookings = booking.session.bookings.filter((b) => isSameDay(b.occurrenceDate, booking.occurrenceDate));
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
+  // Con gente esperando, cualquier cancelación que libere plaza es un aviso que
+  // dar: si el aforo se amplió después de formarse la lista, la sesión ya no
+  // estaba "llena" y quien esperaba se quedaba sin enterarse del hueco.
+  const hasWaitlist = dayBookings.some((b) => b.status === "WAITLISTED");
 
   // Igual que en la cancelación del socio (portal-queries.ts): la condición de
   // "sigue activa" va dentro del UPDATE, para que dos cancelaciones simultáneas
@@ -381,9 +394,289 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   });
   if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
-  if (booking.status === "BOOKED" && wasFull) {
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
+
+  return { ok: true as const };
+}
+
+/**
+ * Socios a los que el staff puede dar una plaza en esta sesión: los que tienen
+ * un bono ACTIVE de esa modalidad en el centro que la imparte (RB-AGENDA-003),
+ * que es exactamente lo que exige `bookSessionForMemberAsStaff`.
+ *
+ * No vale el listado general de socios activos: ofrecía a toda la organización
+ * —incluida gente sin bono de grupos, o de otro centro— y en cambio dejaba
+ * fuera a quien está de prueba (`state` TRIAL), que es justo a quien más se
+ * apunta a mano desde el mostrador.
+ */
+export async function listMembersBookableForSession(orgId: string, sessionId: string) {
+  const session = await prisma.classSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: { centerId: true, classType: true },
+  });
+  if (!session) return [];
+  const kind = sessionServiceKind(session.classType);
+
+  const members = await prisma.member.findMany({
+    where: { orgId, subscriptions: { some: { status: "ACTIVE", centerId: session.centerId } } },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      subscriptions: {
+        where: { status: "ACTIVE", centerId: session.centerId },
+        select: { plan: { select: { type: true } } },
+      },
+    },
+  });
+
+  return members
+    .filter((m) => m.subscriptions.some((s) => planServiceKind(s.plan.type) === kind))
+    .map(({ id, firstName, lastName }) => ({ id, firstName, lastName }));
+}
+
+/**
+ * Motivo por el que una reserva de staff no se puede aplicar. Se lanza dentro
+ * de la transacción (en vez de devolverse) para que el descuento de bono que ya
+ * hubiera hecho se deshaga con ella: devolver un objeto de error confirma la
+ * transacción y dejaba la sesión cobrada y sin reservar.
+ */
+class StaffBookingError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
+}
+
+export type StaffBookingResult =
+  | { ok: true; claimedFromWaitlist: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Reserva la plaza de un cliente concreto en una sesión, desde la agenda de
+ * staff (el reverso de `cancelSessionBooking`). Es una acción PUNTUAL sobre un
+ * día: no existe el "cliente fijo" de grupos reducidos —eso se queda en
+ * Entrenamiento Personal—, así que reservar la ocurrencia del martes no apunta
+ * a nadie a los martes siguientes.
+ *
+ * El bono se trata exactamente igual que cuando reserva el propio socio desde
+ * la app (`bookSessionForMember`, portal-queries.ts): mismo bono elegido, mismo
+ * descuento atómico y misma devolución al cancelar. Lo que NO se aplica son las
+ * reglas de autoservicio del portal (antelación mínima, ventana de 7 días,
+ * `selfBookable` en EP): quien está en el mostrador apunta a alguien a la clase
+ * de dentro de diez minutos, que es justo lo que el socio no puede hacer solo.
+ *
+ * Si el cliente ya estaba en lista de espera, esto es su forma de reclamar la
+ * plaza liberada (RB-RES-007): se pasa a BOOKED con la misma condición atómica
+ * que usa el portal, así que si otro se ha adelantado, no se le cobra.
+ */
+export async function bookSessionForMemberAsStaff(
+  orgId: string,
+  input: { sessionId: string; memberId: string; occurrenceDate: Date }
+): Promise<StaffBookingResult> {
+  const day = startOfDay(input.occurrenceDate);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Mismo lock de fila que el portal: sin él, dos reservas simultáneas leen
+      // el mismo aforo libre y ambas entran por encima de `capacity`.
+      await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${input.sessionId} FOR UPDATE`;
+
+      const cls = await tx.classSession.findFirst({
+        where: { id: input.sessionId, orgId },
+        select: {
+          id: true,
+          centerId: true,
+          classType: true,
+          capacity: true,
+          status: true,
+          date: true,
+          recurrence: true,
+          recUntil: true,
+          bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
+        },
+      });
+      if (!cls) throw new StaffBookingError("Sesión no encontrada.");
+      if (cls.status !== "SCHEDULED") throw new StaffBookingError("Esta sesión ya no admite reservas.");
+      // El día llega de la URL de la agenda: en una serie recurrente solo vale
+      // si la serie ocurre de verdad ese día (si no, la reserva quedaría en un
+      // roster que no existe).
+      if (!occursOn(cls, day)) throw new StaffBookingError("Esta sesión no se imparte ese día.");
+
+      // El socio, contrastado contra la organización: sin esto bastaba conocer
+      // un id ajeno para colar una reserva a nombre de alguien de otra.
+      const member = await tx.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
+      if (!member) throw new StaffBookingError("Socio no encontrado.");
+
+      const dayBookings = cls.bookings.filter((b) => isSameDay(b.occurrenceDate, day));
+      const mine = dayBookings.filter((b) => b.memberId === member.id);
+      if (mine.some((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW")) {
+        throw new StaffBookingError("Ese socio ya tiene plaza en esta sesión.");
+      }
+      // Desde el mostrador no se apunta a nadie a la lista de espera: eso lo
+      // hace el cliente desde la app. Aquí solo se ocupa una plaza que exista.
+      if (occupiedSpots(dayBookings, day) >= cls.capacity) {
+        throw new StaffBookingError("La sesión está completa: no quedan plazas libres ese día.");
+      }
+
+      const kind = sessionServiceKind(cls.classType);
+      const subscriptions = await tx.subscription.findMany({
+        where: { memberId: member.id, status: "ACTIVE" },
+        select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
+      });
+      const choice = pickBookingSubscription(subscriptions, {
+        centerId: cls.centerId,
+        kind,
+        consumesSession: true,
+      });
+      if (!choice.ok) {
+        throw new StaffBookingError(
+          choice.reason === "NO_PLAN"
+            ? `El bono de ese socio no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"} en este centro.`
+            : "A ese socio no le quedan sesiones en su bono."
+        );
+      }
+      const chargeSubscriptionId = choice.subscriptionId;
+
+      // Antes de escribir la reserva, para no dejarla creada sin cobrar.
+      if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+        throw new StaffBookingError("A ese socio no le quedan sesiones en su bono.");
+      }
+
+      const waiting = mine.find((b) => b.status === "WAITLISTED");
+      if (waiting) {
+        if (!(await claimWaitlistedBooking(tx, waiting.id, chargeSubscriptionId))) {
+          // Lanzar deshace también el descuento de bono de más arriba: nadie
+          // paga una plaza que se quedó otro.
+          throw new StaffBookingError("Esa plaza ya la ha reclamado otra persona.");
+        }
+        return { ok: true as const, claimedFromWaitlist: true };
+      }
+
+      await tx.booking.create({
+        data: {
+          sessionId: cls.id,
+          occurrenceDate: day,
+          memberId: member.id,
+          status: "BOOKED",
+          subscriptionId: chargeSubscriptionId,
+        },
+      });
+      return { ok: true as const, claimedFromWaitlist: false };
+    });
+  } catch (error) {
+    if (error instanceof StaffBookingError) return { ok: false as const, error: error.reason };
+    throw error;
+  }
+}
+
+/**
+ * RB-RES-009: marca la reserva como falta, con motivo, y aplica la decisión del
+ * entrenador sobre el bono.
+ *
+ * Hasta ahora una falta no devolvía nunca la sesión (a diferencia de la
+ * cancelación a tiempo, RB-RES-006) y tampoco dejaba rastro de por qué: una
+ * gripe avisada y un plantón acababan en el mismo `NO_SHOW`. Ahora el motivo es
+ * obligatorio y la devolución es una decisión explícita, caso a caso.
+ *
+ * La devolución reutiliza la misma mecánica que `cancelSessionBooking`
+ * (`Subscription.sessionsRemaining` + 1 sobre el bono del que salió la reserva),
+ * pero se cierra sobre `noShowRefunded` en vez de sobre `subscriptionId`: la
+ * reserva conserva su bono, así que rectificar la falta puede volver a
+ * descontarla (`clearBookingNoShow`). Que el incremento vaya condicionado a que
+ * la bandera pase de false a true es lo que impide devolver dos veces la misma
+ * sesión si se marca dos veces (o dos personas a la vez).
+ */
+export async function markBookingNoShow(
+  orgId: string,
+  bookingId: string,
+  opts: { sessionId: string; reason: NoShowReason; refundSession: boolean }
+) {
+  const booking = await prisma.booking.findFirst({
+    // Acotado a la sesión Y a la organización, igual que el check-in: el id de
+    // la reserva viaja desde el cliente y por sí solo no dice de quién es.
+    //
+    // WAITLISTED y CANCELLED quedan fuera: no hay asistencia que registrar en
+    // una reserva que nunca ocupó plaza. ATTENDED sí entra, porque marcar la
+    // falta es también rectificar un check-in dado por error.
+    where: {
+      id: bookingId,
+      sessionId: opts.sessionId,
+      session: { orgId },
+      status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] },
+    },
+    select: { id: true, memberId: true, subscriptionId: true, noShowRefunded: true },
+  });
+  if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  const refunded = await prisma.$transaction(async (tx) => {
+    const applied = await tx.booking.updateMany({
+      where: { id: booking.id, status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+      data: { status: "NO_SHOW", checkedInAt: null, noShowReason: opts.reason },
+    });
+    if (applied.count === 0) return null;
+
+    // Sin bono del que salió la reserva no hay nada que devolver (cuota
+    // ilimitada, o sesión agendada sin cargo).
+    if (!opts.refundSession || !booking.subscriptionId) return booking.noShowRefunded;
+
+    const claimed = await tx.booking.updateMany({
+      where: { id: booking.id, noShowRefunded: false },
+      data: { noShowRefunded: true },
+    });
+    if (claimed.count > 0) {
+      await tx.subscription.update({
+        where: { id: booking.subscriptionId },
+        data: { sessionsRemaining: { increment: 1 } },
+      });
+    }
+    return true;
+  });
+  if (refunded === null) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  return { ok: true as const, memberId: booking.memberId, refunded };
+}
+
+/**
+ * Deshace una falta: la reserva vuelve al estado que se le indique (asistió, o
+ * de nuevo reservada) y se borra el motivo. Si la falta había devuelto la
+ * sesión al bono, se vuelve a descontar — si no, rectificar un "No asistió"
+ * marcado por error regalaría una sesión cada vez.
+ */
+export async function clearBookingNoShow(orgId: string, bookingId: string, nextStatus: "BOOKED" | "ATTENDED") {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, session: { orgId } },
+    select: { id: true, subscriptionId: true, noShowRefunded: true },
+  });
+  if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  await prisma.$transaction(async (tx) => {
+    // La bandera es también aquí el cierre de la operación, en el mismo UPDATE
+    // que la baja: dos rectificaciones simultáneas no pueden descontar dos
+    // veces una sesión que solo se devolvió una.
+    const released = await tx.booking.updateMany({
+      where: { id: booking.id, noShowRefunded: true },
+      data: { noShowRefunded: false },
+    });
+    await tx.booking.update({
+      where: { id: booking.id },
+      data: {
+        status: nextStatus,
+        checkedInAt: nextStatus === "ATTENDED" ? new Date() : null,
+        noShowReason: null,
+      },
+    });
+
+    if (released.count === 0 || !booking.subscriptionId) return;
+    // Solo se descuenta si el bono tiene saldo: dejarlo en negativo rompería
+    // las cuentas de `bonoUsage` (session-balance.ts). Un bono ilimitado
+    // (`sessionsRemaining` null) no se toca: NULL - 1 sigue siendo NULL.
+    await tx.subscription.updateMany({
+      where: { id: booking.subscriptionId, sessionsRemaining: { gt: 0 } },
+      data: { sessionsRemaining: { decrement: 1 } },
+    });
+  });
 
   return { ok: true as const };
 }

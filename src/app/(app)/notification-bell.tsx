@@ -18,6 +18,9 @@ type NotificationItem = {
 const ENTITY_HREF: Record<string, (id: string) => string> = {
   Lead: (id) => `/leads/${id}`,
   Member: (id) => `/members/${id}`,
+  // La alerta de faltas seguidas usa entidad propia para no deduplicarse contra
+  // el resto de tareas del socio (no-show-alerts.ts), pero apunta a su ficha.
+  MemberNoShowStreak: (id) => `/members/${id}`,
 };
 
 export function NotificationBell({ notifications }: { notifications: NotificationItem[] }) {

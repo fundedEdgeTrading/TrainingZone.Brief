@@ -1,15 +1,18 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole, requireCenterRole } from "@/lib/guard";
-import { getSessionDetail } from "@/lib/agenda-queries";
+import { getSessionDetail, listMembersBookableForSession } from "@/lib/agenda-queries";
 import { formatDateParam } from "@/lib/date-utils";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
+import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import CheckinButton from "./checkin-button";
 import CancelBookingButton from "./cancel-booking-button";
+import BookMemberForm from "./book-member-form";
+import NoShowButton from "./no-show-button";
 import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -46,6 +49,18 @@ export default async function SessionDetailPage({
 
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");
+
+  // Reserva puntual desde el mostrador (grupo reducido; en EP la franja la
+  // asigna el diálogo de la agenda). Solo se ofrece a quien tiene bono de esta
+  // modalidad en este centro: quien ya ocupa plaza ese día sale de la lista, y
+  // quien espera se queda, porque elegirlo reclama su plaza liberada.
+  const waitingMemberIds = new Set(waitlisted.map((b) => b.member.id));
+  const bookedMemberIds = new Set(booked.map((b) => b.member.id));
+  const bookableMembers = isEpSession
+    ? []
+    : (await listMembersBookableForSession(session.user.orgId, cls.id))
+        .filter((m) => !bookedMemberIds.has(m.id))
+        .map((m) => ({ ...m, waiting: waitingMemberIds.has(m.id) }));
 
   // El debrief es confidencial del entrenador asignado (o quien la dirigió) y
   // dirección; ocultamos el acceso al resto para no dejar un enlace muerto.
@@ -93,7 +108,17 @@ export default async function SessionDetailPage({
       </div>
 
       <div>
-        <h2 className="text-sm font-semibold text-text-2 mb-2">Roster ({booked.length})</h2>
+        <div className="flex items-end justify-between gap-3 flex-wrap mb-2">
+          <h2 className="text-sm font-semibold text-text-2">Roster ({booked.length})</h2>
+          {!isEpSession && (
+            <BookMemberForm
+              sessionId={cls.id}
+              occurrenceDate={formatDateParam(occurrenceDate)}
+              members={bookableMembers}
+              full={booked.length >= cls.capacity}
+            />
+          )}
+        </div>
         <DataTable
           columns={rosterColumns}
           rows={booked.map((b) => bookingToRow(b, cls.id))}
@@ -118,7 +143,7 @@ const rosterColumns: DataTableColumn[] = [
   { key: "member", header: "Socio", sortable: true },
   { key: "memberState", header: "Estado del socio", sortable: true },
   { key: "status", header: "Estado reserva", sortable: true, className: "text-text-2" },
-  { key: "checkin", header: "Check-in" },
+  { key: "checkin", header: "Asistencia" },
   { key: "actions", header: "Acciones" },
 ];
 
@@ -137,8 +162,32 @@ function bookingToRow(b: Booking, sessionId: string): DataTableRow {
         </Link>
       ),
       memberState: <Badge tone={MEMBER_STATE_TONE[b.member.state]}>{MEMBER_STATE_LABEL[b.member.state]}</Badge>,
-      status: STATUS_LABEL[b.status],
-      checkin: <CheckinButton bookingId={b.id} sessionId={sessionId} checkedIn={b.status === "ATTENDED"} />,
+      // RB-RES-009: la falta se lee entera aquí —motivo y si se devolvió la
+      // sesión—, que es lo que el entrenador necesita para saber si tiene que
+      // hablar con el cliente o solo apuntarlo.
+      status: (
+        <div>
+          {STATUS_LABEL[b.status]}
+          {b.status === "NO_SHOW" && b.noShowReason && (
+            <span className="block text-xs text-muted">
+              {NO_SHOW_REASON_LABEL[b.noShowReason]} · {b.noShowRefunded ? "sesión devuelta" : "sesión no devuelta"}
+            </span>
+          )}
+        </div>
+      ),
+      checkin: (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <CheckinButton bookingId={b.id} sessionId={sessionId} checkedIn={b.status === "ATTENDED"} />
+          <NoShowButton
+            bookingId={b.id}
+            sessionId={sessionId}
+            memberName={`${b.member.firstName} ${b.member.lastName}`}
+            currentReason={b.status === "NO_SHOW" ? b.noShowReason : null}
+            refunded={b.noShowRefunded}
+            hasSubscription={b.subscriptionId != null}
+          />
+        </div>
+      ),
       actions: b.status === "BOOKED" && (
         <CancelBookingButton bookingId={b.id} sessionId={sessionId} memberName={`${b.member.firstName} ${b.member.lastName}`} />
       ),

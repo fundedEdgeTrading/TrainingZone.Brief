@@ -4,6 +4,7 @@ import {
   PlanType,
   MemberState,
   BookingStatus,
+  NoShowReason,
   PaymentMethod,
   HealthRecordType,
   HealthSeverity,
@@ -41,6 +42,15 @@ TODAY.setHours(0, 0, 0, 0);
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
+
+/** Motivos de falta que se reparten en los datos de demo (RB-RES-009). */
+const NO_SHOW_REASONS: NoShowReason[] = [
+  NoShowReason.FORGOT,
+  NoShowReason.FORGOT,
+  NoShowReason.LATE_NOTICE,
+  NoShowReason.JUSTIFIED,
+  NoShowReason.OUR_ERROR,
+];
 function weightedPick<T>(pairs: [T, number][]): T {
   const total = pairs.reduce((s, [, w]) => s + w, 0);
   let r = Math.random() * total;
@@ -932,6 +942,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     waitlistPosition: number | null;
     bookedAt: Date;
     checkedInAt: Date | null;
+    noShowReason: NoShowReason | null;
+    noShowRefunded: boolean;
   };
   const bookings: BookingRow[] = [];
   const bookedCountBySession = new Map<string, number>();
@@ -958,6 +970,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
         let status: BookingStatus;
         let checkedInAt: Date | null = null;
+        // RB-RES-009: la falta se registra siempre con motivo, y devolver la
+        // sesión es una decisión del entrenador. Los datos de demo reparten los
+        // cuatro motivos y devuelven solo las que un entrenador devolvería.
+        let noShowReason: NoShowReason | null = null;
         if (!s.isPast) {
           status = overCapacity ? "WAITLISTED" : "BOOKED";
         } else if (overCapacity) {
@@ -965,6 +981,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         } else {
           const r = Math.random();
           status = r < 0.85 ? "ATTENDED" : r < 0.94 ? "NO_SHOW" : "CANCELLED";
+          if (status === "NO_SHOW") noShowReason = pick(NO_SHOW_REASONS);
           if (status === "ATTENDED") {
             const [h, mi] = s.startTime.split(":").map(Number);
             checkedInAt = new Date(s.date);
@@ -982,6 +999,11 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           waitlistPosition: status === "WAITLISTED" ? count - s.capacity + 1 : null,
           bookedAt: addDays(s.date, -randInt(0, 5)),
           checkedInAt,
+          noShowReason,
+          // Se devuelve la sesión en los dos motivos en los que el cliente no
+          // se quedó el hueco por gusto; el plantón sin avisar la pierde.
+          noShowRefunded:
+            noShowReason === NoShowReason.JUSTIFIED || noShowReason === NoShowReason.OUR_ERROR,
         });
         if (status === "ATTENDED") attendanceByMember.get(m.id)!.push(s.date);
       }
@@ -1115,6 +1137,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
 
   // ---------- Salud (A.2.4) ----------
+  const minDate = (a: Date, b: Date) => (a.getTime() < b.getTime() ? a : b);
   const trainerAndOwnerIds = staffUsers.filter((u) => u.role === "TRAINER" || u.role === "OWNER").map((u) => u.id);
   const healthRecords: {
     id: string;
@@ -1124,6 +1147,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     description: string;
     severity: HealthSeverity;
     status: HealthStatus;
+    injuryDate: Date | null;
+    injuryDateApprox: boolean;
+    statusChangedAt: Date | null;
     reportedByUserId: string;
     reportedAt: Date;
     consentSignedAt: Date;
@@ -1136,6 +1162,16 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const reportedAt = addDays(m.joinedAt, randInt(5, Math.max(6, Math.floor((TODAY.getTime() - m.joinedAt.getTime()) / DAY))));
     if (Math.random() < 0.6) {
       const zone = pick(INJURY_ZONES);
+      // La lesión es anterior al registro: casi nadie llega el mismo día. Una de
+      // cada tres solo se recuerda por el mes (injuryDateApprox).
+      const injuryDate = addDays(reportedAt, -randInt(0, 45));
+      const approx = Math.random() < 0.33;
+      const status = weightedPick([
+        [HealthStatus.ACTIVE, 35],
+        [HealthStatus.IN_REHAB, 25],
+        [HealthStatus.RESOLVED, 30],
+        [HealthStatus.CHRONIC, 10],
+      ]);
       healthRecords.push({
         id: id(),
         memberId: m.id,
@@ -1143,7 +1179,12 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         zone,
         description: `Lesión: ${zone}, ${pick(["tendinopatía", "sobrecarga muscular", "esguince leve", "molestia crónica"])}`,
         severity: weightedPick([[HealthSeverity.LOW, 40], [HealthSeverity.MEDIUM, 45], [HealthSeverity.HIGH, 15]]),
-        status: Math.random() < 0.6 ? HealthStatus.ACTIVE : HealthStatus.RESOLVED,
+        status,
+        injuryDate: approx ? new Date(injuryDate.getFullYear(), injuryDate.getMonth(), 1) : injuryDate,
+        injuryDateApprox: approx,
+        // Nunca en el futuro: un "resuelta desde" posterior a hoy se lee como un fallo.
+        statusChangedAt:
+          status === HealthStatus.ACTIVE ? null : minDate(addDays(reportedAt, randInt(7, 60)), TODAY),
         reportedByUserId: pick(trainerAndOwnerIds),
         reportedAt,
         consentSignedAt: reportedAt,
@@ -1158,6 +1199,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         description: c.desc,
         severity: c.severity,
         status: HealthStatus.ACTIVE,
+        injuryDate: null,
+        injuryDateApprox: false,
+        statusChangedAt: null,
         reportedByUserId: pick(trainerAndOwnerIds),
         reportedAt,
         consentSignedAt: reportedAt,
@@ -1176,7 +1220,33 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       zone: "cervicales",
       description: "Lesión: cervicales, contractura recurrente por trabajo de oficina",
       severity: HealthSeverity.MEDIUM,
-      status: HealthStatus.ACTIVE,
+      // En rehabilitación: sigue siendo vigente (enciende el mismo semáforo que
+      // ACTIVE) y de paso la demo enseña la fase intermedia.
+      status: HealthStatus.IN_REHAB,
+      injuryDate: addDays(reportedAt, -11),
+      injuryDateApprox: false,
+      statusChangedAt: minDate(addDays(reportedAt, 21), TODAY),
+      reportedByUserId: trainerAndOwnerIds.length ? pick(trainerAndOwnerIds) : ownerId,
+      reportedAt,
+      consentSignedAt: reportedAt,
+    });
+  }
+  // Lesión crónica del socio en riesgo: es el caso que enciende el aviso
+  // permanente de la cabecera de la ficha, así que la demo lo tiene siempre.
+  for (const m of members.filter((m) => m.showcase === "atRisk")) {
+    const reportedAt = addDays(m.joinedAt, 40);
+    healthRecords.push({
+      id: id(),
+      memberId: m.id,
+      type: HealthRecordType.INJURY,
+      zone: "zona lumbar",
+      description: "Lesión: zona lumbar, hernia discal L4-L5 con limitación permanente",
+      severity: HealthSeverity.HIGH,
+      status: HealthStatus.CHRONIC,
+      // Solo recuerda el mes: capturada como aproximada a propósito.
+      injuryDate: new Date(m.joinedAt.getFullYear() - 1, m.joinedAt.getMonth(), 1),
+      injuryDateApprox: true,
+      statusChangedAt: minDate(addDays(reportedAt, 30), TODAY),
       reportedByUserId: trainerAndOwnerIds.length ? pick(trainerAndOwnerIds) : ownerId,
       reportedAt,
       consentSignedAt: reportedAt,
@@ -1185,13 +1255,28 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   await prisma.healthRecord.createMany({ data: healthRecords });
 
   // ---------- Bitácora de observaciones (MemberNote) ----------
+  // Una de cada cinco nace destacada (sube al bloque de cabecera de la ficha) y
+  // lo más viejo de tres meses se siembra archivado: así la demo enseña las dos
+  // caras — lo que hay que saber antes de la sesión y lo que ya se apartó sin
+  // borrarlo.
   const noteAuthorIds = staffUsers.filter((u) => u.role !== "PLATFORM_ADMIN").map((u) => u.id);
-  const noteRows: { id: string; orgId: string; memberId: string; authorUserId: string; body: string; createdAt: Date }[] = [];
+  const noteRows: Prisma.MemberNoteCreateManyInput[] = [];
   for (const m of members) {
     if (m.state === MemberState.PROSPECT) continue;
     if (Math.random() > 0.3) continue;
     for (let k = 0; k < randInt(1, 2); k++) {
-      noteRows.push({ id: id(), orgId, memberId: m.id, authorUserId: pick(noteAuthorIds), body: pick(NOTE_BODIES), createdAt: addDays(TODAY, -randInt(1, 120)) });
+      const createdAt = addDays(TODAY, -randInt(1, 120));
+      const daysOld = Math.round((TODAY.getTime() - createdAt.getTime()) / 86_400_000);
+      noteRows.push({
+        id: id(),
+        orgId,
+        memberId: m.id,
+        authorUserId: pick(noteAuthorIds),
+        body: pick(NOTE_BODIES),
+        important: Math.random() < 0.2,
+        archivedAt: daysOld > 90 ? addDays(createdAt, 30) : null,
+        createdAt,
+      });
     }
   }
   await prisma.memberNote.createMany({ data: noteRows });
@@ -1604,6 +1689,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
               occurrenceDate: sessionDate,
               memberId,
               status: isNoShow ? BookingStatus.NO_SHOW : BookingStatus.ATTENDED,
+              // Faltas seguidas sin avisar en la demo: son las que hacen que la
+              // alerta a dirección (RB-RES-009) tenga algo que enseñar.
+              noShowReason: isNoShow ? NoShowReason.FORGOT : null,
               bookedAt: addDays(sessionDate, -2),
               checkedInAt,
             },
@@ -2797,6 +2885,88 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         entityType: "Lead",
         entityId: staleLead.id,
       },
+    });
+  }
+
+  // ---------- F10: Tareas manuales de ejemplo ----------
+  // El tablero de /tareas necesita algo que enseñar en la demo. Se siembran
+  // encargadas por dirección (`createdByUserId`), que es lo que distingue una
+  // tarea manual de las que levanta el motor de reglas: ahí no hay nadie detrás.
+  const trainersForTasks = staffUsers.filter((u) => u.role === "TRAINER" || u.role === "TRAINER_ADMIN");
+  if (directorForNotif && trainersForTasks.length > 0) {
+    const manualTasks: {
+      title: string;
+      body: string;
+      category: string;
+      priority: "BAJA" | "MEDIA" | "ALTA";
+      dueInDays: number | null;
+      startedDaysAgo: number | null;
+      resolvedHoursAgo: number | null;
+    }[] = [
+      {
+        title: "Llamar a la lista de espera de las 19:00",
+        body: "Han quedado tres huecos libres esta semana en el grupo de tarde.",
+        category: "Comercial",
+        priority: "ALTA",
+        dueInDays: 1,
+        startedDaysAgo: null,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Revisar el material de suspensión de la sala 2",
+        body: "Dos anclajes hacen ruido. Si no se puede arreglar, retirarlos del circuito.",
+        category: "Instalaciones",
+        priority: "MEDIA",
+        dueInDays: 4,
+        startedDaysAgo: 1,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Preparar el circuito de la jornada de puertas abiertas",
+        body: "Cuatro estaciones, 12 minutos por vuelta.",
+        category: "Operativa",
+        priority: "BAJA",
+        dueInDays: 12,
+        startedDaysAgo: null,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Actualizar las fichas de los socios nuevos de agosto",
+        body: "Faltan objetivos y antecedentes en varias altas del mes.",
+        category: "Operativa",
+        priority: "MEDIA",
+        dueInDays: -2,
+        startedDaysAgo: 3,
+        resolvedHoursAgo: null,
+      },
+      {
+        title: "Cambiar el cartel de horarios de la entrada",
+        body: "Ya está impreso, solo hay que colocarlo.",
+        category: "Instalaciones",
+        priority: "BAJA",
+        dueInDays: -1,
+        startedDaysAgo: 2,
+        // Completada hace unas horas: sale del tablero activo, sigue dentro de
+        // la ventana de la columna "Hecha" y queda en el histórico.
+        resolvedHoursAgo: 3,
+      },
+    ];
+
+    await prisma.notification.createMany({
+      data: manualTasks.map((task, i) => ({
+        id: id(),
+        orgId,
+        recipientUserId: trainersForTasks[i % trainersForTasks.length].id,
+        createdByUserId: directorForNotif.id,
+        kind: "TASK" as const,
+        title: task.title,
+        body: task.body,
+        category: task.category,
+        priority: task.priority,
+        dueDate: task.dueInDays === null ? null : addDays(TODAY, task.dueInDays),
+        startedAt: task.startedDaysAgo === null ? null : addDays(TODAY, -task.startedDaysAgo),
+        resolvedAt: task.resolvedHoursAgo === null ? null : new Date(TODAY.getTime() - task.resolvedHoursAgo * 60 * 60 * 1000),
+      })),
     });
   }
 

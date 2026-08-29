@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
-import type { AssessmentKind, Role, HealthRecordType, HealthSeverity } from "@prisma/client";
+import type { AssessmentKind, Role, HealthRecordType, HealthSeverity, HealthStatus } from "@prisma/client";
+import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { parseAnswers } from "@/lib/assessments/queries";
 import {
   ASSESSMENT_KIND_LABEL,
@@ -161,6 +162,10 @@ export async function createHealthRecord({
     zone: string | null;
     description: string;
     severity: HealthSeverity;
+    /** Cuándo se lesionó, si se sabe. Distinta de `reportedAt` (cuándo se registró). */
+    injuryDate?: Date | null;
+    /** El socio solo supo decir mes y año: el día guardado es relleno. */
+    injuryDateApprox?: boolean;
   };
 }): Promise<HealthWriteResult> {
   if (!canEditHealthData(actorRole)) return { ok: false, error: "forbidden" };
@@ -180,6 +185,8 @@ export async function createHealthRecord({
       description: input.description,
       severity: input.severity,
       status: "ACTIVE",
+      injuryDate: input.injuryDate ?? null,
+      injuryDateApprox: input.injuryDate ? (input.injuryDateApprox ?? false) : false,
       reportedByUserId: actorUserId,
       consentSignedAt: new Date(),
     },
@@ -193,7 +200,13 @@ export async function createHealthRecord({
       entityType: "HealthRecord",
       entityId: record.id,
       memberId,
-      metadata: { type: input.type, zone: input.zone, severity: input.severity },
+      metadata: {
+        type: input.type,
+        zone: input.zone,
+        severity: input.severity,
+        injuryDate: input.injuryDate?.toISOString() ?? null,
+        injuryDateApprox: input.injuryDate ? (input.injuryDateApprox ?? false) : false,
+      },
     },
   });
 
@@ -201,42 +214,65 @@ export async function createHealthRecord({
 }
 
 /**
- * Marca un registro de salud como resuelto (mismo punto único, mismo control de
- * permisos y auditoría). El registro se valida contra la organización del actor
- * para evitar accesos cruzados entre tenants.
+ * Cambio de fase de un registro de salud: ACTIVE → IN_REHAB → RESOLVED, o
+ * CHRONIC para lo que no se va a resolver. Sustituye al antiguo
+ * `resolveHealthRecord`, que solo sabía hacer un salto de los cuatro posibles.
+ *
+ * Entra por el mismo punto único que el resto: mismo permiso que editar
+ * cualquier dato de salud (`canEditHealthData`, sin restricción adicional por
+ * fase — quien puede registrar una lesión puede decir en qué fase está), mismo
+ * aislamiento por organización a través del socio, y el mismo rastro
+ * append-only en `AuditLog`. Ese rastro ES el histórico de fases: quién
+ * (`actorUserId`), cuándo (`createdAt`) y de qué a qué (`metadata.from/to`).
+ * `HealthRecord.statusChangedAt` es solo la copia de lectura del último cambio.
  */
-export async function resolveHealthRecord({
+export async function updateHealthRecordStatus({
   recordId,
   orgId,
   actorUserId,
   actorRole,
+  status,
 }: {
   recordId: string;
   orgId: string;
   actorUserId: string;
   actorRole: Role;
+  status: HealthStatus;
 }): Promise<HealthWriteResult> {
   if (!canEditHealthData(actorRole)) return { ok: false, error: "forbidden" };
 
   const record = await prisma.healthRecord.findFirst({
     where: { id: recordId, member: { orgId } },
-    select: { id: true, memberId: true },
+    select: { id: true, memberId: true, status: true },
   });
   if (!record) return { ok: false, error: "not_found" };
 
+  // Repetir la fase que ya tiene no es un error (dos pestañas abiertas, doble
+  // clic), pero tampoco es un cambio: ni se escribe ni se audita como tal.
+  if (record.status === status) return { ok: true };
+
+  const now = new Date();
   await prisma.healthRecord.update({
     where: { id: recordId },
-    data: { status: "RESOLVED", resolvedAt: new Date() },
+    data: {
+      status,
+      statusChangedAt: now,
+      // `resolvedAt` sigue siendo "cuándo se dio por recuperada". Al salir de
+      // RESOLVED (una recaída que vuelve a rehabilitación) se limpia: si no,
+      // quedaría una fecha de alta médica sobre un registro vigente.
+      resolvedAt: status === "RESOLVED" ? now : null,
+    },
   });
 
   await prisma.auditLog.create({
     data: {
       orgId,
       actorUserId,
-      action: "HEALTH_RECORD_RESOLVED",
+      action: "HEALTH_RECORD_STATUS_CHANGED",
       entityType: "HealthRecord",
       entityId: recordId,
       memberId: record.memberId,
+      metadata: { from: record.status, to: status },
     },
   });
 
@@ -377,8 +413,10 @@ export async function getMesocycleBriefingForMember({
     }),
     member.consentAI
       ? prisma.healthRecord.findMany({
-          where: { memberId, status: "ACTIVE" },
-          select: { type: true, zone: true, description: true, severity: true },
+          // Vigente ≠ "activa": una lesión en rehabilitación o crónica también
+          // condiciona el mesociclo (ver OPEN_HEALTH_STATUSES).
+          where: { memberId, status: { in: OPEN_HEALTH_STATUSES } },
+          select: { type: true, zone: true, description: true, severity: true, status: true },
         })
       : Promise.resolve([]),
   ]);
@@ -396,7 +434,9 @@ export async function getMesocycleBriefingForMember({
     clinical: member.consentAI
       ? [
           ...healthRecords.map(
-            (r) => [r.type, r.zone, r.description].filter(Boolean).join(" · ") + ` (severidad ${r.severity})`
+            (r) =>
+              [r.type, r.zone, r.description].filter(Boolean).join(" · ") +
+              ` (severidad ${r.severity}, fase ${r.status})`
           ),
           ...(context?.clinical ?? []),
         ]
