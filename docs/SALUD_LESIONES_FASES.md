@@ -58,9 +58,10 @@ Los dos casos que obligan a mantenerlos separados:
 
 Lo que sí queda unificado es el **comportamiento**: "¿esto es permanente?" se
 pregunta en un único sitio, `isChronicHealthRecord()`
-(`src/lib/health-status.ts`), que cubre las dos formas de serlo. No hay ningún
-otro punto del código que compare contra `"CHRONIC"` o `"CHRONIC_CONDITION"` por
-su cuenta.
+(`src/lib/health-status.ts`), que cubre las dos formas de serlo. Ningún otro
+punto del código *decide* si algo es permanente comparando por su cuenta contra
+`"CHRONIC"` o `"CHRONIC_CONDITION"` (sí los escribe, claro, al dar de alta un
+registro o al pintar la lista de tipos del formulario).
 
 ### 2.2. El aviso de la ficha usa solo la fase, a propósito
 
