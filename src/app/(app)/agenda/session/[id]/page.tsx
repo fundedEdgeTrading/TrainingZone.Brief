@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireRole, requireCenterRole } from "@/lib/guard";
-import { getSessionDetail } from "@/lib/agenda-queries";
+import { getSessionDetail, listMembersBookableForSession } from "@/lib/agenda-queries";
 import { formatDateParam } from "@/lib/date-utils";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import CheckinButton from "./checkin-button";
 import CancelBookingButton from "./cancel-booking-button";
+import BookMemberForm from "./book-member-form";
 import NoShowButton from "./no-show-button";
 import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
 
@@ -48,6 +49,18 @@ export default async function SessionDetailPage({
 
   const booked = cls.bookings.filter((b) => b.status !== "CANCELLED" && b.status !== "WAITLISTED");
   const waitlisted = cls.bookings.filter((b) => b.status === "WAITLISTED");
+
+  // Reserva puntual desde el mostrador (grupo reducido; en EP la franja la
+  // asigna el diálogo de la agenda). Solo se ofrece a quien tiene bono de esta
+  // modalidad en este centro: quien ya ocupa plaza ese día sale de la lista, y
+  // quien espera se queda, porque elegirlo reclama su plaza liberada.
+  const waitingMemberIds = new Set(waitlisted.map((b) => b.member.id));
+  const bookedMemberIds = new Set(booked.map((b) => b.member.id));
+  const bookableMembers = isEpSession
+    ? []
+    : (await listMembersBookableForSession(session.user.orgId, cls.id))
+        .filter((m) => !bookedMemberIds.has(m.id))
+        .map((m) => ({ ...m, waiting: waitingMemberIds.has(m.id) }));
 
   // El debrief es confidencial del entrenador asignado (o quien la dirigió) y
   // dirección; ocultamos el acceso al resto para no dejar un enlace muerto.
@@ -95,7 +108,17 @@ export default async function SessionDetailPage({
       </div>
 
       <div>
-        <h2 className="text-sm font-semibold text-text-2 mb-2">Roster ({booked.length})</h2>
+        <div className="flex items-end justify-between gap-3 flex-wrap mb-2">
+          <h2 className="text-sm font-semibold text-text-2">Roster ({booked.length})</h2>
+          {!isEpSession && (
+            <BookMemberForm
+              sessionId={cls.id}
+              occurrenceDate={formatDateParam(occurrenceDate)}
+              members={bookableMembers}
+              full={booked.length >= cls.capacity}
+            />
+          )}
+        </div>
         <DataTable
           columns={rosterColumns}
           rows={booked.map((b) => bookingToRow(b, cls.id))}

@@ -231,6 +231,21 @@ el centro. Los horarios de grupo los pone el centro, no el entrenador cliente a 
 en cambio, el hueco puede nacer como reserva manual del entrenador o como franja autorreservable
 (ver `RB-AGENDA-002`).
 
+**`RB-AGENDA-008`** — Reserva y cancelación **puntual** de una plaza de grupo reducido por el
+staff, desde el roster de la sesión en la agenda. Complementa a `RB-AGENDA-007` sin contradecirlo:
+la reserva de grupos la sigue haciendo el cliente desde la app, pero recepción/entrenador pueden
+dar o quitar la plaza de un cliente concreto **para un día concreto** (el que llama por teléfono,
+el que se planta en el mostrador, el que estaba en lista de espera y quiere la plaza que se acaba
+de liberar). Dos límites:
+
+- **Trata el bono igual que la reserva del cliente** (`RB-RES-006`): descuenta al reservar y
+  devuelve al cancelar, sobre el bono de esa modalidad en ese centro (`RB-AGENDA-003`). Solo se
+  ofrece a clientes con ese bono activo, y sobre el aforo real: desde el mostrador **no** se
+  sobrevende ni se apunta a nadie a la lista de espera (a la lista se apunta el cliente).
+- **No existe el "cliente fijo" de grupos reducidos** (decisión de negocio, agosto 2026): reservar
+  el martes no apunta a nadie a los martes siguientes. La plaza recurrente se queda en
+  Entrenamiento Personal, que es donde la relación es uno a uno.
+
 ### 3.2. Check-in / asistencia y entrenador director de sesión
 
 **`RB-AGENDA-003`** — Al comenzar cada sesión (tanto EP como grupo reducido), el entrenador
@@ -246,6 +261,15 @@ dirigido efectivamente**, que puede ser distinto del entrenador asignado origina
 **`RB-AGENDA-005`** — El cliente recibe notificación al reservar (confirmación) y recordatorio
 antes de cada sesión reservada (EP o grupo). La reserva confirmada debe aparecer siempre
 visible en "Mis próximas sesiones" dentro de su perfil.
+
+**`RB-RES-010`** — **Aviso automático a la lista de espera.** Cuando una cancelación (del cliente
+o del staff, `RB-AGENDA-008`) libera una plaza de una sesión que tenía lista de espera, se avisa
+por email a **todos** los que esperan ese día, a la vez. **No hay promoción automática**: la plaza
+es de quien la reclame primero, con el mismo botón "Reservar" de siempre — el orden de la cola
+ordena el aviso, no adjudica la plaza. El paso a reservada es **atómico**, así que de dos avisados
+que reclamen a la vez solo uno entra: la sesión nunca se sobrevende y al que llega tarde no se le
+cobra nada (sigue en la lista). Sin lista de espera, el aviso se abre a los clientes con bono
+activo de esa modalidad en ese centro, como hasta ahora.
 
 ---
 

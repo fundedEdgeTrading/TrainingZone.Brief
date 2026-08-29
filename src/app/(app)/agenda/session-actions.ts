@@ -6,6 +6,7 @@ import {
   saveSession,
   deleteSession,
   rescheduleSession,
+  bookSessionForMemberAsStaff,
   cancelSessionBooking,
   getSessionCenterId,
   getBookingCenterId,
@@ -144,6 +145,37 @@ export async function cancelSessionBookingAction(bookingId: string, sessionId: s
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
 
   const result = await cancelSessionBooking(session.user.orgId, bookingId);
+  if (!result.ok) return result;
+
+  revalidateSessionViews(sessionId);
+  return { ok: true };
+}
+
+/**
+ * Reserva la plaza de un socio concreto en una sesión, desde el roster. Es el
+ * reverso de `cancelSessionBookingAction` y la vía por la que recepción apunta
+ * a quien no usa la app (o reclama, en su nombre, una plaza que se ha
+ * liberado). Puntual y por día: no crea "clientes fijos" de grupo reducido.
+ */
+export async function bookSessionForMemberAction(
+  sessionId: string,
+  memberId: string,
+  occurrenceDate: string
+): Promise<SessionActionResult> {
+  const session = await requireRole([...ALLOWED_ROLES, "RECEPTION"]);
+  if (!memberId) return { ok: false, error: "Elige un socio." };
+
+  // El centro sale de la sesión, nunca del formulario: es lo único que el
+  // cliente no puede falsear para tocar el roster de otro centro.
+  const centerId = await getSessionCenterId(session.user.orgId, sessionId);
+  if (!centerId) return { ok: false, error: "Sesión no encontrada." };
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+
+  const result = await bookSessionForMemberAsStaff(session.user.orgId, {
+    sessionId,
+    memberId,
+    occurrenceDate: parseDateParam(occurrenceDate),
+  });
   if (!result.ok) return result;
 
   revalidateSessionViews(sessionId);
