@@ -790,6 +790,17 @@ enum SessionRecurrence {
   WEEKDAYS
 }
 
+// RB-RES-009: por qué el cliente no se presentó. Es un enum cerrado y no texto
+// libre porque de él dependen dos decisiones: si la falta cuenta como "sin
+// aviso" para la alerta a dirección (LATE_NOTICE y JUSTIFIED no cuentan) y qué
+// se le enseña al entrenador en el historial.
+enum NoShowReason {
+  FORGOT // No se presentó y no avisó
+  LATE_NOTICE // Avisó, pero fuera de la ventana de cancelación
+  JUSTIFIED // Causa justificada (enfermedad, imprevisto)
+  OUR_ERROR // Fallo del centro (mal agendada, aviso no registrado)
+}
+
 enum BookingStatus {
   BOOKED
   WAITLISTED
@@ -822,6 +833,18 @@ model Booking {
   // devuelve el saldo a esta misma suscripción. Null cuando la reserva no
   // consumió bono (cuota ilimitada/online, o entró en lista de espera).
   subscriptionId String?
+
+  // RB-RES-009: al marcar "No asistió" el entrenador registra SIEMPRE el motivo
+  // y decide en ese momento si la sesión vuelve al bono. Antes la falta no
+  // devolvía nunca (a diferencia de la cancelación, RB-RES-006) y no quedaba
+  // rastro de por qué: una gripe avisada y un plantón se contaban igual.
+  //
+  // `noShowRefunded` no es solo informativo: es el cierre de la devolución
+  // (`markBookingNoShow` en agenda-queries.ts solo incrementa
+  // `Subscription.sessionsRemaining` cuando pasa de false a true), así que
+  // volver a marcar la misma reserva no puede devolver la sesión dos veces.
+  noShowReason   NoShowReason?
+  noShowRefunded Boolean       @default(false)
 
   session      ClassSession    @relation(fields: [sessionId], references: [id])
   member       Member          @relation(fields: [memberId], references: [id])
@@ -911,9 +934,27 @@ enum HealthSeverity {
   HIGH
 }
 
+// Fases de una lesión o condición. El ciclo normal es
+// ACTIVE → IN_REHAB → RESOLVED; `CHRONIC` es la salida lateral para lo que no
+// va a resolverse nunca.
+//
+// Por qué `CHRONIC` es un ESTADO y no se unifica con `HealthRecordType.CHRONIC_CONDITION`:
+// son dos ejes distintos y hacen falta los dos. El `type` dice QUÉ es (una
+// lesión, una medicación, una alergia); el `status` dice EN QUÉ FASE está. Una
+// lesión de hombro que ya no se va a curar es `type INJURY` + `status CHRONIC`,
+// y sigue siendo una lesión a efectos del semáforo de aptitud (que empareja por
+// `zone`, y `CHRONIC_CONDITION` no lleva zona). Al revés, el asma es
+// `CHRONIC_CONDITION` y su fase puede ser ACTIVE (vigente) o RESOLVED
+// (superada). Colapsar los dos ejes obligaría a perder uno de los dos datos.
+//
+// Lo que sí queda unificado es el COMPORTAMIENTO: "esto es permanente" se
+// pregunta en un único sitio (`isChronicHealthRecord`, src/lib/health-status.ts),
+// que cubre las dos formas de serlo. Ver docs/SALUD_LESIONES_FASES.md.
 enum HealthStatus {
-  ACTIVE
-  RESOLVED
+  ACTIVE // recién sufrida / vigente, sin plan de recuperación en marcha
+  IN_REHAB // en rehabilitación
+  RESOLVED // recuperada, ya no condiciona el entrenamiento
+  CHRONIC // permanente: no se espera que se resuelva
 }
 
 model HealthRecord {
@@ -928,6 +969,19 @@ model HealthRecord {
   description      String
   severity         HealthSeverity
   status           HealthStatus     @default(ACTIVE)
+  // Cuándo se produjo la lesión, que NO es cuándo se registró (`reportedAt`):
+  // una lesión de hace ocho meses puede entrar en la ficha hoy, y el tiempo
+  // transcurrido que se muestra en la ficha se deriva de esta fecha.
+  injuryDate       DateTime?
+  // `true` cuando el socio solo supo decir mes y año: el día guardado es
+  // relleno (día 1) y la UI redondea el texto a meses en vez de fingir
+  // precisión que no existe.
+  injuryDateApprox Boolean          @default(false)
+  // Última transición de `status`, para el "en rehabilitación desde hace X" de
+  // la ficha. El QUIÉN y el histórico completo viven en `AuditLog`
+  // (HEALTH_RECORD_STATUS_CHANGED), que es append-only; esto es solo la copia
+  // de lectura del último cambio.
+  statusChangedAt  DateTime?
   reportedByUserId String?
   reportedAt       DateTime         @default(now())
   resolvedAt       DateTime?
@@ -944,6 +998,14 @@ model HealthRecord {
 
 // Semáforo de Aptitud (G.2): reglas deterministas mantenidas por Sergio,
 // no por el modelo de IA. La IA (F6, fuera de esta entrega) solo redactaría.
+//
+// La regla empareja por ZONA (`injuryZone` ↔ `HealthRecord.zone`) y no mira el
+// `status` del registro: quien decide si una lesión cuenta es el lado del
+// registro, filtrando por `OPEN_HEALTH_STATUSES` (src/lib/health-status.ts).
+// Consecuencia deliberada para las fases nuevas: IN_REHAB y CHRONIC encienden
+// el MISMO semáforo que ACTIVE. Una lesión en rehabilitación es justo la que
+// más adaptación necesita, y una crónica no deja de limitar por ser antigua;
+// solo RESOLVED apaga la luz. Ver docs/SALUD_LESIONES_FASES.md §4.
 enum AptitudeLight {
   GREEN
   AMBER

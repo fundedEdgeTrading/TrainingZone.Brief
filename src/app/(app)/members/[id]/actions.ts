@@ -4,14 +4,15 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireRole, memberIsInScope, centerIsInScope, OUT_OF_CENTER_SCOPE, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { createHealthRecord, resolveHealthRecord } from "@/lib/health-access";
+import { createHealthRecord, updateHealthRecordStatus } from "@/lib/health-access";
+import { HEALTH_STATUSES } from "@/lib/health-status";
 import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
 import { setMemberNoteArchived, setMemberNoteImportant } from "@/lib/members-queries";
 import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-import { Prisma, type HealthRecordType, type HealthSeverity, type Role, type Sex } from "@prisma/client";
+import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -22,6 +23,39 @@ const HEALTH_TYPES: HealthRecordType[] = [
   "ALLERGY",
 ];
 const SEVERITIES: HealthSeverity[] = ["LOW", "MEDIUM", "HIGH"];
+
+const ISO_DAY_RE = /^\d{4}-\d{2}-\d{2}$/; // "2026-05-14" del <input type="date">
+const ISO_MONTH_RE = /^\d{4}-\d{2}$/; // "2026-05" del <input type="month">
+
+/**
+ * Fecha de la lesión, capturada con la precisión que el socio recuerde: día
+ * exacto, solo mes y año, o nada. El mes aproximado se guarda como el día 1 con
+ * `injuryDateApprox`, para que la ficha redondee el "hace X" a meses en vez de
+ * fingir un día que nadie ha dicho.
+ *
+ * Se construye con componentes LOCALES (como `parseDateParam`) y no con
+ * `new Date("2026-05-14")`, que se interpreta en UTC y en España retrasaría la
+ * lesión un día.
+ */
+function parseInjuryDate(
+  precision: string,
+  day: string,
+  month: string
+): { ok: true; date: Date | null; approx: boolean } | { ok: false } {
+  if (precision === "MONTH") {
+    if (!ISO_MONTH_RE.test(month)) return { ok: false };
+    const [y, m] = month.split("-").map(Number);
+    return { ok: true, date: new Date(y, m - 1, 1), approx: true };
+  }
+  if (precision === "EXACT") {
+    if (!ISO_DAY_RE.test(day)) return { ok: false };
+    const [y, m, d] = day.split("-").map(Number);
+    return { ok: true, date: new Date(y, m - 1, d), approx: false };
+  }
+  // "UNKNOWN" y cualquier otra cosa: sin fecha. No se rellena con `reportedAt`,
+  // que es un dato distinto (cuándo se registró, no cuándo pasó).
+  return { ok: true, date: null, approx: false };
+}
 
 export type MemberActionResult = { ok: true } | { ok: false; error: string };
 
@@ -41,6 +75,17 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
   if (!memberId || !type || !severity || !description) {
     return { ok: false, error: "Completa el tipo, la severidad y la descripción." };
   }
+
+  const injury = parseInjuryDate(
+    String(formData.get("injuryDatePrecision") ?? "UNKNOWN"),
+    String(formData.get("injuryDate") ?? ""),
+    String(formData.get("injuryMonth") ?? "")
+  );
+  if (!injury.ok) return { ok: false, error: "Indica la fecha de la lesión o marca que no se conoce." };
+  if (injury.date && injury.date.getTime() > Date.now()) {
+    return { ok: false, error: "La fecha de la lesión no puede ser futura." };
+  }
+
   if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   await createHealthRecord({
@@ -48,15 +93,33 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
     orgId: session.user.orgId,
     actorUserId: session.user.id,
     actorRole: session.user.role,
-    input: { type, zone: type === "INJURY" ? zone : null, description, severity },
+    input: {
+      type,
+      zone: type === "INJURY" ? zone : null,
+      description,
+      severity,
+      injuryDate: injury.date,
+      injuryDateApprox: injury.approx,
+    },
   });
 
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }
 
-export async function resolveHealthRecordAction(recordId: string, memberId: string): Promise<MemberActionResult> {
+// Cambio de fase de una lesión (ACTIVE → IN_REHAB → RESOLVED, o CHRONIC).
+// Mismo permiso que cualquier otra edición de datos de salud: no hay rol extra
+// para cambiar la fase. Quien decide de verdad es `canEditHealthData` dentro de
+// lib/health-access.ts, que además deja el rastro de quién y cuándo.
+export async function updateHealthRecordStatusAction(
+  recordId: string,
+  memberId: string,
+  statusRaw: string
+): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+
+  const status = HEALTH_STATUSES.includes(statusRaw as HealthStatus) ? (statusRaw as HealthStatus) : null;
+  if (!status) return { ok: false, error: "Estado no válido." };
 
   // El ámbito se comprueba sobre el socio DEL REGISTRO, no sobre el `memberId`
   // que llega del cliente (que solo se usa para revalidar la ruta): si no, bastaba
@@ -70,11 +133,12 @@ export async function resolveHealthRecordAction(recordId: string, memberId: stri
   if (!record?.memberId) return { ok: false, error: "No se ha encontrado ese registro." };
   if (!(await memberIsInScope(session.user, record.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
-  await resolveHealthRecord({
+  await updateHealthRecordStatus({
     recordId,
     orgId: session.user.orgId,
     actorUserId: session.user.id,
     actorRole: session.user.role,
+    status,
   });
 
   revalidatePath(`/members/${memberId}`);

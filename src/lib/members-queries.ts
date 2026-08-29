@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { BookingStatus, MemberState } from "@prisma/client";
+import type { BookingStatus, MemberState, NoShowReason } from "@prisma/client";
 import { formatDateParam } from "@/lib/date-utils";
 import { toMin } from "@/app/(app)/agenda/agenda-utils";
 import { sessionServiceKind } from "@/lib/session-balance";
@@ -278,6 +278,9 @@ export type MemberCalendarEvent = {
   title: string;
   kind: "EP" | "GROUP";
   status: BookingStatus;
+  /** RB-RES-009: motivo de la falta y si aquella sesión volvió al bono. */
+  noShowReason: NoShowReason | null;
+  noShowRefunded: boolean;
   /** La sesión entera está cancelada (distinto de que lo esté esta reserva). */
   sessionCancelled: boolean;
   centerId: string;
@@ -300,6 +303,8 @@ export async function getMemberSessionCalendar(
       id: true,
       sessionId: true,
       status: true,
+      noShowReason: true,
+      noShowRefunded: true,
       occurrenceDate: true,
       debrief: { select: { id: true } },
       session: {
@@ -331,6 +336,8 @@ export async function getMemberSessionCalendar(
       title: b.session.name,
       kind: sessionServiceKind(b.session.classType),
       status: b.status,
+      noShowReason: b.noShowReason,
+      noShowRefunded: b.noShowRefunded,
       sessionCancelled: b.session.status === "CANCELLED",
       centerId: b.session.center.id,
       centerName: b.session.center.name,

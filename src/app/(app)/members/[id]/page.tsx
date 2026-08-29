@@ -18,6 +18,13 @@ import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { activeNotes, archivedNotes, highlightedNotes } from "@/lib/member-notes";
 import { getHealthRecordsForMember } from "@/lib/health-access";
+import {
+  HEALTH_STATUS_LABEL,
+  HEALTH_STATUS_TONE,
+  injuryTimeline,
+  isChronicPhase,
+  isOpenHealthStatus,
+} from "@/lib/health-status";
 import { listAssessmentsForMember } from "@/lib/assessments/queries";
 import { ASSESSMENT_KIND_LABEL } from "@/lib/assessments/schemas";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
@@ -27,13 +34,14 @@ import {
   canManageMesocycles,
   canManageOrg,
   canViewHealthData,
+  canEditHealthData,
 } from "@/lib/rbac";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import SectionRail, { SectionHead, SectionHeadDisclosure, type Section, type SectionKey } from "./section-rail";
 import { EditMemberDataButton, NewNoteButton } from "./member-header-actions";
 import { ActivityThread, type ActivityEntry } from "./activity-thread";
 import { ArchivedNotes, MemberNoteHighlights, type NoteView } from "./note-highlights";
-import { AddHealthRecordForm, ResolveHealthButton, AddNoteForm, ResendWelcomeButton } from "./member-forms";
+import { AddHealthRecordForm, HealthStatusSelect, HealthStatusLegend, AddNoteForm, ResendWelcomeButton } from "./member-forms";
 import { MemberDataPanel, DeleteMemberSection } from "./member-data-panel";
 import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
@@ -57,6 +65,7 @@ import { MemberSessionsCalendar } from "./member-calendar";
 import { listMesocyclesForMember } from "@/lib/mesocycle-queries";
 import { openRetentionAlertsByMember } from "@/lib/retention";
 import { isAiConfigured } from "@/lib/ai/anthropic";
+import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
@@ -270,6 +279,9 @@ export default async function MemberDetailPage({
   // Las valoraciones son trabajo de entrenador y arrastran screening de salud:
   // recepción ve la ficha pero no este bloque (mismo criterio que /salud).
   const canSeeAssessments = canViewHealthData(session.user.role);
+  // Cambiar la fase de una lesión pide exactamente el mismo permiso que
+  // registrarla: no hay un rol aparte para "dar el alta" (RB-SALUD: A.2.4).
+  const canEditHealth = canEditHealthData(session.user.role);
 
   const serviceKinds = getMemberServiceKinds(member.subscriptions.map((s) => ({ status: s.status, plan: { type: s.plan.type } })));
   // RB-AGENDA-003: un socio puede tener varios bonos ACTIVE/FROZEN a la vez
@@ -372,6 +384,18 @@ export default async function MemberDetailPage({
     const sameDayNotes = notesByDay.get(day) ?? [];
     notesByDay.delete(day);
     const status = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "neutral" as BadgeTone };
+    // RB-RES-009: una falta sin más no dice nada; la ficha enseña el motivo que
+    // registró el entrenador y si aquella sesión volvió al bono o se dio por
+    // consumida, que es lo que se discute con el cliente cuando reclama.
+    const noShowBadges: { label: string; tone: BadgeTone }[] =
+      b.status === "NO_SHOW" && b.noShowReason
+        ? [
+            { label: NO_SHOW_REASON_LABEL[b.noShowReason], tone: "warning" },
+            b.noShowRefunded
+              ? { label: "Sesión devuelta", tone: "good" }
+              : { label: "Sesión no devuelta", tone: "neutral" },
+          ]
+        : [];
     activityEntries.push({
       sortKey: b.occurrenceDate.getTime(),
       entry: {
@@ -379,7 +403,7 @@ export default async function MemberDetailPage({
         day: fmtShortDay(b.occurrenceDate),
         time: b.session.startTime,
         title: b.session.name,
-        badges: [{ label: status.label, tone: status.tone }],
+        badges: [{ label: status.label, tone: status.tone }, ...noShowBadges],
         feeling: b.debrief
           ? { dotClass: FEELING_DOT[b.debrief.feeling], label: FEELING_LABEL[b.debrief.feeling] }
           : null,
@@ -450,7 +474,13 @@ export default async function MemberDetailPage({
   const threadEntries = activityEntries.map((e) => e.entry);
 
   // ---- Metas del rail (derivadas de lo ya cargado, sin queries nuevas) ---
-  const activeInjuries = healthRecords?.filter((h) => h.status === "ACTIVE").length ?? 0;
+  // Vigentes, no solo "activas": una lesión en rehabilitación o crónica sigue
+  // contando para el rótulo del rail (ver OPEN_HEALTH_STATUSES).
+  const openInjuries = healthRecords?.filter((h) => isOpenHealthStatus(h.status)).length ?? 0;
+  // Aviso permanente de la cabecera (no solo del apartado Salud): una lesión
+  // crónica condiciona cualquier cosa que se haga con este socio, así que se ve
+  // se abra la ficha por donde se abra.
+  const chronicRecords = healthRecords?.filter(isChronicPhase) ?? [];
   const pendingAssessments = assessments.filter((a) => !a.completedAt).length;
   const lastEntry = member.progressEntries[0];
 
@@ -463,8 +493,8 @@ export default async function MemberDetailPage({
 
   const railMeta: Record<SectionKey, string> = {
     socio:
-      activeInjuries > 0
-        ? `${activeInjuries} ${activeInjuries === 1 ? "lesión activa" : "lesiones activas"}`
+      openInjuries > 0
+        ? `${openInjuries} ${openInjuries === 1 ? "lesión vigente" : "lesiones vigentes"}`
         : "Contacto · Salud · Consentimientos",
     plan: planMeta,
     actividad:
@@ -585,30 +615,50 @@ export default async function MemberDetailPage({
                   <p className="text-sm text-brand-muted">Sin registros de salud.</p>
                 ) : (
                   <>
-                    {healthRecords.map((h) => (
-                      <div key={h.id} className="border border-brand-border rounded-xl p-4 flex flex-col gap-2">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <span className="text-sm font-semibold text-brand-text">
-                            {HEALTH_TYPE_LABEL[h.type]}
-                            {h.zone ? ` — ${h.zone}` : ""}
-                          </span>
-                          <div className="flex items-center gap-2.5 shrink-0">
-                            {h.status === "ACTIVE" && <ResolveHealthButton recordId={h.id} memberId={member.id} />}
-                            <Badge tone={h.status === "ACTIVE" ? "warning" : "neutral"} dot={false}>
-                              {h.status === "ACTIVE" ? "Activa" : "Resuelta"}
-                            </Badge>
+                    {healthRecords.map((h) => {
+                      // Derivado en lectura, nunca guardado: un "meses desde la
+                      // lesión" en base de datos nace caducado.
+                      const timeline = injuryTimeline(h);
+                      return (
+                        <div key={h.id} className="border border-brand-border rounded-xl p-4 flex flex-col gap-2">
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            <span className="text-sm font-semibold text-brand-text">
+                              {HEALTH_TYPE_LABEL[h.type]}
+                              {h.zone ? ` — ${h.zone}` : ""}
+                            </span>
+                            <div className="flex items-center gap-2.5 shrink-0">
+                              <Badge tone={HEALTH_STATUS_TONE[h.status]} dot={false}>
+                                {HEALTH_STATUS_LABEL[h.status]}
+                              </Badge>
+                              {canEditHealth && (
+                                <HealthStatusSelect recordId={h.id} memberId={member.id} status={h.status} />
+                              )}
+                            </div>
                           </div>
+                          <p className="text-[13px] text-text-2 text-pretty">{h.description}</p>
+                          <p className="text-[12.5px] text-brand-text-2">
+                            <span className="font-semibold">{timeline.elapsed}</span>
+                            <span className="text-brand-faint"> · {timeline.label}</span>
+                            {h.statusChangedAt && (
+                              <span className="text-brand-faint">
+                                {" "}
+                                · {HEALTH_STATUS_LABEL[h.status].toLowerCase()} desde {fmtDay(h.statusChangedAt)}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-brand-faint">
+                            Severidad {SEVERITY_LABEL[h.severity].toLowerCase()} · registrada por{" "}
+                            {h.reportedBy?.name ?? "—"} el {fmtDay(h.reportedAt)}
+                          </p>
                         </div>
-                        <p className="text-[13px] text-text-2 text-pretty">{h.description}</p>
-                        <p className="text-[11px] text-brand-faint">
-                          Severidad {SEVERITY_LABEL[h.severity].toLowerCase()} · {h.reportedBy?.name ?? "—"} ·{" "}
-                          {fmtDay(h.reportedAt)}
-                        </p>
-                      </div>
-                    ))}
-                    <p className="text-[11px] text-brand-faint">
-                      Cada lectura y alta queda registrada en el log de auditoría (ADR-008).
-                    </p>
+                      );
+                    })}
+                    <div className="flex flex-col gap-1.5">
+                      <HealthStatusLegend />
+                      <p className="text-[11px] text-brand-faint">
+                        Cada lectura, alta y cambio de estado queda registrada en el log de auditoría (ADR-008).
+                      </p>
+                    </div>
                   </>
                 )}
               </div>
@@ -1063,12 +1113,43 @@ export default async function MemberDetailPage({
     },
   ];
 
-  // La cabecera va fuera del rail, así que lo que se cuelgue de ella se ve
-  // desde cualquier sección. Ahí es donde tiene que estar la bitácora
-  // destacada: quien abre la ficha treinta segundos antes de la sesión no va a
-  // entrar a buscarla a Actividad.
+  // Aviso permanente de lesión crónica (A.2.4). Va en la CABECERA y no dentro
+  // del apartado "Salud" a propósito: quien entra a cobrar un bono, a mover una
+  // reserva o a mirar la evolución tiene que verlo igual, sin abrir la sección
+  // clínica. Solo se ve con permiso de salud — el aviso ya es un dato del Art. 9.
+  const chronicNotice = chronicRecords.length > 0 && (
+    <div className="bg-critical-bg border border-critical-bg rounded-card p-[15px_18px] flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Badge tone="critical">
+          {chronicRecords.length === 1 ? "Lesión crónica" : `${chronicRecords.length} lesiones crónicas`}
+        </Badge>
+        <span className="text-[13px] font-semibold text-critical">
+          Condición permanente: adapta siempre la sesión.
+        </span>
+      </div>
+      <ul className="text-[12.5px] text-brand-text-2 flex flex-col gap-0.5">
+        {chronicRecords.map((h) => {
+          const timeline = injuryTimeline(h);
+          return (
+            <li key={h.id}>
+              <span className="font-semibold">
+                {HEALTH_TYPE_LABEL[h.type]}
+                {h.zone ? ` — ${h.zone}` : ""}
+              </span>
+              : {h.description} <span className="text-brand-faint">({timeline.elapsed})</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+
+  // Lo que se cuelga aquí se ve desde cualquier sección de la ficha: el aviso
+  // de lesión crónica (arriba del todo) y la bitácora destacada, que es lo que
+  // mira quien abre la ficha treinta segundos antes de la sesión.
   const header = (
-    <>
+    <div className="flex flex-col gap-4">
+      {chronicNotice}
       <div className="bg-brand-card border border-brand-border rounded-card shadow-card overflow-hidden">
         <div className="flex items-start justify-between gap-5 flex-wrap p-6 pl-[26px]">
           <div className="flex items-center gap-[18px] min-w-0">
@@ -1137,7 +1218,7 @@ export default async function MemberDetailPage({
         </div>
       </div>
       <MemberNoteHighlights notes={highlights} />
-    </>
+    </div>
   );
 
   const initial = sections.some((s) => s.key === initialSection)
