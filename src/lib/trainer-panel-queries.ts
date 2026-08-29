@@ -4,6 +4,7 @@ import { startOfWeekMonday, formatDateParam, zonedNow, zonedTimeToInstant } from
 import { expandOccurrences, isSameDay, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { listPendingTrainerDebriefs } from "@/lib/feedback-capture";
 import type { AptitudeLight, Role } from "@prisma/client";
+import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 
 const ADHERENCE_PERIOD_DAYS = 90;
 const WEEKDAY_LABELS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -234,8 +235,10 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
 
   if (canSeeHealth && memberIds.length) {
     const [healthRecords, aptitudeRules] = await Promise.all([
+      // Vigentes (ACTIVE / IN_REHAB / CHRONIC): el semáforo de aptitud empareja
+      // por zona y no mira la fase — la fase solo decide si el registro cuenta.
       prisma.healthRecord.findMany({
-        where: { memberId: { in: memberIds }, status: "ACTIVE" },
+        where: { memberId: { in: memberIds }, status: { in: OPEN_HEALTH_STATUSES } },
         select: { memberId: true, zone: true, description: true },
       }),
       prisma.aptitudeRule.findMany({ where: { orgId } }),

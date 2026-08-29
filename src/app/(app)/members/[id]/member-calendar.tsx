@@ -9,6 +9,7 @@ import { formatDateParam, parseDateParam } from "@/lib/date-utils";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import type { MemberCalendarEvent } from "@/lib/members-queries";
+import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 
 const STATUS_LABEL: Record<string, string> = {
   ATTENDED: "Asistió",
@@ -282,6 +283,14 @@ export function MemberSessionsCalendar({
                   {ev.trainerName ? ` · ${ev.trainerName}` : ""}
                 </span>
                 <span className="text-xs text-text-2">{STATUS_LABEL[ev.status] ?? ev.status}</span>
+                {/* RB-RES-009: en una falta, el motivo y el destino de la sesión
+                    (devuelta al bono o consumida) van pegados al estado: es la
+                    respuesta al "¿por qué me la habéis cobrado?" del cliente. */}
+                {ev.status === "NO_SHOW" && ev.noShowReason && (
+                  <span className="text-xs text-brand-muted">
+                    {NO_SHOW_REASON_LABEL[ev.noShowReason]} · {ev.noShowRefunded ? "sesión devuelta" : "sesión no devuelta"}
+                  </span>
+                )}
                 {ev.hasDebrief && (
                   <span className="w-2 h-2 rounded-full bg-good" title="Con debrief del entrenador" />
                 )}

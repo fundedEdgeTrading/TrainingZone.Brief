@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { runLeadOwnerAlertRule } from "@/lib/leads-queries";
 import { runFewSessionsScheduledRule, runLowPackBalanceRule } from "@/lib/trainer-alerts";
 import { runStallDetectionRule } from "@/lib/stall-detection";
+import { runConsecutiveNoShowsRule } from "@/lib/no-show-alerts";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
@@ -17,9 +18,9 @@ import { reportJobFailures } from "@/lib/job-failure-report";
  * Disparador único para todas las reglas temporales del CRM (F10/F13/F14/F15) y
  * del motor de retención (G.3): 24h sin responsable, pocas sesiones EP
  * programadas, bono bajo, caída de frecuencia, estancamiento, check-ins
- * periódicos de objetivos/valoración de entrenadores, valoraciones vencidas y
- * felicitaciones de cumpleaños. Sin worker en este stack (Next.js),
- * se invoca desde un cron externo (.github/workflows/jobs-cron.yml,
+ * periódicos de objetivos/valoración de entrenadores, valoraciones vencidas,
+ * faltas seguidas sin avisar y felicitaciones de cumpleaños. Sin worker en este
+ * stack (Next.js), se invoca desde un cron externo (.github/workflows/jobs-cron.yml,
  * render.yaml u otro) contra esta route handler, protegida por un secreto compartido.
  */
 export async function GET(req: NextRequest) {
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
     leadOwnerAlerts: 0,
     fewSessionsAlerts: 0,
     lowPackAlerts: 0,
+    noShowStreakAlerts: 0,
     retentionAlerts: 0,
     stallAlerts: 0,
     checkins: 0,
@@ -69,6 +71,9 @@ export async function GET(req: NextRequest) {
     summary.leadOwnerAlerts += await run(org.id, "leadOwnerAlerts", () => runLeadOwnerAlertRule(org.id));
     summary.fewSessionsAlerts += await run(org.id, "fewSessionsAlerts", () => runFewSessionsScheduledRule(org.id));
     summary.lowPackAlerts += await run(org.id, "lowPackAlerts", () => runLowPackBalanceRule(org.id));
+    // RB-RES-009: red de seguridad de la alerta por faltas seguidas, que
+    // normalmente salta en el momento de marcar la falta (agenda).
+    summary.noShowStreakAlerts += await run(org.id, "noShowStreakAlerts", () => runConsecutiveNoShowsRule(org.id));
     // Antes que `stallAlerts`: el estancamiento usa la alerta de retención como
     // señal `attendanceDropping`, así que la quiere recalculada de esta pasada y
     // no de la anterior.

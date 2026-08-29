@@ -5,6 +5,7 @@ import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
+import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
 // de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
@@ -244,7 +245,7 @@ export async function getMemberGoals(memberId: string) {
 
 export async function getMemberHealthTransparency(memberId: string, orgId: string) {
   const records = await prisma.healthRecord.findMany({
-    where: { memberId, status: "ACTIVE" },
+    where: { memberId, status: { in: OPEN_HEALTH_STATUSES } },
     select: { zone: true, type: true },
   });
   if (records.length === 0) return [];
