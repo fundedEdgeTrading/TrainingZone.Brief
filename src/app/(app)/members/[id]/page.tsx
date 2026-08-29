@@ -55,6 +55,7 @@ import { MemberSessionsCalendar } from "./member-calendar";
 import { listMesocyclesForMember } from "@/lib/mesocycle-queries";
 import { openRetentionAlertsByMember } from "@/lib/retention";
 import { isAiConfigured } from "@/lib/ai/anthropic";
+import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
@@ -356,6 +357,18 @@ export default async function MemberDetailPage({
     const sameDayNotes = notesByDay.get(day) ?? [];
     notesByDay.delete(day);
     const status = BOOKING_STATUS[b.status] ?? { label: b.status, tone: "neutral" as BadgeTone };
+    // RB-RES-009: una falta sin más no dice nada; la ficha enseña el motivo que
+    // registró el entrenador y si aquella sesión volvió al bono o se dio por
+    // consumida, que es lo que se discute con el cliente cuando reclama.
+    const noShowBadges: { label: string; tone: BadgeTone }[] =
+      b.status === "NO_SHOW" && b.noShowReason
+        ? [
+            { label: NO_SHOW_REASON_LABEL[b.noShowReason], tone: "warning" },
+            b.noShowRefunded
+              ? { label: "Sesión devuelta", tone: "good" }
+              : { label: "Sesión no devuelta", tone: "neutral" },
+          ]
+        : [];
     activityEntries.push({
       sortKey: b.occurrenceDate.getTime(),
       entry: {
@@ -363,7 +376,7 @@ export default async function MemberDetailPage({
         day: fmtShortDay(b.occurrenceDate),
         time: b.session.startTime,
         title: b.session.name,
-        badges: [{ label: status.label, tone: status.tone }],
+        badges: [{ label: status.label, tone: status.tone }, ...noShowBadges],
         feeling: b.debrief
           ? { dotClass: FEELING_DOT[b.debrief.feeling], label: FEELING_LABEL[b.debrief.feeling] }
           : null,

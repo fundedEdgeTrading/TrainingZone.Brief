@@ -775,6 +775,17 @@ enum SessionRecurrence {
   WEEKDAYS
 }
 
+// RB-RES-009: por qué el cliente no se presentó. Es un enum cerrado y no texto
+// libre porque de él dependen dos decisiones: si la falta cuenta como "sin
+// aviso" para la alerta a dirección (LATE_NOTICE y JUSTIFIED no cuentan) y qué
+// se le enseña al entrenador en el historial.
+enum NoShowReason {
+  FORGOT // No se presentó y no avisó
+  LATE_NOTICE // Avisó, pero fuera de la ventana de cancelación
+  JUSTIFIED // Causa justificada (enfermedad, imprevisto)
+  OUR_ERROR // Fallo del centro (mal agendada, aviso no registrado)
+}
+
 enum BookingStatus {
   BOOKED
   WAITLISTED
@@ -807,6 +818,18 @@ model Booking {
   // devuelve el saldo a esta misma suscripción. Null cuando la reserva no
   // consumió bono (cuota ilimitada/online, o entró en lista de espera).
   subscriptionId String?
+
+  // RB-RES-009: al marcar "No asistió" el entrenador registra SIEMPRE el motivo
+  // y decide en ese momento si la sesión vuelve al bono. Antes la falta no
+  // devolvía nunca (a diferencia de la cancelación, RB-RES-006) y no quedaba
+  // rastro de por qué: una gripe avisada y un plantón se contaban igual.
+  //
+  // `noShowRefunded` no es solo informativo: es el cierre de la devolución
+  // (`markBookingNoShow` en agenda-queries.ts solo incrementa
+  // `Subscription.sessionsRemaining` cuando pasa de false a true), así que
+  // volver a marcar la misma reserva no puede devolver la sesión dos veces.
+  noShowReason   NoShowReason?
+  noShowRefunded Boolean       @default(false)
 
   session      ClassSession    @relation(fields: [sessionId], references: [id])
   member       Member          @relation(fields: [memberId], references: [id])

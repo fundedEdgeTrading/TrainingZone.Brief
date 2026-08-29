@@ -6,10 +6,12 @@ import { formatDateParam } from "@/lib/date-utils";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE } from "@/lib/chart-colors";
+import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import CheckinButton from "./checkin-button";
 import CancelBookingButton from "./cancel-booking-button";
+import NoShowButton from "./no-show-button";
 import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -118,7 +120,7 @@ const rosterColumns: DataTableColumn[] = [
   { key: "member", header: "Socio", sortable: true },
   { key: "memberState", header: "Estado del socio", sortable: true },
   { key: "status", header: "Estado reserva", sortable: true, className: "text-text-2" },
-  { key: "checkin", header: "Check-in" },
+  { key: "checkin", header: "Asistencia" },
   { key: "actions", header: "Acciones" },
 ];
 
@@ -137,8 +139,32 @@ function bookingToRow(b: Booking, sessionId: string): DataTableRow {
         </Link>
       ),
       memberState: <Badge tone={MEMBER_STATE_TONE[b.member.state]}>{MEMBER_STATE_LABEL[b.member.state]}</Badge>,
-      status: STATUS_LABEL[b.status],
-      checkin: <CheckinButton bookingId={b.id} sessionId={sessionId} checkedIn={b.status === "ATTENDED"} />,
+      // RB-RES-009: la falta se lee entera aquí —motivo y si se devolvió la
+      // sesión—, que es lo que el entrenador necesita para saber si tiene que
+      // hablar con el cliente o solo apuntarlo.
+      status: (
+        <div>
+          {STATUS_LABEL[b.status]}
+          {b.status === "NO_SHOW" && b.noShowReason && (
+            <span className="block text-xs text-muted">
+              {NO_SHOW_REASON_LABEL[b.noShowReason]} · {b.noShowRefunded ? "sesión devuelta" : "sesión no devuelta"}
+            </span>
+          )}
+        </div>
+      ),
+      checkin: (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <CheckinButton bookingId={b.id} sessionId={sessionId} checkedIn={b.status === "ATTENDED"} />
+          <NoShowButton
+            bookingId={b.id}
+            sessionId={sessionId}
+            memberName={`${b.member.firstName} ${b.member.lastName}`}
+            currentReason={b.status === "NO_SHOW" ? b.noShowReason : null}
+            refunded={b.noShowRefunded}
+            hasSubscription={b.subscriptionId != null}
+          />
+        </div>
+      ),
       actions: b.status === "BOOKED" && (
         <CancelBookingButton bookingId={b.id} sessionId={sessionId} memberName={`${b.member.firstName} ${b.member.lastName}`} />
       ),
