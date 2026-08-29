@@ -43,6 +43,7 @@ export type NavIcon =
   | "puestaEnMarcha"
   | "auditoria"
   | "brief"
+  | "tareas"
   | "actividad"
   | "reservar"
   | "evolucion"
@@ -106,6 +107,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
+    { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
     { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
     // Anuncios sale de Administración: es comunicación al socio, no estructura.
@@ -122,6 +124,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
+    { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
     { href: "/aforo", label: "Aforo de clases", section: "Día a día", icon: "aforo" },
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
     { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
@@ -141,6 +144,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   TRAINER: [
     { href: "/trainer", label: "Mi panel", section: "Vista general", icon: "panel" },
     { href: "/agenda", label: "Agenda", section: "Vista general", icon: "agenda" },
+    { href: "/tareas", label: "Tareas", section: "Vista general", icon: "tareas" },
     { href: "/brief", label: "Session Brief", section: "Vista general", icon: "brief" },
     { href: "/members", label: "Socios", section: "Vista general", icon: "socios" },
     { href: "/leads", label: "Leads", section: "Vista general", icon: "leads" },
@@ -149,6 +153,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   TRAINER_ADMIN: [
     { href: "/trainer", label: "Mi panel", section: "Vista general", icon: "panel" },
     { href: "/agenda", label: "Agenda", section: "Vista general", icon: "agenda" },
+    { href: "/tareas", label: "Tareas", section: "Vista general", icon: "tareas" },
     { href: "/aforo", label: "Aforo de clases", section: "Vista general", icon: "aforo" },
     { href: "/brief", label: "Session Brief", section: "Vista general", icon: "brief" },
     { href: "/members", label: "Socios", section: "Vista general", icon: "socios" },
@@ -158,6 +163,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/leads", label: "Leads", section: "Día a día", icon: "leads" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
+    { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
   ],
   // "Mi perfil" ya no vive en el nav: se accede desde el bloque de usuario del
@@ -171,6 +177,7 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/portal/membresia", label: "Mi membresía", section: "Membresía", icon: "membresia" },
   ],
   HR_MANAGER: [
+    { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
     { href: "/organization", label: "Organización", section: "Administración", icon: "organizacion" },
     { href: "/rrhh", label: "RRHH", section: "Administración", icon: "rrhh" },
   ],
@@ -321,6 +328,22 @@ export function canManageCenterCapacity(role: Role): boolean {
 // D.1 — publicar anuncios/banners del Dashboard del socio: EXCLUSIVO de dirección.
 export function canManageAnnouncements(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "PLATFORM_ADMIN";
+}
+
+// F10/RB-TASK-001 — repartir trabajo: crear una tarea para otra persona y
+// reasignar la de otro. Dirección y Entrenador Admin, que es quien manda en el
+// día a día de un centro. El resto del equipo gestiona lo que tiene asignado
+// —moverlo de columna y completarlo— pero no encarga trabajo ajeno. El soporte
+// de plataforma queda fuera a propósito: entra a diagnosticar, no a repartir
+// tareas dentro del gimnasio de un cliente.
+export function canAssignTasks(role: Role): boolean {
+  return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER_ADMIN";
+}
+
+// Mover una tarea de columna o darla por hecha: quien la tiene asignada, más
+// quien reparte. Nadie más toca la tarea de otro.
+export function canWorkOnTask(role: Role, actorUserId: string, task: { recipientUserId: string }): boolean {
+  return canAssignTasks(role) || task.recipientUserId === actorUserId;
 }
 
 // F14/RB-RRHH-012 — valoraciones de entrenadores: EXCLUSIVO dirección, nunca el propio entrenador.
