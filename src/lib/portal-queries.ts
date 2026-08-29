@@ -1,7 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { buildCompositionView } from "@/lib/composition-view";
-import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { sessionServiceKind } from "@/lib/members-queries";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
+import {
+  chargeSessionToSubscription,
+  claimWaitlistedBooking,
+  pickBookingSubscription,
+  refundSessionToSubscription,
+  SERVICE_LABEL,
+  shouldNotifyVacancy,
+} from "@/lib/session-booking";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
@@ -551,7 +559,7 @@ type MemberForBooking = {
   }[];
 };
 
-const SERVICE_LABEL: Record<string, string> = { EP: "entrenamiento personal", GROUP: "grupos reducidos" };
+const NO_BALANCE_ERROR = "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.";
 
 /**
  * Núcleo de la reserva (RB-RES-001/002/006), extraído de la Server Action
@@ -640,11 +648,19 @@ export async function bookSessionForMember(
     // garantizado, es "quien primero llega" igual que una reserva nueva.
     const claimingOwnWaitlistSpot = existing?.status === "WAITLISTED" && !overCapacity;
     if (existing && !claimingOwnWaitlistSpot) {
-      return { ok: false as const, error: "Ya tienes una reserva para esta clase." };
+      // Sigue llena: quien ya esperaba se queda esperando. Antes se le decía
+      // "ya tienes una reserva", que en lista de espera no es cierto y hacía
+      // pensar que la plaza avisada era suya.
+      return {
+        ok: false as const,
+        error:
+          existing.status === "WAITLISTED"
+            ? "Esta clase sigue completa: continúas en la lista de espera."
+            : "Ya tienes una reserva para esta clase.",
+      };
     }
 
     const kind = sessionServiceKind(cls.classType);
-    let chargeSubscriptionId: string | null = null;
 
     // El saldo se relee DENTRO de la transacción. `member.subscriptions` lo
     // carga `getMemberForUser` antes de abrirla, y con esa foto obsoleta dos
@@ -656,66 +672,43 @@ export async function bookSessionForMember(
       select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
     });
 
-    // RB-AGENDA-003: exige también el centro de la clase — un bono de EP en
-    // otro centro de la organización no cubre esta sesión, igual que uno de
-    // otra modalidad. El mensaje de error es el mismo para ambos casos. Esta
-    // comprobación corre siempre, también en lista de espera: es la única
-    // frontera que impide reservar por `sessionId` una clase de otra
-    // organización o sin bono aplicable (antes de RB-AGENDA-003 la cubría el
-    // `cls.centerId !== member.primaryCenterId` de más arriba, que sí corría
-    // incondicionalmente).
-    const matching = freshSubscriptions.filter(
-      (s) => s.centerId === cls.centerId && planServiceKind(s.plan.type) === kind
-    );
-    if (matching.length === 0) {
-      return {
-        ok: false as const,
-        error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.`,
-      };
+    // RB-AGENDA-003: `pickBookingSubscription` exige también el centro de la
+    // clase — un bono de EP en otro centro de la organización no cubre esta
+    // sesión, igual que uno de otra modalidad. Corre siempre, también en lista
+    // de espera: es la única frontera que impide reservar por `sessionId` una
+    // clase de otra organización o sin bono aplicable (antes de RB-AGENDA-003 la
+    // cubría el `cls.centerId !== member.primaryCenterId` de más arriba, que sí
+    // corría incondicionalmente). La misma elección de bono y el mismo descuento
+    // atómico los usa la reserva que hace el staff desde la agenda.
+    const choice = pickBookingSubscription(freshSubscriptions, {
+      centerId: cls.centerId,
+      kind,
+      consumesSession: !overCapacity,
+    });
+    if (!choice.ok) {
+      return choice.reason === "NO_PLAN"
+        ? { ok: false as const, error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.` }
+        : { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
     }
+    const chargeSubscriptionId = choice.subscriptionId;
 
-    if (!overCapacity) {
-      // Bono ilimitado (sessionsRemaining null): no descuenta saldo.
-      const unlimited = matching.find((s) => s.sessionsRemaining == null);
-      if (!unlimited) {
-        const withBalance = matching
-          .filter((s) => (s.sessionsRemaining ?? 0) > 0)
-          .sort((a, b) => (a.sessionsRemaining ?? 0) - (b.sessionsRemaining ?? 0))[0];
-        if (!withBalance) {
-          return {
-            ok: false as const,
-            needsTopUp: true,
-            error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
-          };
-        }
-        chargeSubscriptionId = withBalance.id;
-      }
-    }
-
-    // Descuento condicional: el `sessionsRemaining > 0` viaja dentro del propio
-    // UPDATE, así que es la base de datos —y no una lectura previa— la que
-    // decide si queda saldo. Barrera final contra el bono en negativo si dos
-    // transacciones concurrentes llegan hasta aquí con el mismo bono. Va ANTES
-    // de escribir la reserva para poder abortar sin dejar nada a medias.
-    if (chargeSubscriptionId) {
-      const charged = await tx.subscription.updateMany({
-        where: { id: chargeSubscriptionId, sessionsRemaining: { gt: 0 } },
-        data: { sessionsRemaining: { decrement: 1 } },
-      });
-      if (charged.count === 0) {
-        return {
-          ok: false as const,
-          needsTopUp: true,
-          error: "No te quedan sesiones en tu bono. Renueva tu bono para seguir reservando.",
-        };
-      }
+    // Va ANTES de escribir la reserva para poder abortar sin dejar nada a medias.
+    if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+      return { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
     }
 
     if (claimingOwnWaitlistSpot) {
-      await tx.booking.update({
-        where: { id: existing!.id },
-        data: { status: "BOOKED", waitlistPosition: null, subscriptionId: chargeSubscriptionId },
-      });
+      // RB-RES-007: el aviso de plaza sale para toda la lista a la vez, así que
+      // el paso a BOOKED solo cuenta si la reserva SIGUE en espera. Sin esa
+      // condición dentro del UPDATE, dos personas avisadas del mismo hueco se
+      // lo quedaban las dos y la clase acababa sobrevendida.
+      const claimed = await claimWaitlistedBooking(tx, existing!.id, chargeSubscriptionId);
+      if (!claimed) {
+        // Otra persona de la lista se ha adelantado: se deshace el descuento
+        // para no cobrarle una sesión que no ha llegado a reservar.
+        if (chargeSubscriptionId) await refundSessionToSubscription(tx, chargeSubscriptionId);
+        return { ok: false as const, error: "Esa plaza ya la ha reclamado otra persona: sigues en la lista de espera." };
+      }
       return { ok: true as const, waitlisted: false };
     }
 
@@ -791,6 +784,10 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   const dayBookings = booking.session.bookings.filter((b) => sameDay(b.occurrenceDate, booking.occurrenceDate));
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
+  // Con gente en lista de espera basta con que se libere la plaza: si el aforo
+  // se amplió después de formarse la lista, la sesión ya no estaba "llena" y
+  // quien esperaba se quedaba sin enterarse del hueco.
+  const hasWaitlist = dayBookings.some((b) => b.status === "WAITLISTED");
 
   // La cancelación solo se aplica si la reserva SIGUE activa, y la condición
   // viaja dentro del propio UPDATE: comprobar el estado con la lectura de más
@@ -813,7 +810,7 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   });
   if (!cancelled) return { ok: false, error: "Esta reserva ya no está activa." };
 
-  if (booking.status === "BOOKED" && wasFull) {
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
     void notifySessionVacancy({
       orgId: booking.session.orgId,
       sessionId: booking.sessionId,

@@ -11,6 +11,15 @@ import {
   type EditScope,
 } from "@/lib/session-series";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
+import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import {
+  chargeSessionToSubscription,
+  claimWaitlistedBooking,
+  occupiedSpots,
+  pickBookingSubscription,
+  SERVICE_LABEL,
+  shouldNotifyVacancy,
+} from "@/lib/session-booking";
 import { addDays, DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
 
 /**
@@ -359,6 +368,10 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   const dayBookings = booking.session.bookings.filter((b) => isSameDay(b.occurrenceDate, booking.occurrenceDate));
   const activeCountBefore = dayBookings.filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW").length;
   const wasFull = activeCountBefore >= booking.session.capacity;
+  // Con gente esperando, cualquier cancelación que libere plaza es un aviso que
+  // dar: si el aforo se amplió después de formarse la lista, la sesión ya no
+  // estaba "llena" y quien esperaba se quedaba sin enterarse del hueco.
+  const hasWaitlist = dayBookings.some((b) => b.status === "WAITLISTED");
 
   // Igual que en la cancelación del socio (portal-queries.ts): la condición de
   // "sigue activa" va dentro del UPDATE, para que dos cancelaciones simultáneas
@@ -381,11 +394,181 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   });
   if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
-  if (booking.status === "BOOKED" && wasFull) {
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
 
   return { ok: true as const };
+}
+
+/**
+ * Socios a los que el staff puede dar una plaza en esta sesión: los que tienen
+ * un bono ACTIVE de esa modalidad en el centro que la imparte (RB-AGENDA-003),
+ * que es exactamente lo que exige `bookSessionForMemberAsStaff`.
+ *
+ * No vale el listado general de socios activos: ofrecía a toda la organización
+ * —incluida gente sin bono de grupos, o de otro centro— y en cambio dejaba
+ * fuera a quien está de prueba (`state` TRIAL), que es justo a quien más se
+ * apunta a mano desde el mostrador.
+ */
+export async function listMembersBookableForSession(orgId: string, sessionId: string) {
+  const session = await prisma.classSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: { centerId: true, classType: true },
+  });
+  if (!session) return [];
+  const kind = sessionServiceKind(session.classType);
+
+  const members = await prisma.member.findMany({
+    where: { orgId, subscriptions: { some: { status: "ACTIVE", centerId: session.centerId } } },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      subscriptions: {
+        where: { status: "ACTIVE", centerId: session.centerId },
+        select: { plan: { select: { type: true } } },
+      },
+    },
+  });
+
+  return members
+    .filter((m) => m.subscriptions.some((s) => planServiceKind(s.plan.type) === kind))
+    .map(({ id, firstName, lastName }) => ({ id, firstName, lastName }));
+}
+
+/**
+ * Motivo por el que una reserva de staff no se puede aplicar. Se lanza dentro
+ * de la transacción (en vez de devolverse) para que el descuento de bono que ya
+ * hubiera hecho se deshaga con ella: devolver un objeto de error confirma la
+ * transacción y dejaba la sesión cobrada y sin reservar.
+ */
+class StaffBookingError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+  }
+}
+
+export type StaffBookingResult =
+  | { ok: true; claimedFromWaitlist: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Reserva la plaza de un cliente concreto en una sesión, desde la agenda de
+ * staff (el reverso de `cancelSessionBooking`). Es una acción PUNTUAL sobre un
+ * día: no existe el "cliente fijo" de grupos reducidos —eso se queda en
+ * Entrenamiento Personal—, así que reservar la ocurrencia del martes no apunta
+ * a nadie a los martes siguientes.
+ *
+ * El bono se trata exactamente igual que cuando reserva el propio socio desde
+ * la app (`bookSessionForMember`, portal-queries.ts): mismo bono elegido, mismo
+ * descuento atómico y misma devolución al cancelar. Lo que NO se aplica son las
+ * reglas de autoservicio del portal (antelación mínima, ventana de 7 días,
+ * `selfBookable` en EP): quien está en el mostrador apunta a alguien a la clase
+ * de dentro de diez minutos, que es justo lo que el socio no puede hacer solo.
+ *
+ * Si el cliente ya estaba en lista de espera, esto es su forma de reclamar la
+ * plaza liberada (RB-RES-007): se pasa a BOOKED con la misma condición atómica
+ * que usa el portal, así que si otro se ha adelantado, no se le cobra.
+ */
+export async function bookSessionForMemberAsStaff(
+  orgId: string,
+  input: { sessionId: string; memberId: string; occurrenceDate: Date }
+): Promise<StaffBookingResult> {
+  const day = startOfDay(input.occurrenceDate);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Mismo lock de fila que el portal: sin él, dos reservas simultáneas leen
+      // el mismo aforo libre y ambas entran por encima de `capacity`.
+      await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${input.sessionId} FOR UPDATE`;
+
+      const cls = await tx.classSession.findFirst({
+        where: { id: input.sessionId, orgId },
+        select: {
+          id: true,
+          centerId: true,
+          classType: true,
+          capacity: true,
+          status: true,
+          date: true,
+          recurrence: true,
+          recUntil: true,
+          bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
+        },
+      });
+      if (!cls) throw new StaffBookingError("Sesión no encontrada.");
+      if (cls.status !== "SCHEDULED") throw new StaffBookingError("Esta sesión ya no admite reservas.");
+      // El día llega de la URL de la agenda: en una serie recurrente solo vale
+      // si la serie ocurre de verdad ese día (si no, la reserva quedaría en un
+      // roster que no existe).
+      if (!occursOn(cls, day)) throw new StaffBookingError("Esta sesión no se imparte ese día.");
+
+      // El socio, contrastado contra la organización: sin esto bastaba conocer
+      // un id ajeno para colar una reserva a nombre de alguien de otra.
+      const member = await tx.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
+      if (!member) throw new StaffBookingError("Socio no encontrado.");
+
+      const dayBookings = cls.bookings.filter((b) => isSameDay(b.occurrenceDate, day));
+      const mine = dayBookings.filter((b) => b.memberId === member.id);
+      if (mine.some((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW")) {
+        throw new StaffBookingError("Ese socio ya tiene plaza en esta sesión.");
+      }
+      // Desde el mostrador no se apunta a nadie a la lista de espera: eso lo
+      // hace el cliente desde la app. Aquí solo se ocupa una plaza que exista.
+      if (occupiedSpots(dayBookings, day) >= cls.capacity) {
+        throw new StaffBookingError("La sesión está completa: no quedan plazas libres ese día.");
+      }
+
+      const kind = sessionServiceKind(cls.classType);
+      const subscriptions = await tx.subscription.findMany({
+        where: { memberId: member.id, status: "ACTIVE" },
+        select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
+      });
+      const choice = pickBookingSubscription(subscriptions, {
+        centerId: cls.centerId,
+        kind,
+        consumesSession: true,
+      });
+      if (!choice.ok) {
+        throw new StaffBookingError(
+          choice.reason === "NO_PLAN"
+            ? `El bono de ese socio no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"} en este centro.`
+            : "A ese socio no le quedan sesiones en su bono."
+        );
+      }
+      const chargeSubscriptionId = choice.subscriptionId;
+
+      // Antes de escribir la reserva, para no dejarla creada sin cobrar.
+      if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+        throw new StaffBookingError("A ese socio no le quedan sesiones en su bono.");
+      }
+
+      const waiting = mine.find((b) => b.status === "WAITLISTED");
+      if (waiting) {
+        if (!(await claimWaitlistedBooking(tx, waiting.id, chargeSubscriptionId))) {
+          // Lanzar deshace también el descuento de bono de más arriba: nadie
+          // paga una plaza que se quedó otro.
+          throw new StaffBookingError("Esa plaza ya la ha reclamado otra persona.");
+        }
+        return { ok: true as const, claimedFromWaitlist: true };
+      }
+
+      await tx.booking.create({
+        data: {
+          sessionId: cls.id,
+          occurrenceDate: day,
+          memberId: member.id,
+          status: "BOOKED",
+          subscriptionId: chargeSubscriptionId,
+        },
+      });
+      return { ok: true as const, claimedFromWaitlist: false };
+    });
+  } catch (error) {
+    if (error instanceof StaffBookingError) return { ok: false as const, error: error.reason };
+    throw error;
+  }
 }
 
 export async function deleteSession(orgId: string, sessionId: string) {
