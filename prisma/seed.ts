@@ -4,6 +4,7 @@ import {
   PlanType,
   MemberState,
   BookingStatus,
+  NoShowReason,
   PaymentMethod,
   HealthRecordType,
   HealthSeverity,
@@ -41,6 +42,15 @@ TODAY.setHours(0, 0, 0, 0);
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
+
+/** Motivos de falta que se reparten en los datos de demo (RB-RES-009). */
+const NO_SHOW_REASONS: NoShowReason[] = [
+  NoShowReason.FORGOT,
+  NoShowReason.FORGOT,
+  NoShowReason.LATE_NOTICE,
+  NoShowReason.JUSTIFIED,
+  NoShowReason.OUR_ERROR,
+];
 function weightedPick<T>(pairs: [T, number][]): T {
   const total = pairs.reduce((s, [, w]) => s + w, 0);
   let r = Math.random() * total;
@@ -932,6 +942,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     waitlistPosition: number | null;
     bookedAt: Date;
     checkedInAt: Date | null;
+    noShowReason: NoShowReason | null;
+    noShowRefunded: boolean;
   };
   const bookings: BookingRow[] = [];
   const bookedCountBySession = new Map<string, number>();
@@ -958,6 +970,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
         let status: BookingStatus;
         let checkedInAt: Date | null = null;
+        // RB-RES-009: la falta se registra siempre con motivo, y devolver la
+        // sesión es una decisión del entrenador. Los datos de demo reparten los
+        // cuatro motivos y devuelven solo las que un entrenador devolvería.
+        let noShowReason: NoShowReason | null = null;
         if (!s.isPast) {
           status = overCapacity ? "WAITLISTED" : "BOOKED";
         } else if (overCapacity) {
@@ -965,6 +981,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         } else {
           const r = Math.random();
           status = r < 0.85 ? "ATTENDED" : r < 0.94 ? "NO_SHOW" : "CANCELLED";
+          if (status === "NO_SHOW") noShowReason = pick(NO_SHOW_REASONS);
           if (status === "ATTENDED") {
             const [h, mi] = s.startTime.split(":").map(Number);
             checkedInAt = new Date(s.date);
@@ -982,6 +999,11 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           waitlistPosition: status === "WAITLISTED" ? count - s.capacity + 1 : null,
           bookedAt: addDays(s.date, -randInt(0, 5)),
           checkedInAt,
+          noShowReason,
+          // Se devuelve la sesión en los dos motivos en los que el cliente no
+          // se quedó el hueco por gusto; el plantón sin avisar la pierde.
+          noShowRefunded:
+            noShowReason === NoShowReason.JUSTIFIED || noShowReason === NoShowReason.OUR_ERROR,
         });
         if (status === "ATTENDED") attendanceByMember.get(m.id)!.push(s.date);
       }
@@ -1604,6 +1626,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
               occurrenceDate: sessionDate,
               memberId,
               status: isNoShow ? BookingStatus.NO_SHOW : BookingStatus.ATTENDED,
+              // Faltas seguidas sin avisar en la demo: son las que hacen que la
+              // alerta a dirección (RB-RES-009) tenga algo que enseñar.
+              noShowReason: isNoShow ? NoShowReason.FORGOT : null,
               bookedAt: addDays(sessionDate, -2),
               checkedInAt,
             },
