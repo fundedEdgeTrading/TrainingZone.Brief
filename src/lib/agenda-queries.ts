@@ -202,10 +202,17 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
 
   const isPersonal = input.type === "personal";
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
+  const groupCapacityCeiling = center.defaultGroupCapacity ?? MAX_GROUP_CAPACITY;
+  if (!isPersonal && input.capacity && input.capacity > groupCapacityCeiling) {
+    return {
+      ok: false as const,
+      error: `El aforo máximo de este centro es ${groupCapacityCeiling} socios: no puedes crear una sesión con ${input.capacity} plazas.`,
+    };
+  }
   const capacity = isPersonal
     ? 1
     : Math.min(
-        MAX_GROUP_CAPACITY,
+        groupCapacityCeiling,
         Math.max(1, Math.round(input.capacity || center.defaultGroupCapacity || DEFAULT_GROUP_CAPACITY))
       );
 

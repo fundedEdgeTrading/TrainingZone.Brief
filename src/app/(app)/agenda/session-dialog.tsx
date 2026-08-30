@@ -318,7 +318,7 @@ export default function SessionDialog({
                     type="number"
                     name="capacity"
                     min={1}
-                    max={MAX_GROUP_CAPACITY}
+                    max={defaultGroupCapacity ?? MAX_GROUP_CAPACITY}
                     aria-label="Plazas del grupo"
                     value={dlg.capacity}
                     onChange={(e) => patch({ capacity: Number(e.target.value) || 1 })}
