@@ -67,7 +67,13 @@ function normalizePlanName(name: string): string {
     .trim();
 }
 
-type PlanRef = { id: string; name: string; type: PlanType; priceCents: number };
+type PlanRef = {
+  id: string;
+  name: string;
+  type: PlanType;
+  priceCents: number;
+  sessionsIncluded: number | null;
+};
 
 /**
  * Da de alta la cuota que el socio ya venía pagando. Devuelve `true` solo si ha
@@ -95,11 +101,19 @@ async function upsertImportedSubscription(
   // todas las altas el día de la importación y falsearía la antigüedad.
   const startDate = sub.startDate ?? joinedAt ?? new Date();
   const sessionsRemaining = plan.type === "SESSION_PACK" ? sub.sessionsRemaining : null;
+  // El CSV solo trae las sesiones que quedan, no las gastadas hasta la fecha de
+  // importación. El total contratado (`sessionsIncluded`) se toma del plan; si
+  // el plan no define uno, se asume que lo restante es todo lo contratado.
+  const sessionsIncluded = sessionsRemaining !== null ? (plan.sessionsIncluded ?? sessionsRemaining) : null;
 
   if (existing) {
     await prisma.subscription.update({
       where: { id: existing.id },
-      data: { priceCents, startDate, ...(sessionsRemaining !== null ? { sessionsRemaining } : {}) },
+      data: {
+        priceCents,
+        startDate,
+        ...(sessionsRemaining !== null ? { sessionsRemaining, sessionsIncluded } : {}),
+      },
     });
     return false;
   }
@@ -111,7 +125,7 @@ async function upsertImportedSubscription(
       centerId,
       startDate,
       priceCents,
-      ...(sessionsRemaining !== null ? { sessionsRemaining } : {}),
+      ...(sessionsRemaining !== null ? { sessionsRemaining, sessionsIncluded } : {}),
     },
   });
   return true;
@@ -217,7 +231,7 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
   // haría 5.000 consultas idénticas.
   const plans = await prisma.membershipPlan.findMany({
     where: { orgId, active: true },
-    select: { id: true, name: true, type: true, priceCents: true },
+    select: { id: true, name: true, type: true, priceCents: true, sessionsIncluded: true },
   });
   const plansByName = new Map(plans.map((p) => [normalizePlanName(p.name), p]));
 
