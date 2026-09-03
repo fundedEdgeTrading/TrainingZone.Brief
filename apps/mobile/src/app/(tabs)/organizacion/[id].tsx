@@ -279,21 +279,26 @@ export default function StaffFormScreen() {
 /** Barra de imputación: se arrastra o se toca, en pasos de 5 %. */
 function AllocationRow({ label, value, onChange }: { label: string; value: number; onChange: (pct: number) => void }) {
   const theme = useTheme();
+  // Ref mutable para el ancho medido: el PanResponder lo lee en sus propios
+  // callbacks (grant/move), que corren fuera del render.
   const width = useRef(96);
 
-  const responder = useRef(
+  function pctAt(x: number) {
+    const ratio = Math.max(0, Math.min(1, x / width.current));
+    return Math.round((ratio * 100) / 5) * 5;
+  }
+
+  // Responder creado una sola vez; sus callbacks (grant/move) leen el ref
+  // de arriba fuera del render.
+  // eslint-disable-next-line react-hooks/refs
+  const [responder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (e) => onChange(pctAt(e.nativeEvent.locationX)),
       onPanResponderMove: (e) => onChange(pctAt(e.nativeEvent.locationX)),
     })
-  ).current;
-
-  function pctAt(x: number) {
-    const ratio = Math.max(0, Math.min(1, x / width.current));
-    return Math.round((ratio * 100) / 5) * 5;
-  }
+  );
 
   function onLayout(e: LayoutChangeEvent) {
     width.current = e.nativeEvent.layout.width;

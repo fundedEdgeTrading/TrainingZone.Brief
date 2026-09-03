@@ -54,12 +54,16 @@ export default function SessionFeedbackScreen() {
   const [index, setIndex] = useState(0);
   const [scores, setScores] = useState<Record<string, FeedbackScores>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const slide = useRef(new Animated.Value(0)).current;
+  const [slide] = useState(() => new Animated.Value(0));
   const autosave = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Estado inicial: lo que ya hubiera guardado el entrenador.
+  // Estado inicial: lo que ya hubiera guardado el entrenador. `scores`/`notes`
+  // son estado editable local que arranca desde `data` (fetch) y luego el
+  // entrenador lo modifica a mano, así que no se puede derivar en el propio
+  // render — necesita este efecto de sincronización única por carga.
   useEffect(() => {
     if (!data) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver comentario arriba
     setScores(Object.fromEntries(data.members.map((m) => [m.bookingId, { ...EMPTY_SCORES, ...m.scores }])));
     setNotes(Object.fromEntries(data.members.map((m) => [m.bookingId, m.note ?? ""])));
   }, [data]);

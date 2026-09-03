@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Animated,
   Image,
@@ -38,7 +38,7 @@ export default function LoginScreen() {
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const shake = useRef(new Animated.Value(0)).current;
+  const [shake] = useState(() => new Animated.Value(0));
 
   if (state.status === "signedIn") return <Redirect href={homeRouteFor(state.user)} />;
 
@@ -153,8 +153,8 @@ export default function LoginScreen() {
 /** Dos manchas translúcidas con deriva lenta (24-30 s), en alternancia. */
 function Aurora() {
   const reduced = useReducedMotion();
-  const driftA = useRef(new Animated.Value(0)).current;
-  const driftB = useRef(new Animated.Value(0)).current;
+  const [driftA] = useState(() => new Animated.Value(0));
+  const [driftB] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     if (reduced) return;

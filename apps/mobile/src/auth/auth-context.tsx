@@ -2,7 +2,14 @@ import { createContext, useContext, useEffect, useMemo, useState, type PropsWith
 import { apiRequest, clearTokens, getStoredTokens, storeTokens, ApiError } from "@/api/client";
 import type { LoginResponse, MeResponse, Role } from "@/api/types";
 
-const SUPPORTED_ROLES: Role[] = ["MEMBER", "TRAINER", "OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"];
+const SUPPORTED_ROLES: Role[] = [
+  "MEMBER",
+  "TRAINER",
+  "TRAINER_ADMIN",
+  "OWNER",
+  "CENTER_DIRECTOR",
+  "PLATFORM_ADMIN",
+];
 
 type AuthState =
   | { status: "loading" }
@@ -49,8 +56,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
         skipAuth: true,
       });
 
-      // F3: socio, entrenador y dirección/admin ya tienen su propio subconjunto
-      // de la app (ver tabs/_layout.tsx). Recepción y RRHH quedan para más adelante.
+      // F1 QA: Entrenador Admin daba error de "rol no soportado" pese a tener
+      // tabs propias en TABS_BY_ROLE (mismo subconjunto que Entrenador) — bug
+      // corregido aquí. Recepción y RRHH sí tienen tabs definidas en
+      // TABS_BY_ROLE, pero de momento no se activan: sus pantallas de gestión
+      // (aforo, avisos globales) aún no existen en la app, así que abrirles el
+      // login solo llevaría a una barra de tabs sin nada útil detrás. Se deja
+      // documentado aquí como decisión de F1: quedan fuera de SUPPORTED_ROLES
+      // hasta que haya una historia que las complete.
       if (!SUPPORTED_ROLES.includes(data.user.role)) {
         return { ok: false, error: "Tu rol todavía no tiene una versión de la app móvil." };
       }

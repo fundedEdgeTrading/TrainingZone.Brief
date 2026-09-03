@@ -43,34 +43,44 @@ export function formatCountdown(seconds: number, format: CountdownFormat): strin
  * segundo plano se recalcula contra el reloj, así que la cuenta atrás nunca se
  * queda congelada ni acumula desfase (`AppState`).
  */
+function initialTargetAt(targetIso?: string | null, initialSeconds?: number | null): number {
+  if (targetIso) return Date.parse(targetIso);
+  if (initialSeconds != null) return Date.now() + initialSeconds * 1000;
+  return 0;
+}
+
 export function useCountdown(source: { targetIso?: string | null; initialSeconds?: number | null }): number {
   const { targetIso, initialSeconds } = source;
-  const targetAt = useRef<number>(0);
+  const [targetAt, setTargetAt] = useState(() => initialTargetAt(targetIso, initialSeconds));
+  const [seconds, setSeconds] = useState(() => Math.max(0, Math.round((targetAt - Date.now()) / 1000)));
 
-  if (targetIso) {
-    targetAt.current = Date.parse(targetIso);
-  } else if (targetAt.current === 0 && initialSeconds != null) {
-    targetAt.current = Date.now() + initialSeconds * 1000;
-  }
-
-  const compute = () => Math.max(0, Math.round((targetAt.current - Date.now()) / 1000));
-  const [seconds, setSeconds] = useState(compute);
-
+  // `targetAt` depende del reloj (Date.now()/Date.parse), así que no se puede
+  // derivar puramente en el render: hace falta este efecto para
+  // resincronizarlo cuando cambian las props.
   useEffect(() => {
-    if (targetIso) targetAt.current = Date.parse(targetIso);
-    else if (initialSeconds != null) targetAt.current = Date.now() + initialSeconds * 1000;
-    setSeconds(compute);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver comentario arriba
+    setTargetAt((prev) => {
+      if (targetIso) return Date.parse(targetIso);
+      if (prev === 0 && initialSeconds != null) return Date.now() + initialSeconds * 1000;
+      return prev;
+    });
+  }, [targetIso, initialSeconds]);
 
-    const interval = setInterval(() => setSeconds(compute), 1000);
+  // Igual que arriba: el tic del contador depende del reloj real, no de props.
+  useEffect(() => {
+    const compute = () => Math.max(0, Math.round((targetAt - Date.now()) / 1000));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver comentario arriba
+    setSeconds(compute());
+
+    const interval = setInterval(() => setSeconds(compute()), 1000);
     const sub = AppState.addEventListener("change", (status) => {
-      if (status === "active") setSeconds(compute);
+      if (status === "active") setSeconds(compute());
     });
     return () => {
       clearInterval(interval);
       sub.remove();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetIso, initialSeconds]);
+  }, [targetAt]);
 
   return seconds;
 }

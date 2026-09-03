@@ -54,7 +54,7 @@ export default function StaffAgendaScreen() {
   // Swipe horizontal para cambiar de día: el gesto solo se reclama cuando el
   // movimiento es claramente horizontal, para no robarle el scroll vertical a
   // la timeline.
-  const swipe = useRef(
+  const [swipe] = useState(() =>
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 24 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 2,
       onPanResponderRelease: (_, gesture) => {
@@ -62,7 +62,7 @@ export default function StaffAgendaScreen() {
         else if (gesture.dx >= 40) setDate((d) => addDaysToIso(d, -1));
       },
     })
-  ).current;
+  );
 
   const isToday = date === todayIso();
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
