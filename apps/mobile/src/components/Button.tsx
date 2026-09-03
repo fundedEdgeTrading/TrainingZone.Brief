@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useState } from "react";
 import {
   Animated,
   Pressable,
@@ -43,7 +43,7 @@ export function Button({
 }: Props) {
   const theme = useTheme();
   const reduced = useReducedMotion();
-  const scale = useRef(new Animated.Value(1)).current;
+  const [scale] = useState(() => new Animated.Value(1));
 
   // primary = hueso sobre tinta (CTA de la maqueta); gold = acento de marca.
   const palette: Record<ButtonVariant, { bg: string; fg: string; border: string }> = {

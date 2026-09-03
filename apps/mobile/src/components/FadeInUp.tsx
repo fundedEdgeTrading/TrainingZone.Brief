@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PropsWithChildren } from "react";
+import { useEffect, useState, type PropsWithChildren } from "react";
 import { Animated, type StyleProp, type ViewStyle } from "react-native";
 import { duration, easeOutSoft, useReducedMotion } from "@/theme/motion";
 
@@ -11,8 +11,8 @@ export function FadeInUp({
   children,
 }: PropsWithChildren<{ delay?: number; style?: StyleProp<ViewStyle> }>) {
   const reduced = useReducedMotion();
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(10)).current;
+  const [opacity] = useState(() => new Animated.Value(0));
+  const [translateY] = useState(() => new Animated.Value(10));
 
   useEffect(() => {
     if (reduced) {

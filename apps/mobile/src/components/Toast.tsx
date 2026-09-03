@@ -39,7 +39,7 @@ function ToastHost({ message }: { message: ToastMessage }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
-  const anim = useRef(new Animated.Value(reduced ? 1 : 0)).current;
+  const [anim] = useState(() => new Animated.Value(reduced ? 1 : 0));
 
   useEffect(() => {
     if (reduced) return;
