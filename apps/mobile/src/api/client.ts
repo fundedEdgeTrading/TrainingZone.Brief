@@ -9,10 +9,49 @@ import type { RefreshResponse } from "./types";
 // es ahí donde aparecen los fallos de URL absoluta y de certificado. Manda
 // `EXPO_PUBLIC_API_URL` (Expo la inlinea en el bundle) para no tener que editar
 // `app.json`; sin ella se cae al valor de siempre para el desarrollo en local.
+//
+// "localhost" solo apunta al servidor de desarrollo cuando la app corre en un
+// simulador/emulador en la misma máquina. En un dispositivo físico con Expo
+// Go (p.ej. probando desde el iPhone), "localhost" es el propio teléfono, así
+// que la petición nunca llega a nadie y se queda colgada hasta que el
+// sistema operativo agota su timeout — de ahí el "no se pudo iniciar sesión"
+// tras una espera larga aunque las credenciales sean correctas. Como
+// fallback de desarrollo, derivamos el host del propio Metro bundler
+// (Constants.expoConfig.hostUri, p.ej. "192.168.1.23:8081"), que sí es
+// alcanzable desde el dispositivo.
+function devApiUrlFallback(): string {
+  const hostUri = Constants.expoConfig?.hostUri;
+  const lanHost = hostUri?.split(":")[0];
+  if (lanHost && lanHost !== "localhost") {
+    return `http://${lanHost}:3000/api/mobile/v1`;
+  }
+  return "http://localhost:3000/api/mobile/v1";
+}
+
 const API_URL =
   process.env.EXPO_PUBLIC_API_URL ??
   (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ??
-  "http://localhost:3000/api/mobile/v1";
+  devApiUrlFallback();
+
+// Sin esto, un servidor inalcanzable (p.ej. el caso de "localhost" de arriba)
+// deja el fetch colgado decenas de segundos con el spinner de "Entrar" antes
+// de fallar: el timeout lo hace fallar rápido y con un mensaje claro.
+const REQUEST_TIMEOUT_MS = 12_000;
+
+async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new ApiError("No hay conexión con el servidor. Comprueba tu red e inténtalo de nuevo.", 0);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 const ACCESS_TOKEN_KEY = "tz_access_token";
 const REFRESH_TOKEN_KEY = "tz_refresh_token";
@@ -57,7 +96,7 @@ async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken } = await getStoredTokens();
   if (!refreshToken) return null;
 
-  const res = await fetch(`${API_URL}/auth/refresh`, {
+  const res = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ refreshToken }),
@@ -82,7 +121,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const doFetch = (token: string | null) => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
-    return fetch(`${API_URL}${path}`, {
+    return fetchWithTimeout(`${API_URL}${path}`, {
       method: options.method ?? "GET",
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,

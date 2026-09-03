@@ -27,10 +27,14 @@ npm install
 npx expo start
 ```
 
-Abre la app en un simulador/dispositivo o en Expo Go. Por defecto apunta a
-`http://localhost:3000/api/mobile/v1` (`app.json` → `expo.extra.apiUrl`); si
-pruebas desde un dispositivo físico o emulador Android, cambia esa URL a la IP
-de tu máquina en la red local (Android emulator: `10.0.2.2`).
+Abre la app en un simulador/dispositivo o en Expo Go. Por defecto (sin
+`EXPO_PUBLIC_API_URL`), `src/api/client.ts` deriva el host de la API del
+propio Metro bundler (`Constants.expoConfig.hostUri`), así que **no hace
+falta tocar nada** ni en simulador ni en un dispositivo físico en la misma
+red: si Metro se ve desde el móvil (p.ej. `192.168.1.23:8081`), la API
+también. Si tu red bloquea esa conexión directa o usas el emulador de
+Android con solo el puerto reenviado (`10.0.2.2`), fija la URL a mano con
+`EXPO_PUBLIC_API_URL` como se explica abajo.
 
 ### Contra el entorno desplegado (emulador de Android Studio)
 
