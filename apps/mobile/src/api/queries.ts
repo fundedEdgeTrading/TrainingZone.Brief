@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { apiRequest } from "./client";
 import type {
   ActivityResponse,
+  AddStaffBookingResponse,
   BirthdayGreetingResponse,
   PendingAssessmentResponse,
   AgendaResponse,
@@ -17,6 +18,7 @@ import type {
   SaveAnnouncementInput,
   SaveStaffSessionInput,
   StaffAgendaResponse,
+  StaffSessionAttendeesResponse,
   TrainerPanelResponse,
   CheckoutResponse,
   CreateStaffInput,
@@ -190,6 +192,47 @@ export function useDeleteStaffSession() {
   return useMutation({
     mutationFn: (sessionId: string) => apiRequest<{ deleted: boolean }>(`/agenda/sessions/${sessionId}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staff-agenda"] }),
+  });
+}
+
+/** Roster + lista de espera de una ocurrencia de grupo reducido, y a quién se le puede dar una plaza. */
+export function useStaffSessionAttendees(sessionId: string, occurrenceDate: string) {
+  return useQuery({
+    queryKey: ["staff-session-attendees", sessionId, occurrenceDate],
+    queryFn: () =>
+      apiRequest<StaffSessionAttendeesResponse>(
+        `/agenda/sessions/${sessionId}/bookings?date=${occurrenceDate}`
+      ),
+    enabled: Boolean(sessionId && occurrenceDate),
+  });
+}
+
+/** Alta puntual de un socio en la ocurrencia (RB-AGENDA-003), desde el mostrador. */
+export function useAddStaffBooking(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId, occurrenceDate }: { memberId: string; occurrenceDate: string }) =>
+      apiRequest<AddStaffBookingResponse>(`/agenda/sessions/${sessionId}/bookings`, {
+        method: "POST",
+        body: { memberId, occurrenceDate },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-session-attendees", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+    },
+  });
+}
+
+/** Baja de un socio del roster (RB-RES-006): devuelve la sesión a su bono. */
+export function useRemoveStaffBooking(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (bookingId: string) =>
+      apiRequest<{ cancelled: boolean }>(`/agenda/sessions/${sessionId}/bookings/${bookingId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-session-attendees", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+    },
   });
 }
 

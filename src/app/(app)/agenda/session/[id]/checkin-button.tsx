@@ -10,10 +10,13 @@ export default function CheckinButton({
   bookingId,
   sessionId,
   checkedIn,
+  onToggled,
 }: {
   bookingId: string;
   sessionId: string;
   checkedIn: boolean;
+  /** Aviso opcional tras el check-in, para quien mantiene su propia copia del roster (el diálogo de sesión). */
+  onToggled?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
@@ -23,6 +26,7 @@ export default function CheckinButton({
       const result = await toggleCheckIn(bookingId, sessionId);
       if (result.ok) {
         toast.success(result.checkedIn ? "Check-in registrado." : "Check-in deshecho.");
+        onToggled?.();
       } else {
         toast.error(result.error);
       }

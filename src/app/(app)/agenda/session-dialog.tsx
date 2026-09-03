@@ -13,6 +13,7 @@ import {
 } from "./agenda-utils";
 import { saveSessionAction, deleteSessionAction } from "./session-actions";
 import SessionScopeDialog from "./session-scope-dialog";
+import SessionDialogAttendees from "./session-dialog-attendees";
 import type { EditScope } from "@/lib/session-series";
 import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/field";
@@ -98,6 +99,11 @@ export default function SessionDialog({
   const toast = useToast();
   const mounted = useMounted();
   const [scopeOpen, setScopeOpen] = useState(false);
+  const [tab, setTab] = useState<"details" | "attendees">("details");
+  // El apartado de asistentes gestiona el roster de una sesión YA GUARDADA de
+  // grupo reducido: en EP el socio se maneja con el campo "Socio asignado", y
+  // al crear todavía no existe un `id` sobre el que reservar.
+  const showAttendeesTab = dlg.mode === "edit" && dlg.type === "reduced" && Boolean(dlg.id);
 
   function patch(p: Partial<DialogState>) {
     setDlg((d) => (d ? { ...d, ...p } : d));
@@ -222,6 +228,20 @@ export default function SessionDialog({
             className="w-full border-0 border-b-2 border-brand-border py-1.5 text-[22px] font-semibold text-brand-text outline-none focus:border-tz-black mb-5.5 mb-[22px]"
           />
 
+          {showAttendeesTab && (
+            <div className="flex gap-2 mb-4.5 mb-[18px]">
+              <button className={`${SEG_BASE} ${tab === "details" ? SEG_ACTIVE : SEG_INACTIVE}`} onClick={() => setTab("details")}>
+                Detalles
+              </button>
+              <button className={`${SEG_BASE} ${tab === "attendees" ? SEG_ACTIVE : SEG_INACTIVE}`} onClick={() => setTab("attendees")}>
+                Asistentes{dlg.bookedCount > 0 ? ` (${dlg.bookedCount})` : ""}
+              </button>
+            </div>
+          )}
+
+          {showAttendeesTab && tab === "attendees" ? (
+            <SessionDialogAttendees sessionId={dlg.id as string} occurrenceDate={dlg.occurrenceISO} />
+          ) : (
           <div className="flex flex-col gap-[18px]">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-[.08em] text-muted mb-1.5">Tipo de entrenamiento</div>
@@ -434,8 +454,9 @@ export default function SessionDialog({
               )}
             </div>
           </div>
+          )}
 
-          {dlg.mode === "edit" && dlg.id && (isDirection || dlg.trainerId === currentUserId) && (
+          {tab === "details" && dlg.mode === "edit" && dlg.id && (isDirection || dlg.trainerId === currentUserId) && (
             /* Con `?d=` para que el brief sea el de ESTE día de la serie y no
                el de la ocurrencia base. */
             <Link

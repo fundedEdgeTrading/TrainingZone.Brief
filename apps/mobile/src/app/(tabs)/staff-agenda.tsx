@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, PanResponder, Pressable, RefreshControl, ScrollView, Text, View, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { useStaffAgenda, useSaveStaffSession, useDeleteStaffSession } from "@/api/queries";
+import {
+  useStaffAgenda,
+  useSaveStaffSession,
+  useDeleteStaffSession,
+  useStaffSessionAttendees,
+  useAddStaffBooking,
+  useRemoveStaffBooking,
+} from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
 import { ScreenContainer } from "@/components/ScreenContainer";
@@ -20,7 +27,7 @@ import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { addDaysToIso, formatLongDate, minutesOf, todayIso } from "@/utils/format";
-import type { StaffAgendaResponse, StaffSession } from "@/api/types";
+import type { StaffAgendaResponse, StaffSession, StaffSessionAttendee } from "@/api/types";
 
 // C2 + C3 del handoff: agenda del centro en timeline diaria, con la hoja de
 // crear/editar sesión.
@@ -33,6 +40,7 @@ export default function StaffAgendaScreen() {
   const [date, setDate] = useState(todayIso());
   const [trainerId, setTrainerId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ session: StaffSession | null; startTime?: string } | null>(null);
+  const [attendeesOf, setAttendeesOf] = useState<StaffSession | null>(null);
   const { data, isLoading, isError, refetch, isRefetching } = useStaffAgenda(date);
   const deleteSession = useDeleteStaffSession();
   const scrollRef = useRef<ScrollView | null>(null);
@@ -199,7 +207,9 @@ export default function StaffAgendaScreen() {
                       rangeFrom={range.from}
                       isToday={isToday}
                       nowMinutes={nowMinutes}
-                      onPress={() => setEditing({ session })}
+                      onPress={() =>
+                        session.classType === "Personal Training" ? setEditing({ session }) : setAttendeesOf(session)
+                      }
                     />
                   ))}
 
@@ -240,6 +250,18 @@ export default function StaffAgendaScreen() {
           startTime={editing.startTime}
           onClose={() => setEditing(null)}
           onDelete={editing.session ? () => confirmDelete(editing.session as StaffSession) : undefined}
+        />
+      ) : null}
+
+      {attendeesOf ? (
+        <AttendeesSheet
+          session={attendeesOf}
+          date={date}
+          onClose={() => setAttendeesOf(null)}
+          onEdit={() => {
+            setEditing({ session: attendeesOf });
+            setAttendeesOf(null);
+          }}
         />
       ) : null}
     </View>
@@ -481,6 +503,175 @@ function SessionSheet({
   );
 }
 
+const ATTENDEE_STATUS_LABEL: Record<StaffSessionAttendee["status"], string> = {
+  BOOKED: "Reservado",
+  WAITLISTED: "Lista de espera",
+  ATTENDED: "Asistió",
+  NO_SHOW: "No-show",
+  CANCELLED: "Cancelado",
+};
+
+/**
+ * Asistentes de un grupo reducido: roster + lista de espera de la ocurrencia,
+ * con alta y baja de socios sin salir de la agenda. Reutiliza `Sheet`, y las
+ * mismas rutas de staff que la web (`bookSessionForMemberAsStaff` /
+ * `cancelSessionBooking` vía la API móvil).
+ */
+function AttendeesSheet({
+  session,
+  date,
+  onClose,
+  onEdit,
+}: {
+  session: StaffSession;
+  date: string;
+  onClose: () => void;
+  onEdit: () => void;
+}) {
+  const theme = useTheme();
+  const toast = useToast();
+  const { data, isLoading, isError } = useStaffSessionAttendees(session.id, date);
+  const addBooking = useAddStaffBooking(session.id);
+  const removeBooking = useRemoveStaffBooking(session.id);
+  const [search, setSearch] = useState("");
+
+  const booked = data?.attendees.filter((a) => a.status !== "WAITLISTED" && a.status !== "CANCELLED") ?? [];
+  const waitlisted = data?.attendees.filter((a) => a.status === "WAITLISTED") ?? [];
+  const capacity = data?.capacity ?? session.capacity;
+  const full = booked.length >= capacity;
+
+  const q = search.trim().toLowerCase();
+  const candidates = (data?.bookableMembers ?? []).filter(
+    (m) => !q || `${m.firstName} ${m.lastName}`.toLowerCase().includes(q)
+  );
+
+  async function handleAdd(memberId: string, name: string) {
+    try {
+      await addBooking.mutateAsync({ memberId, occurrenceDate: date });
+      toast.show(`Plaza reservada para ${name}.`, "good");
+      setSearch("");
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : "No se pudo reservar la plaza.", "critical");
+    }
+  }
+
+  function handleRemove(attendee: StaffSessionAttendee) {
+    Alert.alert("Quitar del roster", `Se cancelará la plaza de ${attendee.name}.`, [
+      { text: "Volver", style: "cancel" },
+      {
+        text: "Quitar",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await removeBooking.mutateAsync(attendee.bookingId);
+            toast.show(`Reserva de ${attendee.name} cancelada.`, "good");
+          } catch (err) {
+            toast.show(err instanceof Error ? err.message : "No se pudo cancelar.", "critical");
+          }
+        },
+      },
+    ]);
+  }
+
+  return (
+    <Sheet visible onClose={onClose} kicker="GRUPO REDUCIDO" title={session.name}>
+      <View style={styles.attendeesHeaderRow}>
+        <Text style={[typo.rowMeta, { color: theme.textSecondary }]}>
+          {session.startTime}–{session.endTime} · {booked.length}/{capacity} plazas
+        </Text>
+        <Button title="Editar sesión" variant="outline" size="sm" onPress={onEdit} />
+      </View>
+
+      {isLoading ? (
+        <SkeletonList rows={3} />
+      ) : isError || !data ? (
+        <EmptyState icon="alert" title="No se pudieron cargar los asistentes" />
+      ) : (
+        <>
+          {booked.length === 0 ? (
+            <EmptyState icon="users" title="Sin reservas" description="Todavía no hay ningún socio apuntado a esta sesión." />
+          ) : (
+            <View style={{ gap: 8 }}>
+              {booked.map((a) => (
+                <View key={a.bookingId} style={[styles.attendeeRow, { borderColor: theme.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[typo.rowTitle, { color: theme.text }]}>{a.name}</Text>
+                    <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>{ATTENDEE_STATUS_LABEL[a.status]}</Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Quitar a ${a.name}`}
+                    disabled={removeBooking.isPending}
+                    onPress={() => handleRemove(a)}
+                    style={[styles.iconButton, { borderColor: theme.border }]}
+                  >
+                    <Icon name="trash" size={16} color={theme.critical} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {waitlisted.length > 0 ? (
+            <View style={{ gap: 6 }}>
+              <Text style={[typo.label, { color: theme.textSecondary }]}>Lista de espera ({waitlisted.length})</Text>
+              {waitlisted.map((a) => (
+                <Text key={a.bookingId} style={[typo.rowMeta, { color: theme.textMuted }]}>
+                  {a.name}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={{ gap: 8 }}>
+            <Text style={[typo.label, { color: theme.textSecondary }]}>Añadir socio</Text>
+            {full ? (
+              <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
+                La sesión está completa: para dar una plaza, cancela antes una reserva.
+              </Text>
+            ) : (
+              <>
+                <Field
+                  placeholder="Buscar socio…"
+                  value={search}
+                  onChangeText={setSearch}
+                  right={<Icon name="search" size={16} color={theme.textFaint} />}
+                />
+                {q && candidates.length === 0 ? (
+                  <Text style={[typo.rowMeta, { color: theme.textFaint }]}>Sin socios con bono que coincidan.</Text>
+                ) : (
+                  <View style={{ gap: 6 }}>
+                    {candidates.slice(0, 20).map((m) => {
+                      const name = `${m.firstName} ${m.lastName}`;
+                      return (
+                        <Pressable
+                          key={m.id}
+                          accessibilityRole="button"
+                          disabled={addBooking.isPending}
+                          onPress={() => handleAdd(m.id, name)}
+                          style={[styles.attendeeRow, { borderColor: theme.border }]}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[typo.rowTitle, { color: theme.text }]}>{name}</Text>
+                            {m.waiting ? (
+                              <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>En lista de espera</Text>
+                            ) : null}
+                          </View>
+                          <Icon name="plus" size={16} color={theme.goldText} />
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+        </>
+      )}
+    </Sheet>
+  );
+}
+
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
   navButton: { width: 34, height: 34, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
@@ -504,4 +695,15 @@ const styles = StyleSheet.create({
   timeRow: { flexDirection: "row", gap: 10, alignItems: "flex-end" },
   overlap: { flexDirection: "row", gap: 9, borderRadius: radii.control, padding: 12, alignItems: "flex-start" },
   overlapDot: { width: 6, height: 6, borderRadius: 3, marginTop: 5 },
+  attendeesHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  attendeeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: radii.control,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  iconButton: { width: 32, height: 32, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 });
