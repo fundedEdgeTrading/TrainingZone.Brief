@@ -1,10 +1,11 @@
-import { ActivityIndicator, Image, RefreshControl, Text, View, StyleSheet } from "react-native";
+import { ActivityIndicator, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { useEvolution } from "@/api/queries";
 import { useTheme } from "@/theme/theme";
 import { ScreenContainer } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
+import { SafePhoto } from "@/components/SafePhoto";
 import { formatShortDate } from "@/utils/format";
 
 const STATUS_COLOR: Record<string, "good" | "warning" | "critical"> = { OK: "good", WATCH: "warning", ALERT: "critical" };
@@ -70,8 +71,8 @@ export default function EvolutionScreen() {
                   <View style={styles.photoRow}>
                     {[entry.photoFrontUrl, entry.photoSideUrl, entry.photoBackUrl]
                       .filter((url): url is string => Boolean(url))
-                      .map((url) => (
-                        <Image key={url} source={{ uri: url }} style={[styles.photo, { backgroundColor: theme.surfaceAlt }]} />
+                      .map((url, i) => (
+                        <SafePhoto key={`${entry.id}-${i}`} uri={url} style={styles.photo} backgroundColor={theme.surfaceAlt} />
                       ))}
                   </View>
                 )}
