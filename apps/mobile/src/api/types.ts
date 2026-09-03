@@ -312,6 +312,22 @@ export type StaffAgendaResponse = {
   sessions: StaffSession[];
 };
 
+export type StaffSessionAttendee = {
+  bookingId: string;
+  memberId: string;
+  name: string;
+  status: BookingStatus;
+};
+
+export type StaffSessionAttendeesResponse = {
+  occurrenceDate: string;
+  capacity: number;
+  attendees: StaffSessionAttendee[];
+  bookableMembers: { id: string; firstName: string; lastName: string; waiting: boolean }[];
+};
+
+export type AddStaffBookingResponse = { claimedFromWaitlist: boolean };
+
 export type SaveStaffSessionInput = {
   /** Presente = edición de una sesión existente (PATCH); ausente = alta (POST). */
   id?: string;

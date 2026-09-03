@@ -10,6 +10,8 @@ import {
   cancelSessionBooking,
   getSessionCenterId,
   getBookingCenterId,
+  getSessionDetail,
+  listMembersBookableForSession,
 } from "@/lib/agenda-queries";
 import { parseDateParam } from "@/lib/date-utils";
 import { parseEditScope } from "@/lib/session-series";
@@ -180,6 +182,57 @@ export async function bookSessionForMemberAction(
 
   revalidateSessionViews(sessionId);
   return { ok: true };
+}
+
+export type SessionAttendee = {
+  bookingId: string;
+  memberId: string;
+  name: string;
+  status: "BOOKED" | "WAITLISTED" | "ATTENDED" | "NO_SHOW";
+};
+
+export type SessionAttendeesResult =
+  | {
+      ok: true;
+      capacity: number;
+      attendees: SessionAttendee[];
+      bookableMembers: { id: string; firstName: string; lastName: string; waiting: boolean }[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Datos del apartado "Asistentes" del diálogo de sesión: roster + lista de
+ * espera de la ocurrencia que se está editando, y a quién se le puede dar una
+ * plaza (mismo cálculo que la página de detalle, `session/[id]`). Se pide
+ * aparte porque el diálogo abre con solo el recuento (`bookedCount`), no con
+ * el roster completo.
+ */
+export async function getSessionAttendeesAction(sessionId: string, occurrenceDate: string): Promise<SessionAttendeesResult> {
+  const session = await requireRole([...ALLOWED_ROLES, "RECEPTION"]);
+
+  const centerId = await getSessionCenterId(session.user.orgId, sessionId);
+  if (!centerId) return { ok: false, error: "Sesión no encontrada." };
+  await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+
+  const cls = await getSessionDetail(session.user.orgId, sessionId, occurrenceDate);
+  if (!cls) return { ok: false, error: "Sesión no encontrada." };
+
+  const attendees = cls.bookings
+    .filter((b) => b.status !== "CANCELLED")
+    .map((b) => ({
+      bookingId: b.id,
+      memberId: b.member.id,
+      name: `${b.member.firstName} ${b.member.lastName}`,
+      status: b.status as SessionAttendee["status"],
+    }));
+
+  const bookedMemberIds = new Set(attendees.filter((a) => a.status !== "WAITLISTED").map((a) => a.memberId));
+  const waitingMemberIds = new Set(attendees.filter((a) => a.status === "WAITLISTED").map((a) => a.memberId));
+  const bookableMembers = (await listMembersBookableForSession(session.user.orgId, sessionId))
+    .filter((m) => !bookedMemberIds.has(m.id))
+    .map((m) => ({ ...m, waiting: waitingMemberIds.has(m.id) }));
+
+  return { ok: true, capacity: cls.capacity, attendees, bookableMembers };
 }
 
 export async function moveSessionAction(input: {

@@ -23,11 +23,14 @@ export default function BookMemberForm({
   occurrenceDate,
   members,
   full,
+  onBooked,
 }: {
   sessionId: string;
   occurrenceDate: string;
   members: BookableMember[];
   full: boolean;
+  /** Aviso opcional tras reservar, para quien mantiene su propia copia del roster (el diálogo de sesión). */
+  onBooked?: () => void;
 }) {
   const [memberId, setMemberId] = useState("");
   const [pending, startTransition] = useTransition();
@@ -44,6 +47,7 @@ export default function BookMemberForm({
       if (result.ok) {
         toast.success(`Plaza reservada${chosen ? ` para ${chosen.firstName} ${chosen.lastName}` : ""}.`);
         setMemberId("");
+        onBooked?.();
       } else {
         toast.error(result.error);
       }

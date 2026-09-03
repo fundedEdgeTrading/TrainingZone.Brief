@@ -15,10 +15,13 @@ export default function CancelBookingButton({
   bookingId,
   sessionId,
   memberName,
+  onCancelled,
 }: {
   bookingId: string;
   sessionId: string;
   memberName: string;
+  /** Aviso opcional tras cancelar, para quien mantiene su propia copia del roster (el diálogo de sesión). */
+  onCancelled?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
@@ -26,8 +29,12 @@ export default function CancelBookingButton({
   function handleClick() {
     startTransition(async () => {
       const result = await cancelSessionBookingAction(bookingId, sessionId);
-      if (result.ok) toast.success(`Reserva de ${memberName} cancelada.`);
-      else toast.error(result.error);
+      if (result.ok) {
+        toast.success(`Reserva de ${memberName} cancelada.`);
+        onCancelled?.();
+      } else {
+        toast.error(result.error);
+      }
     });
   }
 
