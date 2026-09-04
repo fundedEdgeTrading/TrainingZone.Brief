@@ -1,5 +1,4 @@
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import {  } from "expo-router";
 import { goBack } from "@/utils/navigation";
 import { useCenterCapacity, useUpdateCapacity } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";

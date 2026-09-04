@@ -1,5 +1,5 @@
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useAuth } from "@/auth/auth-context";
 import { canManageCenterCapacity, canManageLeads, hasTaskInbox, isTrainerRole } from "@/auth/routes";
 import { useLeads, useMemberships, useNotifications, useTasks } from "@/api/queries";
@@ -69,14 +69,14 @@ function StaffMore({
 
   const tiles: TileProps[] = [
     ...(hasTaskInbox(role)
-      ? [{ icon: "clipboard" as IconName, label: "Tareas", href: "/tareas", count: pendingTasks, tone: "warning" as const }]
+      ? [{ icon: "clipboard", label: "Tareas", href: "/tareas", count: pendingTasks, tone: "warning" } satisfies TileProps]
       : []),
     ...(canManageLeads(role)
-      ? [{ icon: "users" as IconName, label: "Leads", href: "/leads", count: uncontactedLeads, tone: "gold" as const }]
+      ? [{ icon: "users", label: "Leads", href: "/leads", count: uncontactedLeads, tone: "gold" } satisfies TileProps]
       : []),
-    ...(isTrainerRole(role) ? [{ icon: "star" as IconName, label: "Session Brief", href: "/brief" }] : []),
+    ...(isTrainerRole(role) ? [{ icon: "star", label: "Session Brief", href: "/brief" } satisfies TileProps] : []),
     ...(canManageCenterCapacity(role)
-      ? [{ icon: "grid" as IconName, label: "Aforo de clases", href: "/aforo", badge: "Admin" }]
+      ? [{ icon: "grid", label: "Aforo de clases", href: "/aforo", badge: "Admin" } satisfies TileProps]
       : []),
   ];
 
@@ -101,7 +101,7 @@ function StaffMore({
       <FadeInUp delay={stagger(1)}>
         <View style={styles.tileGrid}>
           {tiles.map((tile) => (
-            <Tile key={tile.href} {...tile} />
+            <Tile key={tile.label} {...tile} />
           ))}
         </View>
       </FadeInUp>
@@ -254,7 +254,7 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
 type TileProps = {
   icon: IconName;
   label: string;
-  href: string;
+  href: Href;
   count?: number;
   tone?: "warning" | "gold";
   badge?: string;
