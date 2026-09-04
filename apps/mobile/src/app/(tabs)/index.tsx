@@ -6,6 +6,7 @@ import { useActivity, useAgenda, useCancelBooking, useNotifications } from "@/ap
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
 import { stagger } from "@/theme/motion";
+import { useCountUp } from "@/theme/use-count-up";
 import { ScreenContainer } from "@/components/ScreenContainer";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { HeroCard } from "@/components/HeroCard";
@@ -91,6 +92,7 @@ export default function MemberTodayScreen() {
 
   return (
     <ScreenContainer
+      enter="auth"
       refreshControl={
         <RefreshControl
           refreshing={activity.isRefetching || agenda.isRefetching}
@@ -131,13 +133,11 @@ export default function MemberTodayScreen() {
       ) : (
         <>
           {next ? (
-            <FadeInUp delay={stagger(1)}>
-              <NextSessionHero
-                booking={next}
-                onCancel={() => confirmCancel(next)}
-                onAddToCalendar={() => addBookingToCalendar(next)}
-              />
-            </FadeInUp>
+            <NextSessionHero
+              booking={next}
+              onCancel={() => confirmCancel(next)}
+              onAddToCalendar={() => addBookingToCalendar(next)}
+            />
           ) : (
             <FadeInUp delay={stagger(1)}>
               <Card tone="dashed" style={styles.emptyHero}>
@@ -261,12 +261,15 @@ function BalanceCard({ balance }: { balance: SessionBalance }) {
   const label = balance.serviceKind === "EP" ? "Personal" : balance.serviceKind === "GROUP" ? "Grupos" : "Online";
   const empty = !balance.unlimited && (balance.remaining ?? 0) <= 0;
   const color = balance.unlimited ? theme.good : empty ? theme.critical : theme.gold;
+  // Las sesiones que quedan cuentan hasta su valor; el infinito de un bono sin
+  // límite no es una cifra y se pinta puesto.
+  const remaining = useCountUp(balance.remaining ?? 0);
 
   return (
     <Card style={styles.balanceCard} padding={14}>
       <Text style={[typo.kpiLabel, { color: theme.textMuted }]}>{label}</Text>
       <View style={styles.balanceValueRow}>
-        <Text style={[typo.kpi, { color }]}>{balance.unlimited ? "∞" : (balance.remaining ?? 0)}</Text>
+        <Text style={[typo.kpi, { color }]}>{balance.unlimited ? "∞" : remaining}</Text>
         {balance.total != null ? <Text style={[styles.balanceTotal, { color: theme.textFaint }]}>/{balance.total}</Text> : null}
       </View>
     </Card>

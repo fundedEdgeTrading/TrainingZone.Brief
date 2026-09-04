@@ -1,5 +1,6 @@
-import type { PropsWithChildren, ReactElement } from "react";
+import { useEffect, useState, type PropsWithChildren, type ReactElement } from "react";
 import {
+  Animated,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -11,6 +12,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, layout } from "@/theme/theme";
+import { authEnter, easeOutSoft, useReducedMotion } from "@/theme/motion";
+import { useAuth } from "@/auth/auth-context";
 
 type Props = PropsWithChildren<{
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -33,6 +36,17 @@ type Props = PropsWithChildren<{
    * última tarjeta de la lista y no hay forma de llegar a ella.
    */
   footerSpace?: number;
+  /**
+   * `"auth"` marca esta pantalla como aterrizaje del login: al llegar, se
+   * disuelve entera con un pelo de escala (420 ms) en vez de aparecer puesta.
+   * Es la única transición de la app que cruza de un mundo a otro —de la puerta
+   * a dentro—, y por eso no se parece a la entrada de una tarjeta.
+   *
+   * Solo se ejecuta si se viene de escribir la contraseña (`justSignedIn` del
+   * `AuthProvider`, que esta pantalla consume): volver a la pestaña de inicio
+   * más tarde no es una llegada y no la repite.
+   */
+  enter?: "auth";
 }>;
 
 export function ScreenContainer({
@@ -43,9 +57,35 @@ export function ScreenContainer({
   withTabBar = true,
   onEndReached,
   footerSpace = 0,
+  enter,
 }: Props) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const reduced = useReducedMotion();
+  const { justSignedIn, consumeJustSignedIn } = useAuth();
+
+  // La bandera se lee en el PRIMER render y se congela: consumirla apaga
+  // `justSignedIn` a mitad de la animación, y sin congelarla la pantalla se
+  // quedaría a medio disolver.
+  const [authEntry] = useState(() => enter === "auth" && justSignedIn);
+  const [anim] = useState(() => new Animated.Value(authEntry ? 0 : 1));
+
+  useEffect(() => {
+    if (!authEntry) return;
+    consumeJustSignedIn();
+    if (reduced) {
+      anim.setValue(1);
+      return;
+    }
+    const animation = Animated.timing(anim, {
+      toValue: 1,
+      duration: authEnter.duration,
+      easing: easeOutSoft,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [authEntry, reduced, anim, consumeJustSignedIn]);
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     if (!onEndReached) return;
@@ -53,7 +93,7 @@ export function ScreenContainer({
     if (contentOffset.y + layoutMeasurement.height >= contentSize.height - 240) onEndReached();
   }
 
-  return (
+  const scroll = (
     <ScrollView
       style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={[
@@ -71,6 +111,20 @@ export function ScreenContainer({
     >
       {children}
     </ScrollView>
+  );
+
+  if (!authEntry) return scroll;
+
+  return (
+    <Animated.View
+      style={{
+        flex: 1,
+        opacity: anim,
+        transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [authEnter.fromScale, 1] }) }],
+      }}
+    >
+      {scroll}
+    </Animated.View>
   );
 }
 

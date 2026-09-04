@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Text, StyleSheet } from "react-native";
 import { useTheme } from "@/theme/theme";
 import { typo } from "@/theme/typography";
+import { splitNumeric, useCountUp } from "@/theme/use-count-up";
 import { Card } from "./Card";
 
 export type KpiTone = "default" | "gold" | "good" | "warning" | "critical";
@@ -30,6 +31,14 @@ export function KpiTile({
   const color = (t: KpiTone) =>
     t === "gold" ? theme.gold : t === "good" ? theme.good : t === "warning" ? theme.warning : t === "critical" ? theme.critical : theme.text;
 
+  // La cifra cuenta desde 0 hasta su valor. Solo si es una cifra: un «–» (sin
+  // RPE registrado) o un «∞» no son números y se pintan tal cual, porque lo
+  // que hay que leer ahí es que NO hay dato, no un cero que sí lo parecería.
+  // El sufijo («%») se conserva aparte para no meterlo en el recuento.
+  const numeric = splitNumeric(value);
+  const counted = useCountUp(numeric?.value ?? 0, numeric?.decimals ?? 0);
+  const shown = numeric ? `${counted}${numeric.suffix}` : value;
+
   return (
     <Card style={[styles.card, full ? { width: "100%" } : styles.half]} padding={14}>
       {/* Dos líneas para la etiqueta: en una fila de tres tiles («Sesiones del
@@ -38,7 +47,7 @@ export function KpiTile({
       <Text style={[typo.kpiLabel, { color: theme.textMuted }]} numberOfLines={2}>
         {label}
       </Text>
-      <Text style={[small ? typo.kpiSmall : typo.kpi, { color: color(tone) }]}>{value}</Text>
+      <Text style={[small ? typo.kpiSmall : typo.kpi, { color: color(tone) }]}>{shown}</Text>
       {hint ? (
         <Text style={[typo.rowMetaSmall, { color: color(hintTone ?? "default") }]} numberOfLines={1}>
           {hint}

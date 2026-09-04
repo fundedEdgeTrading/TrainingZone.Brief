@@ -14,7 +14,6 @@ import { Icon } from "@/components/Icon";
 import { KpiTile } from "@/components/KpiTile";
 import { Divider, ListRow } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
-import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import {
   currentMonth,
@@ -96,27 +95,25 @@ export default function MemberDetailScreen() {
         <EmptyState icon="alert" title="No se pudo cargar la ficha" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <FadeInUp>
-            <HeroCard>
-              <View style={styles.heroRow}>
-                <Avatar name={data.member.name} uri={data.member.photoUrl} size={56} />
-                <View style={{ flex: 1, gap: 4 }}>
-                  <Text style={[styles.heroName, { color: theme.onInk.text }]} numberOfLines={2}>
-                    {data.member.name}
-                  </Text>
-                  <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={2}>
-                    {data.member.centerName} · alta {formatShortDate(`${data.member.joinedAt}T00:00:00`)}
-                  </Text>
-                  <View style={styles.badgeRow}>
-                    <Badge label={STATE_BADGE[data.member.state].label} tone={STATE_BADGE[data.member.state].tone} />
-                    {data.member.planNames.slice(0, 2).map((plan) => (
-                      <Badge key={plan} label={plan} tone="gold" />
-                    ))}
-                  </View>
+          <HeroCard>
+            <View style={styles.heroRow}>
+              <Avatar name={data.member.name} uri={data.member.photoUrl} size={56} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={[styles.heroName, { color: theme.onInk.text }]} numberOfLines={2}>
+                  {data.member.name}
+                </Text>
+                <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={2}>
+                  {data.member.centerName} · alta {formatShortDate(`${data.member.joinedAt}T00:00:00`)}
+                </Text>
+                <View style={styles.badgeRow}>
+                  <Badge label={STATE_BADGE[data.member.state].label} tone={STATE_BADGE[data.member.state].tone} />
+                  {data.member.planNames.slice(0, 2).map((plan) => (
+                    <Badge key={plan} label={plan} tone="gold" />
+                  ))}
                 </View>
               </View>
-            </HeroCard>
-          </FadeInUp>
+            </View>
+          </HeroCard>
 
           <View style={styles.tabsRow}>
             {(["calendario", "bonos", "cobros"] as Tab[]).map((option) => {

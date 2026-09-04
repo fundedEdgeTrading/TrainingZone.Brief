@@ -46,7 +46,10 @@ export default function TrainerTodayScreen() {
   const unread = (notifications.data?.notifications ?? []).filter((n) => !n.resolvedAt && n.kind !== "TASK").length;
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
+    <ScreenContainer
+      enter="auth"
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+    >
       <FadeInUp>
         <ScreenHeader
           kicker={`HOY${data?.centerName ? ` · ${data.centerName}` : ""}`}
@@ -217,56 +220,54 @@ function Spotlight({ data }: { data: TrainerPanelResponse }) {
   const seconds = (isCurrent ? spotlight.secondsRemaining : spotlight.secondsUntil) ?? 0;
 
   return (
-    <FadeInUp delay={stagger(1)}>
-      <HeroCard padding={17}>
-        <View style={styles.spotlightRow}>
-          <ProgressRing progressPct={data.todayProgressPct} size={86} strokeWidth={6}>
-            <Text style={[styles.ringValue, { color: theme.onInk.text }]}>{Math.round(data.todayProgressPct)} %</Text>
-            <Text style={[typo.legend, { color: theme.onInk.muted }]}>DEL DÍA</Text>
-          </ProgressRing>
+    <HeroCard padding={17}>
+      <View style={styles.spotlightRow}>
+        <ProgressRing progressPct={data.todayProgressPct} size={86} strokeWidth={6}>
+          <Text style={[styles.ringValue, { color: theme.onInk.text }]}>{Math.round(data.todayProgressPct)} %</Text>
+          <Text style={[typo.legend, { color: theme.onInk.muted }]}>DEL DÍA</Text>
+        </ProgressRing>
 
-          <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
-            <View style={styles.spotlightBadgeRow}>
-              <Badge label={isCurrent ? "En curso" : "Próxima"} tone="gold" />
-              <Text style={[typo.rowMetaSmall, { color: theme.onInk.muted }]}>
-                {isCurrent ? "quedan " : "empieza en "}
-                <Countdown initialSeconds={seconds} format="mmss" style={[styles.countdown, { color: theme.onInk.text }]} />
-              </Text>
-            </View>
-            <Text style={[styles.spotlightTitle, { color: theme.onInk.text }]} numberOfLines={1}>
-              {spotlight.startTime}–{spotlight.endTime} · {spotlight.title}
-            </Text>
-            <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={2}>
-              {spotlight.meta}
+        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+          <View style={styles.spotlightBadgeRow}>
+            <Badge label={isCurrent ? "En curso" : "Próxima"} tone="gold" />
+            <Text style={[typo.rowMetaSmall, { color: theme.onInk.muted }]}>
+              {isCurrent ? "quedan " : "empieza en "}
+              <Countdown initialSeconds={seconds} format="mmss" style={[styles.countdown, { color: theme.onInk.text }]} />
             </Text>
           </View>
+          <Text style={[styles.spotlightTitle, { color: theme.onInk.text }]} numberOfLines={1}>
+            {spotlight.startTime}–{spotlight.endTime} · {spotlight.title}
+          </Text>
+          <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={2}>
+            {spotlight.meta}
+          </Text>
         </View>
+      </View>
 
-        {/* Las dos acciones reales del minuto en que se abre esto, y son DOS
-            pantallas distintas: pasar lista es el feedback socio a socio (que
-            es donde se marca la asistencia) y el brief es el repaso previo de
-            adaptaciones. Las dos abrían el brief, así que «Pasar lista» no
-            llevaba a ninguna parte útil. */}
-        <View style={styles.spotlightActions}>
-          <Button
-            onInk
-            title="Pasar lista"
-            variant="gold"
-            size="sm"
-            style={{ flex: 1 }}
-            onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
-          />
-          <Button
-            onInk
-            title="Brief"
-            variant="outline"
-            size="sm"
-            style={{ flex: 1 }}
-            onPress={() => router.push({ pathname: "/brief/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
-          />
-        </View>
-      </HeroCard>
-    </FadeInUp>
+      {/* Las dos acciones reales del minuto en que se abre esto, y son DOS
+          pantallas distintas: pasar lista es el feedback socio a socio (que
+          es donde se marca la asistencia) y el brief es el repaso previo de
+          adaptaciones. Las dos abrían el brief, así que «Pasar lista» no
+          llevaba a ninguna parte útil. */}
+      <View style={styles.spotlightActions}>
+        <Button
+          onInk
+          title="Pasar lista"
+          variant="gold"
+          size="sm"
+          style={{ flex: 1 }}
+          onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
+        />
+        <Button
+          onInk
+          title="Brief"
+          variant="outline"
+          size="sm"
+          style={{ flex: 1 }}
+          onPress={() => router.push({ pathname: "/brief/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
+        />
+      </View>
+    </HeroCard>
   );
 }
 

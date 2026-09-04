@@ -83,40 +83,38 @@ export default function FeedbackQueueScreen() {
         <EmptyState icon="alert" title="No se pudo cargar" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <FadeInUp delay={stagger(1)}>
-            <HeroCard padding={17}>
-              <Text style={[typo.kicker, { color: theme.onInk.muted }]}>ESTA SEMANA</Text>
-              <Text style={[styles.heroTitle, { color: theme.onInk.text }]}>
-                {pending === 0 ? "Todo al día" : `${pending} ${pending === 1 ? "sesión" : "sesiones"} por puntuar`}
+          <HeroCard padding={17}>
+            <Text style={[typo.kicker, { color: theme.onInk.muted }]}>ESTA SEMANA</Text>
+            <Text style={[styles.heroTitle, { color: theme.onInk.text }]}>
+              {pending === 0 ? "Todo al día" : `${pending} ${pending === 1 ? "sesión" : "sesiones"} por puntuar`}
+            </Text>
+            <View style={styles.segments}>
+              {Array.from({ length: PROGRESS_SEGMENTS }, (_, i) => (
+                <View key={i} style={[styles.segment, { backgroundColor: i < filled ? theme.gold : "#3A382F" }]} />
+              ))}
+            </View>
+            <View style={styles.heroFooter}>
+              {/* El marcador es de HOY, no de la semana: decirlo evita leer
+                  «2 de 3» como si fuera el total de la cola de arriba. */}
+              <Text style={[typo.rowMeta, { color: theme.onInk.secondary, flex: 1 }]}>
+                {totalToday === 0 ? "Sin sesiones terminadas hoy" : `${doneToday} de ${totalToday} de hoy puntuadas`}
               </Text>
-              <View style={styles.segments}>
-                {Array.from({ length: PROGRESS_SEGMENTS }, (_, i) => (
-                  <View key={i} style={[styles.segment, { backgroundColor: i < filled ? theme.gold : "#3A382F" }]} />
-                ))}
-              </View>
-              <View style={styles.heroFooter}>
-                {/* El marcador es de HOY, no de la semana: decirlo evita leer
-                    «2 de 3» como si fuera el total de la cola de arriba. */}
-                <Text style={[typo.rowMeta, { color: theme.onInk.secondary, flex: 1 }]}>
-                  {totalToday === 0 ? "Sin sesiones terminadas hoy" : `${doneToday} de ${totalToday} de hoy puntuadas`}
-                </Text>
-                {pending > 0 ? (
-                  <Button
-                    onInk
-                    title="Seguir"
-                    variant="gold"
-                    size="sm"
-                    onPress={() =>
-                      router.push({
-                        pathname: "/feedback/[id]",
-                        params: { id: data.pendingDebriefs[0].sessionId, d: data.pendingDebriefs[0].occurrenceDate },
-                      })
-                    }
-                  />
-                ) : null}
-              </View>
-            </HeroCard>
-          </FadeInUp>
+              {pending > 0 ? (
+                <Button
+                  onInk
+                  title="Seguir"
+                  variant="gold"
+                  size="sm"
+                  onPress={() =>
+                    router.push({
+                      pathname: "/feedback/[id]",
+                      params: { id: data.pendingDebriefs[0].sessionId, d: data.pendingDebriefs[0].occurrenceDate },
+                    })
+                  }
+                />
+              ) : null}
+            </View>
+          </HeroCard>
 
           {pending > 0 ? (
             <View style={[styles.notice, { backgroundColor: theme.criticalBg, borderColor: theme.critical }]}>

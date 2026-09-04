@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { apiRequest, clearTokens, getStoredTokens, storeTokens, ApiError } from "@/api/client";
 import type { LoginOrganization, LoginResponse, MeResponse, Role } from "@/api/types";
 
@@ -39,12 +39,22 @@ type AuthContextValue = {
   logout: () => Promise<void>;
   /** Vuelve a leer /me: lo usa el gate de compra al volver del pago. */
   refresh: () => Promise<void>;
+  /**
+   * Se acaba de entrar con contraseña, y la pantalla de aterrizaje todavía no
+   * ha gastado la bandera. La consume `ScreenContainer` para hacer la
+   * disolución del login UNA vez: sin ella, esa entrada se repetiría cada vez
+   * que se vuelve a la pestaña de inicio, que es donde deja de ser una llegada
+   * y pasa a ser ruido.
+   */
+  justSignedIn: boolean;
+  consumeJustSignedIn: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
+  const [justSignedIn, setJustSignedIn] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -84,6 +94,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       }
 
       await storeTokens(data);
+      setJustSignedIn(true);
       setState({ status: "signedIn", user: data.user });
       return { ok: true, user: data.user };
     } catch (err) {
@@ -115,10 +126,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
       await apiRequest("/auth/logout", { method: "POST", body: { refreshToken }, skipAuth: true }).catch(() => {});
     }
     await clearTokens();
+    setJustSignedIn(false);
     setState({ status: "signedOut" });
   }
 
-  const value = useMemo(() => ({ state, login, logout, refresh }), [state]);
+  const consumeJustSignedIn = useCallback(() => setJustSignedIn(false), []);
+
+  const value = useMemo(
+    () => ({ state, login, logout, refresh, justSignedIn, consumeJustSignedIn }),
+    [state, justSignedIn, consumeJustSignedIn]
+  );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

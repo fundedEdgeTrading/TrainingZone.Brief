@@ -114,19 +114,25 @@ export default function MesocycleScreen() {
 
           {data.weeklyLayout.length > 0 ? (
             <>
-              <SectionTitle label="Reparto semanal" />
-              <ChipRow>
-                {data.weeklyLayout.map((item, index) => (
-                  <Chip key={`${item}-${index}`} label={item} tone="neutral" />
-                ))}
-              </ChipRow>
+              <FadeInUp delay={stagger(3)}>
+                <SectionTitle label="Reparto semanal" />
+              </FadeInUp>
+              <FadeInUp delay={stagger(3)}>
+                <ChipRow>
+                  {data.weeklyLayout.map((item, index) => (
+                    <Chip key={`${item}-${index}`} label={item} tone="neutral" />
+                  ))}
+                </ChipRow>
+              </FadeInUp>
             </>
           ) : null}
 
           {data.milestones.length > 0 ? (
             <>
-              <SectionTitle label="Hitos" />
-              <FadeInUp delay={stagger(3)}>
+              <FadeInUp delay={stagger(4)}>
+                <SectionTitle label="Hitos" />
+              </FadeInUp>
+              <FadeInUp delay={stagger(4)}>
                 <Card style={{ gap: 10 }}>
                   {data.milestones.map((milestone, index) => (
                     <View key={index} style={styles.milestoneRow}>
@@ -139,30 +145,40 @@ export default function MesocycleScreen() {
             </>
           ) : null}
 
-          <SectionTitle label="Fases" />
+          <FadeInUp delay={stagger(5)}>
+            <SectionTitle label="Fases" />
+          </FadeInUp>
           {data.phases.map((phase) => (
-            <PhaseCard key={phase.id} phase={phase} />
+            <FadeInUp key={phase.id} delay={stagger(5)}>
+              <PhaseCard phase={phase} />
+            </FadeInUp>
           ))}
 
           {selected ? (
             <>
-              <SectionTitle label="Entreno del día" />
-              <ChipRow>
-                {days.map(({ day }) => (
-                  <Chip
-                    key={day.id}
-                    label={`${day.label} · ${day.venue}`}
-                    selected={day.id === selected.day.id}
-                    onPress={() => setDayKey(day.id)}
-                  />
-                ))}
-              </ChipRow>
-              <DayDetail day={selected.day} phase={selected.phase} />
+              <FadeInUp delay={stagger(6)}>
+                <SectionTitle label="Entreno del día" />
+              </FadeInUp>
+              <FadeInUp delay={stagger(6)}>
+                <ChipRow>
+                  {days.map(({ day }) => (
+                    <Chip
+                      key={day.id}
+                      label={`${day.label} · ${day.venue}`}
+                      selected={day.id === selected.day.id}
+                      onPress={() => setDayKey(day.id)}
+                    />
+                  ))}
+                </ChipRow>
+              </FadeInUp>
+              <FadeInUp delay={stagger(6)}>
+                <DayDetail day={selected.day} phase={selected.phase} />
+              </FadeInUp>
             </>
           ) : null}
 
           {data.status === "DRAFT" ? (
-            <View style={styles.footer}>
+            <FadeInUp delay={stagger(6)} style={styles.footer}>
               <Button title="Aprobar" variant="gold" style={{ flex: 1 }} loading={approve.isPending} onPress={handleApprove} />
               {/* Pedir cambios se hace en la web, donde está el refinado con IA
                   y el editor: aquí solo se firma o se deja como está. */}
@@ -172,7 +188,7 @@ export default function MesocycleScreen() {
                 style={{ flex: 1 }}
                 onPress={() => toast.show("Los cambios del plan se piden desde la web, con el editor delante.")}
               />
-            </View>
+            </FadeInUp>
           ) : null}
         </>
       )}

@@ -101,55 +101,53 @@ export default function TrainerMemberDetailScreen() {
         <EmptyState icon="alert" title="No se pudo cargar la ficha" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <FadeInUp delay={stagger(1)}>
-            <HeroCard padding={17}>
-              <View style={styles.heroRow}>
-                <Avatar name={data.member.name} uri={data.member.photoUrl} size={56} />
-                <View style={{ flex: 1, gap: 6 }}>
-                  <Text style={[typo.cardTitle, { color: theme.onInk.text }]} numberOfLines={1}>
-                    {data.member.name}
-                  </Text>
-                  <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={1}>
-                    {[data.member.ageYears ? `${data.member.ageYears} años` : null, `socio desde ${formatDayMonth(data.member.joinedAt)}`]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </Text>
-                  <View style={styles.badgeRow}>
-                    {data.balances.map((balance) => (
-                      <Badge
-                        key={balance.subscriptionId}
-                        label={
-                          balance.unlimited
-                            ? `${balance.serviceKind === "EP" ? "EP" : "Grupos"} ilimitado`
-                            : `${balance.serviceKind === "EP" ? "EP" : "Grupos"} · ${balance.remaining ?? 0} de ${balance.total ?? 0}`
-                        }
-                        tone="gold"
-                      />
-                    ))}
-                    {data.aptitude && data.aptitude.light !== "GREEN" ? (
-                      <Badge
-                        label={data.aptitude.light === "RED" ? "Rojo" : "Ámbar"}
-                        tone={data.aptitude.light === "RED" ? "critical" : "warning"}
-                      />
-                    ) : null}
-                  </View>
+          <HeroCard padding={17}>
+            <View style={styles.heroRow}>
+              <Avatar name={data.member.name} uri={data.member.photoUrl} size={56} />
+              <View style={{ flex: 1, gap: 6 }}>
+                <Text style={[typo.cardTitle, { color: theme.onInk.text }]} numberOfLines={1}>
+                  {data.member.name}
+                </Text>
+                <Text style={[typo.rowMeta, { color: theme.onInk.secondary }]} numberOfLines={1}>
+                  {[data.member.ageYears ? `${data.member.ageYears} años` : null, `socio desde ${formatDayMonth(data.member.joinedAt)}`]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </Text>
+                <View style={styles.badgeRow}>
+                  {data.balances.map((balance) => (
+                    <Badge
+                      key={balance.subscriptionId}
+                      label={
+                        balance.unlimited
+                          ? `${balance.serviceKind === "EP" ? "EP" : "Grupos"} ilimitado`
+                          : `${balance.serviceKind === "EP" ? "EP" : "Grupos"} · ${balance.remaining ?? 0} de ${balance.total ?? 0}`
+                      }
+                      tone="gold"
+                    />
+                  ))}
+                  {data.aptitude && data.aptitude.light !== "GREEN" ? (
+                    <Badge
+                      label={data.aptitude.light === "RED" ? "Rojo" : "Ámbar"}
+                      tone={data.aptitude.light === "RED" ? "critical" : "warning"}
+                    />
+                  ) : null}
                 </View>
               </View>
-              <View style={styles.heroActions}>
-                <Button onInk title="Nueva nota" size="sm" style={{ flex: 1 }} onPress={() => setNoting(true)} />
-                {data.member.phone ? (
-                  <Button
-                    onInk
-                    title="Llamar"
-                    variant="outline"
-                    size="sm"
-                    style={{ flex: 1 }}
-                    onPress={() => Linking.openURL(`tel:${data.member.phone?.replace(/\s+/g, "")}`)}
-                  />
-                ) : null}
-              </View>
-            </HeroCard>
-          </FadeInUp>
+            </View>
+            <View style={styles.heroActions}>
+              <Button onInk title="Nueva nota" size="sm" style={{ flex: 1 }} onPress={() => setNoting(true)} />
+              {data.member.phone ? (
+                <Button
+                  onInk
+                  title="Llamar"
+                  variant="outline"
+                  size="sm"
+                  style={{ flex: 1 }}
+                  onPress={() => Linking.openURL(`tel:${data.member.phone?.replace(/\s+/g, "")}`)}
+                />
+              ) : null}
+            </View>
+          </HeroCard>
 
           {data.aptitude && data.aptitude.light !== "GREEN" ? (
             <FadeInUp delay={stagger(2)}>
@@ -293,6 +291,10 @@ function PlanTab({ memberId }: { memberId: string }) {
     loader.start();
     try {
       const result = await generate.mutateAsync({ memberId, level, weeks, availability });
+      // Se navega DENTRO de `finish`: el velo sigue encima mientras la pantalla
+      // del mesociclo se monta y arranca su entrada escalonada, y se disuelve
+      // (240 ms) con el plan ya entrando debajo. Así no hay pantalla vacía
+      // entre el check de «Mesociclo listo» y el plan.
       loader.finish(() => router.push(`/mis-socios/mesociclo/${result.mesocycleId}`));
     } catch (err) {
       loader.abort();
@@ -378,6 +380,7 @@ function PlanTab({ memberId }: { memberId: string }) {
           steps={MESOCYCLE_STEPS}
           step={loader.step}
           done={loader.done}
+          exiting={loader.exiting}
           onNotifyMe={() => {
             // Salir NO cancela el trabajo: la petición sigue viva y el borrador
             // aparece en la lista al volver. En web esto no existe porque la

@@ -86,23 +86,21 @@ export default function BriefDetailScreen() {
         <EmptyState icon="alert" title="No se pudo cargar la sesión" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <FadeInUp delay={stagger(1)}>
-            <HeroCard padding={17}>
-              <Text style={[typo.kicker, { color: theme.onInk.muted }]}>
-                {data.session.startTime} · {data.session.centerName}
-              </Text>
-              <Text style={[styles.heroCount, { color: theme.onInk.text }]}>
-                {counts.total} {counts.total === 1 ? "socio" : "socios"}
-              </Text>
-              {/* Semáforos en su versión sobre tinta: los de la piel clara son
-                  tonos oscuros para fondo hueso y aquí no se veían. */}
-              <View style={styles.lightRow}>
-                <LightCount color={theme.onInk.good} value={counts.green} label="sin restricción" />
-                <LightCount color={theme.onInk.warning} value={counts.amber} label="adaptar" />
-                <LightCount color={theme.onInk.critical} value={counts.red} label="evitar" />
-              </View>
-            </HeroCard>
-          </FadeInUp>
+          <HeroCard padding={17}>
+            <Text style={[typo.kicker, { color: theme.onInk.muted }]}>
+              {data.session.startTime} · {data.session.centerName}
+            </Text>
+            <Text style={[styles.heroCount, { color: theme.onInk.text }]}>
+              {counts.total} {counts.total === 1 ? "socio" : "socios"}
+            </Text>
+            {/* Semáforos en su versión sobre tinta: los de la piel clara son
+                tonos oscuros para fondo hueso y aquí no se veían. */}
+            <View style={styles.lightRow}>
+              <LightCount color={theme.onInk.good} value={counts.green} label="sin restricción" />
+              <LightCount color={theme.onInk.warning} value={counts.amber} label="adaptar" />
+              <LightCount color={theme.onInk.critical} value={counts.red} label="evitar" />
+            </View>
+          </HeroCard>
 
           {!data.canSeeHealth ? (
             <Card style={{ borderColor: theme.warning }}>

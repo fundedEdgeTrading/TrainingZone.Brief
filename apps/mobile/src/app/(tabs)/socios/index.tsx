@@ -43,6 +43,7 @@ export default function MembersScreen() {
 
   return (
     <ScreenContainer
+      enter="auth"
       refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
       onEndReached={() => {
         if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
