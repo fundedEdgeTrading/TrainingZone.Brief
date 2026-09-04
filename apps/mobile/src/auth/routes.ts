@@ -1,3 +1,4 @@
+import type { Href } from "expo-router";
 import type { MeResponse, Role } from "@/api/types";
 
 /**
@@ -5,7 +6,7 @@ import type { MeResponse, Role } from "@/api/types";
  * el gate de compra del handoff: el socio sin ningún bono vivo entra al
  * catálogo del centro (A2) en lugar de a las tabs.
  */
-export function homeRouteFor(user: MeResponse): string {
+export function homeRouteFor(user: MeResponse): Href {
   if (user.role === "MEMBER" && user.member && !user.member.hasActiveMembership) return "/onboarding/planes";
   return "/(tabs)";
 }

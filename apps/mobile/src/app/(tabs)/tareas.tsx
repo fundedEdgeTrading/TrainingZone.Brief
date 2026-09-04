@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import {  } from "expo-router";
 import { goBack } from "@/utils/navigation";
 import { useAuth } from "@/auth/auth-context";
 import { canAssignTasks } from "@/auth/routes";
