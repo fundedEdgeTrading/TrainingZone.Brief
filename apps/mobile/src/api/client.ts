@@ -38,16 +38,27 @@ const API_URL =
 // de fallar: el timeout lo hace fallar rápido y con un mensaje claro.
 const REQUEST_TIMEOUT_MS = 12_000;
 
-async function fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+// La generación de un mesociclo con IA tarda 60-120 s (el servidor va en
+// streaming precisamente por eso). Con el timeout normal de 12 s la petición
+// se abortaba SIEMPRE a mitad de generación, así que quien la lance debe pasar
+// este margen en `timeoutMs`.
+export const LONG_REQUEST_TIMEOUT_MS = 180_000;
+
+async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new ApiError("No hay conexión con el servidor. Comprueba tu red e inténtalo de nuevo.", 0);
+  } catch {
+    // El abort no llega igual en todos los runtimes (`AbortError`, `TypeError:
+    // Aborted`...), así que mandamos el flag del propio controlador, que sí es
+    // fiable. Sin esto el usuario veía el error crudo del motor de red.
+    if (controller.signal.aborted) {
+      throw new ApiError("El servidor ha tardado demasiado en responder. Inténtalo de nuevo.", 0);
     }
-    throw err;
+    // Cualquier otro fallo de red ("fetch failed", "Network request failed",
+    // DNS, TLS...) es ilegible para quien usa la app: lo traducimos.
+    throw new ApiError("No hay conexión con el servidor. Comprueba tu red e inténtalo de nuevo.", 0);
   } finally {
     clearTimeout(timeout);
   }
@@ -105,11 +116,15 @@ async function refreshAccessToken(): Promise<string | null> {
   const { refreshToken } = await getStoredTokens();
   if (!refreshToken) return null;
 
-  const res = await fetchWithTimeout(`${API_URL}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
-  });
+  const res = await fetchWithTimeout(
+    `${API_URL}/auth/refresh`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    },
+    REQUEST_TIMEOUT_MS
+  );
   const json = (await res.json().catch(() => null)) as ApiEnvelope<RefreshResponse> | null;
   if (!res.ok || !json?.ok) {
     await clearTokens();
@@ -120,7 +135,13 @@ async function refreshAccessToken(): Promise<string | null> {
   return json.data.accessToken;
 }
 
-type RequestOptions = { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; skipAuth?: boolean };
+type RequestOptions = {
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  body?: unknown;
+  skipAuth?: boolean;
+  /** Margen propio para las peticiones lentas (generación con IA). */
+  timeoutMs?: number;
+};
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (accessTokenCache === undefined) {
@@ -130,11 +151,15 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const doFetch = (token: string | null) => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
-    return fetchWithTimeout(`${API_URL}${path}`, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-    });
+    return fetchWithTimeout(
+      `${API_URL}${path}`,
+      {
+        method: options.method ?? "GET",
+        headers,
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      },
+      options.timeoutMs ?? REQUEST_TIMEOUT_MS
+    );
   };
 
   let res = await doFetch(options.skipAuth ? null : accessTokenCache ?? null);

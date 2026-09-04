@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "./client";
+import { apiRequest, LONG_REQUEST_TIMEOUT_MS } from "./client";
 import type {
   ActivityResponse,
   AddStaffBookingResponse,
@@ -515,7 +515,13 @@ export function useGenerateMesocycle() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ memberId, ...input }: GenerateMesocycleInput) =>
-      apiRequest<{ mesocycleId: string }>(`/trainer/members/${memberId}/mesocycles`, { method: "POST", body: input }),
+      apiRequest<{ mesocycleId: string }>(`/trainer/members/${memberId}/mesocycles`, {
+        method: "POST",
+        body: input,
+        // Sin este margen la petición se aborta a los 12 s (el timeout normal)
+        // y la generación nunca llega a terminar.
+        timeoutMs: LONG_REQUEST_TIMEOUT_MS,
+      }),
     onSuccess: (_data, variables) => queryClient.invalidateQueries({ queryKey: ["mesocycles", variables.memberId] }),
   });
 }
