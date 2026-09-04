@@ -9,7 +9,12 @@ type Props = PropsWithChildren<{
   gap?: number;
   /** Sin padding lateral: para pantallas que sangran la timeline o el calendario. */
   flush?: boolean;
-  /** La barra de pestañas flota sobre el contenido: hay que dejarle hueco. */
+  /**
+   * La pantalla vive dentro del grupo (tabs). La barra ya no flota —está fijada
+   * al borde y el navegador le resta su alto a la pantalla—, así que aquí solo
+   * decide si hay que reservar el área segura inferior: dentro de las tabs se
+   * la queda la propia barra, fuera (login, onboarding) la reserva la pantalla.
+   */
   withTabBar?: boolean;
   /** Scroll infinito: se llama al acercarse al final de la lista. */
   onEndReached?: () => void;
@@ -32,7 +37,7 @@ export function ScreenContainer({ children, refreshControl, gap = layout.gap, fl
         {
           paddingTop: insets.top + 14,
           paddingHorizontal: flush ? 0 : layout.screenPadding,
-          paddingBottom: (withTabBar ? layout.tabBarHeight + 34 : 32) + insets.bottom,
+          paddingBottom: withTabBar ? 28 : 32 + insets.bottom,
           gap,
         },
       ]}
@@ -48,8 +53,9 @@ export function ScreenContainer({ children, refreshControl, gap = layout.gap, fl
 
 /**
  * Contenedor fijo (sin scroll) para pantallas de flujo: login, pago, feedback.
- * `withTabBar` deja hueco a la barra de pestañas cuando la pantalla vive dentro
- * del grupo (tabs) — si no, el pie de la pantalla queda debajo de la barra.
+ * `withTabBar` marca que la pantalla vive dentro del grupo (tabs): allí el área
+ * segura inferior ya la ocupa la barra, así que reservarla otra vez dejaría el
+ * pie de la pantalla flotando sobre un hueco vacío.
  */
 export function ScreenFrame({
   children,
@@ -65,7 +71,7 @@ export function ScreenFrame({
         {
           backgroundColor: theme.background,
           paddingTop: insets.top,
-          paddingBottom: insets.bottom + (withTabBar ? layout.tabBarHeight + 10 : 0),
+          paddingBottom: withTabBar ? 10 : insets.bottom,
           paddingHorizontal: padded ? layout.screenPadding : 0,
         },
       ]}

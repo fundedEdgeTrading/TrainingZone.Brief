@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import * as WebBrowser from "expo-web-browser";
 import { useCheckout, useProducts } from "@/api/queries";
 import { useAuth } from "@/auth/auth-context";
@@ -65,7 +66,7 @@ export default function CheckoutScreen() {
           accessibilityRole="button"
           accessibilityLabel="Volver"
           hitSlop={10}
-          onPress={() => router.back()}
+          onPress={() => goBack("/onboarding/planes")}
           style={[styles.back, { borderColor: theme.border }]}
         >
           <Icon name="chevron-left" size={16} color={theme.text} />

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { Alert, PanResponder, Pressable, ScrollView, Text, View, StyleSheet, type LayoutChangeEvent } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCreateStaff, useRemoveStaff, useStaff, useUpdateStaff } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
@@ -17,7 +18,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/Toast";
 import { pickImageAsDataUrl } from "@/utils/pick-image";
 import { formatShortDate } from "@/utils/format";
-import type { Role } from "@/api/types";
+import type { Role, StaffMemberItem } from "@/api/types";
 
 // D7 del handoff: ficha de equipo — foto, rol, imputación a centros y baja.
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
@@ -30,20 +31,66 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
 
 const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "RECEPTION"];
 
+/**
+ * La ficha espera a tener a la persona antes de montar el formulario.
+ *
+ * `useState(member?.name ?? "")` solo lee el valor en el PRIMER render, y el
+ * equipo llega por consulta: abriendo esta ficha en frío —recargando el bundle,
+ * desde un enlace o al reabrir la app aquí— salía en blanco, y «Guardar»
+ * mandaba un nombre vacío y borraba la foto y la imputación a centros. Con la
+ * espera y la `key`, el estado nace ya con los datos reales.
+ */
 export default function StaffFormScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const { data, isLoading } = useStaff();
+
+  const isNew = id === "nuevo";
+  const member = isNew ? undefined : data?.staff.find((s) => s.id === id);
+
+  if (isLoading || !data) {
+    return (
+      <ScreenFrame withTabBar>
+        <EmptyState title="Cargando la ficha…" />
+      </ScreenFrame>
+    );
+  }
+  if (!isNew && !member) {
+    return (
+      <ScreenFrame withTabBar>
+        <EmptyState icon="alert" title="No se ha encontrado a esa persona" />
+        <Button title="Volver al equipo" variant="outline" onPress={() => goBack("/organizacion")} />
+      </ScreenFrame>
+    );
+  }
+
+  return (
+    <StaffForm
+      key={member?.id ?? "nuevo"}
+      member={member}
+      centers={data.centers}
+      // Dirección de centro puede consultar el equipo, pero no editarlo
+      // (canManageStaff en src/lib/rbac.ts): sin permiso, la ficha es de lectura.
+      canManage={data.canManage}
+    />
+  );
+}
+
+function StaffForm({
+  member,
+  centers,
+  canManage,
+}: {
+  member?: StaffMemberItem;
+  centers: { id: string; name: string }[];
+  canManage: boolean;
+}) {
   const theme = useTheme();
   const toast = useToast();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { data } = useStaff();
   const createStaff = useCreateStaff();
   const updateStaff = useUpdateStaff();
   const removeStaff = useRemoveStaff();
 
-  const isNew = id === "nuevo";
-  const member = isNew ? undefined : data?.staff.find((s) => s.id === id);
-  // Dirección de centro puede consultar el equipo, pero no editarlo
-  // (canManageStaff en src/lib/rbac.ts): sin permiso, la ficha es de lectura.
-  const canManage = data?.canManage ?? false;
+  const isNew = !member;
 
   const [name, setName] = useState(member?.name ?? "");
   const [email, setEmail] = useState(member?.email ?? "");
@@ -56,7 +103,6 @@ export default function StaffFormScreen() {
   const [baseCenterId, setBaseCenterId] = useState<string | null>(member?.allocations[0]?.centerId ?? null);
   const [error, setError] = useState<string | null>(null);
 
-  const centers = data?.centers ?? [];
   const totalAllocation = Object.values(allocations).reduce((sum, pct) => sum + pct, 0);
 
   async function changePhoto() {
@@ -96,7 +142,7 @@ export default function StaffFormScreen() {
         });
         toast.show("Ficha guardada.", "good");
       }
-      router.back();
+      goBack("/organizacion");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar.");
     }
@@ -123,7 +169,7 @@ export default function StaffFormScreen() {
                   try {
                     await removeStaff.mutateAsync(member.id);
                     toast.show("Persona dada de baja del equipo.");
-                    router.back();
+                    goBack("/organizacion");
                   } catch (err) {
                     toast.show(err instanceof Error ? err.message : "No se pudo dar de baja.", "critical");
                   }
@@ -135,14 +181,6 @@ export default function StaffFormScreen() {
     );
   }
 
-  if (!isNew && data && !member) {
-    return (
-      <ScreenFrame withTabBar>
-        <EmptyState icon="alert" title="No se ha encontrado a esa persona" />
-      </ScreenFrame>
-    );
-  }
-
   return (
     <ScreenFrame padded={false} withTabBar>
       <LinearGradient colors={theme.heroGradient} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.hero}>
@@ -151,7 +189,7 @@ export default function StaffFormScreen() {
             accessibilityRole="button"
             accessibilityLabel="Volver"
             hitSlop={10}
-            onPress={() => router.back()}
+            onPress={() => goBack("/organizacion")}
             style={[styles.iconButton, { borderColor: "rgba(244,240,232,.25)" }]}
           >
             <Icon name="chevron-left" size={16} color="#F4F0E8" />

@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
 import { hasTaskInbox, isTrainerRole, needsMembershipGate } from "@/auth/routes";
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
-import { useTheme, radii, layout } from "@/theme/theme";
+import { useTheme, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
 import { Icon, type IconName } from "@/components/Icon";
 import { PortalGate } from "@/components/PortalGate";
@@ -111,7 +111,10 @@ export default function TabsLayout() {
   // Gate de compra (A2): sin bono vivo, el socio no entra al portal.
   if (needsMembershipGate(state.user)) return <Redirect href="/onboarding/planes" />;
 
-  const visible = new Set(TABS_BY_ROLE[state.user.role] ?? []);
+  // Un rol sin pestañas declaradas dejaría una barra vacía y al usuario dentro
+  // de la app sin ninguna forma de moverse: «Más» (índice y cuenta) es el
+  // mínimo con el que siempre se puede salir.
+  const visible = new Set(TABS_BY_ROLE[state.user.role]?.length ? TABS_BY_ROLE[state.user.role] : ["mas"]);
   const overrides = LABEL_OVERRIDES[state.user.role] ?? {};
   const badgeFor = (name: string) =>
     name === "feedback" ? pendingFeedback : name === "mas" ? moreCount : 0;
@@ -124,28 +127,34 @@ export default function TabsLayout() {
           headerShown: false,
           tabBarActiveTintColor: theme.gold,
           tabBarInactiveTintColor: theme.textFaint,
-          // La barra flota sobre el contenido (ScreenContainer le deja hueco).
+          // La barra va FIJADA al borde inferior, a todo el ancho y sin margen
+          // por debajo: antes flotaba con 12 px a los lados y un hueco variable
+          // abajo (`insets.bottom - 4`), que en los móviles sin barra de gestos
+          // dejaba la isla despegada del borde y en los que sí la tienen la
+          // montaba encima del indicador. Al no ser `position: "absolute"`, el
+          // navegador le resta su alto a la pantalla, así que ningún contenido
+          // queda debajo de ella (ScreenContainer ya no reserva hueco).
+          //
+          // El área segura la absorbe la propia barra como `paddingBottom`: el
+          // fondo llega hasta el borde físico y las etiquetas se quedan por
+          // encima del indicador de gestos.
           tabBarStyle: {
-            position: "absolute",
-            left: 12,
-            right: 12,
-            bottom: insets.bottom > 0 ? insets.bottom - 4 : 10,
-            height: layout.tabBarHeight,
-            paddingTop: 10,
-            paddingBottom: 12,
-            borderRadius: radii.hero,
-            borderTopWidth: 0,
-            borderWidth: 1,
-            borderColor: theme.border,
+            height: layout.tabBarHeight + insets.bottom,
+            paddingTop: 7,
+            paddingBottom: insets.bottom + 7,
+            paddingHorizontal: 4,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: theme.border,
             backgroundColor: theme.sheet,
-            shadowColor: theme.shadowColor,
-            shadowOpacity: 1,
-            shadowRadius: 18,
-            shadowOffset: { width: 0, height: 10 },
-            elevation: 8,
+            // Sin sombra ni elevación: pegada al borde no flota sobre nada, y
+            // la sombra solo pintaba una banda sucia sobre el contenido.
+            elevation: 0,
+            shadowOpacity: 0,
           },
           tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 9.5, letterSpacing: 0.3 },
-          tabBarItemStyle: { paddingVertical: 2 },
+          // Con el teclado abierto la barra taparía el campo que se está
+          // escribiendo (buscadores de socios, notas del feedback).
+          tabBarHideOnKeyboard: true,
         }}
       >
         {ALL_TABS.map((name) => (
@@ -155,6 +164,11 @@ export default function TabsLayout() {
             options={{
               title: overrides[name] ?? TAB_META[name].label,
               href: visible.has(name) ? undefined : null,
+              // `tabBarItemStyle` va aquí y no en `screenOptions` a propósito:
+              // Expo Router reescribe esta opción por pantalla para ocultar las
+              // que no tocan (`href: null`), y al hacerlo pisa con `undefined`
+              // lo que hubiera puesto `screenOptions`.
+              tabBarItemStyle: visible.has(name) ? { paddingVertical: 0 } : undefined,
               tabBarIcon: ({ color, focused }) => (
                 <View style={styles.iconWrapper}>
                   <Icon name={TAB_META[name].icon} size={19} color={color as string} strokeWidth={focused ? 2 : 1.6} />

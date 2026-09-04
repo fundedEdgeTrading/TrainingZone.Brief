@@ -58,13 +58,22 @@ const REFRESH_TOKEN_KEY = "tz_refresh_token";
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /**
+   * Campos extra que acompañan al error y que el cliente necesita para poder
+   * resolverlo: hoy, la lista de organizaciones del 409 del login. Sin esto la
+   * app recibía «Elige la organización con la que quieres entrar» y no tenía
+   * ninguna organización que ofrecer, así que quien tuviera más de una membresía
+   * no podía entrar de ninguna manera.
+   */
+  details: Record<string, unknown>;
+  constructor(message: string, status: number, details: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.details = details;
   }
 }
 
-type ApiEnvelope<T> = { ok: true; data: T } | { ok: false; error: string };
+type ApiEnvelope<T> = { ok: true; data: T } | ({ ok: false; error: string } & Record<string, unknown>);
 
 export async function getStoredTokens() {
   const [accessToken, refreshToken] = await Promise.all([
@@ -143,7 +152,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   const json = (await res.json().catch(() => null)) as ApiEnvelope<T> | null;
   if (!res.ok || !json || !json.ok) {
-    throw new ApiError(json && !json.ok ? json.error : "No se pudo conectar con el servidor.", res.status);
+    const { ok: _ok, error: _error, ...details } = (json ?? {}) as Record<string, unknown>;
+    throw new ApiError(json && !json.ok ? json.error : "No se pudo conectar con el servidor.", res.status, details);
   }
   return json.data;
 }

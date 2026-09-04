@@ -1,5 +1,6 @@
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import { router } from "expo-router";
+import {  } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useCenterCapacity, useUpdateCapacity } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -47,14 +48,14 @@ export default function CapacityScreen() {
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
       <FadeInUp>
         <ScreenHeader
-          kicker="SOLO ENTRENADOR ADMIN"
+          kicker="AFORO DEL CENTRO"
           title="Aforo de clases"
           tight
           right={
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Volver"
-              onPress={() => router.back()}
+              onPress={() => goBack("/mas")}
               style={[styles.iconButton, { borderColor: theme.border }]}
             >
               <Icon name="chevron-left" size={17} color={theme.text} />

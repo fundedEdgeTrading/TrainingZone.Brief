@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { apiRequest, clearTokens, getStoredTokens, storeTokens, ApiError } from "@/api/client";
-import type { LoginResponse, MeResponse, Role } from "@/api/types";
+import type { LoginOrganization, LoginResponse, MeResponse, Role } from "@/api/types";
 
 const SUPPORTED_ROLES: Role[] = [
   "MEMBER",
@@ -16,11 +16,17 @@ type AuthState =
   | { status: "signedOut" }
   | { status: "signedIn"; user: MeResponse };
 
-type LoginOutcome = { ok: true; user: MeResponse } | { ok: false; error: string };
+type LoginOutcome =
+  | { ok: true; user: MeResponse }
+  /**
+   * `organizations` llega cuando la identidad tiene varias membresías
+   * (409 de `/auth/login`): la pantalla las ofrece y reintenta con `orgId`.
+   */
+  | { ok: false; error: string; organizations?: LoginOrganization[] };
 
 type AuthContextValue = {
   state: AuthState;
-  login: (email: string, password: string) => Promise<LoginOutcome>;
+  login: (email: string, password: string, orgId?: string) => Promise<LoginOutcome>;
   logout: () => Promise<void>;
   /** Vuelve a leer /me: lo usa el gate de compra al volver del pago. */
   refresh: () => Promise<void>;
@@ -48,11 +54,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     })();
   }, []);
 
-  async function login(email: string, password: string): Promise<LoginOutcome> {
+  async function login(email: string, password: string, orgId?: string): Promise<LoginOutcome> {
     try {
       const data = await apiRequest<LoginResponse>("/auth/login", {
         method: "POST",
-        body: { email, password },
+        // RB-ID-002: con varias membresías el servidor responde 409 y la app
+        // reintenta con la organización que haya elegido la persona.
+        body: { email, password, ...(orgId ? { orgId } : {}) },
         skipAuth: true,
       });
 
@@ -72,6 +80,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setState({ status: "signedIn", user: data.user });
       return { ok: true, user: data.user };
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && Array.isArray(err.details.organizations)) {
+        return {
+          ok: false,
+          error: err.message,
+          organizations: err.details.organizations as LoginOrganization[],
+        };
+      }
       return { ok: false, error: err instanceof ApiError ? err.message : "No se pudo iniciar sesión." };
     }
   }

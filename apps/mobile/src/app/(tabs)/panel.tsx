@@ -19,6 +19,7 @@ import { ListRow, Divider } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonScreen } from "@/components/Skeleton";
+import { pluralize } from "@/utils/format";
 import type { TrainerAgendaSession, TrainerPanelResponse } from "@/api/types";
 
 /**
@@ -143,22 +144,25 @@ export default function TrainerTodayScreen() {
                   </View>
                 ))
               )}
-              {/* Hueco de EP sin publicar: el único apunte del día que todavía
-                  no existe, y por eso va apagado y con `+` en dorado. */}
+              {/* Huecos de EP publicados que nadie ha reservado todavía: no son
+                  «sin publicar» —lo están, es lo que cuenta la resta— sino sin
+                  dueño, y por eso llevan a la agenda a llenarlos. Va apagado y
+                  con `+` en dorado: es el único apunte del día que aún no
+                  existe como sesión. */}
               {data.epSlotsPublished > data.epSlotsReserved ? (
                 <>
                   <Divider />
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Publicar un hueco de entrenamiento personal"
+                    accessibilityLabel="Ver los huecos de entrenamiento personal libres"
                     onPress={() => router.push("/staff-agenda")}
                     style={[styles.agendaRow, { opacity: 0.55 }]}
                   >
                     <Icon name="plus" size={16} color={theme.gold} />
                     <View style={{ flex: 1, gap: 2 }}>
-                      <Text style={[typo.rowTitleSmall, { color: theme.text }]}>Hueco de EP sin publicar</Text>
+                      <Text style={[typo.rowTitleSmall, { color: theme.text }]}>Huecos de EP sin reservar</Text>
                       <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>
-                        {data.epSlotsPublished - data.epSlotsReserved} libres esta semana
+                        {pluralize(data.epSlotsPublished - data.epSlotsReserved, "libre", "libres")} esta semana
                       </Text>
                     </View>
                   </Pressable>
@@ -238,14 +242,18 @@ function Spotlight({ data }: { data: TrainerPanelResponse }) {
           </View>
         </View>
 
-        {/* Las dos acciones reales del minuto en que se abre esto. */}
+        {/* Las dos acciones reales del minuto en que se abre esto, y son DOS
+            pantallas distintas: pasar lista es el feedback socio a socio (que
+            es donde se marca la asistencia) y el brief es el repaso previo de
+            adaptaciones. Las dos abrían el brief, así que «Pasar lista» no
+            llevaba a ninguna parte útil. */}
         <View style={styles.spotlightActions}>
           <Button
             title="Pasar lista"
             variant="gold"
             size="sm"
             style={{ flex: 1 }}
-            onPress={() => router.push({ pathname: "/brief/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
+            onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
           />
           <Button
             title="Brief"

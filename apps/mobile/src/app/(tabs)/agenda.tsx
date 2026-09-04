@@ -244,8 +244,11 @@ function SessionRow({
       </View>
 
       {session.myBookingId ? (
+        // El botón decía «En espera» y lo que hacía era CANCELAR: parecía un
+        // distintivo de estado (que ya lo da el badge de arriba) y sacaba al
+        // socio de la lista al tocarlo. Ahora dice lo que hace.
         <Button
-          title={session.myBookingStatus === "WAITLISTED" ? "En espera" : "Cancelar"}
+          title={session.myBookingStatus === "WAITLISTED" ? "Salir" : "Cancelar"}
           variant="outline"
           size="sm"
           loading={busy}

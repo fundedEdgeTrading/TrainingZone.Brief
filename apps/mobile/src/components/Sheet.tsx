@@ -1,13 +1,17 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Modal, Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { typo } from "@/theme/typography";
 
 /**
  * Bottom sheet del handoff: fondo atenuado, hoja de radio 26 con asa de 44 × 4
- * y borde superior. El contenido va en un ScrollView para que un teclado
- * abierto no lo recorte.
+ * y borde superior.
+ *
+ * La hoja está anclada abajo, así que un teclado abierto la tapaba ENTERA: el
+ * ScrollView interior deja llegar a todo el formulario, pero no aparta la hoja
+ * del teclado. De ahí el `KeyboardAvoidingView`, que es lo que hace usable
+ * escribir el título de una sesión, la nota de un descarte o una tarea nueva.
  */
 export function Sheet({
   visible,
@@ -28,7 +32,7 @@ export function Sheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Cerrar" onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: theme.sheet, borderColor: theme.border, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.handle, { backgroundColor: theme.border }]} />
@@ -39,7 +43,7 @@ export function Sheet({
           </ScrollView>
           {footer}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

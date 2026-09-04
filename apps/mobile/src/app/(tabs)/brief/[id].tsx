@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useBriefDetail, useSaveDebrief } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -70,7 +71,7 @@ export default function BriefDetailScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Volver"
-              onPress={() => router.back()}
+              onPress={() => goBack("/brief")}
               style={[styles.iconButton, { borderColor: theme.border }]}
             >
               <Icon name="chevron-left" size={17} color={theme.text} />
@@ -149,7 +150,7 @@ export default function BriefDetailScreen() {
           <Text style={[typo.rowTitleSmall, { color: theme.text, flex: 1 }]}>
             Cerrar lista · {counts.checked} de {counts.total}
           </Text>
-          <Button title="Cerrar" variant="gold" size="sm" onPress={() => router.back()} />
+          <Button title="Cerrar" variant="gold" size="sm" onPress={() => goBack("/brief")} />
         </View>
       ) : null}
     </ScreenContainer>

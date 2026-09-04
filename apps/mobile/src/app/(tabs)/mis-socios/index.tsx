@@ -17,6 +17,7 @@ import { Divider, ListRow } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
+import { useDebounced } from "@/utils/use-debounced";
 import type { TrainerMemberFilter, TrainerMemberRow } from "@/api/types";
 
 /**
@@ -32,7 +33,7 @@ export default function TrainerMembersScreen() {
   const theme = useTheme();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TrainerMemberFilter>("all");
-  const { data, isLoading, isError, refetch, isRefetching } = useTrainerMembers(filter, search);
+  const { data, isLoading, isError, refetch, isRefetching } = useTrainerMembers(filter, useDebounced(search));
 
   // Adherencia como color: verde ≥ 85, ámbar < 70. Es la lectura que hace el
   // entrenador de un vistazo, y una cifra suelta no la da.

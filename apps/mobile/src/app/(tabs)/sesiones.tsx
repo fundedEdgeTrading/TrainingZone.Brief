@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Alert, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import * as WebBrowser from "expo-web-browser";
 import { useAgenda, useCancelBooking, useMemberCalendar } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -19,6 +18,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
+import { addBookingToCalendar } from "@/utils/calendar-link";
 import {
   currentMonth,
   formatLongDate,
@@ -77,20 +77,6 @@ export default function MySessionsScreen() {
     );
   }
 
-  async function addToCalendar(booking: UpcomingBooking) {
-    const start = new Date(booking.startsAt);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-    const stamp = (date: Date) => date.toISOString().replace(/[-:]|\.\d{3}/g, "");
-    const params = new URLSearchParams({
-      action: "TEMPLATE",
-      text: booking.sessionName,
-      dates: `${stamp(start)}/${stamp(end)}`,
-      details: `${booking.centerName}${booking.trainerName ? ` · ${booking.trainerName}` : ""}`,
-      location: booking.room ? `${booking.centerName} · ${booking.room}` : booking.centerName,
-    });
-    await WebBrowser.openBrowserAsync(`https://calendar.google.com/calendar/render?${params.toString()}`);
-  }
-
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
       <FadeInUp>
@@ -126,7 +112,7 @@ export default function MySessionsScreen() {
       ) : (
         <>
           <FadeInUp delay={stagger(2)}>
-            <NextSessionHero booking={next} onCancel={() => confirmCancel(next)} onAddToCalendar={() => addToCalendar(next)} />
+            <NextSessionHero booking={next} onCancel={() => confirmCancel(next)} onAddToCalendar={() => addBookingToCalendar(next)} />
           </FadeInUp>
 
           {later.length > 0 ? (
@@ -169,6 +155,16 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
   const [selected, setSelected] = useState<string>(todayIso());
   const { data, isLoading, isError } = useMemberCalendar(month);
 
+  // Al cambiar de mes hay que mover también el día elegido: se quedaba fijo en
+  // hoy, así que en cualquier otro mes la rejilla no tenía ninguna casilla
+  // marcada y el detalle de abajo seguía titulando la fecha de hoy con las
+  // sesiones —ninguna— de un mes que ya no se estaba mirando.
+  function goToMonth(delta: number) {
+    const next = shiftMonth(month, delta);
+    setMonth(next);
+    setSelected(next === currentMonth() ? todayIso() : `${next}-01`);
+  }
+
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEntry[]>();
     for (const entry of data?.entries ?? []) map.set(entry.day, [...(map.get(entry.day) ?? []), entry]);
@@ -193,7 +189,7 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Mes anterior"
-          onPress={() => setMonth((m) => shiftMonth(m, -1))}
+          onPress={() => goToMonth(-1)}
           style={[styles.navButton, { borderColor: theme.border }]}
         >
           <Icon name="chevron-left" size={16} color={theme.text} />
@@ -201,7 +197,7 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Mes siguiente"
-          onPress={() => setMonth((m) => shiftMonth(m, 1))}
+          onPress={() => goToMonth(1)}
           style={[styles.navButton, { borderColor: theme.border }]}
         >
           <Icon name="chevron-right" size={16} color={theme.text} />

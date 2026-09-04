@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useDeleteProduct, useProducts, useSaveProduct } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { typo } from "@/theme/typography";
@@ -15,19 +16,54 @@ import { Icon } from "@/components/Icon";
 import { ProductThumb } from "@/components/ProductThumb";
 import { useToast } from "@/components/Toast";
 import { pickImageAsDataUrl } from "@/utils/pick-image";
-import type { ServiceKind } from "@/api/types";
+import { EmptyState } from "@/components/EmptyState";
+import { SkeletonList } from "@/components/Skeleton";
+import type { ProductItem, ServiceKind } from "@/api/types";
 
 // D5 del handoff: editar producto y su foto.
+/**
+ * El formulario espera a tener el producto antes de montarse.
+ *
+ * `useState(product?.name ?? "")` solo lee el valor en el PRIMER render, y el
+ * catálogo llega por consulta: si esta ficha se abre en frío —recargando el
+ * bundle, desde un enlace, o al reabrir la app aquí— el formulario aparecía
+ * vacío y «Guardar» borraba el nombre, el precio y la foto del producto. Con la
+ * espera y la `key`, el estado nace ya con los datos reales.
+ */
 export default function ProductFormScreen() {
-  const theme = useTheme();
-  const toast = useToast();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data } = useProducts();
-  const saveProduct = useSaveProduct();
-  const deleteProduct = useDeleteProduct();
+  const { data, isLoading } = useProducts();
 
   const isNew = id === "nuevo";
   const product = isNew ? undefined : data?.products.find((p) => p.id === id);
+
+  if (!isNew && (isLoading || !data)) {
+    return (
+      <ScreenFrame withTabBar>
+        <SkeletonList rows={4} shape="row" note="Cargando el producto…" />
+      </ScreenFrame>
+    );
+  }
+  if (!isNew && !product) {
+    return (
+      <ScreenFrame withTabBar>
+        <EmptyState icon="alert" title="Ese producto ya no existe" description="Vuelve al catálogo y elige otro." />
+        <Button title="Volver al catálogo" variant="outline" onPress={() => goBack("/productos")} />
+      </ScreenFrame>
+    );
+  }
+
+  return <ProductForm key={product?.id ?? "nuevo"} product={product} />;
+}
+
+function ProductForm({ product }: { product?: ProductItem }) {
+  const theme = useTheme();
+  const toast = useToast();
+  const saveProduct = useSaveProduct();
+  const deleteProduct = useDeleteProduct();
+
+  const isNew = !product;
+  const id = product?.id;
 
   const [name, setName] = useState(product?.name ?? "");
   const [description, setDescription] = useState(product?.description ?? "");
@@ -65,12 +101,14 @@ export default function ProductFormScreen() {
         imageUrl,
         priceCents,
         sessionsIncluded: unlimited ? null : sessions,
-        validityDays: null,
+        // La caducidad no se edita desde el móvil (vive en la web), así que se
+        // reenvía la que ya tenía: mandar `null` la BORRABA en cada guardado.
+        validityDays: product?.validityDays ?? null,
         serviceKind,
         visible,
       });
       toast.show(isNew ? "Producto creado." : "Producto guardado.", "good");
-      router.back();
+      goBack("/productos");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo guardar el producto.");
     }
@@ -87,7 +125,7 @@ export default function ProductFormScreen() {
           try {
             await deleteProduct.mutateAsync(product.id);
             toast.show("Producto borrado.");
-            router.back();
+            goBack("/productos");
           } catch (err) {
             toast.show(err instanceof Error ? err.message : "No se pudo borrar.", "critical");
           }
@@ -103,7 +141,7 @@ export default function ProductFormScreen() {
           accessibilityRole="button"
           accessibilityLabel="Volver"
           hitSlop={10}
-          onPress={() => router.back()}
+          onPress={() => goBack("/productos")}
           style={[styles.iconButton, { borderColor: theme.border }]}
         >
           <Icon name="chevron-left" size={16} color={theme.text} />
