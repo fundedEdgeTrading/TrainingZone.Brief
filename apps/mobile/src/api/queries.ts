@@ -52,12 +52,24 @@ import type {
   TrainerMembersResponse,
 } from "./types";
 
-export function useActivity() {
-  return useQuery({ queryKey: ["activity"], queryFn: () => apiRequest<ActivityResponse>("/portal/activity") });
+// `enabled` en las dos consultas del portal: son endpoints de SOCIO —el
+// servidor las cierra con un 403 a cualquier otro rol— y la pantalla que las
+// usa es la ruta índice del grupo (tabs), a la que también llega quien no lo
+// es. Sin la opción, esa visita disparaba dos peticiones condenadas al 403.
+export function useActivity(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["activity"],
+    queryFn: () => apiRequest<ActivityResponse>("/portal/activity"),
+    enabled: opts.enabled ?? true,
+  });
 }
 
-export function useAgenda() {
-  return useQuery({ queryKey: ["agenda"], queryFn: () => apiRequest<AgendaResponse>("/portal/agenda") });
+export function useAgenda(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["agenda"],
+    queryFn: () => apiRequest<AgendaResponse>("/portal/agenda"),
+    enabled: opts.enabled ?? true,
+  });
 }
 
 export function useBookSession() {

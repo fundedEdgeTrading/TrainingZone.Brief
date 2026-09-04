@@ -12,7 +12,7 @@ import {
   useDiscardPreview,
 } from "@/api/queries";
 import { useAuth } from "@/auth/auth-context";
-import { canManageEpSlots } from "@/auth/routes";
+import { canManageEpSlots, isTrainerRole } from "@/auth/routes";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
 import { ScreenContainer } from "@/components/ScreenContainer";
@@ -44,6 +44,9 @@ const DEFAULT_RANGE = { from: 7, to: 22 };
 export default function StaffAgendaScreen() {
   const theme = useTheme();
   const toast = useToast();
+  const { state } = useAuth();
+  const role = state.status === "signedIn" ? state.user.role : null;
+  const isTrainer = role ? isTrainerRole(role) : false;
   const [date, setDate] = useState(todayIso());
   const [trainerId, setTrainerId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ session: StaffSession | null; startTime?: string } | null>(null);
@@ -52,14 +55,18 @@ export default function StaffAgendaScreen() {
   // Los tres modos con los que se mira la agenda: lo mío, todo el centro y los
   // huecos de EP libres. Son preguntas distintas, no un filtro de entrenador
   // más: «¿qué me toca?», «¿qué pasa en la sala?» y «¿qué puedo publicar?».
-  const [scope, setScope] = useState<"mine" | "center" | "slots">("mine");
-  const { state } = useAuth();
+  //
+  // Quien no da clases no tiene un «lo mío»: dirección de centro y recepción
+  // también tienen esta pestaña, y arrancar en «Mis sesiones» les filtraba la
+  // agenda por SU id de usuario —que no es el de ningún entrenador—, así que la
+  // abrían siempre en «Sin sesiones ese día» con la sala llena.
+  const [scope, setScope] = useState<"mine" | "center" | "slots">(isTrainer ? "mine" : "center");
   const { data, isLoading, isError, refetch, isRefetching } = useStaffAgenda(date);
   const deleteSession = useDeleteStaffSession();
   const scrollRef = useRef<ScrollView | null>(null);
 
   const meId = state.status === "signedIn" ? state.user.id : null;
-  const canPublishSlots = state.status === "signedIn" && canManageEpSlots(state.user.role);
+  const canPublishSlots = Boolean(role && canManageEpSlots(role));
 
   const sessions = useMemo(() => {
     const all = data?.sessions ?? [];
@@ -188,10 +195,12 @@ export default function StaffAgendaScreen() {
 
         <DayStrip days={dayStrip} value={date} onChange={setDate} />
 
+        {/* Cada modo se enseña solo a quien significa algo para él: «Mis
+            sesiones» al que las da, y «Huecos EP» al que puede publicarlos. */}
         <ChipRow>
-          <Chip label="Mis sesiones" selected={scope === "mine"} onPress={() => setScope("mine")} />
+          {isTrainer ? <Chip label="Mis sesiones" selected={scope === "mine"} onPress={() => setScope("mine")} /> : null}
           <Chip label="Todo el centro" selected={scope === "center"} onPress={() => setScope("center")} />
-          <Chip label="Huecos EP" selected={scope === "slots"} onPress={() => setScope("slots")} />
+          {canPublishSlots ? <Chip label="Huecos EP" selected={scope === "slots"} onPress={() => setScope("slots")} /> : null}
         </ChipRow>
 
         {data && data.trainers.length > 0 ? (

@@ -53,8 +53,8 @@ tráfico en claro por defecto.
 
 **Login de prueba** (sembrado por `prisma/seed.ts`, rol `MEMBER`):
 `socio@trainingzone.es` / `demo1234`. Socio, entrenador y dirección tienen ya
-su propio subconjunto de la app; recepción y RRHH entran con una versión
-mínima (avisos y perfil).
+su propio subconjunto de la app; recepción entra con socios, agenda y avisos, y
+RRHH con equipo y avisos.
 
 ## Qué incluye esta versión
 
@@ -77,6 +77,15 @@ mínima (avisos y perfil).
   |---|---|
   | Socio | Hoy · Reservar · Sesiones · Evolución · Más |
   | Entrenador / Entrenador Admin | Hoy · Agenda · Socios · Feedback · Más |
+  | Dirección de organización | Panel · Socios · Productos · Equipo · Más |
+  | Dirección de centro | Panel · Socios · Agenda · Productos · Más |
+  | Admin de plataforma | Panel · Anuncios · Equipo · Más |
+  | Recepción | Socios · Agenda · Avisos · Más |
+  | RRHH | Equipo · Avisos · Más |
+
+  El reparto vive en `src/auth/routes.ts` (`TABS_BY_ROLE`), no en el layout: la
+  **primera pestaña de cada rol es su pantalla de aterrizaje**, y las dos cosas
+  tienen que salir de la misma lista (ver el repaso de QA de más abajo).
 
   Lo que cambia respecto a la primera versión: el entrenador tenía en la app
   solo panel, agenda, feedback, brief y perfil mientras en la web disponía
@@ -219,6 +228,26 @@ dejaba de pintar su base dos veces, las medidas del histórico de evolución usa
 coma decimal como los tiles, y se han corregido rótulos que prometían otra cosa
 que su destino («Salud y consentimientos» → «Mi evolución», «SOLO ENTRENADOR
 ADMIN» en una pantalla a la que también entra dirección).
+
+### Segundo repaso de QA (regresión por rol)
+
+Recorrido completo de la app rol por rol contra la API real (`npm run dev` +
+`prisma migrate deploy` + `npm run db:seed`), pantalla por pantalla y con las
+mutaciones de cada una. Lo que salió:
+
+| Dónde | Qué pasaba |
+|---|---|
+| `auth/routes.ts` · `(tabs)/index.tsx` | **El fallo del que se partía.** `homeRouteFor` mandaba a TODOS los roles a `/(tabs)`, que es la ruta índice del grupo — o sea `(tabs)/index.tsx`, el «Hoy» del socio. Un entrenador aterrizaba ahí, la pantalla pedía `/portal/activity` y `/portal/agenda`, el servidor las cierra con 403 a quien no es socio y la primera pantalla tras el login era «No se pudo cargar tu día», encima sin ninguna pestaña marcada (para él `index` va oculta). Ahora cada rol entra por su primera pestaña, `TABS_BY_ROLE` y la ruta de aterrizaje salen de la misma lista, y `index` redirige a su sitio a quien no es socio en vez de pedirle datos que tiene prohibidos. |
+| `auth/routes.ts` | El soporte de plataforma tenía pestaña **Socios** y `canManageMembers` (`src/lib/rbac.ts`) se los niega: la abría en «No tienes permiso para ver los socios». Sus pestañas son ahora las mismas cuatro de su menú de la web. |
+| `(tabs)/mas.tsx` | **Anuncios** estaba implementado y servido por la API, y no había forma de llegar a él: no era pestaña de nadie ni tenía entrada en el índice «Más». Ahora es tile para quien puede publicarlos, sin duplicarse en el rol que sí lo lleva en la barra. |
+| `staff-agenda.tsx` | La agenda arrancaba en «Mis sesiones», que filtra por el id del usuario. Dirección de centro y recepción también tienen esa pestaña y no dan clases: la abrían siempre en «Sin sesiones ese día» con la sala llena. Arranca en «Todo el centro» para quien no es entrenador, y los chips que no significan nada para su rol («Mis sesiones», «Huecos EP») ya no se enseñan. |
+| `auth/auth-context.tsx` | Recepción y RRHH tenían pestañas declaradas y la API les responde 200 en todas sus pantallas, pero el login los rechazaba con «Tu rol todavía no tiene una versión de la app móvil». El comentario que lo justificaba («sus pantallas aún no existen») había dejado de ser cierto. |
+| `api/queries.ts` | `useActivity` y `useAgenda` no se podían desactivar, así que la visita de un no-socio a la ruta índice disparaba dos peticiones condenadas al 403. |
+
+Lo que se comprobó y **no** tenía fallo: los endpoints de las 22 pantallas para
+los ocho roles (login, listados, fichas y calendarios), y las mutaciones de
+tareas, leads, feedback 1-10, debrief, aforo, anuncios, productos, equipo,
+alta/edición/borrado de sesión, hueco de EP y alta/descarte de asistente.
 
 ## Qué falta a propósito (fuera de alcance de esta versión)
 

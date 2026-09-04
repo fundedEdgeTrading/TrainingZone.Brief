@@ -1,7 +1,7 @@
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router, type Href } from "expo-router";
 import { useAuth } from "@/auth/auth-context";
-import { canManageCenterCapacity, canManageLeads, hasTaskInbox, isTrainerRole } from "@/auth/routes";
+import { canManageAnnouncements, canManageCenterCapacity, canManageLeads, hasTaskInbox, isTab, isTrainerRole } from "@/auth/routes";
 import { useLeads, useMemberships, useNotifications, useTasks } from "@/api/queries";
 import { useTheme } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -67,6 +67,11 @@ function StaffMore({
   const uncontactedLeads = leads.data?.counts.SIN_CONTACTAR ?? 0;
   const unread = (notifications.data?.notifications ?? []).filter((n) => !n.resolvedAt && n.kind !== "TASK").length;
 
+  // Este índice es la ÚNICA puerta de lo que no es pestaña, así que lo que el
+  // rol puede hacer y no tiene pestaña tiene que estar aquí. «Anuncios» faltaba:
+  // la pantalla existía, la API la servía y no había forma de llegar a ella
+  // desde ningún sitio de la app. `isTab` evita el duplicado en los roles que sí
+  // la llevan en la barra.
   const tiles: TileProps[] = [
     ...(hasTaskInbox(role)
       ? [{ icon: "clipboard", label: "Tareas", href: "/tareas", count: pendingTasks, tone: "warning" } satisfies TileProps]
@@ -75,6 +80,9 @@ function StaffMore({
       ? [{ icon: "users", label: "Leads", href: "/leads", count: uncontactedLeads, tone: "gold" } satisfies TileProps]
       : []),
     ...(isTrainerRole(role) ? [{ icon: "star", label: "Session Brief", href: "/brief" } satisfies TileProps] : []),
+    ...(canManageAnnouncements(role) && !isTab(role, "anuncios")
+      ? [{ icon: "bell", label: "Anuncios", href: "/anuncios" } satisfies TileProps]
+      : []),
     ...(canManageCenterCapacity(role)
       ? [{ icon: "grid", label: "Aforo de clases", href: "/aforo", badge: "Admin" } satisfies TileProps]
       : []),
