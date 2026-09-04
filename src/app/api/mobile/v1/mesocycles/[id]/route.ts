@@ -26,7 +26,14 @@ function asMilestones(value: unknown): { week: number; text: string }[] {
       if (entry && typeof entry === "object") {
         const row = entry as Record<string, unknown>;
         const week = Number(row.week ?? row.semana ?? 0);
-        const text = typeof row.text === "string" ? row.text : typeof row.hito === "string" ? row.hito : null;
+        const text =
+          typeof row.milestone === "string"
+            ? row.milestone
+            : typeof row.text === "string"
+              ? row.text
+              : typeof row.hito === "string"
+                ? row.hito
+                : null;
         if (text) return { week: Number.isFinite(week) ? week : 0, text };
       }
       return null;
