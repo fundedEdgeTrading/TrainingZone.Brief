@@ -1,4 +1,5 @@
-import { ActivityIndicator, Text, View, StyleSheet } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Animated, Text, View, StyleSheet } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
@@ -6,6 +7,7 @@ import { hasTaskInbox, isTrainerRole, needsMembershipGate, tabsFor, type TabName
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
 import { useTheme, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
+import { easeOutSoft, tabFade, tabIconPop, useReducedMotion } from "@/theme/motion";
 import { Icon, type IconName } from "@/components/Icon";
 import { PortalGate } from "@/components/PortalGate";
 import type { Role } from "@/api/types";
@@ -129,6 +131,18 @@ export default function TabsLayout() {
         backBehavior="history"
         screenOptions={{
           headerShown: false,
+          // Crossfade PURO al cambiar de pestaña, sin desplazamiento: las cinco
+          // pestañas son destinos hermanos, no un recorrido, así que deslizarlas
+          // sugeriría un orden que no existe. Sin animación el cambio es un
+          // corte y cuesta saber si la pantalla ha cambiado o solo su contenido.
+          //
+          // Nota de implementación: el navegador de pestañas anima ambas
+          // escenas con UNA sola línea de tiempo compartida (la entrante y la
+          // saliente recorren la misma curva en espejo), así que los 130 ms de
+          // salida y los 220 ms de entrada del handoff no pueden diferir aquí.
+          // Se toma el valor de ENTRADA, que es el que se mira.
+          animation: "fade",
+          transitionSpec: { animation: "timing", config: { duration: tabFade.in, easing: easeOutSoft } },
           tabBarActiveTintColor: theme.gold,
           tabBarInactiveTintColor: theme.textFaint,
           // La barra va FIJADA al borde inferior, a todo el ancho y sin margen
@@ -174,16 +188,52 @@ export default function TabsLayout() {
               // lo que hubiera puesto `screenOptions`.
               tabBarItemStyle: visible.has(name) ? { paddingVertical: 0 } : undefined,
               tabBarIcon: ({ color, focused }) => (
-                <View style={styles.iconWrapper}>
-                  <Icon name={TAB_META[name].icon} size={19} color={color as string} strokeWidth={focused ? 2 : 1.6} />
-                  <TabBadge count={badgeFor(name)} />
-                </View>
+                <TabIcon icon={TAB_META[name].icon} color={color as string} focused={focused} badge={badgeFor(name)} />
               ),
             }}
           />
         ))}
       </Tabs>
     </>
+  );
+}
+
+/**
+ * Icono de la pestaña, con el pop del 13 % al recibir el foco. Es el acuse de
+ * recibo del toque: la barra no se mueve y el color cambia poco, así que sin
+ * este golpe de escala tocar una pestaña ya seleccionada —o tocar una y que
+ * tarde en pintar— no devuelve ninguna señal.
+ *
+ * Solo se anima al GANAR el foco: animar también la que lo pierde llenaría la
+ * barra de movimiento en cada cambio.
+ */
+function TabIcon({ icon, color, focused, badge }: { icon: IconName; color: string; focused: boolean; badge: number }) {
+  const reduced = useReducedMotion();
+  const [scale] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    if (!focused || reduced) return;
+    const animation = Animated.sequence([
+      Animated.timing(scale, {
+        toValue: tabIconPop.scale,
+        duration: tabIconPop.up,
+        easing: easeOutSoft,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, { toValue: 1, duration: tabIconPop.down, easing: easeOutSoft, useNativeDriver: true }),
+    ]);
+    animation.start();
+    return () => {
+      animation.stop();
+      scale.setValue(1);
+    };
+  }, [focused, reduced, scale]);
+
+  return (
+    <Animated.View style={[styles.iconWrapper, { transform: [{ scale }] }]}>
+      <Icon name={icon} size={19} color={color} strokeWidth={focused ? 2 : 1.6} />
+      <TabBadge count={badge} />
+    </Animated.View>
   );
 }
 

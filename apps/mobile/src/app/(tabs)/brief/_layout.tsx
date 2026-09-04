@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { push } from "@/theme/motion";
 
 // Sub-stack dentro del tab "Session Brief": index.tsx (lista) → [id].tsx (detalle).
 //
@@ -7,6 +8,15 @@ import { Stack } from "expo-router";
 // propia `ScreenHeader` con su flecha— y encima con el hueco del área segura
 // contado dos veces, porque `ScreenContainer` reserva `insets.top` por su
 // cuenta y el navegador ya lo había reservado antes.
+// Push a detalle: preset nativo a la duración del handoff (ver `push` en @/theme/motion).
 export default function BriefLayout() {
-  return <Stack screenOptions={{ headerShown: false, animation: "slide_from_right" }} />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        animation: "slide_from_right",
+        animationDuration: push.in,
+      }}
+    />
+  );
 }

@@ -44,7 +44,10 @@ export default function StaffScreen() {
   const staff = useMemo(() => (data?.staff ?? []).filter((member) => matches(filter, member)), [data, filter]);
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
+    <ScreenContainer
+      enter="auth"
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+    >
       <FadeInUp>
         <ScreenHeader
           kicker={`ORGANIZACIÓN · ${data ? pluralize(data.centers.length, "CENTRO", "CENTROS").toUpperCase() : ""}`}

@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
-import { RefreshControl, Text, View, StyleSheet } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Animated, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { useAgenda, useBookSession, useCancelBooking } from "@/api/queries";
 import { useAuth } from "@/auth/auth-context";
 import { useTheme, radii } from "@/theme/theme";
 import { typo, fonts, tabular } from "@/theme/typography";
-import { stagger } from "@/theme/motion";
+import { barGrow, easeOutSoft, stagger, useReducedMotion } from "@/theme/motion";
+import { useCountUp } from "@/theme/use-count-up";
 import { ScreenContainer } from "@/components/ScreenContainer";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
@@ -157,12 +158,13 @@ function BalanceCard({ balance }: { balance: SessionBalance }) {
   const theme = useTheme();
   const empty = !balance.unlimited && (balance.remaining ?? 0) <= 0;
   const color = balance.unlimited ? theme.good : empty ? theme.critical : balance.serviceKind === "EP" ? theme.gold : theme.text;
+  const remaining = useCountUp(balance.remaining ?? 0);
 
   return (
     <Card style={styles.balanceCard} padding={14}>
       <Text style={[typo.kpiLabel, { color: theme.textMuted }]}>{BALANCE_LABEL[balance.serviceKind] ?? balance.serviceKind}</Text>
       <View style={styles.balanceValueRow}>
-        <Text style={[typo.kpi, { color }]}>{balance.unlimited ? "∞" : balance.remaining ?? 0}</Text>
+        <Text style={[typo.kpi, { color }]}>{balance.unlimited ? "∞" : remaining}</Text>
         {balance.total != null ? <Text style={[styles.balanceTotal, { color: theme.textFaint }]}>/{balance.total}</Text> : null}
       </View>
       <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>
@@ -190,6 +192,28 @@ function SessionRow({
 
   const occupancy = session.capacity > 0 ? Math.min(1, session.bookedCount / session.capacity) : 0;
   const waiting = Math.max(0, session.bookedCount - session.capacity);
+
+  // La barra de aforo CRECE desde la izquierda en vez de aparecer pintada: es
+  // el único dato de la fila que se lee por su longitud, y verla llenarse es
+  // lo que la distingue de una raya decorativa. Entra después de la fila
+  // (240 ms de delay) para que no compita con el nombre de la sesión.
+  const reduced = useReducedMotion();
+  const [grow] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    if (reduced) {
+      grow.setValue(1);
+      return;
+    }
+    const animation = Animated.timing(grow, {
+      toValue: 1,
+      duration: barGrow.duration,
+      delay: barGrow.delay,
+      easing: easeOutSoft,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [grow, reduced]);
 
   return (
     <Card
@@ -224,10 +248,14 @@ function SessionRow({
         {kind === "GROUP" ? (
           <View style={styles.occupancyRow}>
             <View style={[styles.occupancyTrack, { backgroundColor: theme.surfaceAlt }]}>
-              <View
+              <Animated.View
                 style={[
                   styles.occupancyFill,
-                  { width: `${occupancy * 100}%`, backgroundColor: full ? theme.critical : theme.gold },
+                  {
+                    width: `${occupancy * 100}%`,
+                    backgroundColor: full ? theme.critical : theme.gold,
+                    transform: [{ scaleX: grow }],
+                  },
                 ]}
               />
             </View>
@@ -371,7 +399,10 @@ const styles = StyleSheet.create({
   verticalRule: { width: 1, alignSelf: "stretch" },
   occupancyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   occupancyTrack: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
-  occupancyFill: { height: 4, borderRadius: 2 },
+  // `transformOrigin` es lo que hace que `scaleX` crezca desde la izquierda:
+  // por defecto RN escala desde el CENTRO y la barra se abriría hacia los dos
+  // lados, que es justo lo contrario de lo que cuenta un aforo.
+  occupancyFill: { height: 4, borderRadius: 2, transformOrigin: "left" },
   occupancyText: { fontFamily: fonts.bold, fontSize: 11, ...tabular },
   trainerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   sheetRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14 },

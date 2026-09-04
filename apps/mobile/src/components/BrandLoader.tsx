@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
-import { useReducedMotion } from "@/theme/motion";
+import { useReducedMotion, veilExit } from "@/theme/motion";
 import { Icon } from "./Icon";
 
 /**
@@ -15,6 +15,11 @@ import { Icon } from "./Icon";
  *   paso siguiente: la animación nunca promete un progreso que no existe.
  * - El 100 % llega únicamente con `done`, junto al check.
  * - El velo se queda 1150 ms con el resultado a la vista antes de retirarse.
+ * - La retirada es un fundido de 240 ms, y la navegación arranca al EMPEZAR ese
+ *   fundido, no al acabarlo: así la pantalla de destino se monta y empieza su
+ *   entrada escalonada por debajo del velo, y cuando el velo termina de
+ *   disolverse el contenido ya está entrando. Sin eso, entre el velo y el plan
+ *   quedaba un parpadeo de pantalla vacía.
  *
  * Es el ÚNICO estado de espera que bloquea. Para la primera carga de datos van
  * los esqueletos (`Skeleton`), y para una acción corta —reservar, guardar
@@ -60,6 +65,8 @@ export function usePacedLoader(steps: LoaderStep[], expectedMs: number, options:
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(false);
+  /** El velo está disolviéndose: sigue montado, pero ya se va. */
+  const [exiting, setExiting] = useState(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const clear = useCallback(() => {
@@ -73,6 +80,7 @@ export function usePacedLoader(steps: LoaderStep[], expectedMs: number, options:
     clear();
     setStep(0);
     setDone(false);
+    setExiting(false);
     setLoading(true);
     const total = steps.reduce((sum, s) => sum + s.weight, 0) || 1;
     let acc = 0;
@@ -85,10 +93,17 @@ export function usePacedLoader(steps: LoaderStep[], expectedMs: number, options:
   /** La acción ha fallado: fuera el velo. El error lo cuenta el toast. */
   const abort = useCallback(() => {
     clear();
+    setExiting(false);
     setLoading(false);
   }, [clear]);
 
-  /** Confirmado: nivel al 100 %, check, y solo cuando eso se ha visto, `after`. */
+  /**
+   * Confirmado: nivel al 100 %, check, y solo cuando eso se ha visto, `after`.
+   *
+   * `after` se llama AL EMPEZAR el fundido de salida y no al terminarlo: es lo
+   * que deja que la pantalla de destino se monte y arranque su entrada bajo el
+   * velo. El velo se desmonta 240 ms después, con el destino ya entrando.
+   */
   const finish = useCallback(
     (after: () => void) => {
       clear();
@@ -96,15 +111,21 @@ export function usePacedLoader(steps: LoaderStep[], expectedMs: number, options:
       setDone(true);
       timers.current = [
         setTimeout(() => {
-          setLoading(false);
+          setExiting(true);
           after();
+          timers.current.push(
+            setTimeout(() => {
+              setLoading(false);
+              setExiting(false);
+            }, veilExit.duration)
+          );
         }, outroMs),
       ];
     },
     [clear, outroMs, steps.length]
   );
 
-  return { loading, step, done, start, abort, finish };
+  return { loading, step, done, exiting, start, abort, finish };
 }
 
 /** Nivel objetivo del tramo vivo: hasta el 92 % de su tramo, o el 100 % con `done`. */
@@ -120,6 +141,7 @@ export function BrandLoader({
   steps,
   step,
   done,
+  exiting = false,
   title = "Generando el mesociclo",
   hint = "Puedes salir: te avisamos cuando esté.",
   onNotifyMe,
@@ -127,6 +149,8 @@ export function BrandLoader({
   steps: LoaderStep[];
   step: number;
   done: boolean;
+  /** El velo se está retirando: se disuelve en 240 ms sobre lo que haya debajo. */
+  exiting?: boolean;
   title?: string;
   hint?: string;
   /** «Avisarme al terminar»: permite salir del velo sin abortar el trabajo. */
@@ -135,6 +159,7 @@ export function BrandLoader({
   const theme = useTheme();
   const reduced = useReducedMotion();
   const [level] = useState(() => new Animated.Value(0));
+  const [veil] = useState(() => new Animated.Value(1));
   const [pct, setPct] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const target = targetLevel(steps, step, done);
@@ -156,6 +181,17 @@ export function BrandLoader({
   }, [level]);
 
   useEffect(() => {
+    if (!exiting) return;
+    const animation = Animated.timing(veil, {
+      toValue: 0,
+      duration: reduced ? 0 : veilExit.duration,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [exiting, reduced, veil]);
+
+  useEffect(() => {
     const started = Date.now();
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(id);
@@ -168,7 +204,7 @@ export function BrandLoader({
     // El velo bloquea gestos y navegación: `onRequestClose` a vacío para que el
     // botón atrás de Android tampoco lo cierre a medias.
     <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
-      <View style={styles.veil}>
+      <Animated.View style={[styles.veil, { opacity: veil }]}>
         <Text style={[typo.legend, styles.process, { color: theme.textMuted }]}>{title}</Text>
 
         <View style={styles.logoBox}>
@@ -224,7 +260,7 @@ export function BrandLoader({
             <Text style={[typo.buttonSmall, { color: theme.textSecondary }]}>Avisarme al terminar</Text>
           </Pressable>
         ) : null}
-      </View>
+      </Animated.View>
     </Modal>
   );
 }

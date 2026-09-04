@@ -34,7 +34,10 @@ export default function DashboardScreen() {
   const monthLabel = capitalize(new Date().toLocaleDateString("es-ES", { month: "long" }));
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
+    <ScreenContainer
+      enter="auth"
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+    >
       <FadeInUp>
         <ScreenHeader
           kicker={`DIRECCIÓN · ${monthLabel.toUpperCase()}`}
@@ -70,28 +73,26 @@ export default function DashboardScreen() {
         <EmptyState icon="alert" title="No se pudo cargar el panel" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
-          <FadeInUp delay={stagger(1)}>
-            <HeroCard>
-              <Text style={[typo.kicker, { color: theme.goldSoft }]}>INGRESOS DEL MES</Text>
-              <View style={styles.revenueRow}>
-                <Text style={[typo.heroSmall, { color: theme.onInk.text }]}>{formatEuros(data.revenue.monthCents)}</Text>
-                {data.revenue.deltaPct != null ? (
-                  <Badge
-                    label={`${data.revenue.deltaPct > 0 ? "+" : ""}${data.revenue.deltaPct.toLocaleString("es-ES")}%`}
-                    tone={data.revenue.deltaPct >= 0 ? "good" : "critical"}
-                  />
-                ) : null}
-              </View>
-
-              <View style={{ marginTop: 14 }}>
-                <Sparkline
-                  values={data.revenue.series.map((point) => point.cents)}
-                  labels={data.revenue.series.map((point) => point.label)}
-                  width={width - layout.screenPadding * 2 - 40}
+          <HeroCard>
+            <Text style={[typo.kicker, { color: theme.goldSoft }]}>INGRESOS DEL MES</Text>
+            <View style={styles.revenueRow}>
+              <Text style={[typo.heroSmall, { color: theme.onInk.text }]}>{formatEuros(data.revenue.monthCents)}</Text>
+              {data.revenue.deltaPct != null ? (
+                <Badge
+                  label={`${data.revenue.deltaPct > 0 ? "+" : ""}${data.revenue.deltaPct.toLocaleString("es-ES")}%`}
+                  tone={data.revenue.deltaPct >= 0 ? "good" : "critical"}
                 />
-              </View>
-            </HeroCard>
-          </FadeInUp>
+              ) : null}
+            </View>
+
+            <View style={{ marginTop: 14 }}>
+              <Sparkline
+                values={data.revenue.series.map((point) => point.cents)}
+                labels={data.revenue.series.map((point) => point.label)}
+                width={width - layout.screenPadding * 2 - 40}
+              />
+            </View>
+          </HeroCard>
 
           <FadeInUp delay={stagger(2)} style={styles.kpiRow}>
             <KpiTile
