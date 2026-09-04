@@ -2,37 +2,17 @@ import type { MesocycleBriefing } from "@/lib/health-access";
 import type { MesocyclePlan } from "@/lib/ai/mesocycle-schema";
 
 /**
- * Parte ESTABLE del sistema: metodología, formato de salida y criterios de
- * progresión. No contiene ni un dato del socio ni una fecha — es el prefijo que
- * se cachea (`cache_control`), y cualquier byte variable aquí dentro invalidaría
- * el caché de todas las llamadas siguientes. Lo del socio va en el mensaje de
- * usuario, después del punto de corte.
+ * Qué es un mesociclo aquí y cómo se distribuye en fases. Complementa (no
+ * repite) la metodología del agente EP cargada por separado desde
+ * `methodology.ts`: esto describe el contenedor (`Mesocycle → Phase → Day`),
+ * la metodología describe cómo se programa dentro de él.
  */
-export const MESOCYCLE_SYSTEM_METHODOLOGY = `Eres el entrenador jefe de un centro de entrenamiento personal y preparación
-física para oposiciones. Programas mesociclos que después firma y ajusta un
-entrenador titulado: tu borrador es una propuesta profesional, no la última
-palabra.
-
-## Qué es un mesociclo aquí
+const MESOCYCLE_CONTAINER = `## Qué es un mesociclo aquí
 
 Un bloque de entrenamiento de 4 a 12 semanas dividido en fases consecutivas.
 Cada fase tiene un rango de semanas propio, sin solapes ni huecos: la fase 1
 empieza en la semana 1 y la última termina en la semana final del mesociclo.
 Cada fase describe la semana TIPO de ese tramo, no cada semana por separado.
-
-## Criterios de progresión
-
-- Cada fase persigue una cualidad dominante y la anterior la prepara. El orden
-  por defecto es adaptación anatómica y técnica -> fuerza -> aplicación
-  específica de la prueba u objetivo -> afinado.
-- La progresión entre fases se hace primero por volumen y calidad técnica y solo
-  después por carga. Subir carga y volumen a la vez es el error más común.
-- Un patrón que no se puede ejecutar con calidad no se carga: se regresiona a
-  una variante que sí se ejecuta bien y se reintroduce cuando el hito de la hoja
-  de ruta lo permite.
-- Cada semana de la hoja de ruta lleva un hito MEDIBLE (repeticiones, tiempo,
-  metros, rango). "Mejorar la técnica" no es un hito; "3 dominadas estrictas
-  con agarre neutro" sí.
 
 ## Reglas de seguridad — mandan sobre todo lo demás
 
@@ -66,25 +46,20 @@ primer bloque del día y también resumido en \`warmup\`.
 Respeta el número de días y el lugar de cada día tal y como te lo den. El
 material disponible cambia según el lugar: no programes en un sitio un ejercicio
 que exija material que ahí no hay. El campo \`venue\` de cada día repite la
-etiqueta del lugar tal y como aparece en la disponibilidad.
+etiqueta del lugar tal y como aparece en la disponibilidad.`;
 
-## El porqué de cada ejercicio
+/**
+ * Sección de "metodología del contenedor" para el sistema de GENERAR. Estable
+ * y sin datos del socio: se concatena después de `buildMethodologySystem`
+ * (ver `mesocycle-generator.ts`) y dentro del mismo bloque cacheado.
+ */
+export const MESOCYCLE_CONTAINER_INSTRUCTIONS = MESOCYCLE_CONTAINER;
 
-\`rationale\` es obligatorio y es lo que separa esto de una plantilla: explica
-por qué ESE ejercicio para ESTE socio y, cuando la elección venga condicionada
-por el screening (agarre, rango, apoyo, progresión), dilo explícitamente. Una o
-dos frases, con la referencia metodológica cuando exista.
-
-## Formato
-
-Devuelves únicamente el plan en el formato estructurado que se te indica. Sin
-introducciones, sin resúmenes, sin markdown y sin comentarios fuera de los
-campos. Todo el texto en español de España.`;
-
-/** Instrucción del refinado. También estable: se cachea igual que la anterior. */
-export const MESOCYCLE_SYSTEM_REFINE = `${MESOCYCLE_SYSTEM_METHODOLOGY}
-
-## Refinado
+/**
+ * Instrucciones adicionales del REFINADO, que se añaden después de la
+ * metodología completa por perfil. También estables: se cachean igual.
+ */
+export const MESOCYCLE_REFINE_INSTRUCTIONS = `## Refinado
 
 El entrenador te pide un cambio concreto sobre un plan ya generado. Devuelves el
 plan COMPLETO con ese cambio aplicado y NADA MÁS modificado: el resto de fases,
@@ -92,7 +67,14 @@ días, bloques y ejercicios se copian palabra por palabra, incluidos sus
 \`rationale\`. No reescribas lo que no te han pedido, no "mejores" de paso, no
 reordenes. Si el cambio pedido choca con una regla de seguridad, aplica la
 alternativa más cercana que sí la respete y explícalo en el \`rationale\` del
-ejercicio afectado.`;
+ejercicio afectado.
+
+Si sustituyes o eliminas un ejercicio, comprueba que los siete patrones de
+movimiento siguen cubiertos en la semana tipo. Si uno se cae, añade su
+sustituto en el mismo día y dilo en el \`rationale\` del ejercicio que lo
+reemplaza. Si el cambio contradice un \`[SUPUESTO — confirmar]\` que sigue en
+\`safetyCriteria\`, quítalo o corrígelo: nunca dejes un supuesto que ya no
+aplica.`;
 
 /**
  * Parte VOLÁTIL: el socio. Va en el mensaje de usuario, nunca en el prefijo
@@ -114,6 +96,12 @@ export function buildMesocycleBriefing(briefing: MesocycleBriefing): string {
     "",
     "## Disponibilidad",
     ...bullets(briefing.availability, "Sin disponibilidad registrada."),
+    "",
+    "## Grupo Training Zone",
+    "No indicado todavía en la ficha: programa como Mantenimiento y añade una",
+    "entrada en `safetyCriteria` con `[SUPUESTO — confirmar]` pidiendo que el",
+    "entrenador confirme el grupo real del socio (tercera edad, rehabilitación,",
+    "derivación a grupos, rendimiento o mantenimiento).",
   ];
 
   if (briefing.metrics.length > 0) {
