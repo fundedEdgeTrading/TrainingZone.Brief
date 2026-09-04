@@ -1,30 +1,50 @@
 import { prisma } from "@/lib/prisma";
 import type { PaymentStatus } from "@prisma/client";
 
-export async function listPayments(orgId: string, opts: { status?: PaymentStatus; statuses?: PaymentStatus[] } = {}) {
+/**
+ * Ámbito de centro (`center-scope.ts`): igual que `members/page.tsx`,
+ * `centerIds === undefined` es "sin filtro" (dirección de organización) y
+ * `centerIds` presente —aunque venga vacío— manda siempre. Antes Cobros
+ * filtraba solo por `orgId`: recepción/dirección de un centro veía y podía
+ * cobrar/congelar/cancelar la cuota de socios de otros centros de la misma
+ * organización.
+ */
+export async function listPayments(
+  orgId: string,
+  opts: { status?: PaymentStatus; statuses?: PaymentStatus[]; centerIds?: string[] } = {}
+) {
   return prisma.payment.findMany({
     // `statuses`: eje multi-valor de la píldora de estado (dentro del eje, OR).
-    where: { orgId, ...(opts.statuses?.length ? { status: { in: opts.statuses } } : { status: opts.status || undefined }) },
+    where: {
+      orgId,
+      ...(opts.statuses?.length ? { status: { in: opts.statuses } } : { status: opts.status || undefined }),
+      ...(opts.centerIds !== undefined ? { member: { primaryCenterId: { in: opts.centerIds } } } : {}),
+    },
     include: { member: { select: { id: true, firstName: true, lastName: true } } },
     orderBy: { date: "desc" },
     take: 100,
   });
 }
 
-export async function getBillingKpis(orgId: string) {
+export async function getBillingKpis(orgId: string, centerIds?: string[]) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const memberCenterFilter = centerIds !== undefined ? { member: { primaryCenterId: { in: centerIds } } } : {};
 
   const [paidThisMonth, pending, failed, delinquentMembers] = await Promise.all([
     prisma.payment.aggregate({
-      where: { orgId, status: "PAID", date: { gte: monthStart } },
+      where: { orgId, status: "PAID", date: { gte: monthStart }, ...memberCenterFilter },
       _sum: { amountCents: true },
     }),
     // RB-PAGO-002 (B.3.3): un pago aplazado con dueDate futura no cuenta como
     // pendiente "preocupante" — solo los que ya no tienen plazo o están vencidos.
-    prisma.payment.count({ where: { orgId, status: "PENDING", OR: [{ dueDate: null }, { dueDate: { lte: now } }] } }),
-    prisma.payment.count({ where: { orgId, status: "FAILED" } }),
-    prisma.member.count({ where: { orgId, state: "DELINQUENT" } }),
+    prisma.payment.count({
+      where: { orgId, status: "PENDING", OR: [{ dueDate: null }, { dueDate: { lte: now } }], ...memberCenterFilter },
+    }),
+    prisma.payment.count({ where: { orgId, status: "FAILED", ...memberCenterFilter } }),
+    prisma.member.count({
+      where: { orgId, state: "DELINQUENT", ...(centerIds !== undefined ? { primaryCenterId: { in: centerIds } } : {}) },
+    }),
   ]);
 
   return {
@@ -35,9 +55,9 @@ export async function getBillingKpis(orgId: string) {
   };
 }
 
-export async function getDelinquentMembers(orgId: string) {
+export async function getDelinquentMembers(orgId: string, centerIds?: string[]) {
   return prisma.member.findMany({
-    where: { orgId, state: "DELINQUENT" },
+    where: { orgId, state: "DELINQUENT", ...(centerIds !== undefined ? { primaryCenterId: { in: centerIds } } : {}) },
     include: {
       primaryCenter: true,
       // RB-PAGO-002: el último pago mostrado no debe ser un aplazamiento con
@@ -58,9 +78,13 @@ export async function getSubscriptionWithPauseInfo(orgId: string, memberId: stri
   });
 }
 
-export async function getMembersForPaymentForm(orgId: string) {
+export async function getMembersForPaymentForm(orgId: string, centerIds?: string[]) {
   return prisma.member.findMany({
-    where: { orgId, state: { in: ["ACTIVE", "DELINQUENT", "TRIAL"] } },
+    where: {
+      orgId,
+      state: { in: ["ACTIVE", "DELINQUENT", "TRIAL"] },
+      ...(centerIds !== undefined ? { primaryCenterId: { in: centerIds } } : {}),
+    },
     select: {
       id: true,
       firstName: true,

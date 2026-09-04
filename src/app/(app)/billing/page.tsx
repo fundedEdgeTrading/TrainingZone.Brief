@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { listPayments, getBillingKpis, getDelinquentMembers, getMembersForPaymentForm } from "@/lib/billing-queries";
+import { centerScopeFor } from "@/lib/center-scope";
 import { listActivePlansForOrg } from "@/lib/members-queries";
 import { isStripeConfiguredForOrg } from "@/lib/stripe";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
@@ -29,11 +30,18 @@ export default async function BillingPage({
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
   const params = await searchParams;
 
+  // Mismo ámbito de centro que `/members` (center-scope.ts): dirección de
+  // organización ve toda la empresa; recepción/dirección de centro, solo los
+  // socios de los centros a los que está imputada. Antes de esto, Cobros
+  // filtraba únicamente por organización.
+  const scope = await centerScopeFor(session.user);
+  const centerIds = scope ?? undefined;
+
   const [kpis, payments, delinquent, membersForForm, plans, stripeConfigured] = await Promise.all([
-    getBillingKpis(session.user.orgId),
-    listPayments(session.user.orgId, { statuses: parseFilterValues(params.status) as PaymentStatus[] }),
-    getDelinquentMembers(session.user.orgId),
-    getMembersForPaymentForm(session.user.orgId),
+    getBillingKpis(session.user.orgId, centerIds),
+    listPayments(session.user.orgId, { statuses: parseFilterValues(params.status) as PaymentStatus[], centerIds }),
+    getDelinquentMembers(session.user.orgId, centerIds),
+    getMembersForPaymentForm(session.user.orgId, centerIds),
     listActivePlansForOrg(session.user.orgId),
     isStripeConfiguredForOrg(session.user.orgId),
   ]);

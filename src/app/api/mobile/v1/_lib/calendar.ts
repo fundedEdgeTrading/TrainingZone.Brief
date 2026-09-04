@@ -54,14 +54,27 @@ export function debriefAverage(debrief: {
   return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
 }
 
-export async function getMemberCalendar(memberId: string, month: string | null): Promise<MemberCalendarDto> {
+/**
+ * `includeDebrief` decide si se manda `feedbackAvg` (la media del debrief que
+ * el entrenador rellena tras la sesión — técnica, actitud, dolor percibido...
+ * confidencial por `canViewSessionDebrief`, rbac.ts). Es `false` por defecto:
+ * el calendario del PROPIO socio (`portal/member-calendar`) no debe llevarlo
+ * nunca, y hasta ahora lo llevaba sin ningún control. El calendario que
+ * consulta el staff sobre la ficha de un socio (`members/[id]/calendar`) sí lo
+ * pide explícitamente.
+ */
+export async function getMemberCalendar(
+  memberId: string,
+  month: string | null,
+  includeDebrief = false
+): Promise<MemberCalendarDto> {
   const { start, end, key } = monthRange(month);
 
   const bookings = await prisma.booking.findMany({
     where: { memberId, occurrenceDate: { gte: start, lt: end } },
     include: {
       session: { select: { name: true, classType: true, startTime: true, endTime: true, center: { select: { name: true } }, trainer: { select: { name: true } } } },
-      debrief: true,
+      ...(includeDebrief ? { debrief: true } : {}),
     },
     orderBy: [{ occurrenceDate: "asc" }],
   });
@@ -76,7 +89,7 @@ export async function getMemberCalendar(memberId: string, month: string | null):
     trainerName: b.session.trainer?.name ?? null,
     serviceKind: sessionServiceKind(b.session.classType),
     status: b.status,
-    feedbackAvg: debriefAverage(b.debrief),
+    feedbackAvg: "debrief" in b ? debriefAverage(b.debrief) : null,
   }));
 
   return {

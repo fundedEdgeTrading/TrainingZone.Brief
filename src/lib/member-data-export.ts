@@ -7,9 +7,9 @@ import { prisma } from "@/lib/prisma";
  * *sobre* el socio producida por el equipo, no datos que él haya aportado, y
  * puede contener valoraciones internas no pensadas para mostrarse tal cual.
  */
-export async function getMemberDataExport(memberId: string) {
-  const member = await prisma.member.findUnique({
-    where: { id: memberId },
+export async function getMemberDataExport(memberId: string, orgId: string) {
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
     include: {
       primaryCenter: { select: { name: true } },
       subscriptions: { include: { plan: { select: { name: true, type: true } } }, orderBy: { startDate: "desc" } },

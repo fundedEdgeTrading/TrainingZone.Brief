@@ -13,7 +13,7 @@ import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { SafePhoto } from "@/components/SafePhoto";
 import { formatShortDate } from "@/utils/format";
-import type { ProgressEntry } from "@/api/types";
+import type { CompositionTile, ProgressEntry } from "@/api/types";
 
 /**
  * «Evolución». Sube de estar escondida dentro de Perfil a ser pestaña propia, y
@@ -127,6 +127,23 @@ export default function EvolutionScreen() {
             </FadeInUp>
           ) : null}
 
+          {/* `compositionTiles` (semáforo contra el rango de referencia por edad
+              y sexo, docs/COMPOSICION_CORPORAL_TANITA.md §3) llega del servidor
+              igual que en la web (`CompositionSummary`), pero esta pantalla solo
+              pintaba sus propios tiles de delta — el semáforo nunca se veía. */}
+          {data.compositionTiles.length > 0 ? (
+            <FadeInUp delay={stagger(1.5)}>
+              <Card style={{ gap: 12 }}>
+                <Text style={[typo.cardTitleSmall, { color: theme.text }]}>Composición corporal</Text>
+                <View style={styles.tileGrid}>
+                  {data.compositionTiles.map((tile) => (
+                    <CompositionDot key={tile.label} tile={tile} />
+                  ))}
+                </View>
+              </Card>
+            </FadeInUp>
+          ) : null}
+
           {trend.length > 1 ? (
             <FadeInUp delay={stagger(2)}>
               <Card style={{ gap: 12 }}>
@@ -220,6 +237,31 @@ function PhotoRow({ entry, consent }: { entry: ProgressEntry; consent: boolean }
   );
 }
 
+/** Mismo semáforo que la web (`composition-summary.tsx`): good/warning/critical/unknown. */
+function CompositionDot({ tile }: { tile: CompositionTile }) {
+  const theme = useTheme();
+  if (tile.value == null) return null;
+  const dotColor =
+    tile.status === "good"
+      ? theme.good
+      : tile.status === "warning"
+        ? theme.warning
+        : tile.status === "critical"
+          ? theme.critical
+          : theme.textFaint;
+  return (
+    <View style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <View style={styles.compositionLabelRow}>
+        {tile.status ? <View style={[styles.compositionDot, { backgroundColor: dotColor }]} /> : null}
+        <Text style={[typo.kpiLabel, { color: theme.textMuted }]} numberOfLines={1}>
+          {tile.label}
+        </Text>
+      </View>
+      <Text style={[styles.tileValue, { color: theme.text }]}>{tile.value}</Text>
+    </View>
+  );
+}
+
 function Pill({ label }: { label: string }) {
   const theme = useTheme();
   return (
@@ -234,6 +276,8 @@ const styles = StyleSheet.create({
   tile: { flexBasis: "47%", flexGrow: 1, borderWidth: 1, borderRadius: 14, padding: 13, gap: 3 },
   tileValue: { fontFamily: fonts.bold, fontSize: 21, ...tabular },
   tileDelta: { fontFamily: fonts.semibold, fontSize: 11.5, ...tabular },
+  compositionLabelRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  compositionDot: { width: 7, height: 7, borderRadius: 4 },
   chartRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
   monthBarWrap: { alignItems: "center", gap: 4, flex: 1 },
   monthBarTrack: { height: 72, justifyContent: "flex-end" },

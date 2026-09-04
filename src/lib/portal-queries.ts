@@ -23,6 +23,7 @@ export async function getMemberEvolution(memberId: string, orgId: string) {
     where: { id: memberId },
     select: {
       birthDate: true,
+      sex: true,
       consentHealth: true,
       consentImages: true,
       progressEntries: { orderBy: { date: "desc" } },
@@ -30,7 +31,7 @@ export async function getMemberEvolution(memberId: string, orgId: string) {
   });
   if (!member) return null;
 
-  const view = await buildCompositionView(orgId, member.birthDate, member.progressEntries);
+  const view = await buildCompositionView(orgId, member.birthDate, member.progressEntries, member.sex);
   return {
     consentHealth: member.consentHealth,
     consentImages: member.consentImages,

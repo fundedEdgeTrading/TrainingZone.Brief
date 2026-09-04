@@ -167,13 +167,23 @@ export async function updateMyEmailPreferenceAction(
   const field = EMAIL_PREFERENCE_FIELD[kind];
   if (!field) return { ok: false, error: "Preferencia desconocida." };
 
+  // `anyEnabled` se recalcula sobre las 4 preferencias (las 3 de aquí +
+  // marketing), igual que hace `updateMemberEmailPreferences` por el enlace
+  // del pie del correo: sin esto, apagar desde aquí el último interruptor que
+  // le quedaba encendido no fijaba `emailOptOutAt` ni dejaba el mismo rastro
+  // de auditoría que la vía del token — pese a que `docs/EMAILS_TRANSACCIONALES.md`
+  // documenta las cuatro vías como equivalentes.
+  const anyEnabled =
+    (kind === "vacancy" ? enabled : member.notifyVacancies) ||
+    (kind === "birthday" ? enabled : member.notifyBirthday) ||
+    (kind === "assessment" ? enabled : member.notifyAssessments) ||
+    member.consentMarketing;
+
   await prisma.member.update({
     where: { id: member.id },
     data: {
       [field]: enabled,
-      // Encender cualquier aviso levanta la baja global: si no, el socio
-      // marcaría la casilla y seguiría sin recibir nada (ver `email-preferences`).
-      ...(enabled ? { emailOptOutAt: null } : {}),
+      emailOptOutAt: anyEnabled ? null : new Date(),
     },
   });
 

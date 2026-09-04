@@ -45,7 +45,7 @@ export function StaffChatThread({
         }
         className="flex gap-2 p-3 border-t border-tz-sand"
       >
-        <Input name="body" placeholder="Responder al cliente..." className="flex-1" required />
+        <Input name="body" placeholder="Responder al cliente..." className="flex-1" required maxLength={2000} />
         <Button type="submit" disabled={pending} size="sm">
           Enviar
         </Button>

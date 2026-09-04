@@ -388,8 +388,10 @@ export async function reconcileMemberSubscriptionDeleted(orgId: string, subscrip
 }
 
 /** `invoice.paid`: cobro recurrente conciliado — idempotente por `Payment.stripeInvoiceId`. */
-export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.Invoice) {
-  if (!invoice.id) return;
+export type ReconcileResult = { ok: true } | { ok: false; retry: boolean; error: string };
+
+export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.Invoice): Promise<ReconcileResult> {
+  if (!invoice.id) return { ok: true };
   const already = await prisma.payment.findUnique({
     where: { stripeInvoiceId: invoice.id },
     select: { id: true, status: true },
@@ -399,16 +401,24 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
   // vez de emitir una nueva, así que este `invoice.paid` es el cobro que por
   // fin ha entrado. Salir aquí dejaba al socio pagando y marcado como moroso
   // para siempre, con el recibo en FAILED y la suscripción sin reactivar.
-  if (already?.status === "PAID") return;
+  if (already?.status === "PAID") return { ok: true };
 
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
-  if (!stripeSubscriptionId) return;
+  if (!stripeSubscriptionId) return { ok: true };
 
   const subscription = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId },
     select: { id: true, memberId: true, member: { select: { orgId: true, state: true } } },
   });
-  if (!subscription || subscription.member.orgId !== orgId) return; // aislamiento
+  // Stripe no garantiza el orden de entrega: `invoice.paid` puede llegar antes
+  // que el `customer.subscription.created` que crea esta fila localmente. Sin
+  // distinguir este caso de un aislamiento real, el evento se daba por
+  // resuelto (200) y Stripe no volvía a intentarlo — el primer recibo de una
+  // suscripción nueva podía desaparecer para siempre si llegaban en ese orden.
+  if (!subscription) {
+    return { ok: false, retry: true, error: `Suscripción ${stripeSubscriptionId} aún no existe localmente.` };
+  }
+  if (subscription.member.orgId !== orgId) return { ok: true }; // aislamiento: no es de esta org, no es un fallo
 
   const periodEnd = invoice.lines?.data?.[0]?.period?.end;
 
@@ -454,6 +464,8 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
     where: { orgId, entityType: "Member", entityId: subscription.memberId, kind: "ALERT", resolvedAt: null },
     data: { resolvedAt: new Date() },
   });
+
+  return { ok: true };
 }
 
 /** `invoice.payment_failed`: marca al socio moroso y avisa a recepción/dirección — idempotente por `Payment.stripeInvoiceId`. */
@@ -538,11 +550,11 @@ async function sendDunningNoticeOnce(
   });
 }
 
-export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice: Stripe.Invoice) {
-  if (!invoice.id) return;
+export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice: Stripe.Invoice): Promise<ReconcileResult> {
+  if (!invoice.id) return { ok: true };
 
   const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
-  if (!stripeSubscriptionId) return;
+  if (!stripeSubscriptionId) return { ok: true };
 
   const subscription = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId },
@@ -552,7 +564,13 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
       member: { select: { orgId: true, firstName: true, lastName: true } },
     },
   });
-  if (!subscription || subscription.member.orgId !== orgId) return; // aislamiento
+  // Mismo motivo que en `reconcileMemberInvoicePaid`: sin la fila local
+  // todavía (orden de entrega no garantizado por Stripe), es retryable, no un
+  // no-op.
+  if (!subscription) {
+    return { ok: false, retry: true, error: `Suscripción ${stripeSubscriptionId} aún no existe localmente.` };
+  }
+  if (subscription.member.orgId !== orgId) return { ok: true }; // aislamiento: no es de esta org, no es un fallo
 
   const existing = await prisma.payment.findUnique({ where: { stripeInvoiceId: invoice.id }, select: { id: true } });
   if (existing) {
@@ -600,4 +618,6 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
       entityId: subscription.memberId,
     });
   }
+
+  return { ok: true };
 }

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/guard";
+import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { createPaymentWithReceipt } from "@/lib/payments";
 import type { Prisma } from "@prisma/client";
 
@@ -44,6 +44,7 @@ export async function postponePayment(formData: FormData): Promise<SubscriptionA
 
   const payment = await prisma.payment.findFirst({ where: { id: paymentId, orgId: session.user.orgId } });
   if (!payment) return { ok: false, error: "Pago no encontrado." };
+  if (!(await memberIsInScope(session.user, payment.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (payment.status !== "PENDING") return { ok: false, error: "Solo se pueden aplazar pagos pendientes." };
 
   await prisma.payment.update({ where: { id: paymentId }, data: { dueDate: newDueDate } });
@@ -71,6 +72,9 @@ export async function refundPayments(formData: FormData): Promise<SubscriptionAc
 
   const payments = await prisma.payment.findMany({ where: { id: { in: paymentIds }, orgId: session.user.orgId } });
   if (payments.length !== paymentIds.length) return { ok: false, error: "Alguno de los pagos no se ha encontrado." };
+  for (const memberId of new Set(payments.map((p) => p.memberId))) {
+    if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
+  }
   if (payments.some((p) => p.status !== "PAID")) return { ok: false, error: "Solo se pueden devolver pagos cobrados (PAID)." };
   if (payments.some((p) => p.stripePaymentIntentId)) {
     return {
@@ -108,6 +112,7 @@ export async function freezeSubscription(formData: FormData): Promise<Subscripti
     include: { member: { select: { id: true } } },
   });
   if (!subscription) return { ok: false, error: "Suscripción no encontrada." };
+  if (!(await memberIsInScope(session.user, subscription.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (subscription.status !== "ACTIVE") return { ok: false, error: "Solo se pueden congelar suscripciones activas." };
 
   const pauseUntil = pauseUntilRaw ? new Date(pauseUntilRaw) : null;
@@ -130,6 +135,7 @@ export async function resumeSubscription(subscriptionId: string, memberId: strin
   const session = await requireRole([...ALLOWED_ROLES]);
   const subscription = await prisma.subscription.findFirst({ where: { id: subscriptionId, member: { orgId: session.user.orgId } } });
   if (!subscription) return { ok: false, error: "Suscripción no encontrada." };
+  if (!(await memberIsInScope(session.user, subscription.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (subscription.status !== "FROZEN") return { ok: false, error: "Esta suscripción no está congelada." };
 
   await prisma.$transaction([
@@ -154,6 +160,7 @@ export async function addOneOffProduct(formData: FormData): Promise<Subscription
 
   const member = await prisma.member.findFirst({ where: { id: memberId, orgId: session.user.orgId }, select: { id: true } });
   if (!member) return { ok: false, error: "Socio no encontrado." };
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const payment = await createPaymentWithReceipt({
     orgId: session.user.orgId,
@@ -185,6 +192,7 @@ export async function scheduleCancellation(formData: FormData): Promise<Subscrip
 
   const subscription = await prisma.subscription.findFirst({ where: { id: subscriptionId, member: { orgId: session.user.orgId } } });
   if (!subscription) return { ok: false, error: "Suscripción no encontrada." };
+  if (!(await memberIsInScope(session.user, subscription.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (subscription.status !== "ACTIVE" && subscription.status !== "FROZEN") {
     return { ok: false, error: "Solo se pueden programar cancelaciones de suscripciones activas o congeladas." };
   }
@@ -201,6 +209,7 @@ export async function cancelScheduledCancellation(subscriptionId: string, member
   const session = await requireRole([...ALLOWED_ROLES]);
   const subscription = await prisma.subscription.findFirst({ where: { id: subscriptionId, member: { orgId: session.user.orgId } } });
   if (!subscription) return { ok: false, error: "Suscripción no encontrada." };
+  if (!(await memberIsInScope(session.user, subscription.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (!subscription.cancelAt) return { ok: false, error: "Esta suscripción no tiene una cancelación programada." };
 
   await prisma.subscription.update({ where: { id: subscriptionId }, data: { cancelAt: null } });
@@ -221,6 +230,7 @@ export async function updateSubscriptionPrice(formData: FormData): Promise<Subsc
 
   const subscription = await prisma.subscription.findFirst({ where: { id: subscriptionId, member: { orgId: session.user.orgId } } });
   if (!subscription) return { ok: false, error: "Suscripción no encontrada." };
+  if (!(await memberIsInScope(session.user, subscription.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
   const newPriceCents = Math.round(newPriceEuros * 100);
   await prisma.subscription.update({ where: { id: subscriptionId }, data: { priceCents: newPriceCents } });

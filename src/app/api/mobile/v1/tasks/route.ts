@@ -3,6 +3,7 @@ import type { Role, TaskPriority } from "@prisma/client";
 import { createManualTask, listAssignableUsers, listTasks, type TaskScope } from "@/lib/tasks-queries";
 import { taskStatus, TASK_PRIORITIES } from "@/lib/tasks";
 import { canAssignTasks } from "@/lib/rbac";
+import { centerScopeFor } from "@/lib/center-scope";
 import { parseDateParam } from "@/lib/date-utils";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk, apiError } from "../_lib/response";
@@ -50,10 +51,15 @@ export async function GET(req: NextRequest) {
   const team = params.get("scope") === "team" && canAssignTasks(claims.role);
   const recipientUserId = team ? undefined : claims.sub;
 
+  // Ámbito de centro (center-scope.ts): la vista de equipo es la de LOS
+  // CENTROS de quien reparte, no la de toda la organización.
+  const centerScope = team ? await centerScopeFor({ id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId }) : null;
+  const centerIds = centerScope ?? undefined;
+
   const [active, recent, assignables] = await Promise.all([
-    listTasks(claims.orgId, { scope: "activas" as TaskScope, recipientUserId }),
-    listTasks(claims.orgId, { scope: "recien-hechas" as TaskScope, recipientUserId }),
-    canAssignTasks(claims.role) ? listAssignableUsers(claims.orgId) : Promise.resolve([]),
+    listTasks(claims.orgId, { scope: "activas" as TaskScope, recipientUserId, centerIds: team ? centerIds : undefined }),
+    listTasks(claims.orgId, { scope: "recien-hechas" as TaskScope, recipientUserId, centerIds: team ? centerIds : undefined }),
+    canAssignTasks(claims.role) ? listAssignableUsers(claims.orgId, centerIds) : Promise.resolve([]),
   ]);
 
   const serialized = active.map((t) => serialize(t, claims.sub));
@@ -95,6 +101,15 @@ export async function POST(req: NextRequest) {
   const requested = payload?.recipientUserId?.trim() || claims.sub;
   if (requested !== claims.sub && !canAssignTasks(claims.role)) {
     return apiError("No tienes permiso para asignar tareas a otras personas.", 403);
+  }
+  if (requested !== claims.sub) {
+    const scope = await centerScopeFor({ id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId });
+    if (scope !== null) {
+      const assignable = await listAssignableUsers(claims.orgId, scope);
+      if (!assignable.some((u) => u.id === requested)) {
+        return apiError("Esa persona no está en tu ámbito de centro.", 403);
+      }
+    }
   }
 
   const priority: TaskPriority = TASK_PRIORITIES.includes(payload?.priority as TaskPriority)

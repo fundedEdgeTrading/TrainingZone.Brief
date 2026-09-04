@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
 import type { AssessmentKind, Role, HealthRecordType, HealthSeverity, HealthStatus } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { canUseClinicalDataForAI } from "@/lib/consent";
 import { parseAnswers } from "@/lib/assessments/queries";
 import {
   ASSESSMENT_KIND_LABEL,
@@ -395,9 +396,14 @@ export async function getMesocycleBriefingForMember({
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId },
-    select: { birthDate: true, sex: true, consentAI: true },
+    select: { birthDate: true, sex: true, consentAI: true, consentHealth: true },
   });
   if (!member) return null;
+
+  // `consentAI` a secas no basta: sin `consentHealth`, el socio se opuso al
+  // tratamiento de sus datos de salud y no hay dato que enviar aunque siga
+  // consintiendo el uso de IA (ver `canUseClinicalDataForAI` en consent.ts).
+  const clinicalAllowed = canUseClinicalDataForAI(member);
 
   const [goals, metrics, assessment, healthRecords] = await Promise.all([
     prisma.clientGoal.findMany({ where: { memberId, isTemplate: false }, select: { label: true } }),
@@ -411,7 +417,7 @@ export async function getMesocycleBriefingForMember({
       orderBy: { completedAt: "desc" },
       select: { kind: true, answers: true },
     }),
-    member.consentAI
+    clinicalAllowed
       ? prisma.healthRecord.findMany({
           // Vigente ≠ "activa": una lesión en rehabilitación o crónica también
           // condiciona el mesociclo (ver OPEN_HEALTH_STATUSES).
@@ -431,7 +437,7 @@ export async function getMesocycleBriefingForMember({
     goals: [...goals.map((g) => g.label), ...(context?.goals ?? [])],
     availability,
     metrics: [...latestByKey(metrics).map((m) => `${m.key}: ${m.value} ${m.unit}`), ...(context?.metrics ?? [])],
-    clinical: member.consentAI
+    clinical: clinicalAllowed
       ? [
           ...healthRecords.map(
             (r) =>
@@ -454,6 +460,7 @@ export async function getMesocycleBriefingForMember({
       memberId,
       metadata: {
         consentAI: member.consentAI,
+        consentHealth: member.consentHealth,
         clinicalItems: briefing.clinical?.length ?? 0,
         weeks,
       },

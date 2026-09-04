@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import type { Role, TaskPriority } from "@prisma/client";
 import { requireRole } from "@/lib/guard";
 import { canAssignTasks, canWorkOnTask } from "@/lib/rbac";
+import { centerScopeFor } from "@/lib/center-scope";
 import { resolveNotification } from "@/lib/notifications";
 import {
   createManualTask,
+  listAssignableUsers,
   reassignTask,
   reopenTask,
   setTaskProgress,
@@ -45,6 +47,17 @@ export async function createTaskAction(formData: FormData): Promise<TaskWriteRes
   if (recipientUserId !== actorId && !canAssignTasks(role)) {
     return { ok: false, error: "No tienes permiso para asignar tareas a otras personas." };
   }
+  // Ámbito de centro: repartir trabajo a alguien de otro centro que uno no
+  // dirige es el mismo agujero que ya se cerró para leads y cobros.
+  if (recipientUserId !== actorId) {
+    const scope = await centerScopeFor(session.user);
+    if (scope !== null) {
+      const assignable = await listAssignableUsers(orgId, scope);
+      if (!assignable.some((u) => u.id === recipientUserId)) {
+        return { ok: false, error: "Esa persona no está en tu ámbito de centro." };
+      }
+    }
+  }
 
   const dueDate = parseDueDate(String(formData.get("dueDate") ?? ""));
   if (dueDate === "invalid") return { ok: false, error: "La fecha límite no es válida." };
@@ -69,6 +82,14 @@ export async function createTaskAction(formData: FormData): Promise<TaskWriteRes
 export async function reassignTaskAction(taskId: string, recipientUserId: string): Promise<TaskActionResult> {
   const session = await requireRole([...STAFF_ROLES]);
   if (!canAssignTasks(session.user.role)) return { ok: false, error: "No tienes permiso para reasignar tareas." };
+
+  const scope = await centerScopeFor(session.user);
+  if (scope !== null) {
+    const assignable = await listAssignableUsers(session.user.orgId, scope);
+    if (!assignable.some((u) => u.id === recipientUserId)) {
+      return { ok: false, error: "Esa persona no está en tu ámbito de centro." };
+    }
+  }
 
   const result = await reassignTask(session.user.orgId, taskId, recipientUserId);
   if (result.ok) revalidatePath("/tareas");

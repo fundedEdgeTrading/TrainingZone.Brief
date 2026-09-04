@@ -437,6 +437,15 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       await tx.clientGoal.deleteMany({ where: { memberId } });
       await tx.memberNote.deleteMany({ where: { memberId } });
       await tx.memberProgressEntry.deleteMany({ where: { memberId } });
+      // F1/F6: `Assessment`, `PerformanceMetric` y `Mesocycle` tienen FK a
+      // `Member` sin cascada (`ON DELETE RESTRICT`, ver la migración de F1) y
+      // faltaban aquí — el borrado reventaba con P2003 para cualquier socio con
+      // al menos una valoración, que es prácticamente todos. Borrar el
+      // mesociclo se lleva en cascada sus fases/días/bloques/ejercicios (esos sí
+      // son `ON DELETE CASCADE` en el esquema).
+      await tx.assessment.deleteMany({ where: { memberId } });
+      await tx.performanceMetric.deleteMany({ where: { memberId } });
+      await tx.mesocycle.deleteMany({ where: { memberId } });
       await tx.subscription.deleteMany({ where: { memberId } });
       await tx.invitation.deleteMany({ where: { memberId } });
       // El lead de origen sobrevive al socio: solo se suelta el enlace (@unique).

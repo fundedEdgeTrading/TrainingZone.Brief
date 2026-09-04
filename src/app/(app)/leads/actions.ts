@@ -12,9 +12,11 @@ import {
   initiateLeadConversion,
   addLeadChannel,
   addNoCloseReason,
+  leadIsInScope,
   type CreateLeadInput,
   type LeadWriteResult,
 } from "@/lib/leads-queries";
+import { CENTER_OUT_OF_SCOPE, centerIsInScope } from "@/lib/guard";
 
 export type LeadActionResult = { ok: true } | { ok: false; error: string };
 
@@ -23,10 +25,12 @@ export async function createLeadAction(formData: FormData): Promise<LeadWriteRes
   if (!canManageLeads(session.user.role)) return { ok: false, error: "No tienes permiso para crear leads." };
 
   const mode = String(formData.get("mode") ?? "seguimiento");
+  const centerId = String(formData.get("centerId") ?? "");
+  if (!(await centerIsInScope(session.user, centerId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
 
   const result = await createLead({
     orgId: session.user.orgId,
-    centerId: String(formData.get("centerId") ?? ""),
+    centerId,
     firstName: String(formData.get("firstName") ?? ""),
     lastName: String(formData.get("lastName") ?? ""),
     phone: String(formData.get("phone") ?? ""),
@@ -54,6 +58,7 @@ export async function createLeadAction(formData: FormData): Promise<LeadWriteRes
 
 export async function assignLeadOwnerAction(leadId: string, ownerUserId: string): Promise<LeadActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   const result = await assignLeadOwner(session.user.orgId, leadId, ownerUserId);
   if (!result.ok) return result;
   revalidatePath("/leads");
@@ -71,6 +76,7 @@ export async function updateLeadStageAction(
   status: "SIN_CONTACTAR" | "SEGUIMIENTO" | "CON_FECHA_VALORACION"
 ): Promise<LeadActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   const result = await updateLeadStage(session.user.orgId, leadId, status);
   if (!result.ok) return result;
   revalidatePath("/leads");
@@ -81,6 +87,7 @@ export async function updateLeadStageAction(
 export async function markLeadNoCloseAction(formData: FormData): Promise<LeadActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const leadId = String(formData.get("leadId") ?? "");
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   const reason = String(formData.get("noCloseReason") ?? "");
   const result = await markLeadNoClose(session.user.orgId, leadId, reason);
   if (!result.ok) return result;
@@ -92,6 +99,7 @@ export async function markLeadNoCloseAction(formData: FormData): Promise<LeadAct
 export async function addLeadNoteAction(formData: FormData): Promise<LeadActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const leadId = String(formData.get("leadId") ?? "");
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   const body = String(formData.get("body") ?? "");
   const result = await addLeadNote(session.user.orgId, leadId, session.user.id, body);
   if (!result.ok) return result;
@@ -102,6 +110,7 @@ export async function addLeadNoteAction(formData: FormData): Promise<LeadActionR
 export async function convertLeadAction(formData: FormData): Promise<LeadActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const leadId = String(formData.get("leadId") ?? "");
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   const planId = String(formData.get("planId") ?? "") || null;
   const closeType = (String(formData.get("closeType") ?? "EMBUDO") || "EMBUDO") as "EMBUDO" | "DIRECTO" | "ONLINE";
   const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, closeType });

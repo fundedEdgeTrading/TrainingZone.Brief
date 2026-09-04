@@ -1,5 +1,6 @@
 import { requireRole } from "@/lib/guard";
 import { canAssignTasks } from "@/lib/rbac";
+import { centerScopeFor } from "@/lib/center-scope";
 import { parseFilterValues } from "@/lib/filter-params";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -81,12 +82,18 @@ export default async function TareasPage({ searchParams }: { searchParams: Promi
   const canAssign = canAssignTasks(role);
   const scopeToSelf = canAssign ? undefined : userId;
 
+  // Ámbito de centro (center-scope.ts): quien reparte ve el tablero de SUS
+  // centros, no el de toda la organización. Antes solo se acotaba a "lo mío"
+  // cuando el rol no podía repartir; quien sí podía veía siempre todo.
+  const centerScope = await centerScopeFor(session.user);
+  const centerIds = centerScope ?? undefined;
+
   const [tasks, recentlyDone, assignees] = await Promise.all([
-    listTasks(orgId, { scope: view === "historico" ? "historico" : "activas", recipientUserId: scopeToSelf, q: params.q }),
+    listTasks(orgId, { scope: view === "historico" ? "historico" : "activas", recipientUserId: scopeToSelf, q: params.q, centerIds }),
     view === "tablero"
-      ? listTasks(orgId, { scope: "recien-hechas", recipientUserId: scopeToSelf, q: params.q })
+      ? listTasks(orgId, { scope: "recien-hechas", recipientUserId: scopeToSelf, q: params.q, centerIds })
       : Promise.resolve([] as TaskRow[]),
-    listAssignableUsers(orgId),
+    listAssignableUsers(orgId, centerIds),
   ]);
 
   const selection: TaskSelection = {

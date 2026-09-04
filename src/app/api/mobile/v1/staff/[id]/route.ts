@@ -2,7 +2,8 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canManageStaff, canManageOrg } from "@/lib/rbac";
+import { canEditStaff, canDeleteStaff, canManageOrg } from "@/lib/rbac";
+import { findStaffInScope } from "@/lib/staff-queries";
 import { removeStaffMember } from "@/lib/staff-lifecycle";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
@@ -23,14 +24,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const auth = await requireApiRole(req, READ_ROLES);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
-  if (!canManageStaff(claims.role)) return apiError("No tienes permiso para gestionar el equipo.", 403);
+  // `canManageStaff` (OWNER/PLATFORM_ADMIN/HR_MANAGER) excluye a CENTER_DIRECTOR,
+  // que en la web SÍ puede editar a los suyos (`canEditStaff`, organization/actions.ts):
+  // desde el móvil, dirección de centro recibía 403 al editar a su propio equipo.
+  if (!canEditStaff(claims.role)) return apiError("No tienes permiso para gestionar el equipo.", 403);
   const { id } = await params;
 
-  const user = await prisma.user.findFirst({
-    where: { id, orgId: claims.orgId, role: { not: "MEMBER" }, deactivatedAt: null },
-    select: { id: true, role: true },
-  });
-  if (!user) return apiError("No se ha encontrado a esa persona.", 404);
+  // El ámbito de centro se aplica igual que en la web (`findStaffInScope`): un
+  // id de otro centro llega igual de bien por PATCH aunque la pantalla no lo
+  // enseñe.
+  const scopedUser = { id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId };
+  const user = await findStaffInScope(scopedUser, id);
+  if (!user || user.deactivatedAt) return apiError("No se ha encontrado a esa persona.", 404);
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Datos inválidos.", 400);
@@ -100,13 +105,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const auth = await requireApiRole(req, READ_ROLES);
   if (!auth.ok) return auth.response;
   const { claims } = auth;
-  if (!canManageStaff(claims.role)) return apiError("No tienes permiso para gestionar el equipo.", 403);
+  // Mismo cambio que en PATCH: `canDeleteStaff` es la que ya usa la web
+  // (`organization/actions.ts`) e incluye a CENTER_DIRECTOR.
+  if (!canDeleteStaff(claims.role)) return apiError("No tienes permiso para gestionar el equipo.", 403);
   const { id } = await params;
 
-  const user = await prisma.user.findFirst({
-    where: { id, orgId: claims.orgId, role: { not: "MEMBER" } },
-    select: { id: true, name: true, email: true, role: true, centerId: true, deactivatedAt: true },
-  });
+  const scopedUser = { id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId };
+  const user = await findStaffInScope(scopedUser, id);
   if (!user) return apiError("No se ha encontrado a esa persona.", 404);
   if (user.role === "OWNER" && !canManageOrg(claims.role)) return apiError("No tienes permiso para dar de baja a dirección.", 403);
 

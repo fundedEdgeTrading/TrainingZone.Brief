@@ -47,9 +47,12 @@ export async function requestEmailPreferencesLink(email: string): Promise<Prefer
   const parsed = emailSchema.safeParse({ email });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]!.message };
 
-  const member = await prisma.member.findFirst({
+  // `Member.email` no tiene `@@unique`: el mismo email puede pertenecer a
+  // socios de organizaciones distintas. Con `findFirst` solo el socio más
+  // reciente recibía su enlace — el resto se quedaba sin poder gestionar sus
+  // preferencias pese a que el formulario decía haberlo enviado.
+  const members = await prisma.member.findMany({
     where: { email: parsed.data.email },
-    orderBy: { createdAt: "desc" },
     select: {
       id: true,
       firstName: true,
@@ -59,7 +62,7 @@ export async function requestEmailPreferencesLink(email: string): Promise<Prefer
     },
   });
 
-  if (member) {
+  for (const member of members) {
     const links = memberEmailFooterLinks(member.id);
     const brandName = member.organization.name;
     try {

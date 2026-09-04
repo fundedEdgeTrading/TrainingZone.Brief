@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Sex } from "@prisma/client";
 
 // Fuera de un componente (no dispara react-hooks/purity): edad aproximada a partir de la fecha
 // de nacimiento, usada para filtrar ReferenceRange por rango de edad.
@@ -22,20 +23,43 @@ const DEFAULT_RANGES: Record<RangeMetric, { min: number; max: number }> = {
 
 export type RangeStatus = "good" | "warning" | "critical" | "unknown";
 
+/**
+ * `ReferenceRange.sex` es texto libre y el formulario de alta (`create-range-form.tsx`)
+ * guarda `"M"`/`"F"`, mientras que `Member.sex` es el enum `Sex` (`MALE`/`FEMALE`/`OTHER`).
+ * Sin esta conversión los dos vocabularios nunca casaban y todo rango con sexo quedaba
+ * inaplicable — se caía siempre al valor unisex por defecto.
+ */
+function rangeSexCode(sex: Sex | null | undefined): "M" | "F" | null {
+  if (sex === "MALE") return "M";
+  if (sex === "FEMALE") return "F";
+  return null;
+}
+
 export async function getReferenceRange(
   orgId: string,
   metric: RangeMetric,
-  opts: { sex?: string | null; age?: number | null } = {}
+  opts: { sex?: Sex | null; age?: number | null } = {}
 ): Promise<{ min: number | null; max: number | null }> {
+  const sexCode = rangeSexCode(opts.sex);
   const rows = await prisma.referenceRange.findMany({ where: { orgId, metric } });
-  const match = rows.find(
-    (r) =>
-      (!r.sex || r.sex === opts.sex) &&
-      (r.ageMin == null || (opts.age != null && opts.age >= r.ageMin)) &&
-      (r.ageMax == null || (opts.age != null && opts.age <= r.ageMax))
-  );
+  // Cuando hay más de una fila que matchea, se prioriza la más específica
+  // (con sexo y/o edad) sobre la genérica: sin esto, con rangos solapados
+  // ganaba el que devolviera Postgres primero, no el más concreto.
+  const candidates = rows
+    .filter(
+      (r) =>
+        (!r.sex || r.sex === sexCode) &&
+        (r.ageMin == null || (opts.age != null && opts.age >= r.ageMin)) &&
+        (r.ageMax == null || (opts.age != null && opts.age <= r.ageMax))
+    )
+    .sort((a, b) => specificity(b) - specificity(a));
+  const match = candidates[0];
   if (match) return { min: match.min, max: match.max };
   return DEFAULT_RANGES[metric] ?? { min: null, max: null };
+}
+
+function specificity(r: { sex: string | null; ageMin: number | null; ageMax: number | null }): number {
+  return (r.sex ? 1 : 0) + (r.ageMin != null ? 1 : 0) + (r.ageMax != null ? 1 : 0);
 }
 
 // Semáforo simple: dentro de rango = good, hasta un 15% fuera = warning, más allá = critical.

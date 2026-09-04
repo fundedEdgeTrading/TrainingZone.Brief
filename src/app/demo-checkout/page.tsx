@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import AptaLogo from "@/components/apta-logo";
-import { getPlatformPlan, isDemoModeActive } from "@/lib/platform-plans";
+import { prisma } from "@/lib/prisma";
+import { fundadorEnabled, fundadorMaxSeats, getPlatformPlan, isDemoModeActive } from "@/lib/platform-plans";
 import DemoCheckoutForm from "./demo-checkout-form";
 
 export const metadata: Metadata = { title: "Pago de demo · Apta" };
@@ -19,6 +20,21 @@ export default async function DemoCheckoutPage({
   const { plan: planCode } = await searchParams;
   const plan = getPlatformPlan(planCode);
   if (!plan) notFound();
+
+  // Mismas comprobaciones que `createLicenseCheckoutSession` (el checkout
+  // real): esta pantalla es un sustituto de ESE checkout, no una vía aparte
+  // sin el interruptor ni el cupo de la oferta Fundador. Con
+  // `STRIPE_SECRET_KEY` vacío (modo demo real, a diferencia de este entorno de
+  // QA), llegar aquí directamente por URL daba de alta el plan "de por vida"
+  // gratis e ilimitado.
+  if (plan.limitedOffer) {
+    if (!fundadorEnabled()) notFound();
+    const maxSeats = fundadorMaxSeats();
+    if (maxSeats > 0) {
+      const sold = await prisma.organization.count({ where: { platformPlan: plan.code } });
+      if (sold >= maxSeats) notFound();
+    }
+  }
 
   return (
     <div className="min-h-dvh bg-tz-bone flex items-center justify-center p-4 sm:p-8">

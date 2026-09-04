@@ -6,6 +6,11 @@ import type { MesocycleConversation } from "@/lib/ai/mesocycle-generator";
 export type MesocycleWriteResult = { ok: true } | { ok: false; error: string };
 
 const NOT_FOUND = "Mesociclo no encontrado.";
+// Archivar no tiene vuelta atrás desde la UI (el botón desaparece una vez
+// archivado): sin este guardia, editar cualquier campo de un mesociclo
+// ARCHIVED lo devolvía a DRAFT en silencio (vía `backToDraft()`), así que el
+// archivado no era en realidad un estado terminal.
+const ARCHIVED_ERROR = "Este mesociclo está archivado y no se puede editar.";
 
 /** Árbol completo tal y como lo pinta el editor. */
 const detailInclude = {
@@ -91,8 +96,9 @@ export async function replaceMesocyclePlan({
   plan: MesocyclePlan;
   conversation: MesocycleConversation;
 }): Promise<MesocycleWriteResult> {
-  const existing = await prisma.mesocycle.findFirst({ where: { id: mesocycleId, orgId }, select: { id: true } });
+  const existing = await prisma.mesocycle.findFirst({ where: { id: mesocycleId, orgId }, select: { id: true, status: true } });
   if (!existing) return { ok: false, error: NOT_FOUND };
+  if (existing.status === "ARCHIVED") return { ok: false, error: ARCHIVED_ERROR };
 
   await prisma.$transaction([
     prisma.mesocyclePhase.deleteMany({ where: { mesocycleId } }),
@@ -175,11 +181,12 @@ export async function updateMesocycleHeader(
   mesocycleId: string,
   input: { title: string; objective: string; safetyCriteria: string[] }
 ): Promise<MesocycleWriteResult> {
-  const { count } = await prisma.mesocycle.updateMany({
-    where: { id: mesocycleId, orgId },
-    data: { ...input, ...backToDraft() },
-  });
-  return count === 0 ? { ok: false, error: NOT_FOUND } : { ok: true };
+  const existing = await prisma.mesocycle.findFirst({ where: { id: mesocycleId, orgId }, select: { status: true } });
+  if (!existing) return { ok: false, error: NOT_FOUND };
+  if (existing.status === "ARCHIVED") return { ok: false, error: ARCHIVED_ERROR };
+
+  await prisma.mesocycle.update({ where: { id: mesocycleId }, data: { ...input, ...backToDraft() } });
+  return { ok: true };
 }
 
 export async function updateMesocyclePhase(
@@ -189,9 +196,10 @@ export async function updateMesocyclePhase(
 ): Promise<MesocycleWriteResult> {
   const phase = await prisma.mesocyclePhase.findFirst({
     where: { id: phaseId, mesocycle: { orgId } },
-    select: { mesocycleId: true },
+    select: { mesocycleId: true, mesocycle: { select: { status: true } } },
   });
   if (!phase) return { ok: false, error: NOT_FOUND };
+  if (phase.mesocycle.status === "ARCHIVED") return { ok: false, error: ARCHIVED_ERROR };
 
   await prisma.$transaction([
     prisma.mesocyclePhase.update({ where: { id: phaseId }, data: input }),
@@ -207,9 +215,10 @@ export async function updateMesocycleDay(
 ): Promise<MesocycleWriteResult> {
   const day = await prisma.mesocycleDay.findFirst({
     where: { id: dayId, phase: { mesocycle: { orgId } } },
-    select: { phase: { select: { mesocycleId: true } } },
+    select: { phase: { select: { mesocycleId: true, mesocycle: { select: { status: true } } } } },
   });
   if (!day) return { ok: false, error: NOT_FOUND };
+  if (day.phase.mesocycle.status === "ARCHIVED") return { ok: false, error: ARCHIVED_ERROR };
 
   await prisma.$transaction([
     prisma.mesocycleDay.update({ where: { id: dayId }, data: input }),
@@ -225,9 +234,12 @@ export async function updateMesocycleExercise(
 ): Promise<MesocycleWriteResult> {
   const exercise = await prisma.mesocycleExercise.findFirst({
     where: { id: exerciseId, block: { day: { phase: { mesocycle: { orgId } } } } },
-    select: { block: { select: { day: { select: { phase: { select: { mesocycleId: true } } } } } } },
+    select: {
+      block: { select: { day: { select: { phase: { select: { mesocycleId: true, mesocycle: { select: { status: true } } } } } } } },
+    },
   });
   if (!exercise) return { ok: false, error: "Ejercicio no encontrado." };
+  if (exercise.block.day.phase.mesocycle.status === "ARCHIVED") return { ok: false, error: ARCHIVED_ERROR };
 
   await prisma.$transaction([
     prisma.mesocycleExercise.update({ where: { id: exerciseId }, data: input }),
@@ -242,9 +254,25 @@ export async function updateMesocycleExercise(
 export async function deleteMesocycleExercise(orgId: string, exerciseId: string): Promise<MesocycleWriteResult> {
   const exercise = await prisma.mesocycleExercise.findFirst({
     where: { id: exerciseId, block: { day: { phase: { mesocycle: { orgId } } } } },
-    select: { block: { select: { day: { select: { phase: { select: { mesocycleId: true } } } } } } },
+    select: {
+      block: {
+        select: {
+          _count: { select: { exercises: true } },
+          day: { select: { phase: { select: { mesocycleId: true, mesocycle: { select: { status: true } } } } } },
+        },
+      },
+    },
   });
   if (!exercise) return { ok: false, error: "Ejercicio no encontrado." };
+  if (exercise.block.day.phase.mesocycle.status === "ARCHIVED") return { ok: false, error: ARCHIVED_ERROR };
+  // MesocycleBlockSchema exige al menos un ejercicio por bloque: sin esta
+  // comprobación, un bloque se quedaba vacío, el siguiente refinado lo
+  // mandaba tal cual como "Plan vigente", la salida del modelo dejaba de
+  // validar contra el schema y el mesociclo quedaba irrecuperable desde la UI
+  // (no existe ninguna acción para volver a añadir un ejercicio).
+  if (exercise.block._count.exercises <= 1) {
+    return { ok: false, error: "No se puede borrar el último ejercicio de un bloque." };
+  }
 
   await prisma.$transaction([
     prisma.mesocycleExercise.delete({ where: { id: exerciseId } }),
