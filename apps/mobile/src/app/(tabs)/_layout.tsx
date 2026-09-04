@@ -2,7 +2,7 @@ import { ActivityIndicator, Text, View, StyleSheet } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
-import { hasTaskInbox, isTrainerRole, needsMembershipGate } from "@/auth/routes";
+import { hasTaskInbox, isTrainerRole, needsMembershipGate, tabsFor, type TabName } from "@/auth/routes";
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
 import { useTheme, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
@@ -28,32 +28,25 @@ import type { Role } from "@/api/types";
  *   (era una pantalla aparte que contaba lo mismo) y Avisos entra por la
  *   campana de Hoy y por «Más».
  *
+ * El reparto vive en `@/auth/routes` (`TABS_BY_ROLE`) junto a la ruta de
+ * aterrizaje de cada rol, que es su PRIMERA pestaña: separados, el login
+ * mandaba a todo el mundo a `/(tabs)` —o sea, al «Hoy» del socio— y quien no
+ * era socio se estrellaba contra el 403 de `/portal/*`.
+ *
  * Los tabs que no le tocan a un rol se ocultan con `href: null` (Expo Router),
  * no se desmontan: así el grupo (tabs) declara siempre las mismas pantallas y
  * las secundarias siguen siendo navegables por `push`.
  */
-const TABS_BY_ROLE: Record<Role, string[]> = {
-  MEMBER: ["index", "agenda", "sesiones", "evolucion", "mas"],
-  TRAINER: ["panel", "staff-agenda", "mis-socios", "feedback", "mas"],
-  // El Entrenador Admin ve lo mismo; lo que le distingue (aforo, ajuste de
-  // saldo al descartar) aparece DENTRO de esas pantallas según su permiso, no
-  // como una pestaña más: su día a día es el mismo que el del entrenador.
-  TRAINER_ADMIN: ["panel", "staff-agenda", "mis-socios", "feedback", "mas"],
-  OWNER: ["dashboard", "socios", "productos", "organizacion", "mas"],
-  CENTER_DIRECTOR: ["dashboard", "socios", "staff-agenda", "productos", "mas"],
-  PLATFORM_ADMIN: ["dashboard", "socios", "productos", "organizacion", "mas"],
-  RECEPTION: ["socios", "staff-agenda", "notificaciones", "mas"],
-  HR_MANAGER: ["organizacion", "notificaciones", "mas"],
-};
 
 /** Etiquetas por rol donde la misma pantalla se llama distinto a cada uno. */
-const LABEL_OVERRIDES: Partial<Record<Role, Record<string, string>>> = {
+const LABEL_OVERRIDES: Partial<Record<Role, Partial<Record<TabName, string>>>> = {
   MEMBER: { index: "Hoy" },
   TRAINER: { panel: "Hoy" },
   TRAINER_ADMIN: { panel: "Hoy" },
 };
 
-const TAB_META: Record<string, { label: string; icon: IconName }> = {
+/** Rótulo e icono de cada pestaña. Tipado por `TabName`: una pestaña nueva sin entrada aquí no compila. */
+const TAB_META: Record<TabName, { label: string; icon: IconName }> = {
   index: { label: "Actividad", icon: "activity" },
   agenda: { label: "Reservar", icon: "calendar" },
   sesiones: { label: "Sesiones", icon: "clock" },
@@ -78,7 +71,7 @@ const TAB_META: Record<string, { label: string; icon: IconName }> = {
   perfil: { label: "Perfil", icon: "user" },
 };
 
-const ALL_TABS = Object.keys(TAB_META);
+const ALL_TABS = Object.keys(TAB_META) as TabName[];
 
 export default function TabsLayout() {
   const { state } = useAuth();
@@ -111,12 +104,12 @@ export default function TabsLayout() {
   // Gate de compra (A2): sin bono vivo, el socio no entra al portal.
   if (needsMembershipGate(state.user)) return <Redirect href="/onboarding/planes" />;
 
-  // Un rol sin pestañas declaradas dejaría una barra vacía y al usuario dentro
-  // de la app sin ninguna forma de moverse: «Más» (índice y cuenta) es el
-  // mínimo con el que siempre se puede salir.
-  const visible = new Set(TABS_BY_ROLE[state.user.role]?.length ? TABS_BY_ROLE[state.user.role] : ["mas"]);
+  // `tabsFor` deja al menos «Más» a un rol sin pestañas declaradas: sin eso la
+  // barra saldría vacía y el usuario se quedaría dentro de la app sin ninguna
+  // forma de moverse ni de salir.
+  const visible = new Set<TabName>(tabsFor(state.user.role));
   const overrides = LABEL_OVERRIDES[state.user.role] ?? {};
-  const badgeFor = (name: string) =>
+  const badgeFor = (name: TabName) =>
     name === "feedback" ? pendingFeedback : name === "mas" ? moreCount : 0;
 
   return (

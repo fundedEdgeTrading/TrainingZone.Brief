@@ -1,6 +1,7 @@
 import { Alert, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import { router } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useAuth } from "@/auth/auth-context";
+import { homeTabFor } from "@/auth/routes";
 import { useActivity, useAgenda, useCancelBooking, useNotifications } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -41,9 +42,17 @@ export default function MemberTodayScreen() {
   const { state } = useAuth();
   const theme = useTheme();
   const toast = useToast();
-  const activity = useActivity();
-  const agenda = useAgenda();
-  const notifications = useNotifications();
+
+  // `index` es la ruta índice del grupo (tabs): cualquiera que navegue a
+  // `/(tabs)` a secas —el alta tras el pago, un enlace profundo, una versión
+  // vieja del login— cae AQUÍ, aunque no sea socio. Y esta pantalla vive de
+  // `/portal/*`, que el servidor le niega con un 403 a quien no lo es: sin esta
+  // guarda el entrenador entraba a «No se pudo cargar tu día», y encima sin
+  // ninguna pestaña marcada, porque para él `index` va oculta.
+  const isMember = state.status !== "signedIn" || state.user.role === "MEMBER";
+  const activity = useActivity({ enabled: isMember });
+  const agenda = useAgenda({ enabled: isMember });
+  const notifications = useNotifications({ enabled: isMember });
   const cancelBooking = useCancelBooking();
 
   const firstName = state.status === "signedIn" ? state.user.name.split(" ")[0] : "";
@@ -51,6 +60,10 @@ export default function MemberTodayScreen() {
   const next = (agenda.data?.upcomingBookings ?? []).find((b) => !b.sessionCancelled) ?? null;
   const balances = agenda.data?.balances ?? [];
   const loading = activity.isLoading || agenda.isLoading;
+
+  if (state.status === "signedIn" && state.user.role !== "MEMBER") {
+    return <Redirect href={homeTabFor(state.user.role)} />;
+  }
 
   function confirmCancel(booking: UpcomingBooking) {
     Alert.alert(

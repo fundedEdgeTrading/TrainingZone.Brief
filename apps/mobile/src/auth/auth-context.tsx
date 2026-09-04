@@ -2,6 +2,13 @@ import { createContext, useContext, useEffect, useMemo, useState, type PropsWith
 import { apiRequest, clearTokens, getStoredTokens, storeTokens, ApiError } from "@/api/client";
 import type { LoginOrganization, LoginResponse, MeResponse, Role } from "@/api/types";
 
+/**
+ * Roles que pueden entrar en la app. Es la misma lista que `TABS_BY_ROLE`
+ * (@/auth/routes): un rol con pestañas declaradas y endpoints que le responden
+ * pero fuera de aquí choca en el login con «Tu rol todavía no tiene una versión
+ * de la app móvil», que es lo que les pasaba a recepción y RRHH pese a que el
+ * README anuncia su versión mínima y la API les sirve todas sus pantallas.
+ */
 const SUPPORTED_ROLES: Role[] = [
   "MEMBER",
   "TRAINER",
@@ -9,6 +16,8 @@ const SUPPORTED_ROLES: Role[] = [
   "OWNER",
   "CENTER_DIRECTOR",
   "PLATFORM_ADMIN",
+  "RECEPTION",
+  "HR_MANAGER",
 ];
 
 type AuthState =
@@ -65,13 +74,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       });
 
       // F1 QA: Entrenador Admin daba error de "rol no soportado" pese a tener
-      // tabs propias en TABS_BY_ROLE (mismo subconjunto que Entrenador) — bug
-      // corregido aquí. Recepción y RRHH sí tienen tabs definidas en
-      // TABS_BY_ROLE, pero de momento no se activan: sus pantallas de gestión
-      // (aforo, avisos globales) aún no existen en la app, así que abrirles el
-      // login solo llevaría a una barra de tabs sin nada útil detrás. Se deja
-      // documentado aquí como decisión de F1: quedan fuera de SUPPORTED_ROLES
-      // hasta que haya una historia que las complete.
+      // tabs propias en TABS_BY_ROLE (mismo subconjunto que Entrenador). Lo
+      // mismo le pasaba a recepción (socios, agenda, avisos) y a RRHH (equipo,
+      // avisos): la razón por la que quedaron fuera —"sus pantallas aún no
+      // existen en la app"— dejó de ser cierta cuando entraron socios, agenda,
+      // equipo y avisos, y la API les responde 200 en todas.
       if (!SUPPORTED_ROLES.includes(data.user.role)) {
         return { ok: false, error: "Tu rol todavía no tiene una versión de la app móvil." };
       }
