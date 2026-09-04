@@ -45,3 +45,13 @@ export function canManageLeads(role: Role): boolean {
 export function canManageEpSlots(role: Role): boolean {
   return role === "OWNER" || role === "CENTER_DIRECTOR" || role === "TRAINER" || role === "TRAINER_ADMIN";
 }
+
+/**
+ * Quién tiene bandeja de tareas. Mismo conjunto que acepta `/tasks` en la API:
+ * el soporte de plataforma queda fuera a propósito —entra a diagnosticar, no a
+ * repartir trabajo dentro del gimnasio de un cliente— y sin este predicado la
+ * app le pediría una bandeja que el servidor rechaza con un 403.
+ */
+export function hasTaskInbox(role: Role): boolean {
+  return role !== "MEMBER" && role !== "PLATFORM_ADMIN";
+}

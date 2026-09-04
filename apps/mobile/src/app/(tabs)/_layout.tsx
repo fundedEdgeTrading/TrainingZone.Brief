@@ -2,7 +2,7 @@ import { ActivityIndicator, Text, View, StyleSheet } from "react-native";
 import { Redirect, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
-import { isTrainerRole, needsMembershipGate } from "@/auth/routes";
+import { hasTaskInbox, isTrainerRole, needsMembershipGate } from "@/auth/routes";
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
@@ -92,7 +92,7 @@ export default function TabsLayout() {
   // siempre, y TanStack Query comparte la caché con la pantalla que los usa:
   // abrir Feedback no vuelve a pedir lo mismo.
   const panel = useTrainerPanel(undefined, { enabled: isTrainer });
-  const tasks = useTasks("mine", { enabled: Boolean(role) && role !== "MEMBER" });
+  const tasks = useTasks("mine", { enabled: role ? hasTaskInbox(role) : false });
   const notifications = useNotifications({ enabled: Boolean(role) });
 
   const pendingFeedback = panel.data?.pendingDebriefs.length ?? 0;

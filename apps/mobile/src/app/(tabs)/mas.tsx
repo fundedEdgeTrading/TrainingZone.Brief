@@ -1,7 +1,7 @@
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "@/auth/auth-context";
-import { canManageCenterCapacity, canManageLeads, isTrainerRole } from "@/auth/routes";
+import { canManageCenterCapacity, canManageLeads, hasTaskInbox, isTrainerRole } from "@/auth/routes";
 import { useLeads, useMemberships, useNotifications, useTasks } from "@/api/queries";
 import { useTheme } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -55,7 +55,7 @@ function StaffMore({
   image: string | null;
 }) {
   const theme = useTheme();
-  const tasks = useTasks("mine");
+  const tasks = useTasks("mine", { enabled: hasTaskInbox(role) });
   // Los leads solo se piden si el rol puede verlos: pedirlos igualmente
   // devolvería un 403 y dejaría la pantalla en estado de error por un tile que
   // ni siquiera se enseña.
@@ -68,7 +68,9 @@ function StaffMore({
   const unread = (notifications.data?.notifications ?? []).filter((n) => !n.resolvedAt && n.kind !== "TASK").length;
 
   const tiles: TileProps[] = [
-    { icon: "clipboard", label: "Tareas", href: "/tareas", count: pendingTasks, tone: "warning" },
+    ...(hasTaskInbox(role)
+      ? [{ icon: "clipboard" as IconName, label: "Tareas", href: "/tareas", count: pendingTasks, tone: "warning" as const }]
+      : []),
     ...(canManageLeads(role)
       ? [{ icon: "users" as IconName, label: "Leads", href: "/leads", count: uncontactedLeads, tone: "gold" as const }]
       : []),
