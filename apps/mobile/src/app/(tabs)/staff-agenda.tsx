@@ -81,6 +81,9 @@ export default function StaffAgendaScreen() {
     return byTrainer;
   }, [data, trainerId, scope, meId]);
 
+  // Columnas de las sesiones que se solapan (ver `laneLayout`).
+  const lanes = useMemo(() => laneLayout(sessions), [sessions]);
+
   const range = useMemo(() => {
     const starts = sessions.map((s) => Math.floor(minutesOf(s.startTime) / 60));
     const ends = sessions.map((s) => Math.ceil(minutesOf(s.endTime) / 60));
@@ -151,12 +154,21 @@ export default function StaffAgendaScreen() {
     <View style={{ flex: 1 }}>
       <ScreenContainer
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+        // Alto del FAB (46) + su separación del borde (18): sin reservarlo, el
+        // botón flotante se comía la última tarjeta de la pantalla.
+        footerSpace={data?.canEdit ? 64 : 0}
       >
+        {/* La fecha ocupa su propia línea. Compartiendo fila con los cuatro
+            controles le quedaban ~150 px para «Miércoles, 4 de septiembre» a 23
+            px, así que el título salía siempre partido y con puntos suspensivos
+            —y en un móvil estrecho, ilegible—. */}
         <FadeInUp>
           <View style={styles.header}>
-            <Text style={[typo.screenTitleTight, { color: theme.text, flex: 1 }]} numberOfLines={2}>
+            <Text style={[typo.screenTitleTight, { color: theme.text, flex: 1 }]} numberOfLines={1} adjustsFontSizeToFit>
               {formatLongDate(date)}
             </Text>
+          </View>
+          <View style={styles.headerControls}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Día anterior"
@@ -276,6 +288,8 @@ export default function StaffAgendaScreen() {
                       rangeFrom={range.from}
                       isToday={isToday}
                       nowMinutes={nowMinutes}
+                      lane={lanes.get(session.id)?.lane}
+                      lanes={lanes.get(session.id)?.lanes}
                       onPress={() =>
                         session.classType === "Personal Training" ? setEditing({ session }) : setAttendeesOf(session)
                       }
@@ -367,17 +381,76 @@ export default function StaffAgendaScreen() {
   );
 }
 
+/**
+ * Reparte en columnas las sesiones que coinciden en el tiempo.
+ *
+ * Todas las tarjetas de la timeline se pintaban en la MISMA franja (`left: 4`,
+ * `right: 8`), así que dos sesiones a la misma hora se tapaban entera la una a
+ * la otra: solo se veía la última pintada. No es un caso raro —es lo normal en
+ * «Todo el centro», que además es el modo con el que abren dirección de centro
+ * y recepción—, así que media agenda quedaba invisible.
+ *
+ * Cada grupo de sesiones encadenadas por solape se reparte los carriles que
+ * necesite; una sesión sin solapes sigue ocupando el ancho completo.
+ */
+function laneLayout(sessions: StaffSession[]): Map<string, { lane: number; lanes: number }> {
+  const layout = new Map<string, { lane: number; lanes: number }>();
+  const sorted = [...sessions].sort(
+    (a, b) => minutesOf(a.startTime) - minutesOf(b.startTime) || minutesOf(a.endTime) - minutesOf(b.endTime)
+  );
+
+  let cluster: StaffSession[] = [];
+  let clusterEnd = -1;
+
+  function flush() {
+    if (cluster.length === 0) return;
+    // Fin de la última sesión de cada carril: una sesión entra en el primer
+    // carril que ya haya terminado cuando ella empieza.
+    const laneEnds: number[] = [];
+    for (const session of cluster) {
+      const start = minutesOf(session.startTime);
+      let lane = laneEnds.findIndex((end) => end <= start);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(0);
+      }
+      laneEnds[lane] = minutesOf(session.endTime);
+      layout.set(session.id, { lane, lanes: 1 });
+    }
+    for (const session of cluster) {
+      const entry = layout.get(session.id);
+      if (entry) entry.lanes = laneEnds.length;
+    }
+    cluster = [];
+    clusterEnd = -1;
+  }
+
+  for (const session of sorted) {
+    if (cluster.length > 0 && minutesOf(session.startTime) >= clusterEnd) flush();
+    cluster.push(session);
+    clusterEnd = Math.max(clusterEnd, minutesOf(session.endTime));
+  }
+  flush();
+
+  return layout;
+}
+
 function TimelineEvent({
   session,
   rangeFrom,
   isToday,
   nowMinutes,
+  lane = 0,
+  lanes = 1,
   onPress,
 }: {
   session: StaffSession;
   rangeFrom: number;
   isToday: boolean;
   nowMinutes: number;
+  /** Columna que le toca dentro de su grupo de solapes, y cuántas hay. */
+  lane?: number;
+  lanes?: number;
   onPress: () => void;
 }) {
   const theme = useTheme();
@@ -389,33 +462,39 @@ function TimelineEvent({
   const top = ((start - rangeFrom * 60) / 60) * HOUR_HEIGHT;
   const height = Math.max(40, ((end - start) / 60) * HOUR_HEIGHT - 4);
 
+  const width = 100 / lanes;
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${session.name}, ${session.startTime} a ${session.endTime}`}
-      onPress={onPress}
-      style={[styles.event, { top, height, borderColor: live ? theme.gold : theme.border }]}
-    >
-      <LinearGradient
-        colors={live ? ["#3A3427", "#26251F"] : [theme.surface, theme.surface]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={[styles.eventBar, { backgroundColor: live ? theme.gold : theme.surfaceAlt }]} />
-      <View style={styles.eventBody}>
-        <View style={styles.eventTitleRow}>
-          <Text style={[styles.eventTitle, { color: live ? "#F4F0E8" : theme.text }]} numberOfLines={1}>
-            {session.name}
+    <View style={[styles.eventColumn, { top, height, left: `${lane * width}%`, width: `${width}%` }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${session.name}, ${session.startTime} a ${session.endTime}`}
+        onPress={onPress}
+        style={[styles.event, { borderColor: live ? theme.gold : theme.border }]}
+      >
+        <LinearGradient
+          colors={live ? ["#3A3427", "#26251F"] : [theme.surface, theme.surface]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={[styles.eventBar, { backgroundColor: live ? theme.gold : theme.surfaceAlt }]} />
+        <View style={styles.eventBody}>
+          <View style={styles.eventTitleRow}>
+            <Text style={[styles.eventTitle, { color: live ? "#F4F0E8" : theme.text }]} numberOfLines={1}>
+              {session.name}
+            </Text>
+            {/* En columna estrecha el distintivo se come el título, que es lo
+                que identifica la sesión. */}
+            {live && lanes === 1 ? <Badge label="En curso" tone="gold" /> : null}
+          </View>
+          <Text style={[styles.eventMeta, { color: live ? "#C7C2B4" : theme.textMuted }]} numberOfLines={1}>
+            {session.startTime}–{session.endTime} · {session.trainerName ?? "Sin entrenador"}
+            {session.room ? ` · ${session.room}` : ""} · {active}/{session.capacity}
           </Text>
-          {live ? <Badge label="En curso" tone="gold" /> : null}
         </View>
-        <Text style={[styles.eventMeta, { color: live ? "#C7C2B4" : theme.textMuted }]} numberOfLines={1}>
-          {session.startTime}–{session.endTime} · {session.trainerName ?? "Sin entrenador"}
-          {session.room ? ` · ${session.room}` : ""} · {active}/{session.capacity}
-        </Text>
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
@@ -575,8 +654,13 @@ function SessionSheet({
         <View style={{ flex: 1 }}>
           <Field label="Fin" value={endTime} onChangeText={setEndTime} placeholder="10:00" keyboardType="numbers-and-punctuation" />
         </View>
-        {type === "reduced" ? <Stepper label="Aforo" value={capacity} onChange={setCapacity} min={1} max={12} /> : null}
       </View>
+
+      {/* El aforo, en su propia línea. Como tercer elemento de la fila de horas
+          le tocaban ~105 px y el `Stepper` necesita 118 de mínimo —sus dos
+          controles miden 44 px cada uno, que es el mínimo táctil—, así que el
+          «+» se salía de su marco. */}
+      {type === "reduced" ? <Stepper label="Aforo" value={capacity} onChange={setCapacity} min={1} max={12} /> : null}
 
       {overlap ? (
         <View style={[styles.overlap, { backgroundColor: theme.warningBg }]}>
@@ -1075,15 +1159,19 @@ function DiscardSheet({
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", gap: 8 },
+  // Los controles del día, en su propia fila bajo la fecha. El «Hoy» crece para
+  // repartir el ancho sobrante en vez de dejar los tres iconos amontonados.
+  headerControls: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 10 },
   navButton: { width: 34, height: 34, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-  todayButton: { height: 34, paddingHorizontal: 12, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  todayButton: { flex: 1, height: 34, paddingHorizontal: 12, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   timelineCard: { overflow: "hidden" },
   hoursColumn: { width: 38 },
   hourCell: { height: HOUR_HEIGHT, alignItems: "center", paddingTop: 4 },
   hourLabel: { fontFamily: fonts.semibold, fontSize: 10.5, ...tabular },
   hourSlot: { height: HOUR_HEIGHT, borderTopWidth: 1, padding: 4 },
   freeSlot: { flex: 1, borderRadius: radii.chip, borderWidth: 1, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
-  event: { position: "absolute", left: 4, right: 8, borderRadius: 11, borderWidth: 1, overflow: "hidden", flexDirection: "row" },
+  eventColumn: { position: "absolute", paddingLeft: 4, paddingRight: 4 },
+  event: { flex: 1, borderRadius: 11, borderWidth: 1, overflow: "hidden", flexDirection: "row" },
   eventBar: { width: 3 },
   eventBody: { flex: 1, padding: 8, gap: 2, justifyContent: "center" },
   eventTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },

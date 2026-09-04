@@ -82,16 +82,25 @@ export default function StaffScreen() {
                 >
                   <Card padding={13} style={styles.row}>
                     <Avatar name={member.name} uri={member.image} size={44} />
-                    <View style={{ flex: 1, gap: 2 }}>
+                    {/* Los distintivos van DENTRO de la columna de texto y con
+                        salto de línea. En la fila, «Invitación» y «Oculto»
+                        ocupaban ~140 px fijos que no encogen, así que en un
+                        móvil estrecho al nombre no le quedaba prácticamente
+                        ancho y salía recortado a dos letras. */}
+                    <View style={{ flex: 1, gap: 4 }}>
                       <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
                         {member.name}
                       </Text>
                       <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={1}>
                         {metaOf(member)}
                       </Text>
+                      {member.invitationPending || !member.visibleInApp ? (
+                        <View style={styles.badgeRow}>
+                          {member.invitationPending ? <Badge label="Invitación" tone="warning" /> : null}
+                          {!member.visibleInApp ? <Badge label="Oculto" tone="outline" /> : null}
+                        </View>
+                      ) : null}
                     </View>
-                    {member.invitationPending ? <Badge label="Invitación" tone="warning" /> : null}
-                    {!member.visibleInApp ? <Badge label="Oculto" tone="outline" /> : null}
                     <Icon name="chevron-right" size={15} color={theme.textFaint} />
                   </Card>
                 </Pressable>
@@ -114,4 +123,5 @@ export default function StaffScreen() {
 
 const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 11 },
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
 });

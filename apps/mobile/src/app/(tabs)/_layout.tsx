@@ -116,6 +116,17 @@ export default function TabsLayout() {
     <>
       <PortalGate isMember={state.user.role === "MEMBER"} />
       <Tabs
+        // `backBehavior` por defecto es `firstRoute`, y eso rompía TODAS las
+        // flechas de «volver» de las pantallas que son pestaña oculta (Aforo,
+        // Tareas, Leads, Avisos, Consumo, Perfil, Session Brief): el router de
+        // pestañas descarta el recorrido real y deja como único historial la
+        // PRIMERA pantalla declarada, que aquí es `index` —el «Hoy» del socio—.
+        // Así, volver desde Aforo no llevaba a «Más» sino a `index`, que para
+        // el personal está oculta y rebota a su pantalla de inicio: la flecha
+        // parecía tirar al azar. Con `history` se vuelve a la pestaña de la que
+        // se vino, que es lo que promete la flecha (y también lo que hace el
+        // botón físico de Android).
+        backBehavior="history"
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: theme.gold,

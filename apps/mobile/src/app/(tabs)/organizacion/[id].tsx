@@ -1,6 +1,19 @@
 import { useRef, useState } from "react";
-import { Alert, PanResponder, Pressable, ScrollView, Text, View, StyleSheet, type LayoutChangeEvent } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  PanResponder,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  StyleSheet,
+  type LayoutChangeEvent,
+} from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { goBack } from "@/utils/navigation";
 import { LinearGradient } from "expo-linear-gradient";
 import { useCreateStaff, useRemoveStaff, useStaff, useUpdateStaff } from "@/api/queries";
@@ -85,6 +98,7 @@ function StaffForm({
   canManage: boolean;
 }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const toast = useToast();
   const createStaff = useCreateStaff();
   const updateStaff = useUpdateStaff();
@@ -182,8 +196,27 @@ function StaffForm({
   }
 
   return (
-    <ScreenFrame padded={false} withTabBar>
-      <LinearGradient colors={theme.heroGradient} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={styles.hero}>
+    // Sin `ScreenFrame`: reservaba `insets.top` con el color de FONDO de la
+    // pantalla, así que el degradado empezaba por debajo de la barra de estado
+    // y quedaba una franja lisa por encima del héroe —en piel clara, una banda
+    // hueso sobre el degradado oscuro—. Ahora el degradado sube hasta el borde
+    // y es él quien se come el área segura.
+    // `KeyboardAvoidingView` por lo mismo que `ScreenFrame`: en iOS el teclado
+    // tapaba el nombre, el email y el botón de guardar de esta ficha.
+    <KeyboardAvoidingView
+      style={[styles.screen, { backgroundColor: theme.background }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+    >
+      {/* El degradado pasa por debajo de la barra de estado, así que sus
+          iconos tienen que ir claros: con la piel clara el `_layout` los pone
+          oscuros y sobre el héroe en tinta no se veían. */}
+      <StatusBar style="light" />
+      <LinearGradient
+        colors={theme.heroGradient}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.9, y: 1 }}
+        style={[styles.hero, { paddingTop: insets.top + 14 }]}
+      >
         <View style={styles.heroBar}>
           <Pressable
             accessibilityRole="button"
@@ -310,7 +343,7 @@ function StaffForm({
           <Text style={[typo.rowMeta, { color: theme.textMuted }]}>Tu rol puede consultar el equipo, pero no editarlo.</Text>
         )}
       </ScrollView>
-    </ScreenFrame>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -358,7 +391,12 @@ function AllocationRow({ label, value, onChange }: { label: string; value: numbe
 }
 
 const styles = StyleSheet.create({
-  hero: { height: 330, paddingHorizontal: layout.screenPadding, paddingTop: 54 },
+  screen: { flex: 1 },
+  // `paddingTop` lo pone el propio componente con el área segura del móvil: un
+  // 54 fijo dejaba el botón de volver metido bajo la muesca en unos móviles y
+  // flotando muy abajo en otros. Alto mínimo, no fijo, para que la foto y el
+  // rótulo no se recorten con la tipografía del sistema en grande.
+  hero: { minHeight: 300, paddingHorizontal: layout.screenPadding, paddingBottom: 20 },
   heroBar: { flexDirection: "row", alignItems: "center", gap: 12 },
   iconButton: { width: 38, height: 38, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   photoBlock: { alignItems: "center", gap: 12, marginTop: 22 },

@@ -1,127 +1,212 @@
 import { useState } from "react";
-import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, Text, View, StyleSheet } from "react-native";
+import { Alert, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
+import { goBack } from "@/utils/navigation";
 import { useAnnouncements, useCreateAnnouncement, useDeleteAnnouncement, useToggleAnnouncement } from "@/api/queries";
-import { useTheme } from "@/theme/theme";
+import { useTheme, radii } from "@/theme/theme";
+import { typo } from "@/theme/typography";
+import { stagger } from "@/theme/motion";
 import { ScreenContainer } from "@/components/ScreenContainer";
+import { ScreenHeader } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { Chip, ChipRow } from "@/components/Chip";
 import { Field } from "@/components/Field";
+import { Icon } from "@/components/Icon";
+import { Sheet } from "@/components/Sheet";
 import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
+import { SkeletonList } from "@/components/Skeleton";
+import { useToast } from "@/components/Toast";
+import { formatDayMonth } from "@/utils/format";
 import type { AnnouncementCategory, AnnouncementItem } from "@/api/types";
 
+/**
+ * Anuncios del centro. Esta pantalla se había quedado fuera del sistema de
+ * diseño —tipografías escritas a mano en vez de la escala, `ActivityIndicator`
+ * gris en vez del esqueleto, un `Modal` propio en lugar de `Sheet` y un cartel
+ * de estado en vez del toast—, así que entrar aquí desde «Más» parecía otra
+ * app. Es el mismo arreglo que ya se le hizo a `brief/index.tsx`.
+ *
+ * Lo que además estaba roto:
+ *
+ * - **Sin forma de volver.** Dirección de organización y dirección de centro
+ *   llegan aquí por el índice «Más» (no la tienen en la barra), y la pantalla
+ *   no tenía flecha: se entraba y no se salía.
+ * - **El teclado tapaba el formulario.** El `Modal` propio no llevaba
+ *   `KeyboardAvoidingView` —que es justo lo que `Sheet` sí hace— así que
+ *   escribir el texto del anuncio era a ciegas.
+ * - **El botón de publicar quedaba bajo el indicador de gestos**: la hoja
+ *   pegaba su contenido al borde sin reservar el área segura.
+ * - **Eliminar no preguntaba.** Un toque sin confirmación borraba el anuncio
+ *   publicado, y no hay deshacer.
+ */
 const CATEGORIES: AnnouncementCategory[] = ["NEWS", "EVENT", "PROMO", "ALERT"];
-const CATEGORY_LABEL: Record<AnnouncementCategory, string> = { NEWS: "Noticia", EVENT: "Evento", PROMO: "Promoción", ALERT: "Alerta" };
+const CATEGORY_LABEL: Record<AnnouncementCategory, string> = {
+  NEWS: "Noticia",
+  EVENT: "Evento",
+  PROMO: "Promoción",
+  ALERT: "Alerta",
+};
+const CATEGORY_TONE: Record<AnnouncementCategory, "neutral" | "gold" | "good" | "critical"> = {
+  NEWS: "neutral",
+  EVENT: "gold",
+  PROMO: "good",
+  ALERT: "critical",
+};
 
 export default function AnnouncementsScreen() {
   const theme = useTheme();
+  const toast = useToast();
   const { data, isLoading, isError, refetch, isRefetching } = useAnnouncements();
-  const createAnnouncement = useCreateAnnouncement();
   const toggleAnnouncement = useToggleAnnouncement();
   const deleteAnnouncement = useDeleteAnnouncement();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
 
   async function handleToggle(item: AnnouncementItem) {
-    setFeedback(null);
     try {
       await toggleAnnouncement.mutateAsync({ id: item.id, active: !item.active });
+      toast.show(item.active ? "Anuncio desactivado." : "Anuncio activado.", "good");
     } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "No se pudo actualizar.");
+      toast.show(err instanceof Error ? err.message : "No se pudo actualizar.", "critical");
     }
   }
 
-  async function handleDelete(id: string) {
-    setFeedback(null);
-    try {
-      await deleteAnnouncement.mutateAsync(id);
-      setFeedback("Anuncio eliminado.");
-    } catch (err) {
-      setFeedback(err instanceof Error ? err.message : "No se pudo eliminar.");
-    }
+  /** Borrar un anuncio publicado no se deshace: se pregunta antes. */
+  function confirmDelete(item: AnnouncementItem) {
+    Alert.alert("Eliminar el anuncio", `«${item.title}» dejará de verse en la app del socio. No se puede deshacer.`, [
+      { text: "Volver", style: "cancel" },
+      {
+        text: "Eliminar",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteAnnouncement.mutateAsync(item.id);
+            toast.show("Anuncio eliminado.");
+          } catch (err) {
+            toast.show(err instanceof Error ? err.message : "No se pudo eliminar.", "critical");
+          }
+        },
+      },
+    ]);
   }
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.text} />}>
+    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
       <FadeInUp>
-        <Text style={[styles.kicker, { color: theme.textMuted }]}>ADMINISTRACIÓN</Text>
-        <Text style={[styles.title, { color: theme.text }]}>Anuncios</Text>
+        <ScreenHeader
+          kicker="LO QUE VE EL SOCIO"
+          title="Anuncios"
+          tight
+          right={
+            <View style={styles.headerActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Volver"
+                onPress={() => goBack("/mas")}
+                style={[styles.iconButton, { borderColor: theme.border }]}
+              >
+                <Icon name="chevron-left" size={17} color={theme.text} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Nuevo anuncio"
+                onPress={() => setComposing(true)}
+                style={[styles.iconButton, { borderColor: theme.border }]}
+              >
+                <Icon name="plus" size={17} color={theme.gold} />
+              </Pressable>
+            </View>
+          }
+        />
       </FadeInUp>
 
-      {feedback ? (
-        <Card style={{ paddingVertical: 10 }}>
-          <Text style={{ color: theme.text, fontFamily: "Poppins_500Medium", fontSize: 13 }}>{feedback}</Text>
-        </Card>
-      ) : null}
-
       {isLoading ? (
-        <ActivityIndicator color={theme.text} style={{ marginTop: 24 }} />
+        <SkeletonList rows={3} note="Cargando tus anuncios…" />
       ) : isError || !data ? (
-        <EmptyState title="No se pudo cargar los anuncios" description="Desliza hacia abajo para reintentar." />
+        <EmptyState icon="alert" title="No se pudieron cargar los anuncios" description="Desliza hacia abajo para reintentar." />
+      ) : data.announcements.length === 0 ? (
+        <EmptyState icon="bell" title="Sin anuncios" description="Publica el primero con el + de la cabecera." />
       ) : (
-        <>
-          <Button title="+ Nuevo anuncio" onPress={() => setModalOpen(true)} />
-
-          {data.announcements.length === 0 ? (
-            <EmptyState title="Sin anuncios" description="Todavía no has publicado ningún anuncio." />
-          ) : (
-            data.announcements.map((a) => (
-              <Card key={a.id} style={{ opacity: a.active ? 1 : 0.55 }}>
-                <View style={styles.cardHeader}>
-                  <Text style={[styles.announcementTitle, { color: theme.text }]}>{a.title}</Text>
-                  <Badge label={CATEGORY_LABEL[a.category]} tone="neutral" />
-                </View>
-                {a.body ? <Text style={[styles.announcementBody, { color: theme.textSecondary }]}>{a.body}</Text> : null}
-                <Text style={[styles.announcementMeta, { color: theme.textMuted }]}>
-                  {a.centerName} · {a.viewsCount} vistas{a.pinned ? " · fijado" : ""}
+        data.announcements.map((item, index) => (
+          <FadeInUp key={item.id} delay={stagger(index)}>
+            <Card style={[styles.card, item.active ? null : { opacity: 0.55 }]}>
+              <View style={styles.cardHeader}>
+                <Text style={[typo.cardTitleSmall, { color: theme.text, flex: 1 }]} numberOfLines={2}>
+                  {item.title}
                 </Text>
-                <View style={styles.actionsRow}>
-                  <Button title={a.active ? "Desactivar" : "Activar"} variant="outline" onPress={() => handleToggle(a)} loading={toggleAnnouncement.isPending} />
-                  <Button title="Eliminar" variant="danger" onPress={() => handleDelete(a.id)} loading={deleteAnnouncement.isPending} />
-                </View>
-              </Card>
-            ))
-          )}
+                <Badge label={CATEGORY_LABEL[item.category]} tone={CATEGORY_TONE[item.category]} />
+              </View>
 
-          <CreateAnnouncementModal
-            visible={modalOpen}
-            onClose={() => setModalOpen(false)}
-            centers={data.centers}
-            createAnnouncement={createAnnouncement}
-            onCreated={() => {
-              setModalOpen(false);
-              setFeedback("Anuncio creado.");
-            }}
-          />
-        </>
+              {item.body ? (
+                <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]} numberOfLines={4}>
+                  {item.body}
+                </Text>
+              ) : null}
+
+              <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]} numberOfLines={1}>
+                {item.centerName} · {item.viewsCount} {item.viewsCount === 1 ? "vista" : "vistas"} ·{" "}
+                {formatDayMonth(item.createdAt)}
+                {item.pinned ? " · fijado" : ""}
+                {item.active ? "" : " · inactivo"}
+              </Text>
+
+              <View style={styles.actionsRow}>
+                <Button
+                  title={item.active ? "Desactivar" : "Activar"}
+                  variant="outline"
+                  size="sm"
+                  style={{ flex: 1 }}
+                  loading={toggleAnnouncement.isPending && toggleAnnouncement.variables?.id === item.id}
+                  onPress={() => handleToggle(item)}
+                />
+                <Button
+                  title="Eliminar"
+                  variant="danger"
+                  size="sm"
+                  style={{ flex: 1 }}
+                  loading={deleteAnnouncement.isPending && deleteAnnouncement.variables === item.id}
+                  onPress={() => confirmDelete(item)}
+                />
+              </View>
+            </Card>
+          </FadeInUp>
+        ))
       )}
+
+      <ComposeSheet visible={composing} onClose={() => setComposing(false)} centers={data?.centers ?? []} />
     </ScreenContainer>
   );
 }
 
-function CreateAnnouncementModal({
+/** Alta de anuncio. En `Sheet`, que es lo que aparta el formulario del teclado. */
+function ComposeSheet({
   visible,
   onClose,
   centers,
-  createAnnouncement,
-  onCreated,
 }: {
   visible: boolean;
   onClose: () => void;
   centers: { id: string; name: string }[];
-  createAnnouncement: ReturnType<typeof useCreateAnnouncement>;
-  onCreated: () => void;
 }) {
   const theme = useTheme();
+  const toast = useToast();
+  const createAnnouncement = useCreateAnnouncement();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [category, setCategory] = useState<AnnouncementCategory>("NEWS");
   const [centerId, setCenterId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit() {
+  function reset() {
+    setTitle("");
+    setBody("");
+    setCategory("NEWS");
+    setCenterId(null);
     setError(null);
+  }
+
+  async function submit() {
     if (!title.trim()) {
       setError("El anuncio necesita un título.");
       return;
@@ -130,6 +215,7 @@ function CreateAnnouncementModal({
       setError("Añade un texto al anuncio.");
       return;
     }
+    setError(null);
     try {
       await createAnnouncement.mutateAsync({
         title: title.trim(),
@@ -143,82 +229,74 @@ function CreateAnnouncementModal({
         startsAt: null,
         endsAt: null,
       });
-      setTitle("");
-      setBody("");
-      onCreated();
+      reset();
+      onClose();
+      toast.show("Anuncio publicado.", "good");
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo crear el anuncio.");
     }
   }
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalCard, { backgroundColor: theme.background, borderColor: theme.border }]}>
-          <ScrollView contentContainerStyle={{ gap: 14 }}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Nuevo anuncio</Text>
-            <Field label="Título" value={title} onChangeText={setTitle} placeholder="Título del anuncio" />
-            <Field label="Texto" value={body} onChangeText={setBody} placeholder="Contenido" multiline numberOfLines={4} />
-
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Categoría</Text>
-            <View style={styles.chipRow}>
-              {CATEGORIES.map((c) => (
-                <Pressable
-                  key={c}
-                  onPress={() => setCategory(c)}
-                  style={[styles.chip, { borderColor: theme.border, backgroundColor: category === c ? theme.ink : "transparent" }]}
-                >
-                  <Text style={{ color: category === c ? theme.inkText : theme.text, fontFamily: "Poppins_500Medium", fontSize: 12 }}>
-                    {CATEGORY_LABEL[c]}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Text style={[styles.fieldLabel, { color: theme.textSecondary }]}>Alcance</Text>
-            <View style={styles.chipRow}>
-              <Pressable
-                onPress={() => setCenterId(null)}
-                style={[styles.chip, { borderColor: theme.border, backgroundColor: centerId === null ? theme.ink : "transparent" }]}
-              >
-                <Text style={{ color: centerId === null ? theme.inkText : theme.text, fontFamily: "Poppins_500Medium", fontSize: 12 }}>Global</Text>
-              </Pressable>
-              {centers.map((c) => (
-                <Pressable
-                  key={c.id}
-                  onPress={() => setCenterId(c.id)}
-                  style={[styles.chip, { borderColor: theme.border, backgroundColor: centerId === c.id ? theme.ink : "transparent" }]}
-                >
-                  <Text style={{ color: centerId === c.id ? theme.inkText : theme.text, fontFamily: "Poppins_500Medium", fontSize: 12 }}>
-                    {c.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {error ? <Text style={{ color: theme.critical, fontFamily: "Poppins_500Medium", fontSize: 13 }}>{error}</Text> : null}
-
-            <Button title="Publicar" onPress={handleSubmit} loading={createAnnouncement.isPending} />
-            <Button title="Cancelar" variant="outline" onPress={onClose} />
-          </ScrollView>
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      kicker="NUEVO"
+      title="Publicar un anuncio"
+      footer={
+        <View style={{ gap: 8 }}>
+          <Button title="Publicar" variant="gold" size="lg" loading={createAnnouncement.isPending} onPress={submit} />
+          <Button title="Ahora no" variant="ghost" onPress={onClose} />
         </View>
+      }
+    >
+      <Field label="Título" value={title} onChangeText={setTitle} placeholder="Cerramos el lunes por mantenimiento" />
+      <Field
+        label="Texto"
+        value={body}
+        onChangeText={setBody}
+        placeholder="Lo que el socio tiene que saber, en dos líneas"
+        multiline
+      />
+
+      <View style={{ gap: 6 }}>
+        <Text style={[typo.label, { color: theme.textSecondary }]}>Categoría</Text>
+        <ChipRow>
+          {CATEGORIES.map((option) => (
+            <Chip
+              key={option}
+              label={CATEGORY_LABEL[option]}
+              selected={category === option}
+              onPress={() => setCategory(option)}
+            />
+          ))}
+        </ChipRow>
       </View>
-    </Modal>
+
+      <View style={{ gap: 6 }}>
+        <Text style={[typo.label, { color: theme.textSecondary }]}>Alcance</Text>
+        <ChipRow>
+          <Chip label="Todos los centros" selected={centerId === null} onPress={() => setCenterId(null)} />
+          {centers.map((center) => (
+            <Chip
+              key={center.id}
+              label={center.name}
+              selected={centerId === center.id}
+              onPress={() => setCenterId(center.id)}
+            />
+          ))}
+        </ChipRow>
+      </View>
+
+      {error ? <Text style={[typo.rowMeta, { color: theme.critical }]}>{error}</Text> : null}
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  kicker: { fontFamily: "Poppins_700Bold", fontSize: 11, letterSpacing: 1.5 },
-  title: { fontFamily: "Poppins_700Bold", fontSize: 26, marginTop: 4 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
-  announcementTitle: { fontFamily: "Poppins_600SemiBold", fontSize: 15, flex: 1 },
-  announcementBody: { fontFamily: "Poppins_400Regular", fontSize: 13 },
-  announcementMeta: { fontFamily: "Poppins_400Regular", fontSize: 11 },
-  actionsRow: { flexDirection: "row", gap: 8, marginTop: 4 },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
-  modalCard: { maxHeight: "88%", borderTopWidth: 1, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
-  modalTitle: { fontFamily: "Poppins_700Bold", fontSize: 18 },
-  fieldLabel: { fontFamily: "Poppins_600SemiBold", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  chip: { borderWidth: 1, borderRadius: 999, paddingVertical: 6, paddingHorizontal: 12 },
+  headerActions: { flexDirection: "row", gap: 8 },
+  iconButton: { width: 40, height: 40, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  card: { gap: 9 },
+  cardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  actionsRow: { flexDirection: "row", gap: 8, marginTop: 2 },
 });

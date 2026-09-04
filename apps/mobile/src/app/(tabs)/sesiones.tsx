@@ -228,10 +228,7 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
               <Card padding={12}>
                 <View style={styles.weekRow}>
                   {WEEKDAY_INITIALS.map((initial, index) => (
-                    <Text
-                      key={`${initial}-${index}`}
-                      style={[typo.legend, { color: theme.textFaint, width: 42, textAlign: "center" }]}
-                    >
+                    <Text key={`${initial}-${index}`} style={[typo.legend, styles.weekdayHead, { color: theme.textFaint }]}>
                       {initial}
                     </Text>
                   ))}
@@ -366,8 +363,15 @@ function NextSessionHero({
       </View>
 
       <View style={styles.heroActions}>
-        <Button title="Añadir al calendario" size="sm" onPress={onAddToCalendar} style={{ flex: 1 }} />
-        <Button title="Cancelar" variant="outline" size="sm" onPress={onCancel} style={{ flex: 1 }} />
+        <Button
+          onInk
+          title="Al calendario"
+          accessibilityLabel="Añadir la sesión al calendario"
+          size="sm"
+          onPress={onAddToCalendar}
+          style={{ flex: 1 }}
+        />
+        <Button onInk title="Cancelar" variant="outline" size="sm" onPress={onCancel} style={{ flex: 1 }} />
       </View>
     </HeroCard>
   );
@@ -427,8 +431,15 @@ const styles = StyleSheet.create({
   legend: { flexDirection: "row", gap: 14, flexWrap: "wrap" },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   legendDot: { width: 6, height: 6, borderRadius: 3 },
-  weekRow: { flexDirection: "row", justifyContent: "space-between" },
-  cell: { width: 42, height: 42, alignItems: "center", justifyContent: "center", gap: 3 },
+  weekRow: { flexDirection: "row" },
+  /**
+   * Las siete casillas se REPARTEN el ancho (`flex: 1`) en vez de medir 42 px
+   * fijos: 7 × 42 = 294 px más el padding de pantalla y de tarjeta se salía de
+   * cualquier móvil de 360 px o menos, y la última columna —el domingo— quedaba
+   * cortada por el borde de la tarjeta.
+   */
+  weekdayHead: { flex: 1, textAlign: "center" },
+  cell: { flex: 1, height: 42, alignItems: "center", justifyContent: "center", gap: 3 },
   cellNumber: { fontFamily: fonts.semibold, fontSize: 13, ...tabular },
   cellDot: { width: 5, height: 5, borderRadius: 3 },
   entryCard: { flexDirection: "row", overflow: "hidden" },

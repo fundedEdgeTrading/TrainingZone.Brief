@@ -58,6 +58,27 @@ function SkeletonCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Cuatro celdas en una fila, la retícula real de `KpiCell` en el panel del
+ * entrenador (`flex: 1`, gap 8, borde y superficie de tarjeta). Las celdas del
+ * esqueleto no tenían ni fondo ni borde, así que en vez de cuatro tiles se
+ * veían ocho barras grises sueltas y la tarjeta aparecía de golpe al llegar el
+ * dato.
+ */
+function KpiSkeletonGrid() {
+  const theme = useTheme();
+  return (
+    <View style={styles.kpiGrid}>
+      {[0, 1, 2, 3].map((i) => (
+        <View key={i} style={[styles.kpiTile, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Skeleton width="60%" height={19} />
+          <Skeleton width="85%" height={9} radius={6} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function Shape({ shape }: { shape: SkeletonShape }) {
   if (shape === "hero") {
     return (
@@ -74,16 +95,7 @@ function Shape({ shape }: { shape: SkeletonShape }) {
   }
 
   if (shape === "kpi") {
-    return (
-      <View style={styles.kpiGrid}>
-        {[0, 1, 2, 3].map((i) => (
-          <View key={i} style={styles.kpiTile}>
-            <Skeleton width="60%" height={19} />
-            <Skeleton width="85%" height={9} radius={6} />
-          </View>
-        ))}
-      </View>
-    );
+    return <KpiSkeletonGrid />;
   }
 
   if (shape === "avatarRow") {
@@ -169,7 +181,7 @@ const styles = StyleSheet.create({
   hero: { borderColor: "transparent", backgroundColor: "transparent", padding: 17, gap: 12 },
   heroActions: { flexDirection: "row", gap: 10 },
   kpiGrid: { flexDirection: "row", gap: 8 },
-  kpiTile: { flex: 1, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 9, gap: 7 },
+  kpiTile: { flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 9, gap: 7 },
   avatarRow: { flexDirection: "row", alignItems: "center", gap: 11 },
   avatarRowText: { flex: 1, gap: 7 },
 });

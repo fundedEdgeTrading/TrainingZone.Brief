@@ -136,9 +136,10 @@ export default function TrainerMemberDetailScreen() {
                 </View>
               </View>
               <View style={styles.heroActions}>
-                <Button title="Nueva nota" size="sm" style={{ flex: 1 }} onPress={() => setNoting(true)} />
+                <Button onInk title="Nueva nota" size="sm" style={{ flex: 1 }} onPress={() => setNoting(true)} />
                 {data.member.phone ? (
                   <Button
+                    onInk
                     title="Llamar"
                     variant="outline"
                     size="sm"
