@@ -3,7 +3,7 @@ import { Animated, Pressable, ScrollView, Text, View, StyleSheet } from "react-n
 import { router, useLocalSearchParams } from "expo-router";
 import { useSessionFeedback, useSaveSessionFeedback } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
-import { fonts, tabular, typo } from "@/theme/typography";
+import { typo } from "@/theme/typography";
 import { duration, easeOutSoft, useReducedMotion } from "@/theme/motion";
 import { ScreenFrame } from "@/components/ScreenContainer";
 import { Card } from "@/components/Card";
@@ -13,6 +13,7 @@ import { Avatar } from "@/components/Avatar";
 import { Field } from "@/components/Field";
 import { Icon } from "@/components/Icon";
 import { ScoreBar } from "@/components/ScoreBar";
+import { useCountdown } from "@/components/Countdown";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -31,6 +32,9 @@ const AXES: { key: FeedbackAxis; label: string }[] = [
   { key: "adherence", label: "Adherencia al plan" },
   { key: "progress", label: "Progreso vs. sesión anterior" },
 ];
+
+/** El feedback se cierra 48 h después de la sesión (feedback-capture.ts). */
+const CLOSE_WINDOW_HOURS = 48;
 
 const EMPTY_SCORES: FeedbackScores = {
   rpe: null,
@@ -72,8 +76,19 @@ export default function SessionFeedbackScreen() {
     if (autosave.current) clearTimeout(autosave.current);
   }, []);
 
-  const members = data?.members ?? [];
+  const members = useMemo(() => data?.members ?? [], [data]);
   const current = members[index];
+  // Instante de cierre del feedback: fin de la sesión + 48 h.
+  const closesAt = useMemo(() => {
+    if (!data) return null;
+    const ended = Date.parse(`${data.session.occurrenceDate}T${data.session.endTime}:00`);
+    if (Number.isNaN(ended)) return null;
+    return new Date(ended + CLOSE_WINDOW_HOURS * 3_600_000).toISOString();
+  }, [data]);
+  // `useCountdown` lee el reloj dentro de su efecto: hacerlo en el render sería
+  // una lectura impura (react-hooks/purity).
+  const secondsToClose = useCountdown({ targetIso: closesAt });
+  const closesIn = closesAt ? Math.round(secondsToClose / 3600) : null;
   const completed = useMemo(
     () => members.map((m) => AXES.every((axis) => scores[m.bookingId]?.[axis.key] != null)),
     [members, scores]
@@ -148,6 +163,11 @@ export default function SessionFeedbackScreen() {
             {members.length > 0 ? `Socio ${index + 1} de ${members.length}` : "Feedback de la sesión"}
           </Text>
         </View>
+        {/* El plazo va en la cabecera y no en un aviso al pie: puntuar ocho
+            ejes lleva su rato, y quien empieza tiene que saber si le da tiempo. */}
+        {closesIn != null ? (
+          <Badge label={`Cierra ${closesIn} h`} tone={closesIn <= 12 ? "critical" : "warning"} />
+        ) : null}
       </View>
 
       {members.length > 0 ? (
@@ -215,7 +235,7 @@ export default function SessionFeedbackScreen() {
               />
 
               <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>
-                Se guarda solo según puntúas. Guardar marca la asistencia del socio.
+                Guardar marca además la asistencia del socio.
               </Text>
             </ScrollView>
           </Animated.View>
@@ -230,14 +250,18 @@ export default function SessionFeedbackScreen() {
             >
               <Icon name="chevron-left" size={16} color={theme.text} />
             </Pressable>
-            <Button
-              title={index === members.length - 1 ? "Guardar y cerrar" : "Guardar y siguiente"}
-              variant="gold"
-              size="lg"
-              style={{ flex: 1 }}
-              loading={saveFeedback.isPending}
-              onPress={saveAndAdvance}
-            />
+            <View style={{ flex: 1, gap: 6 }}>
+              <Button
+                title={index === members.length - 1 ? "Guardar y cerrar" : "Guardar y siguiente"}
+                variant="gold"
+                size="md"
+                loading={saveFeedback.isPending}
+                onPress={saveAndAdvance}
+              />
+              <Text style={[typo.rowMetaSmall, { color: theme.textFaint, textAlign: "center" }]}>
+                Se guarda solo según puntúas
+              </Text>
+            </View>
           </View>
         </>
       )}
@@ -252,5 +276,5 @@ const styles = StyleSheet.create({
   progressSegment: { flex: 1, height: 4, borderRadius: 2 },
   content: { gap: layout.gap, paddingBottom: 20 },
   memberRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-  footer: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12 },
+  footer: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 12 },
 });

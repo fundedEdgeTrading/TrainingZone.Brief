@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { ProductThumb } from "@/components/ProductThumb";
+import { Icon } from "@/components/Icon";
 import { formatEuros } from "@/utils/format";
 import type { ProductItem } from "@/api/types";
 
@@ -27,6 +28,10 @@ export default function PlansScreen() {
 
   const firstName = state.status === "signedIn" ? state.user.member?.firstName ?? state.user.name.split(" ")[0] : "";
   const centerName = state.status === "signedIn" ? state.user.member?.centerName : null;
+  // La misma pantalla hace dos papeles: el gate de compra del primer login y
+  // «Ampliar» desde Más. Con bono vivo hay que poder volver, y el copy cambia:
+  // no se está eligiendo plan por primera vez, se está cambiando el que hay.
+  const upgrading = state.status === "signedIn" && Boolean(state.user.member?.hasActiveMembership);
   const products = (data?.products ?? []).filter((p) => p.visible);
   const featured = products.find((p) => p.featured) ?? products[0];
   const rest = products.filter((p) => p.id !== featured?.id);
@@ -39,15 +44,30 @@ export default function PlansScreen() {
       <FadeInUp>
         <ScreenHeader
           kicker={centerName ? centerName.toUpperCase() : "TU CENTRO"}
-          title={firstName ? `Elige tu plan, ${firstName}` : "Elige tu plan"}
+          title={upgrading ? "Ampliar tu bono" : firstName ? `Elige tu plan, ${firstName}` : "Elige tu plan"}
+          tight={upgrading}
+          right={
+            upgrading ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Volver"
+                onPress={() => router.back()}
+                style={[styles.backButton, { borderColor: theme.border }]}
+              >
+                <Icon name="chevron-left" size={17} color={theme.text} />
+              </Pressable>
+            ) : undefined
+          }
         />
         <Text style={[typo.rowMeta, { color: theme.textMuted, marginTop: 8 }]}>
-          Puedes cambiarlo o ampliarlo cuando quieras desde Mis bonos.
+          {upgrading
+            ? "El cambio se aplica en tu próxima renovación: no pierdes las sesiones del bono actual."
+            : "Puedes cambiarlo o ampliarlo cuando quieras desde Más."}
         </Text>
       </FadeInUp>
 
       {isLoading ? (
-        <SkeletonList rows={3} />
+        <SkeletonList rows={3} shape="row" note="Cargando el catálogo de tu centro…" />
       ) : isError || !data ? (
         <EmptyState icon="alert" title="No se pudo cargar el catálogo" description="Desliza hacia abajo para reintentar." />
       ) : products.length === 0 ? (
@@ -76,9 +96,13 @@ export default function PlansScreen() {
         </>
       )}
 
-      <Pressable accessibilityRole="button" onPress={logout} style={styles.logout}>
-        <Text style={[typo.rowMeta, { color: theme.textMuted }]}>Cerrar sesión</Text>
-      </Pressable>
+      {/* Salir solo tiene sentido en el gate: quien viene de «Ampliar» ya está
+          dentro de la app y solo quiere volver. */}
+      {!upgrading ? (
+        <Pressable accessibilityRole="button" onPress={logout} style={styles.logout}>
+          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>Cerrar sesión</Text>
+        </Pressable>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -180,4 +204,5 @@ const styles = StyleSheet.create({
   price: { fontFamily: fonts.bold, fontSize: 27, ...tabular },
   priceSmall: { fontFamily: fonts.bold, fontSize: 22, ...tabular },
   logout: { alignSelf: "center", paddingVertical: 10 },
+  backButton: { width: 40, height: 40, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 });

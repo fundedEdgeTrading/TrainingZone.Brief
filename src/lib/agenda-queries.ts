@@ -11,6 +11,9 @@ import {
   type EditScope,
 } from "@/lib/session-series";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
+import { createNotification } from "@/lib/notifications";
+import { trainerDiscardEffect } from "@/lib/attendee-discard";
+import { zonedTimeToInstant } from "@/lib/date-utils";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import {
   chargeSessionToSubscription,
@@ -836,4 +839,127 @@ export async function getSessionDetail(orgId: string, sessionId: string, d?: str
     occurrenceDate,
     bookings: session.bookings.filter((b) => isSameDay(b.occurrenceDate, occurrenceDate)),
   };
+}
+
+/**
+ * Descarte de un asistente por el entrenador, con la ventana de 24 h propia del
+ * rediseño de la app móvil (`lib/attendee-discard.ts`).
+ *
+ * Existe aparte de `cancelSessionBooking` porque aquella siempre devuelve el
+ * bono —es el reverso de una reserva que hizo el propio staff— mientras que
+ * sacar a alguien de un grupo reducido a última hora consume la sesión: la
+ * plaza ya no se puede revender. Comparte con ella la escritura condicional
+ * dentro del UPDATE (dos descartes simultáneos no devuelven el bono dos veces)
+ * y el aviso de hueco liberado (RB-RES-007).
+ */
+export async function discardAttendeeAsStaff(
+  orgId: string,
+  bookingId: string,
+  opts: {
+    actorUserId: string;
+    /** Devolver la sesión estando dentro de la ventana (RB-RES-006). */
+    forceRefund?: boolean;
+    /** El rol del actor puede ajustar saldo a mano. */
+    canForceRefund?: boolean;
+    reason?: string | null;
+    /** Avisar al socio del descarte (y de su motivo). */
+    notifyMember?: boolean;
+    now?: Date;
+  }
+) {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, session: { orgId }, status: { in: ["BOOKED", "WAITLISTED"] } },
+    select: {
+      id: true,
+      status: true,
+      subscriptionId: true,
+      sessionId: true,
+      memberId: true,
+      occurrenceDate: true,
+      member: { select: { userId: true, firstName: true } },
+      session: {
+        select: {
+          name: true,
+          capacity: true,
+          startTime: true,
+          center: { select: { id: true, timezone: true } },
+          bookings: { select: { status: true, occurrenceDate: true } },
+        },
+      },
+    },
+  });
+  if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
+
+  const startsAt = zonedTimeToInstant(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+  const effect = trainerDiscardEffect({
+    startsAt,
+    now: opts.now ?? new Date(),
+    status: booking.status === "WAITLISTED" ? "WAITLISTED" : "BOOKED",
+    hasSubscription: Boolean(booking.subscriptionId),
+    forceRefund: opts.forceRefund,
+    canForceRefund: opts.canForceRefund,
+  });
+
+  const dayBookings = booking.session.bookings.filter((b) => isSameDay(b.occurrenceDate, booking.occurrenceDate));
+  const activeCountBefore = dayBookings.filter(
+    (b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW"
+  ).length;
+  const wasFull = activeCountBefore >= booking.session.capacity;
+  const hasWaitlist = dayBookings.some((b) => b.status === "WAITLISTED");
+
+  const subscriptionId = booking.subscriptionId;
+  const applied = await prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: { id: booking.id, status: { in: ["BOOKED", "WAITLISTED"] } },
+      data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
+    });
+    if (updated.count === 0) return false;
+
+    if (effect.refunds && subscriptionId) {
+      await tx.subscription.update({ where: { id: subscriptionId }, data: { sessionsRemaining: { increment: 1 } } });
+    }
+
+    // Todo descarte deja traza, no solo el que fuerza la devolución: quien
+    // revise el saldo de un socio necesita saber quién le quitó la plaza y con
+    // qué efecto, no solo que alguien pulsó el override.
+    await tx.auditLog.create({
+      data: {
+        orgId,
+        actorUserId: opts.actorUserId,
+        action: effect.overridden ? "BOOKING_DISCARDED_REFUND_OVERRIDE" : "BOOKING_DISCARDED",
+        entityType: "Booking",
+        entityId: booking.id,
+        memberId: booking.memberId,
+        metadata: {
+          sessionId: booking.sessionId,
+          occurrenceDate: booking.occurrenceDate.toISOString(),
+          refunded: effect.refunds,
+          withinWindow: effect.withinWindow,
+          hoursUntil: Math.round(effect.hoursUntil * 10) / 10,
+          reason: opts.reason?.trim() || null,
+        },
+      },
+    });
+    return true;
+  });
+  if (!applied) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
+
+  if (opts.notifyMember !== false && booking.member.userId) {
+    const suffix = effect.refunds ? "La sesión vuelve a tu bono." : "La sesión se ha consumido por el margen de aviso.";
+    void createNotification({
+      orgId,
+      recipientUserId: booking.member.userId,
+      kind: "INFO",
+      title: `Te han quitado la plaza de ${booking.session.name}`,
+      body: [opts.reason?.trim() || null, suffix].filter(Boolean).join(" · "),
+      entityType: "Booking",
+      entityId: booking.id,
+    }).catch(() => {});
+  }
+
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+    void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
+  }
+
+  return { ok: true as const, refunded: effect.refunds, withinWindow: effect.withinWindow, overridden: effect.overridden };
 }

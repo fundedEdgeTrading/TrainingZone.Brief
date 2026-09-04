@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Text, View, StyleSheet } from "react-native";
+import { Text, StyleSheet } from "react-native";
 import { useTheme } from "@/theme/theme";
 import { typo } from "@/theme/typography";
 import { Card } from "./Card";

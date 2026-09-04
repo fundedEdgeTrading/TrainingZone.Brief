@@ -7,8 +7,12 @@ import {
   useDeleteStaffSession,
   useStaffSessionAttendees,
   useAddStaffBooking,
-  useRemoveStaffBooking,
+  useCreateEpSlot,
+  useDiscardAttendee,
+  useDiscardPreview,
 } from "@/api/queries";
+import { useAuth } from "@/auth/auth-context";
+import { canManageEpSlots } from "@/auth/routes";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
 import { ScreenContainer } from "@/components/ScreenContainer";
@@ -17,6 +21,8 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Field } from "@/components/Field";
 import { Chip, ChipRow } from "@/components/Chip";
+import { DayStrip, nextDays } from "@/components/DayStrip";
+import { Avatar } from "@/components/Avatar";
 import { Segmented } from "@/components/Segmented";
 import { Sheet } from "@/components/Sheet";
 import { Stepper } from "@/components/Stepper";
@@ -27,6 +33,7 @@ import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { addDaysToIso, formatLongDate, minutesOf, todayIso } from "@/utils/format";
+import { formatCompact } from "@/components/Countdown";
 import type { StaffAgendaResponse, StaffSession, StaffSessionAttendee } from "@/api/types";
 
 // C2 + C3 del handoff: agenda del centro en timeline diaria, con la hoja de
@@ -41,14 +48,31 @@ export default function StaffAgendaScreen() {
   const [trainerId, setTrainerId] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ session: StaffSession | null; startTime?: string } | null>(null);
   const [attendeesOf, setAttendeesOf] = useState<StaffSession | null>(null);
+  const [publishingSlot, setPublishingSlot] = useState<{ startTime: string } | null>(null);
+  // Los tres modos con los que se mira la agenda: lo mío, todo el centro y los
+  // huecos de EP libres. Son preguntas distintas, no un filtro de entrenador
+  // más: «¿qué me toca?», «¿qué pasa en la sala?» y «¿qué puedo publicar?».
+  const [scope, setScope] = useState<"mine" | "center" | "slots">("mine");
+  const { state } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useStaffAgenda(date);
   const deleteSession = useDeleteStaffSession();
   const scrollRef = useRef<ScrollView | null>(null);
 
-  const sessions = useMemo(
-    () => (data?.sessions ?? []).filter((s) => (trainerId ? s.trainerId === trainerId : true)),
-    [data, trainerId]
-  );
+  const meId = state.status === "signedIn" ? state.user.id : null;
+  const canPublishSlots = state.status === "signedIn" && canManageEpSlots(state.user.role);
+
+  const sessions = useMemo(() => {
+    const all = data?.sessions ?? [];
+    const byTrainer = trainerId ? all.filter((s) => s.trainerId === trainerId) : all;
+    if (scope === "mine" && meId) return byTrainer.filter((s) => s.trainerId === meId);
+    if (scope === "slots") {
+      // Hueco de EP libre: franja personal autorreservable sin nadie dentro.
+      return byTrainer.filter(
+        (s) => s.classType === "Personal Training" && s.selfBookable && s.bookings.every((b) => b.status === "CANCELLED")
+      );
+    }
+    return byTrainer;
+  }, [data, trainerId, scope, meId]);
 
   const range = useMemo(() => {
     const starts = sessions.map((s) => Math.floor(minutesOf(s.startTime) / 60));
@@ -135,8 +159,26 @@ export default function StaffAgendaScreen() {
             >
               <Icon name="chevron-right" size={16} color={theme.text} />
             </Pressable>
+            {/* El `+` de cabecera además del FAB: con la timeline desplazada,
+                el FAB queda lejos del pulgar que acaba de leer la hora. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Nueva sesión"
+              onPress={() => setEditing({ session: null })}
+              style={[styles.navButton, { borderColor: theme.border }]}
+            >
+              <Icon name="plus" size={16} color={theme.gold} />
+            </Pressable>
           </View>
         </FadeInUp>
+
+        <DayStrip days={nextDays(6, new Date(`${todayIso()}T00:00:00`))} value={date} onChange={setDate} />
+
+        <ChipRow>
+          <Chip label="Mis sesiones" selected={scope === "mine"} onPress={() => setScope("mine")} />
+          <Chip label="Todo el centro" selected={scope === "center"} onPress={() => setScope("center")} />
+          <Chip label="Huecos EP" selected={scope === "slots"} onPress={() => setScope("slots")} />
+        </ChipRow>
 
         {data && data.trainers.length > 0 ? (
           <ChipRow>
@@ -188,7 +230,11 @@ export default function StaffAgendaScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Crear sesión a las ${hour}:00`}
                         disabled={!data.canEdit || busy}
-                        onPress={() => setEditing({ session: null, startTime: `${String(hour).padStart(2, "0")}:00` })}
+                        onPress={() =>
+                          scope === "slots" && canPublishSlots
+                            ? setPublishingSlot({ startTime: `${String(hour).padStart(2, "0")}:00` })
+                            : setEditing({ session: null, startTime: `${String(hour).padStart(2, "0")}:00` })
+                        }
                         style={[styles.hourSlot, { borderTopColor: theme.separator }]}
                       >
                         {!busy && data.canEdit ? (
@@ -232,7 +278,28 @@ export default function StaffAgendaScreen() {
         )}
 
         {data && sessions.length === 0 && !isLoading ? (
-          <EmptyState icon="calendar" title="Sin sesiones ese día" description="Toca un hueco libre para crear la primera." />
+          <EmptyState
+            icon="calendar"
+            title={scope === "slots" ? "Sin huecos de EP publicados" : "Sin sesiones ese día"}
+            description={
+              scope === "slots"
+                ? "Toca una hora libre para publicar un hueco que el socio pueda reservar."
+                : "Toca un hueco libre para crear la primera."
+            }
+          />
+        ) : null}
+
+        {scope === "slots" && canPublishSlots ? (
+          <Card tone="dashed" style={styles.publishCard}>
+            <Icon name="plus" size={18} color={theme.gold} />
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={[typo.rowTitleSmall, { color: theme.text }]}>Publicar hueco de EP</Text>
+              <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>
+                Queda autorreservable desde la app del socio.
+              </Text>
+            </View>
+            <Button title="Publicar" variant="gold" size="sm" onPress={() => setPublishingSlot({ startTime: "09:00" })} />
+          </Card>
         ) : null}
       </ScreenContainer>
 
@@ -262,6 +329,15 @@ export default function StaffAgendaScreen() {
             setEditing({ session: attendeesOf });
             setAttendeesOf(null);
           }}
+        />
+      ) : null}
+
+      {publishingSlot && data ? (
+        <EpSlotSheet
+          agenda={data}
+          date={date}
+          startTime={publishingSlot.startTime}
+          onClose={() => setPublishingSlot(null)}
         />
       ) : null}
     </View>
@@ -503,6 +579,113 @@ function SessionSheet({
   );
 }
 
+/**
+ * «Publicar hueco de EP» (RB-AGENDA-006): una franja personal SIN cliente
+ * asignado que el socio se reserva por su cuenta.
+ *
+ * La leyenda no es decorativa. Un hueco agendado a mano por el entrenador se
+ * crea sin bono asociado (`createEpSlot` pone `subscriptionId` a null), así que
+ * NO le descuenta sesión a nadie; cuando lo reserva el socio desde su app, sí
+ * pasa por el motor de reservas y consume. Confundir los dos casos es cómo se
+ * regalan o se cobran sesiones sin querer.
+ */
+function EpSlotSheet({
+  agenda,
+  date,
+  startTime: prefill,
+  onClose,
+}: {
+  agenda: StaffAgendaResponse;
+  date: string;
+  startTime: string;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const toast = useToast();
+  const createSlot = useCreateEpSlot();
+  const [startTime, setStartTime] = useState(prefill);
+  const [durationMin, setDurationMin] = useState(60);
+  const [memberId, setMemberId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setError(null);
+    if (!agenda.centerId) return setError("No hay centro seleccionado.");
+    try {
+      await createSlot.mutateAsync({
+        centerId: agenda.centerId,
+        date,
+        startTime,
+        durationMin,
+        memberId,
+      });
+      toast.show(memberId ? "Sesión personal agendada." : "Hueco publicado: ya se puede reservar.", "good");
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo publicar el hueco.");
+    }
+  }
+
+  return (
+    <Sheet
+      visible
+      onClose={onClose}
+      kicker={`HUECO LIBRE · ${formatLongDate(date)}`}
+      title="Publicar hueco de EP"
+      footer={
+        <View style={{ gap: 8 }}>
+          {error ? <Text style={[typo.rowMeta, { color: theme.critical }]}>{error}</Text> : null}
+          <Button
+            title={memberId ? "Agendar sesión" : "Publicar hueco"}
+            variant="gold"
+            size="lg"
+            loading={createSlot.isPending}
+            onPress={submit}
+          />
+        </View>
+      }
+    >
+      <View style={styles.timeRow}>
+        <View style={{ flex: 1 }}>
+          <Field
+            label="Inicio"
+            value={startTime}
+            onChangeText={setStartTime}
+            placeholder="09:00"
+            keyboardType="numbers-and-punctuation"
+          />
+        </View>
+        <Stepper label="Minutos" value={durationMin} min={30} max={120} onChange={(v) => setDurationMin(v)} />
+      </View>
+
+      <View style={{ gap: 6 }}>
+        <Text style={[typo.label, { color: theme.textSecondary }]}>Cliente</Text>
+        <ChipRow>
+          <Chip label="Dejar libre" selected={memberId === null} onPress={() => setMemberId(null)} />
+          {agenda.members.slice(0, 30).map((member) => (
+            <Chip
+              key={member.id}
+              label={`${member.firstName} ${member.lastName}`}
+              tone="bone"
+              selected={memberId === member.id}
+              onPress={() => setMemberId((current) => (current === member.id ? null : member.id))}
+            />
+          ))}
+        </ChipRow>
+      </View>
+
+      <View style={[styles.overlap, { backgroundColor: memberId ? theme.warningBg : theme.goldBg }]}>
+        <View style={[styles.overlapDot, { backgroundColor: memberId ? theme.warning : theme.gold }]} />
+        <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1, lineHeight: 17 }]}>
+          {memberId
+            ? "Con cliente asignado la sesión queda cerrada y no se ofrece a nadie más. Al agendarla tú, se crea sin bono asociado: no le descuenta sesión."
+            : "Sin cliente asignado, la sesión queda libre y la reserva el socio desde su app. Ese hueco se crea sin bono asociado: no le descuenta sesión."}
+        </Text>
+      </View>
+    </Sheet>
+  );
+}
+
 const ATTENDEE_STATUS_LABEL: Record<StaffSessionAttendee["status"], string> = {
   BOOKED: "Reservado",
   WAITLISTED: "Lista de espera",
@@ -512,10 +695,15 @@ const ATTENDEE_STATUS_LABEL: Record<StaffSessionAttendee["status"], string> = {
 };
 
 /**
- * Asistentes de un grupo reducido: roster + lista de espera de la ocurrencia,
- * con alta y baja de socios sin salir de la agenda. Reutiliza `Sheet`, y las
- * mismas rutas de staff que la web (`bookSessionForMemberAsStaff` /
- * `cancelSessionBooking` vía la API móvil).
+ * Asistentes de un grupo reducido.
+ *
+ * Lo que cambia respecto a la versión anterior no es el aspecto: es que quitar
+ * a alguien deja de ser un `Alert` genérico. Sacar a un socio de una sesión
+ * TIENE efecto sobre su bono, y ese efecto depende de cuánto falte —la ventana
+ * de 24 h del descarte del entrenador, distinta de las 12 h que tiene el propio
+ * socio para cancelar—, así que se abre una hoja que dice el efecto exacto
+ * ANTES de confirmar. Descubrir que has consumido la sesión de alguien después
+ * de haberla consumido no es una opción.
  */
 function AttendeesSheet({
   session,
@@ -532,13 +720,15 @@ function AttendeesSheet({
   const toast = useToast();
   const { data, isLoading, isError } = useStaffSessionAttendees(session.id, date);
   const addBooking = useAddStaffBooking(session.id);
-  const removeBooking = useRemoveStaffBooking(session.id);
   const [search, setSearch] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [discarding, setDiscarding] = useState<StaffSessionAttendee | null>(null);
 
   const booked = data?.attendees.filter((a) => a.status !== "WAITLISTED" && a.status !== "CANCELLED") ?? [];
   const waitlisted = data?.attendees.filter((a) => a.status === "WAITLISTED") ?? [];
   const capacity = data?.capacity ?? session.capacity;
-  const full = booked.length >= capacity;
+  const free = Math.max(0, capacity - booked.length);
+  const full = free === 0;
 
   const q = search.trim().toLowerCase();
   const candidates = (data?.bookableMembers ?? []).filter(
@@ -550,122 +740,310 @@ function AttendeesSheet({
       await addBooking.mutateAsync({ memberId, occurrenceDate: date });
       toast.show(`Plaza reservada para ${name}.`, "good");
       setSearch("");
+      setAdding(false);
     } catch (err) {
       toast.show(err instanceof Error ? err.message : "No se pudo reservar la plaza.", "critical");
     }
   }
 
-  function handleRemove(attendee: StaffSessionAttendee) {
-    Alert.alert("Quitar del roster", `Se cancelará la plaza de ${attendee.name}.`, [
-      { text: "Volver", style: "cancel" },
-      {
-        text: "Quitar",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await removeBooking.mutateAsync(attendee.bookingId);
-            toast.show(`Reserva de ${attendee.name} cancelada.`, "good");
-          } catch (err) {
-            toast.show(err instanceof Error ? err.message : "No se pudo cancelar.", "critical");
-          }
-        },
-      },
-    ]);
+  return (
+    <>
+      <Sheet visible={!discarding && !adding} onClose={onClose} kicker="GRUPO REDUCIDO" title={session.name}>
+        <View style={styles.attendeesHeaderRow}>
+          <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1 }]}>
+            {booked.length} de {capacity} plazas · {free} {free === 1 ? "libre" : "libres"}
+            {waitlisted.length > 0 ? ` · ${waitlisted.length} en lista de espera` : ""}
+          </Text>
+          <Button title="Añadir" variant="gold" size="sm" onPress={() => setAdding(true)} />
+        </View>
+
+        {isLoading ? (
+          <SkeletonList rows={3} shape="avatarRow" />
+        ) : isError || !data ? (
+          <EmptyState icon="alert" title="No se pudieron cargar los asistentes" />
+        ) : (
+          <>
+            <Text style={[typo.label, { color: theme.textSecondary }]}>Confirmados</Text>
+            {booked.length === 0 ? (
+              <EmptyState icon="users" title="Sin reservas" description="Todavía no hay ningún socio apuntado." />
+            ) : (
+              <View style={{ gap: 8 }}>
+                {booked.map((a) => (
+                  <View key={a.bookingId} style={[styles.attendeeRow, { borderColor: theme.border }]}>
+                    <Avatar name={a.name} size={34} />
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                        {a.name}
+                      </Text>
+                      <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>{ATTENDEE_STATUS_LABEL[a.status]}</Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Descartar a ${a.name}`}
+                      onPress={() => setDiscarding(a)}
+                      style={[styles.iconButton, { borderColor: theme.border }]}
+                    >
+                      <Icon name="close" size={16} color={theme.critical} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {waitlisted.length > 0 ? (
+              <>
+                <Text style={[typo.label, { color: theme.textSecondary }]}>Lista de espera</Text>
+                {/* La regla, explícita: la plaza no se asigna sola. Con la
+                    sesión completa hay que cancelar antes una reserva, y quien
+                    espera no se entera si esto no se dice aquí. */}
+                <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>
+                  La plaza no se asigna sola: con la sesión completa hay que cancelar antes una reserva.
+                </Text>
+                <View style={{ gap: 8 }}>
+                  {waitlisted.map((a) => (
+                    <View key={a.bookingId} style={[styles.attendeeRow, { borderColor: theme.border }]}>
+                      <Avatar name={a.name} size={34} />
+                      <Text style={[typo.rowTitle, { color: theme.text, flex: 1 }]} numberOfLines={1}>
+                        {a.name}
+                      </Text>
+                      <Button
+                        title="Dar plaza"
+                        variant="outline"
+                        size="sm"
+                        disabled={full}
+                        loading={addBooking.isPending}
+                        onPress={() => handleAdd(a.memberId, a.name)}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
+            <Button title="Editar sesión" variant="outline" onPress={onEdit} />
+          </>
+        )}
+      </Sheet>
+
+      {/* Hoja de añadir: al 82 % de alto, con el saldo del bono EN LA PROPIA
+          FILA. Sin el saldo delante, apuntar a alguien es apostar a que le
+          quedan sesiones. */}
+      <Sheet visible={adding} onClose={() => setAdding(false)} kicker="AÑADIR ASISTENTE" title="¿A quién apuntas?">
+        {full ? (
+          <View style={[styles.overlap, { backgroundColor: theme.criticalBg }]}>
+            <View style={[styles.overlapDot, { backgroundColor: theme.critical }]} />
+            <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1 }]}>
+              La sesión está completa: para dar una plaza, cancela antes una reserva.
+            </Text>
+          </View>
+        ) : null}
+
+        <Field
+          placeholder="Buscar socio…"
+          value={search}
+          onChangeText={setSearch}
+          right={<Icon name="search" size={16} color={theme.textFaint} />}
+        />
+
+        {candidates.length === 0 ? (
+          <Text style={[typo.rowMeta, { color: theme.textFaint }]}>
+            Sin socios con bono vivo que coincidan. Solo aparecen socios con bono de grupos.
+          </Text>
+        ) : (
+          <View style={{ gap: 6 }}>
+            {candidates.slice(0, 20).map((m) => {
+              const name = `${m.firstName} ${m.lastName}`;
+              return (
+                <Pressable
+                  key={m.id}
+                  accessibilityRole="button"
+                  disabled={addBooking.isPending || full}
+                  onPress={() => handleAdd(m.id, name)}
+                  style={[styles.attendeeRow, { borderColor: theme.border, opacity: full ? 0.5 : 1 }]}
+                >
+                  <Avatar name={name} size={34} />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>
+                      {m.waiting ? "En lista de espera" : "Bono de grupos vivo"}
+                    </Text>
+                  </View>
+                  <Icon name="plus" size={16} color={theme.goldText} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={[styles.overlap, { backgroundColor: theme.goodBg }]}>
+          <View style={[styles.overlapDot, { backgroundColor: theme.good }]} />
+          <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1, lineHeight: 17 }]}>
+            Se consumirá 1 sesión de su bono de grupos y la sesión pasa a {Math.min(capacity, booked.length + 1)} de{" "}
+            {capacity}. Solo aparecen socios con bono vivo.
+          </Text>
+        </View>
+      </Sheet>
+
+      {discarding ? (
+        <DiscardSheet
+          sessionId={session.id}
+          attendee={discarding}
+          onClose={() => setDiscarding(null)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Descartar a un asistente, con la regla de negocio delante.
+ *
+ * El servidor calcula el efecto (`GET .../discard`) y aquí solo se pinta: a más
+ * de 24 h la sesión vuelve al bono; dentro de las 24 h se consume igualmente,
+ * porque la plaza ya no se puede revender. El override —«devolver de todos
+ * modos»— solo existe para quien puede ajustar saldo a mano
+ * (`canAdjustSessionBalance`), y queda en `AuditLog`.
+ *
+ * Se dice explícitamente que esta ventana NO es la del socio (12 h): son dos
+ * reglas distintas y confundirlas es la causa de la mitad de las discusiones de
+ * mostrador.
+ */
+function DiscardSheet({
+  sessionId,
+  attendee,
+  onClose,
+}: {
+  sessionId: string;
+  attendee: StaffSessionAttendee;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const toast = useToast();
+  const { data: preview, isLoading } = useDiscardPreview(sessionId, attendee.bookingId);
+  const discard = useDiscardAttendee(sessionId);
+  const [reason, setReason] = useState<string | null>(null);
+  const [freeText, setFreeText] = useState("");
+  const [forceRefund, setForceRefund] = useState(false);
+  const [notifyMember, setNotifyMember] = useState(true);
+
+  const within = preview?.withinWindow ?? false;
+  const refunds = preview ? (within ? forceRefund && preview.canForceRefund : preview.refundsByDefault) : false;
+
+  async function submit() {
+    try {
+      const result = await discard.mutateAsync({
+        bookingId: attendee.bookingId,
+        reason: [reason, freeText.trim() || null].filter(Boolean).join(" · ") || null,
+        forceRefund,
+        notifyMember,
+      });
+      toast.show(
+        result.refunded ? `${attendee.name} fuera: sesión devuelta al bono.` : `${attendee.name} fuera: la sesión se consume.`,
+        result.refunded ? "good" : "neutral"
+      );
+      onClose();
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : "No se pudo descartar.", "critical");
+    }
   }
 
   return (
-    <Sheet visible onClose={onClose} kicker="GRUPO REDUCIDO" title={session.name}>
-      <View style={styles.attendeesHeaderRow}>
-        <Text style={[typo.rowMeta, { color: theme.textSecondary }]}>
-          {session.startTime}–{session.endTime} · {booked.length}/{capacity} plazas
-        </Text>
-        <Button title="Editar sesión" variant="outline" size="sm" onPress={onEdit} />
-      </View>
-
-      {isLoading ? (
-        <SkeletonList rows={3} />
-      ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudieron cargar los asistentes" />
+    <Sheet
+      visible
+      onClose={onClose}
+      kicker="DESCARTAR ASISTENTE"
+      title={attendee.name}
+      footer={
+        <Button
+          title={refunds ? "Descartar y devolver sesión" : "Descartar asistente"}
+          variant="danger"
+          size="lg"
+          loading={discard.isPending}
+          disabled={isLoading}
+          onPress={submit}
+        />
+      }
+    >
+      {isLoading || !preview ? (
+        <SkeletonList rows={2} shape="card" />
       ) : (
         <>
-          {booked.length === 0 ? (
-            <EmptyState icon="users" title="Sin reservas" description="Todavía no hay ningún socio apuntado a esta sesión." />
-          ) : (
-            <View style={{ gap: 8 }}>
-              {booked.map((a) => (
-                <View key={a.bookingId} style={[styles.attendeeRow, { borderColor: theme.border }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[typo.rowTitle, { color: theme.text }]}>{a.name}</Text>
-                    <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>{ATTENDEE_STATUS_LABEL[a.status]}</Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`Quitar a ${a.name}`}
-                    disabled={removeBooking.isPending}
-                    onPress={() => handleRemove(a)}
-                    style={[styles.iconButton, { borderColor: theme.border }]}
-                  >
-                    <Icon name="trash" size={16} color={theme.critical} />
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          )}
+          <View
+            style={[
+              styles.overlap,
+              { backgroundColor: within && !refunds ? theme.criticalBg : theme.goodBg },
+            ]}
+          >
+            <View style={[styles.overlapDot, { backgroundColor: within && !refunds ? theme.critical : theme.good }]} />
+            <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1, lineHeight: 17 }]}>
+              {preview.notice}
+            </Text>
+          </View>
 
-          {waitlisted.length > 0 ? (
-            <View style={{ gap: 6 }}>
-              <Text style={[typo.label, { color: theme.textSecondary }]}>Lista de espera ({waitlisted.length})</Text>
-              {waitlisted.map((a) => (
-                <Text key={a.bookingId} style={[typo.rowMeta, { color: theme.textMuted }]}>
-                  {a.name}
-                </Text>
-              ))}
+          <Text style={[typo.label, { color: theme.textSecondary }]}>Motivo (opcional)</Text>
+          <ChipRow>
+            {["Lesión", "Cambio de día", "Aforo", "Otro"].map((option) => (
+              <Chip
+                key={option}
+                label={option}
+                selected={reason === option}
+                onPress={() => setReason((current) => (current === option ? null : option))}
+              />
+            ))}
+          </ChipRow>
+          <Field placeholder="Detalle para el socio (opcional)" value={freeText} onChangeText={setFreeText} multiline />
+
+          {/* El efecto exacto sobre las dos cifras que importan: su bono y las
+              plazas de la sesión. */}
+          <Card tone="alt" style={{ gap: 8 }}>
+            <View style={styles.effectRow}>
+              <Text style={[typo.rowMeta, { color: theme.textMuted, flex: 1 }]}>
+                Bono{preview.planName ? ` · ${preview.planName}` : ""}
+              </Text>
+              <Text
+                style={[
+                  typo.num,
+                  { color: refunds ? theme.good : theme.textSecondary },
+                ]}
+              >
+                {preview.balanceBefore == null
+                  ? "ilimitado"
+                  : refunds
+                    ? `${preview.balanceBefore} → ${preview.balanceAfterIfRefunded}`
+                    : `${preview.balanceBefore} (sin cambio)`}
+              </Text>
+            </View>
+            <View style={styles.effectRow}>
+              <Text style={[typo.rowMeta, { color: theme.textMuted, flex: 1 }]}>Empieza en</Text>
+              <Text style={[typo.num, { color: theme.text }]}>
+                {formatCompact(Math.max(0, preview.hoursUntil * 3600))}
+              </Text>
+            </View>
+          </Card>
+
+          {within && preview.canForceRefund ? (
+            <View style={[styles.overrideBox, { borderColor: theme.gold }]}>
+              <View style={styles.overrideHeader}>
+                <Text style={[typo.rowTitleSmall, { color: theme.text, flex: 1 }]}>Devolver la sesión de todos modos</Text>
+                <Badge label="Admin" tone="gold" />
+              </View>
+              <ToggleRow
+                label="Ajustar el saldo a mano"
+                description="Queda registrado en el histórico de auditoría."
+                value={forceRefund}
+                onValueChange={setForceRefund}
+              />
             </View>
           ) : null}
 
-          <View style={{ gap: 8 }}>
-            <Text style={[typo.label, { color: theme.textSecondary }]}>Añadir socio</Text>
-            {full ? (
-              <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
-                La sesión está completa: para dar una plaza, cancela antes una reserva.
-              </Text>
-            ) : (
-              <>
-                <Field
-                  placeholder="Buscar socio…"
-                  value={search}
-                  onChangeText={setSearch}
-                  right={<Icon name="search" size={16} color={theme.textFaint} />}
-                />
-                {q && candidates.length === 0 ? (
-                  <Text style={[typo.rowMeta, { color: theme.textFaint }]}>Sin socios con bono que coincidan.</Text>
-                ) : (
-                  <View style={{ gap: 6 }}>
-                    {candidates.slice(0, 20).map((m) => {
-                      const name = `${m.firstName} ${m.lastName}`;
-                      return (
-                        <Pressable
-                          key={m.id}
-                          accessibilityRole="button"
-                          disabled={addBooking.isPending}
-                          onPress={() => handleAdd(m.id, name)}
-                          style={[styles.attendeeRow, { borderColor: theme.border }]}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={[typo.rowTitle, { color: theme.text }]}>{name}</Text>
-                            {m.waiting ? (
-                              <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>En lista de espera</Text>
-                            ) : null}
-                          </View>
-                          <Icon name="plus" size={16} color={theme.goldText} />
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
-              </>
-            )}
-          </View>
+          <ToggleRow
+            label="Avisar al socio"
+            description="Le llega el motivo y qué pasa con su sesión."
+            value={notifyMember}
+            onValueChange={setNotifyMember}
+          />
         </>
       )}
     </Sheet>
@@ -705,5 +1083,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  iconButton: { width: 32, height: 32, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  iconButton: { width: 34, height: 34, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  publishCard: { flexDirection: "row", alignItems: "center", gap: 11 },
+  effectRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  overrideBox: { borderWidth: 1, borderRadius: radii.control, padding: 13, gap: 6 },
+  overrideHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
 });

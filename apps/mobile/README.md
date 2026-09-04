@@ -69,9 +69,22 @@ mínima (avisos y perfil).
   en `src/theme/motion.ts`, y primitivas en `src/components/` (héroe, anillo de
   progreso, cuenta atrás, hojas, chips, barras de puntuación, esqueletos…).
 - **Navegación por rol** (`src/app/(tabs)/_layout.tsx`): cinco pestañas por
-  rol, espejo de `NAV_BY_ROLE` (src/lib/rbac.ts). Las pantallas secundarias
-  (calendario, evolución, anuncios, avisos, agenda del centro) se abren desde
-  Perfil, que hace de índice.
+  rol, elegidas por frecuencia de uso. La quinta es **Más**, un índice real del
+  resto de la app con contadores de trabajo pendiente; **Perfil** deja de ser
+  ese índice y vuelve a ser solo la cuenta.
+
+  | Rol | Pestañas |
+  |---|---|
+  | Socio | Hoy · Reservar · Sesiones · Evolución · Más |
+  | Entrenador / Entrenador Admin | Hoy · Agenda · Socios · Feedback · Más |
+
+  Lo que cambia respecto a la primera versión: el entrenador tenía en la app
+  solo panel, agenda, feedback, brief y perfil mientras en la web disponía
+  además de Tareas, Socios, Leads y —como Entrenador Admin— Aforo; ahora
+  «Socios» es pestaña y el resto entra por «Más». Del lado del socio,
+  Calendario se funde dentro de «Sesiones» como vista (era una pantalla aparte
+  que contaba lo mismo), Evolución sube a pestaña y Avisos entra por la campana
+  de Hoy y por «Más».
 
 ### Pantallas (handoff "App móvil premium")
 
@@ -83,7 +96,7 @@ mínima (avisos y perfil).
 | B1 Reservar · B2 Confirmar | `app/(tabs)/agenda.tsx` | `GET /portal/agenda`, `POST /portal/agenda/book` |
 | B3 Mis sesiones | `app/(tabs)/sesiones.tsx` | `GET /portal/agenda` |
 | B4 Mis bonos | `app/(tabs)/bonos.tsx` | `GET /portal/memberships` |
-| B5 Mi calendario | `app/(tabs)/calendario.tsx` | `GET /portal/member-calendar?month=` |
+| B5 Mi calendario | vista dentro de `app/(tabs)/sesiones.tsx` | `GET /portal/member-calendar?month=` |
 | C1 Mi panel | `app/(tabs)/panel.tsx` | `GET /trainer/panel` |
 | C2 Agenda · C3 Crear/editar | `app/(tabs)/staff-agenda.tsx` | `GET /agenda`, `POST`/`PATCH`/`DELETE /agenda/sessions` |
 | C4 Feedback 1-10 | `app/(tabs)/feedback/[id].tsx` | `GET`/`POST /trainer/sessions/:id/feedback` |
@@ -92,6 +105,44 @@ mínima (avisos y perfil).
 | D4 Productos · D5 Ficha | `app/(tabs)/productos/` | `GET`/`POST /products`, `PATCH`/`DELETE /products/:id` |
 | D6 Equipo · D7 Ficha | `app/(tabs)/organizacion/` | `GET`/`POST /staff`, `PATCH`/`DELETE /staff/:id` |
 | Cumpleaños · valoración vencida | `src/components/PortalGate.tsx` | `GET`/`POST /portal/greeting`, `GET /portal/valoracion` |
+
+### Rediseño y paridad funcional (handoff "Mejora de mobile app")
+
+| Pantalla | Ruta | Endpoint |
+|---|---|---|
+| Más (índice de los dos roles) | `app/(tabs)/mas.tsx` | — |
+| Socios del entrenador · ficha | `app/(tabs)/mis-socios/` | `GET /trainer/members`, `/trainer/members/:id`, `POST` (nota) |
+| Plan del socio · mesociclos | `app/(tabs)/mis-socios/mesociclo/[id].tsx` | `GET`/`POST /trainer/members/:id/mesocycles`, `GET /mesocycles/:id`, `POST /mesocycles/:id/approve` |
+| Tareas | `app/(tabs)/tareas.tsx` | `GET`/`POST /tasks`, `PATCH /tasks/:id` |
+| Leads | `app/(tabs)/leads.tsx` | `GET /leads`, `PATCH /leads/:id` |
+| Aforo de clases | `app/(tabs)/aforo.tsx` | `GET`/`PATCH /capacity` |
+| Hueco de EP | hoja de `app/(tabs)/staff-agenda.tsx` | `POST /agenda/ep-slots` |
+| Descartar asistente | hoja de `app/(tabs)/staff-agenda.tsx` | `GET`/`POST /agenda/sessions/:id/bookings/:bookingId/discard` |
+| Historial de consumo | `app/(tabs)/consumo.tsx` | `GET /portal/consumption` |
+
+**Regla de negocio nueva — descarte del entrenador (`src/lib/attendee-discard.ts`):**
+sacar a un socio de un grupo reducido tiene ventana propia de **24 h**, distinta
+de la cancelación del propio socio. Con más margen la sesión vuelve al bono;
+dentro de las 24 h se consume, porque la plaza ya no se puede revender. Quien
+tiene `canAdjustSessionBalance` (Entrenador Admin, dirección, recepción) puede
+devolverla igualmente, y ese override —como el propio descarte— queda en
+`AuditLog`. La hoja enseña el efecto exacto sobre el bono ANTES de confirmar.
+
+**Estados de espera (tres mecanismos, no uno):**
+
+1. **Velo de marca bloqueante** (`src/components/BrandLoader.tsx`) — solo para
+   las esperas largas con IA (generar un mesociclo: 60-120 s). Portado de
+   `src/components/ui/brand-loader.tsx` con sus reglas: el nivel se para al 92 %
+   de su tramo, el 100 % solo llega con `done`, y el velo se queda 1150 ms con
+   el resultado a la vista. Añadido propio del móvil: **Avisarme al terminar**,
+   que permite salir sin abortar el trabajo.
+2. **Skeleton** (`src/components/Skeleton.tsx`) — primera carga de cualquier
+   pantalla, con variantes por forma (`row`, `avatarRow`, `kpi`, `hero`) para
+   que el esqueleto calque la retícula real y nada salte al llegar los datos.
+   Cabecera, buscador y filtros son reales desde el primer fotograma.
+3. **Botón en curso** — acciones cortas (reservar, cancelar, guardar feedback,
+   añadir o descartar asistente). Sin velo: tapar la pantalla media décima de
+   segundo hace la app más lenta de lo que es.
 
 ### Paridad con el portal web (F8)
 
