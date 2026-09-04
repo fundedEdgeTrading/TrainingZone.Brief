@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Linking, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useLeads, useUpdateLead } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
@@ -54,14 +55,25 @@ export default function LeadsScreen() {
     // Registrar el contacto va unido a llamar: si fueran dos gestos, el segundo
     // no se hace nunca y el embudo deja de reflejar la realidad. RB-LEAD-003:
     // quien llama se lleva el lead si no tenía responsable.
+    // Los dos fallos posibles son distintos y el aviso tiene que decir cuál
+    // fue: con un único `catch`, un error al guardar el cambio de etapa
+    // avisaba de que «no se pudo abrir el marcador» después de haber llamado.
     try {
       await Linking.openURL(`tel:${lead.phone.replace(/\s+/g, "")}`);
-      if (lead.status === "SIN_CONTACTAR") {
-        await updateLead.mutateAsync({ id: lead.id, status: "SEGUIMIENTO", claimOwner: true });
-        toast.show("Contacto registrado: pasa a seguimiento.");
-      }
     } catch {
       toast.show("No se pudo abrir el marcador del teléfono.", "critical");
+      return;
+    }
+
+    if (lead.status !== "SIN_CONTACTAR") return;
+    try {
+      await updateLead.mutateAsync({ id: lead.id, status: "SEGUIMIENTO", claimOwner: true });
+      toast.show("Contacto registrado: pasa a seguimiento.");
+    } catch (err) {
+      toast.show(
+        err instanceof Error ? err.message : "Llamada hecha, pero no se pudo registrar el contacto.",
+        "critical"
+      );
     }
   }
 
@@ -86,7 +98,7 @@ export default function LeadsScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Volver"
-              onPress={() => router.back()}
+              onPress={() => goBack("/mas")}
               style={[styles.iconButton, { borderColor: theme.border }]}
             >
               <Icon name="chevron-left" size={17} color={theme.text} />

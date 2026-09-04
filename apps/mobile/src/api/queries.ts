@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./client";
 import type {
   ActivityResponse,
@@ -362,6 +362,9 @@ export function useMembers(search: string, state?: MemberState) {
       return apiRequest<MembersResponse>(`/members?${params.toString()}`);
     },
     getNextPageParam: (lastPage) => lastPage.nextPage,
+    // Al cambiar el filtro o el texto buscado, la lista anterior se queda a la
+    // vista hasta que llega la nueva en vez de vaciarse a esqueleto.
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -452,6 +455,7 @@ export function useTrainerMembers(filter: TrainerMemberFilter, search: string) {
   return useQuery({
     queryKey: ["trainer-members", filter, search.trim()],
     queryFn: () => apiRequest<TrainerMembersResponse>(`/trainer/members?${params.toString()}`),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -557,6 +561,7 @@ export function useLeads(stage: LeadStage | null, search = "", opts: { enabled?:
     queryKey: ["leads", stage ?? "all", search.trim()],
     queryFn: () => apiRequest<LeadsResponse>(`/leads${qs ? `?${qs}` : ""}`),
     enabled: opts.enabled ?? true,
+    placeholderData: keepPreviousData,
   });
 }
 

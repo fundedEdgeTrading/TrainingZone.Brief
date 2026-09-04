@@ -146,6 +146,12 @@ export type NotificationItem = {
 export type NotificationsResponse = { notifications: NotificationItem[] };
 
 export type LoginResponse = { accessToken: string; refreshToken: string; user: MeResponse };
+
+/**
+ * Organización entre las que elegir cuando una misma identidad tiene varias
+ * membresías (`POST /auth/login` responde 409 con esta lista, RB-ID-002).
+ */
+export type LoginOrganization = { id: string; name: string; logoUrl: string | null };
 export type RefreshResponse = { accessToken: string; refreshToken: string };
 
 // ---------- Mi evolución (socio) ----------

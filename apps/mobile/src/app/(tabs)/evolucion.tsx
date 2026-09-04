@@ -29,6 +29,11 @@ import type { ProgressEntry } from "@/api/types";
 /** Medidas en las que BAJAR es lo que se busca. */
 const LOWER_IS_BETTER: Record<string, boolean> = { weightKg: true, bodyFatPct: true, waistCm: true, muscleMassKg: false };
 
+/** Cifra con coma decimal, que es como se escribe en español. */
+function decimal(value: number, decimals: number): string {
+  return value.toFixed(decimals).replace(".", ",");
+}
+
 const METRICS: { key: keyof ProgressEntry; label: string; unit: string; decimals: number }[] = [
   { key: "weightKg", label: "Peso", unit: "kg", decimals: 1 },
   { key: "bodyFatPct", label: "% graso", unit: "%", decimals: 1 },
@@ -56,7 +61,20 @@ export default function EvolutionScreen() {
   );
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
+    <ScreenContainer
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefetching || activity.isRefetching}
+          // Las dos consultas que pinta la pantalla, no solo una: la gráfica de
+          // constancia sale de `activity` y se quedaba con los datos viejos.
+          onRefresh={() => {
+            refetch();
+            activity.refetch();
+          }}
+          tintColor={theme.gold}
+        />
+      }
+    >
       <FadeInUp>
         <ScreenHeader
           kicker={data?.measuredAt ? `ÚLTIMA TOMA · ${data.measuredAt}` : "TU EVOLUCIÓN"}
@@ -92,12 +110,12 @@ export default function EvolutionScreen() {
                         {metric.label}
                       </Text>
                       <Text style={[styles.tileValue, { color: theme.text }]}>
-                        {value.toFixed(metric.decimals).replace(".", ",")} {metric.unit}
+                        {decimal(value, metric.decimals)} {metric.unit}
                       </Text>
                       {delta != null && Math.abs(delta) >= 0.05 ? (
                         <Text style={[styles.tileDelta, { color: better ? theme.good : theme.critical }]}>
                           {delta > 0 ? "+" : "−"}
-                          {Math.abs(delta).toFixed(metric.decimals).replace(".", ",")}
+                          {decimal(Math.abs(delta), metric.decimals)}
                         </Text>
                       ) : (
                         <Text style={[styles.tileDelta, { color: theme.textFaint }]}>sin cambio</Text>
@@ -151,11 +169,14 @@ export default function EvolutionScreen() {
             entries.map((entry) => (
               <Card key={entry.id} style={{ gap: 10 }}>
                 <Text style={[typo.rowTitle, { color: theme.text }]}>{formatShortDate(entry.measuredAt ?? entry.date)}</Text>
+                {/* Con coma decimal, igual que los tiles de arriba: mezclar
+                    «62,4 kg» arriba y «62.4 kg» aquí abajo se lee como si
+                    fueran dos medidas distintas. */}
                 <View style={styles.pillRow}>
-                  {entry.weightKg != null ? <Pill label={`${entry.weightKg} kg`} /> : null}
-                  {entry.bodyFatPct != null ? <Pill label={`${entry.bodyFatPct} % graso`} /> : null}
-                  {entry.muscleMassKg != null ? <Pill label={`${entry.muscleMassKg} kg músculo`} /> : null}
-                  {entry.waistCm != null ? <Pill label={`${entry.waistCm} cm cintura`} /> : null}
+                  {entry.weightKg != null ? <Pill label={`${decimal(entry.weightKg, 1)} kg`} /> : null}
+                  {entry.bodyFatPct != null ? <Pill label={`${decimal(entry.bodyFatPct, 1)} % graso`} /> : null}
+                  {entry.muscleMassKg != null ? <Pill label={`${decimal(entry.muscleMassKg, 1)} kg músculo`} /> : null}
+                  {entry.waistCm != null ? <Pill label={`${decimal(entry.waistCm, 0)} cm cintura`} /> : null}
                 </View>
                 <PhotoRow entry={entry} consent={data.consentImages} />
               </Card>

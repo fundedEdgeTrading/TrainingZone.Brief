@@ -1,4 +1,4 @@
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import Svg, { Circle, Path } from "react-native-svg";
 
 // Iconografía propia en SVG (react-native-svg ya es dependencia): glifos
 // geométricos de trazo, 18-20 px, como pide el handoff. Se dibujan aquí en vez
@@ -41,7 +41,10 @@ const PATHS: Record<IconName, string[]> = {
   user: ["M4.5 20.5c0-3.6 3.2-5.6 7.5-5.6s7.5 2 7.5 5.6"],
   box: ["M12 3.2 20.5 8v8L12 20.8 3.5 16V8z", "M3.5 8 12 12.7 20.5 8", "M12 12.7v8.1"],
   building: ["M5 21V4.5h14V21", "M9 8.5h2M13 8.5h2M9 12.5h2M13 12.5h2", "M10 21v-4.5h4V21"],
-  bell: ["M6.5 17.5V11a5.5 5.5 0 1 1 11 0v6.5H4.5h15", "M10 20.5h4"],
+  // El cuerpo, la base y el badajo por separado: en un único trazo la base se
+  // dibujaba dos veces encima de sí misma (`H4.5h15`) y quedaba más gruesa que
+  // el resto del glifo.
+  bell: ["M6.5 17.5V11a5.5 5.5 0 1 1 11 0v6.5", "M4.5 17.5h15", "M10 20.5h4"],
   star: ["m12 3.8 2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8L3.5 10l5.9-.9z"],
   clipboard: ["M9 4.5H7A1.5 1.5 0 0 0 5.5 6v13A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V6A1.5 1.5 0 0 0 17 4.5h-2", "M9 3.5h6v3H9z", "M9 11h6M9 15h4"],
   grid: ["M4 7.5h16M4 12h16M4 16.5h16", "M8 5.5v13"],
@@ -72,10 +75,6 @@ const CIRCLES: Partial<Record<IconName, { cx: number; cy: number; r: number }[]>
   eye: [{ cx: 12, cy: 12, r: 2.6 }],
 };
 
-const RECTS: Partial<Record<IconName, { x: number; y: number; w: number; h: number; rx: number }[]>> = {
-  activity: [],
-};
-
 export function Icon({
   name,
   size = 20,
@@ -89,9 +88,6 @@ export function Icon({
 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      {(RECTS[name] ?? []).map((r, i) => (
-        <Rect key={`r${i}`} x={r.x} y={r.y} width={r.w} height={r.h} rx={r.rx} stroke={color} strokeWidth={strokeWidth} />
-      ))}
       {(CIRCLES[name] ?? []).map((c, i) => (
         <Circle key={`c${i}`} cx={c.cx} cy={c.cy} r={c.r} stroke={color} strokeWidth={strokeWidth} />
       ))}

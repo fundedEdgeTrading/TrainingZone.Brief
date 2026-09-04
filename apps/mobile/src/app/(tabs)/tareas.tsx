@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import { router } from "expo-router";
+import {  } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useAuth } from "@/auth/auth-context";
 import { canAssignTasks } from "@/auth/routes";
 import { useCreateTask, useSetTaskStatus, useTasks } from "@/api/queries";
@@ -78,7 +79,7 @@ export default function TasksScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Volver"
-                onPress={() => router.back()}
+                onPress={() => goBack("/mas")}
                 style={[styles.iconButton, { borderColor: theme.border }]}
               >
                 <Icon name="chevron-left" size={17} color={theme.text} />

@@ -19,6 +19,7 @@ import { fonts, typo } from "@/theme/typography";
 import { easeOutSoft, useReducedMotion } from "@/theme/motion";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/Button";
+import type { LoginOrganization } from "@/api/types";
 
 // A1 del handoff. Pantalla en tinta con dos manchas "aurora" a la deriva; el
 // login es el único sitio de la app donde el fondo no sigue la piel del
@@ -38,6 +39,11 @@ export default function LoginScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [shake] = useState(() => new Animated.Value(0));
+  // RB-ID-002: una misma identidad puede pertenecer a varias organizaciones. El
+  // servidor responde 409 con la lista y espera un reintento con `orgId`; la
+  // app se limitaba a enseñar «Elige la organización…» sin ninguna que elegir,
+  // así que esas personas no podían entrar.
+  const [organizations, setOrganizations] = useState<LoginOrganization[] | null>(null);
 
   if (state.status === "signedIn") return <Redirect href={homeRouteFor(state.user)} />;
 
@@ -52,7 +58,7 @@ export default function LoginScreen() {
     ]).start();
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(orgId?: string) {
     if (!email.trim() || !password) {
       setError("Escribe tu email y tu contraseña.");
       shakeError();
@@ -60,13 +66,15 @@ export default function LoginScreen() {
     }
     setError(null);
     setLoading(true);
-    const result = await login(email.trim(), password);
+    const result = await login(email.trim(), password, orgId);
     setLoading(false);
     if (!result.ok) {
+      setOrganizations(result.organizations ?? null);
       setError(result.error);
       shakeError();
       return;
     }
+    setOrganizations(null);
     router.replace(homeRouteFor(result.user));
   }
 
@@ -120,11 +128,36 @@ export default function LoginScreen() {
               </Animated.View>
             ) : null}
 
-            <Button title="Entrar" size="lg" onPress={handleSubmit} loading={loading} style={{ marginTop: 4 }} />
+            {organizations && organizations.length > 0 ? (
+              <View style={styles.orgList}>
+                {organizations.map((org) => (
+                  <Pressable
+                    key={org.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Entrar en ${org.name}`}
+                    disabled={loading}
+                    onPress={() => handleSubmit(org.id)}
+                    style={[styles.orgRow, { opacity: loading ? 0.5 : 1 }]}
+                  >
+                    {org.logoUrl ? (
+                      <Image source={{ uri: org.logoUrl }} style={styles.orgLogo} resizeMode="contain" />
+                    ) : null}
+                    <Text style={[typo.rowTitle, { color: BONE, flex: 1 }]} numberOfLines={1}>
+                      {org.name}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Button title="Entrar" size="lg" onPress={() => handleSubmit()} loading={loading} style={{ marginTop: 4 }} />
+            )}
 
-            <Pressable accessibilityRole="button" hitSlop={8} style={styles.forgot}>
-              <Text style={[typo.bodyMedium, { color: MUTED }]}>¿Has olvidado la contraseña?</Text>
-            </Pressable>
+            {/* No hay flujo de recuperación en la API móvil: el centro
+                restablece la contraseña. Antes esto era un botón mudo — se
+                pulsaba y no pasaba nada — así que ahora lo dice en texto. */}
+            <Text style={[typo.rowMetaSmall, { color: MUTED, textAlign: "center" }]}>
+              ¿Has olvidado la contraseña? Pídele a tu centro que te la restablezca.
+            </Text>
           </View>
 
           <View style={styles.dividerRow}>
@@ -203,7 +236,18 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 14,
   },
-  forgot: { alignSelf: "center", paddingVertical: 6 },
+  orgList: { gap: 8, marginTop: 4 },
+  orgRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    minHeight: 54,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    borderColor: BORDER,
+    paddingHorizontal: 14,
+  },
+  orgLogo: { width: 30, height: 30, borderRadius: 8 },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   divider: { flex: 1, height: 1, backgroundColor: BORDER },
   ssoRow: { flexDirection: "row", gap: 10 },

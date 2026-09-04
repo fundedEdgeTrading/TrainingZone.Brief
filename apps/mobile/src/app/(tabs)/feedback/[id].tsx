@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useSessionFeedback, useSaveSessionFeedback } from "@/api/queries";
 import { useTheme, radii, layout } from "@/theme/theme";
 import { typo } from "@/theme/typography";
@@ -64,13 +65,34 @@ export default function SessionFeedbackScreen() {
   // Estado inicial: lo que ya hubiera guardado el entrenador. `scores`/`notes`
   // son estado editable local que arranca desde `data` (fetch) y luego el
   // entrenador lo modifica a mano, así que no se puede derivar en el propio
-  // render — necesita este efecto de sincronización única por carga.
+  // render — necesita este efecto de sincronización.
+  //
+  // Y la siembra es UNA SOLA VEZ por sesión, no con cada `data`. El
+  // autoguardado invalida esta misma consulta, así que al llegar la respuesta
+  // del guardado el efecto volvía a sembrar desde el servidor y BORRABA de la
+  // pantalla los ejes que el entrenador acababa de puntuar y que aún no habían
+  // salido: se puntuaba un eje y los anteriores se quedaban en blanco.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
     if (!data) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver comentario arriba
+    const key = `${data.session.id}:${data.session.occurrenceDate}`;
+    if (seededFor.current === key) return;
+    seededFor.current = key;
     setScores(Object.fromEntries(data.members.map((m) => [m.bookingId, { ...EMPTY_SCORES, ...m.scores }])));
     setNotes(Object.fromEntries(data.members.map((m) => [m.bookingId, m.note ?? ""])));
   }, [data]);
+
+  // Espejo en refs de lo puntuado: el autoguardado se dispara desde un
+  // `setTimeout` y necesita leer el estado del momento en que salta, no el que
+  // había cuando se programó.
+  const scoresRef = useRef(scores);
+  const notesRef = useRef(notes);
+  useEffect(() => {
+    scoresRef.current = scores;
+  }, [scores]);
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
 
   useEffect(() => () => {
     if (autosave.current) clearTimeout(autosave.current);
@@ -99,9 +121,19 @@ export default function SessionFeedbackScreen() {
 
     // Autoguardado optimista: no bloquea la interacción y, si el entrenador
     // sale a mitad, lo puntuado ya está en el servidor.
+    //
+    // Se manda el bloque ENTERO del socio, no solo el eje que se acaba de
+    // tocar. El rebote es único y lo comparten los ocho ejes, así que puntuar
+    // ocho seguidos solo guardaba el octavo: los otros siete se perdían en
+    // cuanto el entrenador salía sin pulsar «Guardar».
     if (autosave.current) clearTimeout(autosave.current);
     autosave.current = setTimeout(() => {
-      saveFeedback.mutate({ bookingId, scores: { [axis]: value }, note: notes[bookingId] ?? null });
+      const note = notesRef.current[bookingId]?.trim();
+      saveFeedback.mutate({
+        bookingId,
+        scores: scoresRef.current[bookingId] ?? { ...EMPTY_SCORES, [axis]: value },
+        note: note ? note : null,
+      });
     }, 700);
   }
 
@@ -137,7 +169,7 @@ export default function SessionFeedbackScreen() {
         return;
       }
       toast.show("Feedback guardado. ¡Buen trabajo!", "good");
-      router.back();
+      goBack("/feedback");
     } catch (err) {
       toast.show(err instanceof Error ? err.message : "No se pudo guardar el feedback.", "critical");
     }
@@ -150,7 +182,7 @@ export default function SessionFeedbackScreen() {
           accessibilityRole="button"
           accessibilityLabel="Cerrar"
           hitSlop={10}
-          onPress={() => router.back()}
+          onPress={() => goBack("/feedback")}
           style={[styles.iconButton, { borderColor: theme.border }]}
         >
           <Icon name="close" size={16} color={theme.text} />

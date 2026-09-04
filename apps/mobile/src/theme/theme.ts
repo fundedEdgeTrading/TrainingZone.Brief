@@ -1,4 +1,5 @@
 import { useColorScheme } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Tokens de marca (docs/BRANDING.md) portados a React Native. Misma paleta
 // que src/app/globals.css de la web, con equivalentes claro/oscuro.
@@ -130,8 +131,26 @@ const dark: Theme = {
 
 export const radii = { card: 18, control: 12, pill: 999, hero: 20, sheet: 26, chip: 12 };
 
-/** Retícula del handoff: 20 de padding lateral, 11-14 entre tarjetas. */
-export const layout = { screenPadding: 20, gap: 12, cardPadding: 16, tabBarHeight: 76, touchMin: 44 };
+/**
+ * Retícula del handoff: 20 de padding lateral, 11-14 entre tarjetas.
+ *
+ * `tabBarHeight` es el alto ÚTIL de la barra de pestañas —iconos y etiqueta—,
+ * SIN el área segura inferior. La barra va fijada al borde de la pantalla y se
+ * come ella misma ese margen (`useTabBarHeight()` devuelve el alto total), así
+ * que sumarlo aquí dejaría un hueco doble bajo las etiquetas.
+ */
+export const layout = { screenPadding: 20, gap: 12, cardPadding: 16, tabBarHeight: 58, touchMin: 44 };
+
+/**
+ * Alto real que ocupa la barra de pestañas, área segura inferior incluida. La
+ * barra está pegada al borde inferior sin margen, así que quien pinte por
+ * encima de ella (el toast, que vive fuera del navegador) tiene que descontar
+ * este alto y no solo `layout.tabBarHeight`.
+ */
+export function useTabBarHeight(): number {
+  const insets = useSafeAreaInsets();
+  return layout.tabBarHeight + insets.bottom;
+}
 
 /** Sombra de tarjeta (base) y elevada (hojas, spotlight). */
 export function shadow(theme: Theme, elevated = false) {

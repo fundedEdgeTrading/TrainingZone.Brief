@@ -231,9 +231,12 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
             <Divider />
             <ListRow title="Mis bonos" meta="Todos tus bonos y su estado" chevron onPress={() => router.push("/bonos")} />
             <Divider />
+            {/* La fila se llamaba «Salud y consentimientos» pero abre «Mi
+                evolución»: quien buscaba lo que tenía firmado no lo encontraba
+                y quien quería ver su progreso no entraba aquí. */}
             <ListRow
-              title="Salud y consentimientos"
-              meta="Lo que has firmado y lo que se comparte"
+              title="Mi evolución"
+              meta="Tus medidas, tu progreso y el consentimiento que lo permite"
               chevron
               onPress={() => router.push("/evolucion")}
             />

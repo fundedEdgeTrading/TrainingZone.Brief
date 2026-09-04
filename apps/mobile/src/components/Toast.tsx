@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useTheme, radii, layout } from "@/theme/theme";
+import { useTheme, radii, layout, useTabBarHeight } from "@/theme/theme";
 import { typo } from "@/theme/typography";
 import { duration, easeOutSoft, useReducedMotion } from "@/theme/motion";
 
@@ -37,8 +36,11 @@ export function ToastProvider({ children }: PropsWithChildren) {
 
 function ToastHost({ message }: { message: ToastMessage }) {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const reduced = useReducedMotion();
+  // El toast vive fuera del navegador de pestañas, así que tiene que descontar
+  // a mano el alto REAL de la barra (área segura incluida) para quedarse justo
+  // encima de ella y no medio tapado.
+  const tabBarHeight = useTabBarHeight();
   const [anim] = useState(() => new Animated.Value(reduced ? 1 : 0));
 
   useEffect(() => {
@@ -56,7 +58,7 @@ function ToastHost({ message }: { message: ToastMessage }) {
       style={[
         styles.host,
         {
-          bottom: insets.bottom + layout.tabBarHeight + 18,
+          bottom: tabBarHeight + 14,
           opacity: anim,
           transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
         },

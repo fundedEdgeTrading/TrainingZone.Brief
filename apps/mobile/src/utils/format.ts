@@ -2,17 +2,36 @@ export function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+/**
+ * Lee una fecha de la API respetando el día de calendario.
+ *
+ * `new Date("2026-09-04")` NO es medianoche local sino medianoche UTC, así que
+ * en cualquier huso al oeste de Greenwich se pintaba el día anterior: una
+ * renovación del día 1 salía como «31 ago». Las fechas «YYYY-MM-DD» que manda
+ * la API son días de calendario sin hora, así que se leen como hora local; lo
+ * que ya trae hora (`createdAt` y compañía) se parsea tal cual.
+ */
+function parseApiDate(iso: string): Date {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso);
+}
+
+/** Fechas ausentes o corruptas no deben pintar «Invalid Date» en la interfaz. */
+function formatDate(iso: string, options: Intl.DateTimeFormatOptions): string {
+  const date = parseApiDate(iso);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("es-ES", options);
+}
+
 export function formatDayLabel(iso: string): string {
-  return capitalize(new Date(iso).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }));
+  return capitalize(formatDate(iso, { weekday: "long", day: "numeric", month: "long" }));
 }
 
 export function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(iso, { day: "numeric", month: "short", year: "numeric" });
 }
 
 /** "19 sep" — para renovaciones y filas de consumo. */
 export function formatDayMonth(iso: string): string {
-  return new Date(iso).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+  return formatDate(iso, { day: "numeric", month: "short" });
 }
 
 /** Importe en euros a partir de céntimos. Sin decimales cuando son cero. */
@@ -81,7 +100,7 @@ export const WEEKDAY_INITIALS = ["L", "M", "X", "J", "V", "S", "D"];
 
 /** "Martes, 19 de agosto" — cabecera de la agenda del centro. */
 export function formatLongDate(iso: string): string {
-  return capitalize(new Date(`${iso}T00:00:00`).toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }));
+  return capitalize(formatDate(iso, { weekday: "long", day: "numeric", month: "long" }));
 }
 
 /** Minutos desde medianoche de una hora "HH:mm" (timeline de la agenda). */

@@ -1,6 +1,5 @@
 import { Alert, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import { useAuth } from "@/auth/auth-context";
 import { useActivity, useAgenda, useCancelBooking, useNotifications } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
@@ -20,9 +19,12 @@ import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonScreen } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
+import { addBookingToCalendar } from "@/utils/calendar-link";
 import type { SessionBalance, UpcomingBooking } from "@/api/types";
 
 const LIGHT_COLOR: Record<string, "critical" | "warning" | "good"> = { RED: "critical", AMBER: "warning", GREEN: "good" };
+/** Un semáforo desconocido o nulo pintaba un punto transparente: se lee verde. */
+const lightColorKey = (light: string | null) => LIGHT_COLOR[light ?? ""] ?? "good";
 
 /**
  * «Hoy» del socio. Antes esta pantalla se llamaba «Mi actividad» y abría con
@@ -74,20 +76,6 @@ export default function MemberTodayScreen() {
     );
   }
 
-  async function addToCalendar(booking: UpcomingBooking) {
-    const start = new Date(booking.startsAt);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-    const stamp = (date: Date) => date.toISOString().replace(/[-:]|\.\d{3}/g, "");
-    const params = new URLSearchParams({
-      action: "TEMPLATE",
-      text: booking.sessionName,
-      dates: `${stamp(start)}/${stamp(end)}`,
-      details: `${booking.centerName}${booking.trainerName ? ` · ${booking.trainerName}` : ""}`,
-      location: booking.room ? `${booking.centerName} · ${booking.room}` : booking.centerName,
-    });
-    await WebBrowser.openBrowserAsync(`https://calendar.google.com/calendar/render?${params.toString()}`);
-  }
-
   return (
     <ScreenContainer
       refreshControl={
@@ -122,8 +110,11 @@ export default function MemberTodayScreen() {
 
       {loading ? (
         <SkeletonScreen note="Cargando tu día…" />
-      ) : activity.isError || !activity.data ? (
-        <EmptyState icon="alert" title="No se pudo cargar tu actividad" description="Desliza hacia abajo para reintentar." />
+      ) : activity.isError || !activity.data || agenda.isError || !agenda.data ? (
+        // La agenda también tiene que entrar aquí: si falla ella sola, `next`
+        // se queda a null y la pantalla anunciaba «Sin sesiones reservadas» a
+        // un socio que sí las tiene.
+        <EmptyState icon="alert" title="No se pudo cargar tu día" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
           {next ? (
@@ -131,7 +122,7 @@ export default function MemberTodayScreen() {
               <NextSessionHero
                 booking={next}
                 onCancel={() => confirmCancel(next)}
-                onAddToCalendar={() => addToCalendar(next)}
+                onAddToCalendar={() => addBookingToCalendar(next)}
               />
             </FadeInUp>
           ) : (
@@ -158,7 +149,7 @@ export default function MemberTodayScreen() {
                 <Text style={[typo.cardTitleSmall, { color: theme.text }]}>Lo que adapta tu entrenador</Text>
                 {activity.data.healthTransparency.map((item, index) => (
                   <View key={index} style={styles.adaptationRow}>
-                    <View style={[styles.dot, { backgroundColor: theme[LIGHT_COLOR[item.light]] }]} />
+                    <View style={[styles.dot, { backgroundColor: theme[lightColorKey(item.light)] }]} />
                     <View style={{ flex: 1, gap: 3 }}>
                       <Text style={[typo.rowTitleSmall, { color: theme.text }]}>{item.blockArea}</Text>
                       {item.adaptation ? (

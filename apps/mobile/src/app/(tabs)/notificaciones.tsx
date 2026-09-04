@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useAuth } from "@/auth/auth-context";
 import { useMarkNotificationRead, useNotifications } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
@@ -101,7 +102,7 @@ export default function NotificationsScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Volver"
-              onPress={() => router.back()}
+              onPress={() => goBack("/mas")}
               style={[styles.iconButton, { borderColor: theme.border }]}
             >
               <Icon name="chevron-left" size={17} color={theme.text} />

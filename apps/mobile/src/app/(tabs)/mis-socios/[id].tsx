@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Linking, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import {
   useAddMemberNote,
   useGenerateMesocycle,
@@ -75,7 +76,7 @@ export default function TrainerMemberDetailScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Volver"
-            onPress={() => router.back()}
+            onPress={() => goBack("/mis-socios")}
             style={[styles.iconButton, { borderColor: theme.border }]}
           >
             <Icon name="chevron-left" size={17} color={theme.text} />

@@ -99,6 +99,20 @@ export default function StaffAgendaScreen() {
   const isToday = date === todayIso();
   const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
 
+  // La tira de días tiene que CONTENER siempre el día elegido. Con una ventana
+  // fija de seis días desde hoy, en cuanto se retrocedía con la flecha o con el
+  // gesto —o se saltaba más de una semana adelante— el día seleccionado se
+  // salía de la tira y no quedaba ninguna casilla marcada: la agenda enseñaba
+  // un día y la tira decía otro.
+  const dayStrip = useMemo(() => {
+    const today = todayIso();
+    const start = date < today ? date : today;
+    const span = Math.round(
+      (Date.parse(`${date}T00:00:00`) - Date.parse(`${start}T00:00:00`)) / 86_400_000
+    );
+    return nextDays(Math.max(7, span + 2), new Date(`${start}T00:00:00`));
+  }, [date]);
+
   // Al abrir el día de hoy, la timeline arranca en la hora actual.
   useEffect(() => {
     if (!isToday || isLoading) return;
@@ -172,7 +186,7 @@ export default function StaffAgendaScreen() {
           </View>
         </FadeInUp>
 
-        <DayStrip days={nextDays(6, new Date(`${todayIso()}T00:00:00`))} value={date} onChange={setDate} />
+        <DayStrip days={dayStrip} value={date} onChange={setDate} />
 
         <ChipRow>
           <Chip label="Mis sesiones" selected={scope === "mine"} onPress={() => setScope("mine")} />
@@ -1069,7 +1083,10 @@ const styles = StyleSheet.create({
   nowLine: { position: "absolute", left: 0, right: 0, height: 2, justifyContent: "center" },
   nowChip: { position: "absolute", right: 4, top: -9, borderRadius: radii.pill, paddingHorizontal: 7, paddingVertical: 2 },
   nowChipText: { fontFamily: fonts.bold, fontSize: 9, color: "#1D1D1C", fontVariant: ["tabular-nums"] },
-  fab: { position: "absolute", right: layout.screenPadding, bottom: layout.tabBarHeight + 26 },
+  // La barra de pestañas ya no se superpone a la pantalla (va fijada al borde y
+  // el navegador le resta su alto), así que el FAB se ancla al pie de la propia
+  // pantalla en vez de a un alto de barra que aquí ya no existe.
+  fab: { position: "absolute", right: layout.screenPadding, bottom: 18 },
   timeRow: { flexDirection: "row", gap: 10, alignItems: "flex-end" },
   overlap: { flexDirection: "row", gap: 9, borderRadius: radii.control, padding: 12, alignItems: "flex-start" },
   overlapDot: { width: 6, height: 6, borderRadius: 3, marginTop: 5 },

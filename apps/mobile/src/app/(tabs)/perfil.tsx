@@ -1,5 +1,6 @@
 import { Pressable, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
+import { goBack } from "@/utils/navigation";
 import { useAuth } from "@/auth/auth-context";
 import { useTheme, radii } from "@/theme/theme";
 import { typo } from "@/theme/typography";
@@ -55,7 +56,7 @@ export default function AccountScreen() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Volver"
-              onPress={() => router.back()}
+              onPress={() => goBack("/mas")}
               style={[styles.iconButton, { borderColor: theme.border }]}
             >
               <Icon name="chevron-left" size={17} color={theme.text} />
@@ -84,8 +85,8 @@ export default function AccountScreen() {
           <Card tone="alt" padding={0} style={{ gap: 0 }}>
             <View style={styles.listInset}>
               <ListRow
-                title="Salud y consentimientos"
-                meta="Lo que has firmado y lo que se comparte"
+                title="Mi evolución"
+                meta="Tus medidas, tu progreso y el consentimiento que lo permite"
                 chevron
                 onPress={() => router.push("/evolucion")}
               />

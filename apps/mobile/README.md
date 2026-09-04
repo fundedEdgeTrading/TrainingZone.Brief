@@ -175,6 +175,51 @@ conectado Stripe, `POST /checkout` responde `mode: "manual"` y la app explica
 que el centro activará el bono al registrar el pago: no se crea ninguna
 suscripción sin cobro.
 
+### Repaso de QA (barra de pestañas y corrección de fallos)
+
+**Barra de pestañas fijada al borde inferior.** Flotaba con 12 px a los lados y
+un hueco calculado a mano (`insets.bottom - 4`), que en los móviles sin barra de
+gestos dejaba la isla despegada del borde y en los que sí la tienen la montaba
+sobre el indicador. Ahora va a todo el ancho, pegada abajo y **sin margen**, con
+el área segura absorbida como `paddingBottom` de la propia barra. Al dejar de
+ser `position: "absolute"`, el navegador le resta su alto a la pantalla: ningún
+contenido queda debajo, así que `ScreenContainer`/`ScreenFrame` ya no reservan
+hueco (`layout.tabBarHeight` pasa a ser el alto ÚTIL y `useTabBarHeight()`
+devuelve el total con área segura, que es lo que descuenta el toast). Además se
+esconde con el teclado abierto (`tabBarHideOnKeyboard`).
+
+**Fallos corregidos en este repaso** (los que se veían con el rol de entrenador
+van primero):
+
+| Dónde | Qué pasaba |
+|---|---|
+| `panel.tsx` | «Pasar lista» y «Brief» abrían la MISMA pantalla; pasar lista es el feedback socio a socio, que es donde se marca la asistencia. |
+| `panel.tsx` | «Hueco de EP sin publicar» contaba huecos ya publicados y **sin reservar**: el rótulo decía lo contrario de la cifra. |
+| `feedback/[id].tsx` | El autoguardado mandaba solo el último eje tocado y, al invalidar su propia consulta, la respuesta volvía a sembrar el formulario y **borraba de la pantalla los ejes recién puntuados**. Ahora se manda el bloque entero del socio y la siembra es una sola vez por sesión. |
+| `feedback/index.tsx` | «X de Y hechas» contaba la misma sesión como hecha y como pendiente; y «Cierra en X h» usaba el pendiente MENOS urgente del grupo. |
+| `login.tsx` | Con varias membresías el servidor responde 409 con la lista de organizaciones (RB-ID-002) y la app enseñaba «Elige la organización…» **sin ninguna que elegir**: no había forma de entrar. Ahora las ofrece y reintenta con `orgId`. `ApiError` conserva los campos extra del error. |
+| `login.tsx` | «¿Has olvidado la contraseña?» era un botón mudo. |
+| Todas las fichas y pantallas de índice | `router.back()` no hace nada sin historial (recarga del bundle, enlace directo): la flecha de volver se quedaba muerta. `goBack(fallback)` siempre tiene salida. |
+| `productos/[id].tsx`, `organizacion/[id].tsx` | El formulario se sembraba en el primer render, antes de que llegara la consulta: abierto en frío salía **en blanco** y «Guardar» borraba nombre, precio, foto e imputación. Ahora espera al dato y se monta con `key`. |
+| `productos/[id].tsx` | Guardar mandaba `validityDays: null` **borrando la caducidad** del bono en cada edición. |
+| `Sheet.tsx` | El teclado tapaba entera la hoja (crear sesión, nueva tarea, motivo del descarte). |
+| `staff-agenda.tsx` | Al retroceder de día, la tira de días no contenía el día seleccionado y no quedaba ninguna casilla marcada. |
+| `agenda.tsx` (socio) | El botón de una reserva en espera decía «En espera» y lo que hacía era **cancelar**. |
+| `sesiones.tsx` | Al cambiar de mes en el calendario, el día elegido se quedaba en hoy: rejilla sin selección y detalle de otro mes. |
+| `index.tsx` (socio) | «Añadir al calendario» fijaba 60 min ignorando la duración real; y un fallo SOLO de la agenda anunciaba «Sin sesiones reservadas» a quien sí tenía. |
+| `utils/format.ts` | `new Date("2026-09-01")` es medianoche **UTC**: al oeste de Greenwich las fechas se pintaban un día antes. Y una fecha corrupta escribía «Invalid Date». |
+| `Countdown.tsx` | El instante objetivo solo se fijaba una vez: al pasar de «empieza en» a «quedan» seguía descontando la sesión anterior. |
+| `leads.tsx` | Un fallo al registrar el contacto avisaba de que «no se pudo abrir el marcador» después de haber llamado. |
+| Buscadores de socios | Una petición por tecla, y la lista entera cayendo al esqueleto entre letra y letra (`useDebounced` + `keepPreviousData`). |
+| `_layout.tsx` | Un rol sin pestañas declaradas dejaba una barra vacía y sin forma de moverse. |
+
+También se han unificado estilos: `brief/index.tsx` volvió al sistema de diseño
+(usaba tipografías escritas a mano y un spinner gris), la campana del icono
+dejaba de pintar su base dos veces, las medidas del histórico de evolución usan
+coma decimal como los tiles, y se han corregido rótulos que prometían otra cosa
+que su destino («Salud y consentimientos» → «Mi evolución», «SOLO ENTRENADOR
+ADMIN» en una pantalla a la que también entra dirección).
+
 ## Qué falta a propósito (fuera de alcance de esta versión)
 
 - **`packages/shared-types`**: los DTO viven duplicados en `src/api/types.ts`

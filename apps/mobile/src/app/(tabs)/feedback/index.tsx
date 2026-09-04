@@ -40,18 +40,36 @@ export default function FeedbackQueueScreen() {
     for (const item of data.pendingDebriefs) {
       (hoursLeft(item) <= 24 ? closing : rest).push(item);
     }
+    // El plazo del rótulo es el del MÁS URGENTE del grupo, no el del primero:
+    // `pendingDebriefs` viene de más reciente a más antiguo, así que `[0]` era
+    // justo el que más margen tenía y el corte anunciaba más horas de las que
+    // realmente quedaban.
+    const soonest = closing.length ? Math.min(...closing.map(hoursLeft)) : 0;
     return [
-      { key: "closing", label: closing.length ? `Cierra en ${Math.max(0, Math.round(hoursLeft(closing[0])))} h` : "", urgent: true, items: closing },
+      { key: "closing", label: closing.length ? `Cierra en ${Math.max(0, Math.round(soonest))} h` : "", urgent: true, items: closing },
       { key: "rest", label: "Esta semana", urgent: false, items: rest },
     ].filter((group) => group.items.length > 0);
   }, [data]);
 
   const pending = data?.pendingDebriefs.length ?? 0;
-  const doneToday = (data?.todaySessions ?? []).filter((s) => s.status === "past").length;
-  const totalToday = doneToday + pending;
+  const todaySessions = useMemo(() => data?.todaySessions ?? [], [data]);
+  // Una sesión de hoy ya terminada solo cuenta como «hecha» si NO está en la
+  // cola de pendientes. Sumando todas las pasadas, la misma sesión se contaba
+  // a la vez como hecha y como pendiente y el marcador decía cosas como
+  // «3 de 5 hechas» con las tres sin puntuar.
+  const pendingTodayIds = useMemo(
+    () => new Set((data?.pendingDebriefs ?? []).map((item) => `${item.sessionId}:${item.occurrenceDate}`)),
+    [data]
+  );
+  const pendingToday = useMemo(
+    () => todaySessions.filter((s) => s.status === "past" && pendingTodayIds.has(`${s.id}:${data?.agendaDay ?? ""}`)).length,
+    [todaySessions, pendingTodayIds, data]
+  );
+  const doneToday = todaySessions.filter((s) => s.status === "past").length - pendingToday;
+  const totalToday = todaySessions.filter((s) => s.status === "past").length;
   const filled = totalToday ? Math.round((doneToday / totalToday) * PROGRESS_SEGMENTS) : PROGRESS_SEGMENTS;
 
-  const upcoming = (data?.todaySessions ?? []).filter((s) => s.status !== "past");
+  const upcoming = todaySessions.filter((s) => s.status !== "past");
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
@@ -77,8 +95,10 @@ export default function FeedbackQueueScreen() {
                 ))}
               </View>
               <View style={styles.heroFooter}>
+                {/* El marcador es de HOY, no de la semana: decirlo evita leer
+                    «2 de 3» como si fuera el total de la cola de arriba. */}
                 <Text style={[typo.rowMeta, { color: theme.onInk.secondary, flex: 1 }]}>
-                  {doneToday} de {totalToday || doneToday} hechas
+                  {totalToday === 0 ? "Sin sesiones terminadas hoy" : `${doneToday} de ${totalToday} de hoy puntuadas`}
                 </Text>
                 {pending > 0 ? (
                   <Button

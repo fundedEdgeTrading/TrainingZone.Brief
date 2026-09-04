@@ -16,6 +16,7 @@ import { Icon } from "@/components/Icon";
 import { EmptyState } from "@/components/EmptyState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
+import { useDebounced } from "@/utils/use-debounced";
 import type { MemberState } from "@/api/types";
 
 // D2 del handoff: socios con buscador y chips de estado.
@@ -33,7 +34,7 @@ export default function MembersScreen() {
   const [search, setSearch] = useState("");
   const [state, setState] = useState<MemberState | undefined>();
   const { data, isLoading, isError, refetch, isRefetching, fetchNextPage, hasNextPage, isFetchingNextPage } = useMembers(
-    search,
+    useDebounced(search),
     state
   );
 
