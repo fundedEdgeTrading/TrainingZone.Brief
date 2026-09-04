@@ -236,8 +236,21 @@ function NextSessionHero({
       </View>
 
       <View style={styles.heroActions}>
-        <Button title="Añadir al calendario" size="sm" onPress={onAddToCalendar} style={{ flex: 1 }} />
-        <Button title="Cancelar" variant="outline" size="sm" onPress={onCancel} style={{ flex: 1 }} />
+        {/* `onInk`: el héroe se queda en tinta también con la piel clara, así
+            que sin esto el botón primario salía tinta sobre tinta y el
+            `outline` con texto negro sobre el degradado. */}
+        {/* «Añadir al calendario» son 20 versalitas que no caben en medio
+            héroe: el rótulo se salía del botón. El nombre largo se queda en la
+            etiqueta de accesibilidad, que es donde no estorba. */}
+        <Button
+          onInk
+          title="Al calendario"
+          accessibilityLabel="Añadir la sesión al calendario"
+          size="sm"
+          onPress={onAddToCalendar}
+          style={{ flex: 1 }}
+        />
+        <Button onInk title="Cancelar" variant="outline" size="sm" onPress={onCancel} style={{ flex: 1 }} />
       </View>
     </HeroCard>
   );

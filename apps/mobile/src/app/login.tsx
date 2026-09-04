@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { Redirect, router } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
 import { homeRouteFor } from "@/auth/routes";
@@ -24,6 +25,12 @@ import type { LoginOrganization } from "@/api/types";
 // A1 del handoff. Pantalla en tinta con dos manchas "aurora" a la deriva; el
 // login es el único sitio de la app donde el fondo no sigue la piel del
 // sistema: la marca entra siempre en oscuro.
+//
+// Por eso los campos y los botones van con `onInk`: sus colores salían de
+// `useTheme()`, que SÍ sigue la piel del sistema, así que con el móvil en modo
+// claro las etiquetas («Email», «Contraseña») quedaban en gris oscuro sobre
+// negro y el botón «Entrar» se pintaba tinta sobre tinta —solo se veía su
+// texto, flotando sin botón debajo—.
 const INK = "#0F0F0E";
 const BONE = "#F4F0E8";
 const MUTED = "#9C9686";
@@ -80,6 +87,10 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: INK }]}>
+      {/* La pantalla es siempre oscura, así que los iconos de la barra de
+          estado van siempre claros: el `_layout` los pone oscuros cuando el
+          sistema está en modo claro, y aquí desaparecían sobre la tinta. */}
+      <StatusBar style="light" />
       <Aurora />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView
@@ -99,6 +110,7 @@ export default function LoginScreen() {
 
           <View style={styles.form}>
             <Field
+              onInk
               label="Email"
               value={email}
               onChangeText={setEmail}
@@ -108,6 +120,7 @@ export default function LoginScreen() {
               placeholder="tu@email.com"
             />
             <Field
+              onInk
               label="Contraseña"
               value={password}
               onChangeText={setPassword}
@@ -149,7 +162,7 @@ export default function LoginScreen() {
                 ))}
               </View>
             ) : (
-              <Button title="Entrar" size="lg" onPress={() => handleSubmit()} loading={loading} style={{ marginTop: 4 }} />
+              <Button onInk title="Entrar" size="lg" onPress={() => handleSubmit()} loading={loading} style={{ marginTop: 4 }} />
             )}
 
             {/* No hay flujo de recuperación en la API móvil: el centro
@@ -170,8 +183,8 @@ export default function LoginScreen() {
               proveedor (ver README del repo): un botón que no puede funcionar
               se muestra apagado, no se esconde. */}
           <View style={styles.ssoRow}>
-            <Button title="Microsoft" variant="outline" disabled style={styles.sso} />
-            <Button title="Google" variant="outline" disabled style={styles.sso} />
+            <Button onInk title="Microsoft" variant="outline" disabled style={styles.sso} />
+            <Button onInk title="Google" variant="outline" disabled style={styles.sso} />
           </View>
           <Text style={[typo.rowMetaSmall, { color: "#6E6A5E", textAlign: "center" }]}>
             El acceso con Microsoft y Google se activará en cuanto tu centro lo configure.

@@ -148,10 +148,13 @@ export default function DashboardScreen() {
             </>
           ) : null}
 
+          {/* Rótulos cortos: «Agenda del centro» a media anchura no cabía en
+              el botón —17 caracteres en versalitas de 13 px— y salía recortado.
+              Son los mismos nombres que llevan esas pantallas en la barra. */}
           <SectionTitle label="Atajos" />
           <View style={styles.shortcuts}>
-            <Button title="Agenda del centro" variant="outline" style={{ flex: 1 }} onPress={() => router.push("/staff-agenda")} />
-            <Button title="Socios" variant="outline" style={{ flex: 1 }} onPress={() => router.push("/socios")} />
+            <Button title="Agenda" icon="calendar" variant="outline" style={{ flex: 1 }} onPress={() => router.push("/staff-agenda")} />
+            <Button title="Socios" icon="users" variant="outline" style={{ flex: 1 }} onPress={() => router.push("/socios")} />
           </View>
         </>
       )}

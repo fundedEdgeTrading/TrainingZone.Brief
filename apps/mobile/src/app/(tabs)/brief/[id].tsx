@@ -94,10 +94,12 @@ export default function BriefDetailScreen() {
               <Text style={[styles.heroCount, { color: theme.onInk.text }]}>
                 {counts.total} {counts.total === 1 ? "socio" : "socios"}
               </Text>
+              {/* Semáforos en su versión sobre tinta: los de la piel clara son
+                  tonos oscuros para fondo hueso y aquí no se veían. */}
               <View style={styles.lightRow}>
-                <LightCount color={theme.good} value={counts.green} label="sin restricción" />
-                <LightCount color={theme.warning} value={counts.amber} label="adaptar" />
-                <LightCount color={theme.critical} value={counts.red} label="evitar" />
+                <LightCount color={theme.onInk.good} value={counts.green} label="sin restricción" />
+                <LightCount color={theme.onInk.warning} value={counts.amber} label="adaptar" />
+                <LightCount color={theme.onInk.critical} value={counts.red} label="evitar" />
               </View>
             </HeroCard>
           </FadeInUp>
@@ -163,7 +165,10 @@ function LightCount({ color, value, label }: { color: string; value: number; lab
     <View style={styles.lightItem}>
       <View style={[styles.lightDot, { backgroundColor: color }]} />
       <Text style={[styles.lightValue, { color: theme.onInk.text }]}>{value}</Text>
-      <Text style={[typo.rowMetaSmall, { color: theme.onInk.muted }]} numberOfLines={1}>
+      {/* `flexShrink` + `minWidth: 0`: los tres rótulos juntos («sin
+          restricción», «adaptar», «evitar») no caben en un móvil estrecho y sin
+          esto se salían del héroe en vez de recortarse. */}
+      <Text style={[typo.rowMetaSmall, styles.lightLabel, { color: theme.onInk.muted }]} numberOfLines={1}>
         {label}
       </Text>
     </View>
@@ -278,8 +283,9 @@ function AttendanceButton({ checked, busy, onPress }: { checked: boolean; busy: 
 const styles = StyleSheet.create({
   iconButton: { width: 40, height: 40, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   heroCount: { fontFamily: fonts.bold, fontSize: 26, marginTop: 6, ...tabular },
-  lightRow: { flexDirection: "row", gap: 16, marginTop: 12 },
-  lightItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  lightRow: { flexDirection: "row", gap: 12, marginTop: 12 },
+  lightItem: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1, minWidth: 0 },
+  lightLabel: { flexShrink: 1, minWidth: 0 },
   lightDot: { width: 10, height: 10, borderRadius: 5 },
   lightValue: { fontFamily: fonts.bold, fontSize: 14, ...tabular },
   rosterCard: { flexDirection: "row", overflow: "hidden" },

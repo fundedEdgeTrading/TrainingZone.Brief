@@ -249,6 +249,54 @@ los ocho roles (login, listados, fichas y calendarios), y las mutaciones de
 tareas, leads, feedback 1-10, debrief, aforo, anuncios, productos, equipo,
 alta/edición/borrado de sesión, hueco de EP y alta/descarte de asistente.
 
+### Tercer repaso de QA (volver atrás, piel clara y desbordes)
+
+Repaso de estilo y navegación pantalla por pantalla. Los tres bloques grandes:
+
+**1. Las flechas de «volver» llevaban a otro sitio.** `router.back()` dentro del
+grupo (tabs) lo resuelve el `TabRouter`, y su `backBehavior` por defecto es
+`firstRoute`: descarta el recorrido real y deja como único historial la PRIMERA
+pantalla declarada del navegador, que aquí es `index` — el «Hoy» del socio. Así
+que volver desde Aforo, Tareas, Leads, Avisos, Consumo, Perfil o Session Brief
+no llevaba a «Más» sino a `index`, que para el personal está oculta y rebota a
+su pantalla de inicio: la flecha parecía tirar al azar. Ahora el navegador va
+con `backBehavior="history"`, así que se vuelve a la pestaña de la que se vino
+—que es lo que promete la flecha— y el botón físico de Android hace lo mismo.
+
+Las flechas se quedan: **estas pantallas son pestañas, y en una barra de
+pestañas no hay gesto de volver**, ni en iOS ni en Android. El gesto sí existe
+—y sigue funcionando— en las fichas, que cuelgan de un `Stack` (socios,
+productos, equipo, feedback, mis socios, brief y onboarding).
+
+**2. Con el móvil en modo claro, media interfaz sobre tinta era ilegible.** El
+héroe y el login no se aclaran nunca, pero la paleta de sus botones y campos sí
+seguía la piel del sistema. `Button` y `Field` tienen ahora `onInk`, y el tema
+`onInk` incluye también los tres semáforos.
+
+**3. Cosas que se salían de la pantalla.** En React Native `flexShrink` vale 0
+por defecto (en la web, 1), así que lo que no encoge, desborda.
+
+| Dónde | Qué pasaba |
+|---|---|
+| `(tabs)/_layout.tsx` | El `backBehavior` de arriba: TODAS las flechas de volver de las pestañas ocultas. |
+| `brief/_layout.tsx` | Único sub-stack con cabecera nativa: sus dos pantallas salían con DOS cabeceras (la del navegador y su propia `ScreenHeader`) y con el área segura contada dos veces. |
+| `login.tsx` | En modo claro las etiquetas «Email» y «Contraseña» salían en gris oscuro sobre negro, y «Entrar» se pintaba tinta sobre tinta: se leía el texto del botón flotando, sin botón debajo. Y los iconos de la barra de estado, oscuros sobre una pantalla oscura. |
+| `index.tsx`, `sesiones.tsx`, `panel.tsx`, `mis-socios/[id].tsx` | Mismo caso en los botones del héroe: el `primary` invisible y el `outline` con texto negro sobre el degradado. |
+| `brief/[id].tsx` | Los puntos del semáforo usaban los colores de la piel clara —verde oliva, ámbar y teja oscuros— sobre el héroe casi negro. Y los tres rótulos juntos no cabían en un móvil estrecho. |
+| `KpiTile` | Tres tiles del 47 % en una fila sin `flexWrap` (ficha del socio y ficha del socio del entrenador) suman el 141 %: el tercero se salía por la derecha. |
+| `Button` | Un rótulo largo en un botón estrecho («Añadir al calendario», «Agendar prueba») se salía por los lados en vez de recortarse. |
+| `sesiones.tsx` | La rejilla del mes tenía casillas de 42 px fijos: 7 × 42 = 294 px, más el padding de pantalla y de tarjeta, no cabe en un móvil de 360 px o menos y el domingo quedaba cortado. |
+| `staff-agenda.tsx` | **Dos sesiones a la misma hora se tapaban entera la una a la otra** —todas se pintaban en la misma franja— y solo se veía la última. Es lo normal en «Todo el centro», que además es el modo con el que abren dirección de centro y recepción. Ahora los solapes se reparten en carriles. |
+| `staff-agenda.tsx` | La fecha compartía fila con cuatro controles y le quedaban ~150 px para «Miércoles, 4 de septiembre» a 23 px. Ahora tiene su propia línea. |
+| `staff-agenda.tsx` | El `Stepper` de aforo, como tercer elemento de la fila de horas, recibía menos ancho del que miden sus dos controles de 44 px. |
+| `staff-agenda.tsx` | El botón flotante tapaba la última tarjeta de la lista. |
+| `organizacion/index.tsx` | «Invitación» y «Oculto» ocupaban ~140 px que no encogen: al nombre no le quedaba ancho. |
+| `organizacion/[id].tsx` | El degradado del héroe empezaba por debajo del área segura, así que quedaba una franja del color de fondo por encima —en piel clara, una banda hueso sobre el degradado oscuro—. |
+| `dashboard.tsx` | «Agenda del centro» a media anchura no cabía en su botón. |
+| `ScreenFrame` | En iOS el teclado tapaba a la vez el campo y el botón de guardar de los formularios largos (nota del feedback, ficha de producto, ficha de equipo). Era el mismo fallo que ya se le había arreglado a `Sheet`. |
+| `Skeleton` | Las celdas del esqueleto de KPI no tenían ni fondo ni borde: en vez de cuatro tiles se veían ocho barras grises sueltas. |
+| `anuncios.tsx` | La pantalla que se había quedado fuera del sistema de diseño (como le pasaba a `brief/index.tsx`): tipografías escritas a mano, `ActivityIndicator` gris, `Modal` propio y cartel de estado en vez del toast. Y encima **sin forma de volver** —dirección de organización y de centro llegan por «Más», no la tienen en la barra—, con el teclado tapando el formulario, el botón de publicar bajo el indicador de gestos y un borrado sin confirmación. Reescrita sobre `ScreenHeader`, `Sheet`, `Chip`, `SkeletonList` y `useToast`. |
+
 ## Qué falta a propósito (fuera de alcance de esta versión)
 
 - **`packages/shared-types`**: los DTO viven duplicados en `src/api/types.ts`

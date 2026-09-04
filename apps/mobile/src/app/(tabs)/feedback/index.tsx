@@ -102,6 +102,7 @@ export default function FeedbackQueueScreen() {
                 </Text>
                 {pending > 0 ? (
                   <Button
+                    onInk
                     title="Seguir"
                     variant="gold"
                     size="sm"

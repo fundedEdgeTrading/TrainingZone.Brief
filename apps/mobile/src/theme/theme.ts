@@ -61,11 +61,31 @@ export type Theme = {
   auroraGold: string;
   auroraLinen: string;
   shadowColor: string;
-  /** Textos sobre tinta (héroe): iguales en ambas pieles, el héroe nunca se aclara. */
-  onInk: { text: string; secondary: string; muted: string };
+  /**
+   * Colores sobre tinta (héroe, login): iguales en ambas pieles, porque esas
+   * superficies nunca se aclaran. Los tres semáforos entran aquí además de los
+   * textos: `good`/`warning`/`critical` de la piel CLARA son tonos oscuros
+   * pensados para fondo hueso, y sobre el degradado del héroe se perdían (un
+   * punto verde oliva sobre casi negro no se ve).
+   */
+  onInk: {
+    text: string;
+    secondary: string;
+    muted: string;
+    good: string;
+    warning: string;
+    critical: string;
+  };
 };
 
-const onInk = { text: "#F4F0E8", secondary: "#C7C2B4", muted: "#9C9686" };
+const onInk = {
+  text: "#F4F0E8",
+  secondary: "#C7C2B4",
+  muted: "#9C9686",
+  good: "#9DB35A",
+  warning: "#D9A45C",
+  critical: "#E08267",
+};
 
 const light: Theme = {
   mode: "light",

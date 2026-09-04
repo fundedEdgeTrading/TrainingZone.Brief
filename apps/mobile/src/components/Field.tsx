@@ -11,22 +11,37 @@ type Props = TextInputProps & {
   suffix?: string;
   error?: string | null;
   right?: ReactNode;
+  /**
+   * El campo vive sobre tinta (el login, que entra siempre en oscuro sea cual
+   * sea la piel del sistema). Sin esto, con el móvil en modo claro la etiqueta
+   * salía en gris oscuro sobre casi negro —ilegible— y el campo se pintaba
+   * blanco en medio de una pantalla de marca.
+   */
+  onInk?: boolean;
 };
+
+/** Colores fijos sobre tinta, iguales en las dos pieles (misma escala que el login). */
+const INK = { label: "#C7C2B4", text: "#F4F0E8", placeholder: "#9C9686", surface: "#1A1A18", border: "#46443C" };
 
 /**
  * Campo de formulario del handoff: alto 50, radio 12, y al enfocar borde
  * dorado con halo suave.
  */
-export function Field({ label, action, suffix, error, right, style, multiline, onFocus, onBlur, ...props }: Props) {
+export function Field({ label, action, suffix, error, right, style, multiline, onInk, onFocus, onBlur, ...props }: Props) {
   const theme = useTheme();
   const [focused, setFocused] = useState(false);
-  const borderColor = error ? theme.critical : focused ? theme.gold : theme.border;
+  const idleBorder = onInk ? INK.border : theme.border;
+  const borderColor = error ? theme.critical : focused ? theme.gold : idleBorder;
+  const labelColor = onInk ? INK.label : theme.textSecondary;
+  const textColor = onInk ? INK.text : theme.text;
+  const surface = onInk ? INK.surface : theme.mode === "dark" ? "#232320" : theme.surface;
+  const placeholder = onInk ? INK.placeholder : theme.textFaint;
 
   return (
     <View style={{ gap: 6 }}>
       {label || action ? (
         <View style={styles.labelRow}>
-          {label ? <Text style={[typo.label, { color: theme.textSecondary, flex: 1 }]}>{label}</Text> : <View style={{ flex: 1 }} />}
+          {label ? <Text style={[typo.label, { color: labelColor, flex: 1 }]}>{label}</Text> : <View style={{ flex: 1 }} />}
           {action ? (
             <Pressable accessibilityRole="button" hitSlop={10} onPress={action.onPress}>
               <Text style={[typo.label, { color: theme.goldText }]}>{action.label}</Text>
@@ -40,7 +55,7 @@ export function Field({ label, action, suffix, error, right, style, multiline, o
           styles.wrapper,
           {
             borderColor,
-            backgroundColor: theme.mode === "dark" ? "#232320" : theme.surface,
+            backgroundColor: surface,
             minHeight: multiline ? 62 : 50,
             alignItems: multiline ? "flex-start" : "center",
           },
@@ -48,7 +63,7 @@ export function Field({ label, action, suffix, error, right, style, multiline, o
         ]}
       >
         <TextInput
-          placeholderTextColor={theme.textFaint}
+          placeholderTextColor={placeholder}
           multiline={multiline}
           onFocus={(e) => {
             setFocused(true);
@@ -58,7 +73,7 @@ export function Field({ label, action, suffix, error, right, style, multiline, o
             setFocused(false);
             onBlur?.(e);
           }}
-          style={[styles.input, { color: theme.text, textAlignVertical: multiline ? "top" : "center" }, style]}
+          style={[styles.input, { color: textColor, textAlignVertical: multiline ? "top" : "center" }, style]}
           {...props}
         />
         {suffix ? <Text style={[styles.suffix, { color: theme.textMuted }]}>{suffix}</Text> : null}

@@ -249,6 +249,7 @@ function Spotlight({ data }: { data: TrainerPanelResponse }) {
             llevaba a ninguna parte útil. */}
         <View style={styles.spotlightActions}>
           <Button
+            onInk
             title="Pasar lista"
             variant="gold"
             size="sm"
@@ -256,6 +257,7 @@ function Spotlight({ data }: { data: TrainerPanelResponse }) {
             onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
           />
           <Button
+            onInk
             title="Brief"
             variant="outline"
             size="sm"

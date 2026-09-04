@@ -31,8 +31,11 @@ export function KpiTile({
     t === "gold" ? theme.gold : t === "good" ? theme.good : t === "warning" ? theme.warning : t === "critical" ? theme.critical : theme.text;
 
   return (
-    <Card style={[styles.card, full ? { width: "100%" } : { flexBasis: "47%", flexGrow: 1 }]} padding={14}>
-      <Text style={[typo.kpiLabel, { color: theme.textMuted }]} numberOfLines={1}>
+    <Card style={[styles.card, full ? { width: "100%" } : styles.half]} padding={14}>
+      {/* Dos líneas para la etiqueta: en una fila de tres tiles («Sesiones del
+          mes», «Asistencia media») el rótulo no cabía y se cortaba con puntos
+          suspensivos, que en un KPI deja el número sin explicar. */}
+      <Text style={[typo.kpiLabel, { color: theme.textMuted }]} numberOfLines={2}>
         {label}
       </Text>
       <Text style={[small ? typo.kpiSmall : typo.kpi, { color: color(tone) }]}>{value}</Text>
@@ -48,4 +51,13 @@ export function KpiTile({
 
 const styles = StyleSheet.create({
   card: { gap: 4 },
+  /**
+   * `flexShrink: 1` es obligatorio aquí: en React Native el valor por defecto
+   * es 0 (no 1, como en la web), así que tres tiles del 47 % en una fila SIN
+   * `flexWrap` —la ficha del socio y la del socio del entrenador— sumaban el
+   * 141 % del ancho y el tercero se salía de la pantalla por la derecha. Con
+   * `flexShrink` se reparten la fila, y donde la fila sí envuelve siguen
+   * cayendo de dos en dos.
+   */
+  half: { flexBasis: "47%", flexGrow: 1, flexShrink: 1 },
 });
