@@ -33,6 +33,23 @@ import type {
   SessionFeedbackResponse,
   StaffResponse,
   UpdateStaffInput,
+  CapacityResponse,
+  ConsumptionResponse,
+  CreateEpSlotInput,
+  CreateTaskInput,
+  DiscardInput,
+  DiscardPreview,
+  DiscardResult,
+  GenerateMesocycleInput,
+  LeadStage,
+  LeadsResponse,
+  MesocycleDetailResponse,
+  MesocyclesResponse,
+  TaskStatus,
+  TasksResponse,
+  TrainerMemberDetailResponse,
+  TrainerMemberFilter,
+  TrainerMembersResponse,
 } from "./types";
 
 export function useActivity() {
@@ -104,8 +121,12 @@ export function usePendingAssessment(enabled: boolean) {
   });
 }
 
-export function useNotifications() {
-  return useQuery({ queryKey: ["notifications"], queryFn: () => apiRequest<NotificationsResponse>("/notifications") });
+export function useNotifications(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => apiRequest<NotificationsResponse>("/notifications"),
+    enabled: opts.enabled ?? true,
+  });
 }
 
 export function useMarkNotificationRead() {
@@ -124,10 +145,11 @@ export function useEvolution() {
 
 // ---------- Panel del entrenador ----------
 
-export function useTrainerPanel(day?: string) {
+export function useTrainerPanel(day?: string, opts: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["trainer-panel", day ?? "today"],
     queryFn: () => apiRequest<TrainerPanelResponse>(day ? `/trainer/panel?day=${day}` : "/trainer/panel"),
+    enabled: opts.enabled ?? true,
   });
 }
 
@@ -420,4 +442,196 @@ export function useSaveSessionFeedback(sessionId: string) {
       queryClient.invalidateQueries({ queryKey: ["brief-detail", sessionId] });
     },
   });
+}
+
+// ---------- Socios del entrenador (rediseño móvil) ----------
+
+export function useTrainerMembers(filter: TrainerMemberFilter, search: string) {
+  const params = new URLSearchParams({ filter });
+  if (search.trim()) params.set("search", search.trim());
+  return useQuery({
+    queryKey: ["trainer-members", filter, search.trim()],
+    queryFn: () => apiRequest<TrainerMembersResponse>(`/trainer/members?${params.toString()}`),
+  });
+}
+
+export function useTrainerMemberDetail(memberId: string) {
+  return useQuery({
+    queryKey: ["trainer-member", memberId],
+    queryFn: () => apiRequest<TrainerMemberDetailResponse>(`/trainer/members/${memberId}`),
+    enabled: Boolean(memberId),
+  });
+}
+
+export function useAddMemberNote(memberId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) =>
+      apiRequest<{ id: string }>(`/trainer/members/${memberId}`, { method: "POST", body: { body } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["trainer-member", memberId] }),
+  });
+}
+
+// ---------- Mesociclos ----------
+
+export function useMesocycles(memberId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["mesocycles", memberId],
+    queryFn: () => apiRequest<MesocyclesResponse>(`/trainer/members/${memberId}/mesocycles`),
+    enabled: enabled && Boolean(memberId),
+  });
+}
+
+export function useMesocycleDetail(mesocycleId: string | null) {
+  return useQuery({
+    queryKey: ["mesocycle", mesocycleId],
+    queryFn: () => apiRequest<MesocycleDetailResponse>(`/mesocycles/${mesocycleId}`),
+    enabled: Boolean(mesocycleId),
+  });
+}
+
+/**
+ * Generación con IA: 60-120 s. Quien la llame monta el velo de marca
+ * (`BrandLoader` + `usePacedLoader`), que es el único estado de espera
+ * bloqueante de la app.
+ */
+export function useGenerateMesocycle() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ memberId, ...input }: GenerateMesocycleInput) =>
+      apiRequest<{ mesocycleId: string }>(`/trainer/members/${memberId}/mesocycles`, { method: "POST", body: input }),
+    onSuccess: (_data, variables) => queryClient.invalidateQueries({ queryKey: ["mesocycles", variables.memberId] }),
+  });
+}
+
+export function useApproveMesocycle() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (mesocycleId: string) =>
+      apiRequest<{ approved: boolean }>(`/mesocycles/${mesocycleId}/approve`, { method: "POST" }),
+    onSuccess: (_data, mesocycleId) => {
+      queryClient.invalidateQueries({ queryKey: ["mesocycle", mesocycleId] });
+      queryClient.invalidateQueries({ queryKey: ["mesocycles"] });
+    },
+  });
+}
+
+// ---------- Tareas ----------
+
+export function useTasks(scope: "mine" | "team" = "mine", opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["tasks", scope],
+    queryFn: () => apiRequest<TasksResponse>(`/tasks${scope === "team" ? "?scope=team" : ""}`),
+    enabled: opts.enabled ?? true,
+  });
+}
+
+export function useCreateTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTaskInput) => apiRequest<{ id: string }>("/tasks", { method: "POST", body: input }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+  });
+}
+
+export function useSetTaskStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: TaskStatus }) =>
+      apiRequest<{ status: TaskStatus }>(`/tasks/${id}`, { method: "PATCH", body: { status } }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+// ---------- Leads ----------
+
+export function useLeads(stage: LeadStage | null, search = "", opts: { enabled?: boolean } = {}) {
+  const params = new URLSearchParams();
+  if (stage) params.set("stage", stage);
+  if (search.trim()) params.set("search", search.trim());
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ["leads", stage ?? "all", search.trim()],
+    queryFn: () => apiRequest<LeadsResponse>(`/leads${qs ? `?${qs}` : ""}`),
+    enabled: opts.enabled ?? true,
+  });
+}
+
+export function useUpdateLead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string; status?: LeadStage; note?: string; claimOwner?: boolean }) =>
+      apiRequest<{ updated: boolean }>(`/leads/${id}`, { method: "PATCH", body }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads"] }),
+  });
+}
+
+// ---------- Aforo de clases ----------
+
+export function useCenterCapacity(date?: string) {
+  return useQuery({
+    queryKey: ["capacity", date ?? "today"],
+    queryFn: () => apiRequest<CapacityResponse>(`/capacity${date ? `?date=${date}` : ""}`),
+  });
+}
+
+export function useUpdateCapacity() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { sessionId?: string; capacity?: number; centerId?: string; defaultGroupCapacity?: number | null }) =>
+      apiRequest<{ capacity?: number; defaultGroupCapacity?: number | null }>("/capacity", { method: "PATCH", body: input }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["capacity"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+    },
+  });
+}
+
+// ---------- Descarte de asistente (ventana de 24 h del entrenador) ----------
+
+/** El efecto sobre el bono ANTES de confirmar: es lo que pinta el aviso de la hoja. */
+export function useDiscardPreview(sessionId: string, bookingId: string | null) {
+  return useQuery({
+    queryKey: ["discard-preview", sessionId, bookingId],
+    queryFn: () => apiRequest<DiscardPreview>(`/agenda/sessions/${sessionId}/bookings/${bookingId}/discard`),
+    enabled: Boolean(sessionId && bookingId),
+  });
+}
+
+export function useDiscardAttendee(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, ...body }: DiscardInput & { bookingId: string }) =>
+      apiRequest<DiscardResult>(`/agenda/sessions/${sessionId}/bookings/${bookingId}/discard`, {
+        method: "POST",
+        body,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-session-attendees", sessionId] });
+      queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+      queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
+    },
+  });
+}
+
+// ---------- Hueco de EP ----------
+
+export function useCreateEpSlot() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateEpSlotInput) => apiRequest<{ id: string }>("/agenda/ep-slots", { method: "POST", body: input }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+      queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
+    },
+  });
+}
+
+// ---------- Historial de consumo del socio ----------
+
+export function useConsumption() {
+  return useQuery({ queryKey: ["consumption"], queryFn: () => apiRequest<ConsumptionResponse>("/portal/consumption") });
 }

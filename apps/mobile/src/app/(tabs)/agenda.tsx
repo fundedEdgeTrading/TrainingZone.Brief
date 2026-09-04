@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
+import { RefreshControl, Text, View, StyleSheet } from "react-native";
 import { useAgenda, useBookSession, useCancelBooking } from "@/api/queries";
 import { useAuth } from "@/auth/auth-context";
 import { useTheme, radii } from "@/theme/theme";
@@ -85,11 +85,23 @@ export default function AgendaScreen() {
       </FadeInUp>
 
       {data && data.balances.length > 0 ? (
-        <FadeInUp delay={stagger(1)} style={styles.balanceRow}>
-          {data.balances.map((balance) => (
-            <BalanceCard key={balance.serviceKind} balance={balance} />
-          ))}
-        </FadeInUp>
+        <>
+          <FadeInUp delay={stagger(1)} style={styles.balanceRow}>
+            {data.balances.map((balance) => (
+              <BalanceCard key={balance.serviceKind} balance={balance} />
+            ))}
+          </FadeInUp>
+          {/* El aviso de saldo bajo va ANTES de la lista: enterarse de que no
+              te quedan sesiones después de elegir una es la peor forma. */}
+          {data.balances.some((b) => !b.unlimited && (b.remaining ?? 0) <= 1) ? (
+            <View style={[styles.notice, { backgroundColor: theme.goldBg }]}>
+              <View style={[styles.noticeDot, { backgroundColor: theme.gold }]} />
+              <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1 }]}>
+                Te queda poco saldo en alguno de tus bonos. Puedes ampliarlo desde «Más».
+              </Text>
+            </View>
+          ) : null}
+        </>
       ) : null}
 
       <FadeInUp delay={stagger(2)}>
@@ -105,7 +117,7 @@ export default function AgendaScreen() {
       </FadeInUp>
 
       {isLoading ? (
-        <SkeletonList rows={4} />
+        <SkeletonList rows={4} shape="row" note="Cargando lo que puedes reservar…" />
       ) : isError || !data ? (
         <EmptyState icon="alert" title="No se pudo cargar la agenda" description="Desliza hacia abajo para reintentar." />
       ) : sessions.length === 0 ? (
@@ -176,15 +188,15 @@ function SessionRow({
   const full = session.bookedCount >= session.capacity && !session.myBookingId;
   const durationMin = Math.max(0, minutesOf(session.endTime) - minutesOf(session.startTime));
 
-  const badge =
-    kind === "EP"
-      ? { label: "Personal", tone: "gold" as const }
-      : full
-        ? { label: `Completo · ${session.bookedCount}/${session.capacity}`, tone: "critical" as const }
-        : { label: `Grupo · ${session.bookedCount}/${session.capacity}`, tone: "neutral" as const };
+  const occupancy = session.capacity > 0 ? Math.min(1, session.bookedCount / session.capacity) : 0;
+  const waiting = Math.max(0, session.bookedCount - session.capacity);
 
   return (
-    <Card style={[styles.sessionCard, full ? { opacity: 0.72 } : null]} padding={14}>
+    <Card
+      tone={session.myBookingId ? "accent" : "default"}
+      style={[styles.sessionCard, full && !session.myBookingId ? { opacity: 0.72 } : null]}
+      padding={14}
+    >
       <View style={styles.timeColumn}>
         <Text style={[styles.time, { color: theme.text }]}>{session.startTime}</Text>
         <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>{durationMin} min</Text>
@@ -192,7 +204,9 @@ function SessionRow({
       <View style={[styles.verticalRule, { backgroundColor: theme.separator }]} />
 
       <View style={{ flex: 1, gap: 6 }}>
-        <Badge label={badge.label} tone={badge.tone} />
+        {session.myBookingId ? (
+          <Badge label={session.myBookingStatus === "WAITLISTED" ? "En espera" : "Reservada"} tone="gold" />
+        ) : null}
         <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={2}>
           {session.name}
         </Text>
@@ -203,6 +217,30 @@ function SessionRow({
             {session.room ? ` · ${session.room}` : ` · ${session.centerName}`}
           </Text>
         </View>
+
+        {/* La ocupación como BARRA y no como texto: «5/6» obliga a hacer la
+            resta; la barra dice de un vistazo si queda sitio. En EP no hay
+            aforo que enseñar (siempre es 1 plaza). */}
+        {kind === "GROUP" ? (
+          <View style={styles.occupancyRow}>
+            <View style={[styles.occupancyTrack, { backgroundColor: theme.surfaceAlt }]}>
+              <View
+                style={[
+                  styles.occupancyFill,
+                  { width: `${occupancy * 100}%`, backgroundColor: full ? theme.critical : theme.gold },
+                ]}
+              />
+            </View>
+            <Text style={[styles.occupancyText, { color: full ? theme.critical : theme.textMuted }]}>
+              {Math.min(session.bookedCount, session.capacity)}/{session.capacity}
+            </Text>
+          </View>
+        ) : null}
+        {full && waiting > 0 ? (
+          <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>
+            {waiting} {waiting === 1 ? "persona" : "personas"} en lista de espera
+          </Text>
+        ) : null}
       </View>
 
       {session.myBookingId ? (
@@ -328,6 +366,10 @@ const styles = StyleSheet.create({
   timeColumn: { width: 52, gap: 1 },
   time: { fontFamily: fonts.bold, fontSize: 15, ...tabular },
   verticalRule: { width: 1, alignSelf: "stretch" },
+  occupancyRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  occupancyTrack: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
+  occupancyFill: { height: 4, borderRadius: 2 },
+  occupancyText: { fontFamily: fonts.bold, fontSize: 11, ...tabular },
   trainerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   sheetRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, padding: 14 },
   notice: { flexDirection: "row", gap: 9, borderRadius: radii.control, padding: 12, alignItems: "flex-start" },

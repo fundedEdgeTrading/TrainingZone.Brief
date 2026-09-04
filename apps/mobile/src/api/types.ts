@@ -645,3 +645,288 @@ export type BirthdayGreetingResponse = {
 export type PendingAssessmentResponse = {
   assessment: { id: string; kind: string; label: string; dueDate: string } | null;
 };
+
+// ---------- Socios del entrenador (rediseño móvil) ----------
+// No es el listado de gestión de dirección (`MembersResponse`): el ámbito es la
+// gente a la que ESTE entrenador da sesión, y lo que se enseña es adherencia y
+// aptitud, no estado comercial.
+
+export type AptitudeLight = "GREEN" | "AMBER" | "RED";
+
+export type TrainerMemberRow = {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  photoUrl: string | null;
+  kinds: ("EP" | "GROUP")[];
+  adherencePct: number;
+  attendedCount: number;
+  planNames: string;
+  nextLabel: string | null;
+  light: AptitudeLight | null;
+  zone: string | null;
+  condition: string | null;
+  adaptation: string | null;
+};
+
+export type TrainerMembersResponse = {
+  counts: { all: number; ep: number; group: number; alerts: number };
+  needAdaptation: TrainerMemberRow[];
+  members: TrainerMemberRow[];
+};
+
+export type TrainerMemberFilter = "all" | "ep" | "group" | "alerts";
+
+export type TrainerMemberSession = {
+  bookingId: string;
+  day: string;
+  sessionName: string;
+  startTime: string;
+  endTime: string;
+  status: BookingStatus;
+  feeling: AptitudeLight | null;
+  scores: Record<FeedbackAxis, number | null> | null;
+};
+
+export type TrainerMemberNote = {
+  id: string;
+  body: string;
+  important: boolean;
+  authorName: string | null;
+  createdAt: string;
+};
+
+export type TrainerMemberDetailResponse = {
+  member: {
+    id: string;
+    name: string;
+    firstName: string;
+    phone: string | null;
+    photoUrl: string | null;
+    joinedAt: string;
+    ageYears: number | null;
+    planNames: string[];
+  };
+  balances: {
+    subscriptionId: string;
+    planName: string;
+    serviceKind: ServiceKind;
+    unlimited: boolean;
+    remaining: number | null;
+    used: number | null;
+    total: number | null;
+  }[];
+  aptitude: { light: AptitudeLight; zone: string | null; condition: string; adaptation: string | null } | null;
+  stats: { adherencePct: number; sessionsThisMonth: number; rpeAvg: number | null };
+  sessions: TrainerMemberSession[];
+  notes: TrainerMemberNote[];
+  canManageMesocycles: boolean;
+};
+
+// ---------- Mesociclos (pestaña «Plan» de la ficha) ----------
+
+export type MesocycleStatus = "DRAFT" | "APPROVED" | "ARCHIVED";
+
+export type MesocycleListItem = {
+  id: string;
+  title: string;
+  status: MesocycleStatus;
+  createdAt: string;
+  approvedAt: string | null;
+};
+
+export type MesocyclesResponse = { aiConfigured: boolean; mesocycles: MesocycleListItem[] };
+
+export type MesocycleExercise = {
+  id: string;
+  name: string;
+  sets: number;
+  reps: string;
+  load: string | null;
+  description: string;
+  rationale: string;
+};
+
+export type MesocycleBlock = { id: string; name: string; durationMin: number; exercises: MesocycleExercise[] };
+
+export type MesocycleDay = {
+  id: string;
+  label: string;
+  venue: string;
+  focus: string;
+  warmup: string[];
+  blocks: MesocycleBlock[];
+};
+
+export type MesocyclePhase = {
+  id: string;
+  name: string;
+  weekFrom: number;
+  weekTo: number;
+  notes: string | null;
+  days: MesocycleDay[];
+};
+
+export type MesocycleDetailResponse = {
+  id: string;
+  memberId: string;
+  title: string;
+  status: MesocycleStatus;
+  objective: string;
+  /** Lo que NO se puede programar, heredado del screening de la valoración. */
+  safetyCriteria: string[];
+  weeklyLayout: string[];
+  milestones: { week: number; text: string }[];
+  createdAt: string;
+  approvedAt: string | null;
+  phases: MesocyclePhase[];
+};
+
+export type GenerateMesocycleInput = { memberId: string; level: string; weeks: number; availability: string };
+
+// ---------- Tareas (F10) ----------
+
+export type TaskStatus = "PENDIENTE" | "EN_CURSO" | "HECHA";
+export type TaskPriority = "ALTA" | "MEDIA" | "BAJA";
+
+export type TaskItem = {
+  id: string;
+  title: string;
+  body: string | null;
+  category: string | null;
+  priority: TaskPriority;
+  status: TaskStatus;
+  dueDate: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  recipientUserId: string;
+  recipientName: string | null;
+  createdByName: string | null;
+  /** «Te la asignó dirección»: la encargó otra persona. */
+  assignedByOther: boolean;
+  mine: boolean;
+};
+
+export type TasksResponse = {
+  canAssign: boolean;
+  scope: "mine" | "team";
+  counts: { todo: number; doing: number; done: number };
+  tasks: TaskItem[];
+  done: TaskItem[];
+  assignables: { id: string; name: string; role: Role }[];
+};
+
+export type CreateTaskInput = {
+  title: string;
+  body?: string | null;
+  category?: string | null;
+  priority?: TaskPriority;
+  dueDate?: string | null;
+  recipientUserId?: string | null;
+};
+
+// ---------- Leads (F8) ----------
+
+export type LeadStage = "SIN_CONTACTAR" | "SEGUIMIENTO" | "CON_FECHA_VALORACION" | "CERRADO" | "NO_CERRADO";
+
+export type LeadItem = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  status: LeadStage;
+  channel: string;
+  goals: string;
+  centerName: string;
+  ownerName: string | null;
+  createdAt: string;
+  contactedAt: string;
+};
+
+export type LeadsResponse = {
+  counts: Record<"SIN_CONTACTAR" | "SEGUIMIENTO" | "CON_FECHA_VALORACION" | "CERRADO", number>;
+  leads: LeadItem[];
+};
+
+// ---------- Aforo de clases ----------
+
+export type CapacitySession = {
+  id: string;
+  occurrenceDate: string;
+  name: string;
+  startTime: string;
+  endTime: string;
+  centerName: string;
+  capacity: number;
+  booked: number;
+  waiting: number;
+  full: boolean;
+};
+
+export type CapacityResponse = {
+  date: string | null;
+  maxCapacity: number;
+  centers: { id: string; name: string; defaultGroupCapacity: number | null }[];
+  sessions: CapacitySession[];
+};
+
+// ---------- Descarte de asistente (ventana de 24 h del entrenador) ----------
+
+export type DiscardPreview = {
+  memberName: string;
+  sessionName: string;
+  startsAt: string;
+  hoursUntil: number;
+  withinWindow: boolean;
+  /** Qué pasa con el bono si se descarta sin tocar nada. */
+  refundsByDefault: boolean;
+  /** El toggle «Devolver de todos modos» solo aparece con permiso de ajuste. */
+  canForceRefund: boolean;
+  planName: string | null;
+  balanceBefore: number | null;
+  balanceAfterIfRefunded: number | null;
+  notice: string;
+};
+
+export type DiscardResult = { refunded: boolean; withinWindow: boolean; overridden: boolean };
+
+export type DiscardInput = { reason?: string | null; forceRefund?: boolean; notifyMember?: boolean };
+
+// ---------- Hueco de EP ----------
+
+export type CreateEpSlotInput = {
+  centerId?: string;
+  date: string;
+  startTime: string;
+  durationMin: number;
+  memberId?: string | null;
+};
+
+// ---------- Historial de consumo del socio ----------
+
+export type ConsumptionMovement = {
+  id: string;
+  day: string;
+  concept: string;
+  reason: string | null;
+  serviceKind: "EP" | "GROUP" | null;
+  /** Signo del movimiento: −1 al gastar, +1 al devolver, +N en la renovación. */
+  delta: number;
+  tone: "neutral" | "critical" | "good";
+};
+
+export type ConsumptionResponse = {
+  balances: {
+    subscriptionId: string;
+    planName: string;
+    serviceKind: ServiceKind;
+    unlimited: boolean;
+    remaining: number | null;
+    used: number | null;
+    total: number | null;
+    renewsAt: string | null;
+  }[];
+  summary: { spent: number; returned: number; noShow: number };
+  movements: ConsumptionMovement[];
+};

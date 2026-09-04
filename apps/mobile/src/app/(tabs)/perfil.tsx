@@ -1,48 +1,27 @@
-import { Text, View, StyleSheet } from "react-native";
+import { Pressable, Text, View, StyleSheet } from "react-native";
 import { router } from "expo-router";
 import { useAuth } from "@/auth/auth-context";
-import { useTheme } from "@/theme/theme";
+import { useTheme, radii } from "@/theme/theme";
 import { typo } from "@/theme/typography";
 import { stagger } from "@/theme/motion";
 import { ScreenContainer } from "@/components/ScreenContainer";
-import { ScreenHeader, SectionTitle } from "@/components/ScreenHeader";
+import { ScreenHeader } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { Icon } from "@/components/Icon";
 import { Divider, ListRow } from "@/components/Row";
 import { FadeInUp } from "@/components/FadeInUp";
 import type { Role } from "@/api/types";
 
 /**
- * Perfil: además de la cuenta, es el índice de las pantallas que no caben en
- * la barra de cinco pestañas (calendario, evolución, anuncios, avisos…).
+ * Mi cuenta. Deja de ser el índice de la app —eso es ahora «Más»— y vuelve a
+ * ser lo que su nombre promete: quién eres, con qué rol entras y cómo sales.
+ *
+ * Cerrar sesión vive AQUÍ y no en la pestaña: es la acción menos frecuente y
+ * la más costosa de deshacer, así que no debe estar a un toque de la barra.
  */
-const EXTRA_BY_ROLE: Record<Role, { href: string; label: string; meta: string }[]> = {
-  MEMBER: [
-    { href: "/calendario", label: "Mi calendario", meta: "Realizadas, reservadas y no presentadas" },
-    { href: "/evolucion", label: "Mi evolución", meta: "Composición corporal y progreso" },
-    { href: "/notificaciones", label: "Avisos", meta: "Novedades de tu centro" },
-  ],
-  TRAINER: [{ href: "/notificaciones", label: "Avisos", meta: "Alertas y recordatorios" }],
-  TRAINER_ADMIN: [{ href: "/notificaciones", label: "Avisos", meta: "Alertas y recordatorios" }],
-  OWNER: [
-    { href: "/staff-agenda", label: "Agenda del centro", meta: "Timeline diaria y creación de sesiones" },
-    { href: "/anuncios", label: "Anuncios", meta: "Comunicaciones a socios" },
-    { href: "/notificaciones", label: "Avisos", meta: "Alertas de la organización" },
-  ],
-  CENTER_DIRECTOR: [
-    { href: "/anuncios", label: "Anuncios", meta: "Comunicaciones a socios" },
-    { href: "/notificaciones", label: "Avisos", meta: "Alertas del centro" },
-  ],
-  PLATFORM_ADMIN: [
-    { href: "/anuncios", label: "Anuncios", meta: "Comunicaciones a socios" },
-    { href: "/notificaciones", label: "Avisos", meta: "Alertas de la plataforma" },
-  ],
-  RECEPTION: [{ href: "/notificaciones", label: "Avisos", meta: "Alertas del centro" }],
-  HR_MANAGER: [{ href: "/notificaciones", label: "Avisos", meta: "Alertas de personal" }],
-};
-
 const ROLE_LABEL: Record<Role, string> = {
   OWNER: "Dirección",
   CENTER_DIRECTOR: "Dirección de centro",
@@ -54,11 +33,11 @@ const ROLE_LABEL: Record<Role, string> = {
   PLATFORM_ADMIN: "Administración",
 };
 
-export default function ProfileScreen() {
+export default function AccountScreen() {
   const { state, logout } = useAuth();
   const theme = useTheme();
   const user = state.status === "signedIn" ? state.user : null;
-  const extras = user ? EXTRA_BY_ROLE[user.role] ?? [] : [];
+  const isMember = user?.role === "MEMBER";
 
   async function handleLogout() {
     await logout();
@@ -68,7 +47,21 @@ export default function ProfileScreen() {
   return (
     <ScreenContainer>
       <FadeInUp>
-        <ScreenHeader kicker="MI CUENTA" title="Perfil" />
+        <ScreenHeader
+          kicker="MI CUENTA"
+          title="Tus datos"
+          tight
+          right={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Volver"
+              onPress={() => router.back()}
+              style={[styles.iconButton, { borderColor: theme.border }]}
+            >
+              <Icon name="chevron-left" size={17} color={theme.text} />
+            </Pressable>
+          }
+        />
       </FadeInUp>
 
       <FadeInUp delay={stagger(1)}>
@@ -86,27 +79,32 @@ export default function ProfileScreen() {
         </Card>
       </FadeInUp>
 
-      {extras.length > 0 ? (
-        <>
-          <SectionTitle label="Más" />
-          <FadeInUp delay={stagger(2)}>
-            <Card tone="alt" padding={0} style={{ gap: 0 }}>
-              {extras.map((item, index) => (
-                <View key={item.href} style={{ paddingHorizontal: 14 }}>
-                  {index > 0 ? <Divider /> : null}
-                  <ListRow title={item.label} meta={item.meta} chevron onPress={() => router.push(item.href)} />
-                </View>
-              ))}
-            </Card>
-          </FadeInUp>
-        </>
+      {isMember ? (
+        <FadeInUp delay={stagger(2)}>
+          <Card tone="alt" padding={0} style={{ gap: 0 }}>
+            <View style={styles.listInset}>
+              <ListRow
+                title="Salud y consentimientos"
+                meta="Lo que has firmado y lo que se comparte"
+                chevron
+                onPress={() => router.push("/evolucion")}
+              />
+              <Divider />
+              <ListRow title="Mis bonos" meta="Todos tus bonos y su estado" chevron onPress={() => router.push("/bonos")} />
+            </View>
+          </Card>
+        </FadeInUp>
       ) : null}
 
-      <Button title="Cerrar sesión" variant="outline" onPress={handleLogout} />
+      <FadeInUp delay={stagger(3)}>
+        <Button title="Cerrar sesión" variant="danger" onPress={handleLogout} />
+      </FadeInUp>
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   card: { flexDirection: "row", alignItems: "center", gap: 14 },
+  iconButton: { width: 40, height: 40, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  listInset: { paddingHorizontal: 14 },
 });

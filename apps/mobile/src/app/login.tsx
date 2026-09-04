@@ -16,7 +16,7 @@ import { useAuth } from "@/auth/auth-context";
 import { homeRouteFor } from "@/auth/routes";
 import { radii } from "@/theme/theme";
 import { fonts, typo } from "@/theme/typography";
-import { duration, easeOutSoft, useReducedMotion } from "@/theme/motion";
+import { easeOutSoft, useReducedMotion } from "@/theme/motion";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/Button";
 
@@ -25,7 +25,6 @@ import { Button } from "@/components/Button";
 // sistema: la marca entra siempre en oscuro.
 const INK = "#0F0F0E";
 const BONE = "#F4F0E8";
-const GOLD = "#C8AB72";
 const MUTED = "#9C9686";
 const BORDER = "#46443C";
 
