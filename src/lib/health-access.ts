@@ -10,7 +10,6 @@ import {
   PAIN_ZONE_LABEL,
   isInitialAnswers,
 } from "@/lib/assessments/schemas";
-import { canUseClinicalDataForAI } from "@/lib/consent";
 
 /**
  * Punto único de lectura de datos de salud (A.2.4 / ADR-005 / ADR-008).
