@@ -1723,6 +1723,7 @@ model Mesocycle {
   memberId         String
   createdByUserId  String
   status           MesocycleStatus @default(DRAFT)
+  profile          EpProfile       @default(MANTENIMIENTO) // grupo de socio Training Zone; decide la metodología del sistema (src/lib/ai/methodology.ts)
   title            String
   objective        String
   safetyCriteria   Json // heredado del screening de la valoración: lo que NO se puede programar
@@ -1741,6 +1742,19 @@ model Mesocycle {
 
   @@index([orgId])
   @@index([memberId])
+}
+
+// Los cinco grupos de socio del agente EP (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md
+// §2, §5): Rendimiento se separa en dos porque su ficha y su regla de bloqueo
+// (prueba + fecha + nivel) difieren entre oposición y atleta, aunque compartan
+// metodología (src/lib/ai/methodology.ts).
+enum EpProfile {
+  TERCERA_EDAD
+  REHABILITACION
+  DERIVACION_GRUPOS
+  RENDIMIENTO_OPOSICIONES
+  RENDIMIENTO_ATLETA
+  MANTENIMIENTO
 }
 
 enum MesocycleStatus {

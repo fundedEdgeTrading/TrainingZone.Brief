@@ -36,7 +36,7 @@ export async function listMesocyclesForMember(orgId: string, memberId: string) {
   return prisma.mesocycle.findMany({
     where: { orgId, memberId },
     orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, status: true, createdAt: true, approvedAt: true },
+    select: { id: true, title: true, status: true, profile: true, createdAt: true, approvedAt: true },
   });
 }
 
@@ -121,6 +121,7 @@ export function toPlan(detail: MesocycleDetail): MesocyclePlan {
   return {
     title: detail.title,
     objective: detail.objective,
+    profile: detail.profile,
     safetyCriteria: asStringArray(detail.safetyCriteria),
     weeklyLayout: asStringArray(detail.weeklyLayout),
     milestones: asMilestones(detail.milestones),
@@ -296,6 +297,7 @@ function planHeader(plan: MesocyclePlan) {
   return {
     title: plan.title,
     objective: plan.objective,
+    profile: plan.profile,
     safetyCriteria: plan.safetyCriteria,
     weeklyLayout: plan.weeklyLayout,
     milestones: plan.milestones,

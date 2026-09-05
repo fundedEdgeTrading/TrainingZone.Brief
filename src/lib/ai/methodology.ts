@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { EpProfile } from "@/lib/ai/ep-profile";
 
 /**
  * Carga y ensambla la metodología del agente "Entrenamiento Personal —
@@ -8,31 +9,11 @@ import { join } from "node:path";
  * estable del sistema siga cacheándose (`cache_control`): se concatena
  * siempre en el mismo orden con el mismo contenido, y el perfil es la única
  * pieza que cambia entre llamadas (ver docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2).
+ *
+ * Los valores de perfil viven en `ep-profile.ts` (sin `node:fs`, importable
+ * también desde el cliente); este módulo es server-only por los `readFileSync`.
  */
-
-export type EpProfile =
-  | "TERCERA_EDAD"
-  | "REHABILITACION"
-  | "DERIVACION_GRUPOS"
-  | "RENDIMIENTO_OPOSICIONES"
-  | "RENDIMIENTO_ATLETA"
-  | "MANTENIMIENTO";
-
-export const EP_PROFILES: EpProfile[] = [
-  "TERCERA_EDAD",
-  "REHABILITACION",
-  "DERIVACION_GRUPOS",
-  "RENDIMIENTO_OPOSICIONES",
-  "RENDIMIENTO_ATLETA",
-  "MANTENIMIENTO",
-];
-
-/**
- * Perfil que se usa mientras el esquema del mesociclo no tenga un campo
- * `profile` propio (fase 1 de la guía): se programa como Mantenimiento y se
- * deja constancia en el briefing de que el perfil real no se ha confirmado.
- */
-export const DEFAULT_PROFILE: EpProfile = "MANTENIMIENTO";
+export { EP_PROFILES, EP_PROFILE_LABEL, DEFAULT_PROFILE, type EpProfile } from "@/lib/ai/ep-profile";
 
 const ROOT = join(process.cwd(), "src/lib/ai/methodology");
 const read = (name: string) => readFileSync(join(ROOT, name), "utf8").trim();
@@ -62,18 +43,21 @@ const PROFILE_FILE: Record<EpProfile, string> = {
 };
 
 /**
- * Contrato de salida sobre el esquema ACTUAL (`mesocycle-schema.ts`), que
- * todavía no tiene campos propios para supuestos, preguntas pendientes,
- * "lo único que hay que vigilar" o la clave de ejecución (fase 1 de la
- * guía). Hasta entonces, esas piezas de la metodología se aplican dentro de
- * los campos existentes.
+ * Contrato de salida sobre el esquema ACTUAL (`mesocycle-schema.ts`), que ya
+ * tiene un campo `profile` (eco del perfil con el que se programa) pero
+ * todavía no tiene campos propios para supuestos, preguntas pendientes, "lo
+ * único que hay que vigilar" o la clave de ejecución (fase 1 de la guía, sin
+ * terminar). Hasta entonces, esas piezas de la metodología se aplican dentro
+ * de los campos existentes.
  */
 const OUTPUT_CONTRACT = `## Formato de salida
 
 Devuelves únicamente el plan en el formato estructurado que se te indica
 (Mesocycle → Phase → Day → Block → Exercise). Sin introducciones, sin
 resúmenes, sin markdown y sin comentarios fuera de los campos. Todo el texto
-en español de España.
+en español de España. El campo \`profile\` repite exactamente el perfil
+Training Zone con el que se te ha pedido programar: no lo cambies aunque el
+contenido del plan te parezca más propio de otro grupo.
 
 El esquema actual todavía no tiene campos propios para "supuestos",
 "preguntas pendientes", "lo único que hay que vigilar" ni la clave de

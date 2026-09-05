@@ -6,6 +6,7 @@ import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMesocycleBriefingForMember } from "@/lib/health-access";
 import { generateMesocyclePlan, refineMesocyclePlan } from "@/lib/ai/mesocycle-generator";
+import { isEpProfile } from "@/lib/ai/ep-profile";
 import {
   approveMesocycle,
   archiveMesocycle,
@@ -94,11 +95,12 @@ function lines(value: string): string[] {
 
 export async function generateMesocycleAction(
   memberId: string,
-  input: { level: string; weeks: number; availability: string }
+  input: { profile: string; level: string; weeks: number; availability: string }
 ): Promise<GenerateResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
   if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
+  if (!isEpProfile(input.profile)) return { ok: false, error: "Elige un grupo Training Zone válido." };
   const availability = lines(input.availability);
   if (availability.length === 0) return { ok: false, error: "Indica al menos un día de disponibilidad." };
   if (!Number.isInteger(input.weeks) || input.weeks < 4 || input.weeks > 12) {
@@ -111,6 +113,7 @@ export async function generateMesocycleAction(
     orgId: session.user.orgId,
     actorUserId: session.user.id,
     actorRole: session.user.role,
+    profile: input.profile,
     level: input.level,
     weeks: input.weeks,
     availability,

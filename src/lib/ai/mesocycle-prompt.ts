@@ -1,5 +1,6 @@
 import type { MesocycleBriefing } from "@/lib/health-access";
 import type { MesocyclePlan } from "@/lib/ai/mesocycle-schema";
+import { EP_PROFILE_LABEL } from "@/lib/ai/ep-profile";
 
 /**
  * Qué es un mesociclo aquí y cómo se distribuye en fases. Complementa (no
@@ -98,10 +99,8 @@ export function buildMesocycleBriefing(briefing: MesocycleBriefing): string {
     ...bullets(briefing.availability, "Sin disponibilidad registrada."),
     "",
     "## Grupo Training Zone",
-    "No indicado todavía en la ficha: programa como Mantenimiento y añade una",
-    "entrada en `safetyCriteria` con `[SUPUESTO — confirmar]` pidiendo que el",
-    "entrenador confirme el grupo real del socio (tercera edad, rehabilitación,",
-    "derivación a grupos, rendimiento o mantenimiento).",
+    `- ${EP_PROFILE_LABEL[briefing.profile]}. Programa con la metodología de este perfil, no la de otro.`,
+    `- El campo \`profile\` de tu respuesta debe ser exactamente "${briefing.profile}".`,
   ];
 
   if (briefing.metrics.length > 0) {

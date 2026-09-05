@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import clsx from "clsx";
-import { MESOCYCLE_REFINE_STEPS, usePacedLoader } from "@/components/ui/brand-loader";
+import { BrandLoader, MESOCYCLE_REFINE_STEPS, usePacedLoader } from "@/components/ui/brand-loader";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
+import { EP_PROFILE_LABEL } from "@/lib/ai/ep-profile";
 import type { MesocycleDetail } from "@/lib/mesocycle-queries";
 import { MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "../panel";
 import {
@@ -77,6 +78,7 @@ function totalWeeks(mesocycle: MesocycleDetail): number {
 function metaOf(mesocycle: MesocycleDetail, memberName?: string): string {
   const weekly = strings(mesocycle.weeklyLayout).length;
   return [
+    EP_PROFILE_LABEL[mesocycle.profile],
     `${totalWeeks(mesocycle)} semanas`,
     `${mesocycle.phases.length} fases`,
     weekly > 0 ? `${weekly} días/semana` : "",
@@ -1090,41 +1092,21 @@ function RefineBar({
     });
   }
 
-  const stepLabel = MESOCYCLE_REFINE_STEPS[Math.min(loader.step, MESOCYCLE_REFINE_STEPS.length - 1)].label;
-
   if (busy) {
+    // Mismo velo de marca que la generación (§BrandLoader): un refinado
+    // también es una espera bloqueante con IA, y un spinner suelto no dice
+    // nada durante medio minuto largo. `usePacedLoader` ya reparte
+    // `MESOCYCLE_REFINE_STEPS` sobre `EXPECTED_REFINE_MS`; aquí solo cambia
+    // el componente que pinta ese progreso.
     return (
-      <div className="sticky bottom-0 z-20 pb-1">
-        <div
-          className="bg-tz-black text-tz-bone rounded-card px-5 pt-4 pb-3.5 flex flex-col gap-[11px]"
-          style={{ boxShadow: "0 18px 44px -16px rgba(29,29,28,.4)" }}
-          role="status"
-          aria-live="polite"
-        >
-          <div className="flex items-center gap-[11px] flex-wrap">
-            <span
-              className="w-[7px] h-[7px] rounded-full bg-apta-gold shrink-0"
-              style={{ animation: "tzLiveDot 1.1s ease-in-out infinite" }}
-              aria-hidden="true"
-            />
-            <span className="text-[14.5px] font-semibold">{stepLabel}</span>
-            <span className="ml-auto text-[11.5px] text-tz-bone/45">
-              Suele tardar cerca de un minuto. No cierres esta ventana.
-            </span>
-          </div>
-          <div className="flex gap-[5px]" aria-hidden="true">
-            {MESOCYCLE_REFINE_STEPS.map((step, i) => (
-              <span
-                key={step.label}
-                className={clsx(
-                  "flex-1 h-[3px] rounded-pill transition-colors duration-200 ease-out-soft",
-                  i <= loader.step || loader.done ? "bg-apta-gold" : "bg-tz-bone/20"
-                )}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
+      <BrandLoader
+        steps={MESOCYCLE_REFINE_STEPS}
+        step={loader.step}
+        done={loader.done}
+        title="Refinando mesociclo"
+        doneLabel="Plan actualizado"
+        hint="Suele tardar cerca de un minuto. No cierres esta ventana."
+      />
     );
   }
 

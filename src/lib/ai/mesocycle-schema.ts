@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EP_PROFILES } from "@/lib/ai/ep-profile";
 
 /**
  * Espejo en Zod del árbol Mesocycle → Phase → Day → Block → Exercise de
@@ -52,6 +53,9 @@ export const MesocyclePhaseSchema = z.object({
 export const MesocyclePlanSchema = z.object({
   title: z.string(),
   objective: z.string(),
+  profile: z
+    .enum(EP_PROFILES)
+    .describe("Perfil Training Zone con el que se ha programado este mesociclo; repite el que se te ha indicado."),
   safetyCriteria: z
     .array(z.string())
     .describe("Lo que NO se puede programar, heredado del screening. Vacío si no hay criterios clínicos."),
