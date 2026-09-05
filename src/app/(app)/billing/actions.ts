@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/guard";
+import { prisma } from "@/lib/prisma";
+import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import type { PaymentMethod } from "@prisma/client";
 import { confirmLeadClosureForMember } from "@/lib/leads-queries";
 import { createCheckoutSession, type CheckoutResult } from "@/lib/stripe-checkout";
@@ -21,7 +22,24 @@ export async function registerManualPayment(formData: FormData): Promise<Payment
   const amountEuros = Number(formData.get("amount") ?? 0);
   const method = String(formData.get("method") ?? "CASH") as PaymentMethod;
 
-  if (!memberId || !amountEuros) return { ok: false, error: "Selecciona un socio e introduce un importe." };
+  if (!memberId) return { ok: false, error: "Selecciona un socio e introduce un importe." };
+  // `!amountEuros` solo descarta 0/NaN/"": un importe negativo colaba como un
+  // "cobro" que en realidad resta dinero, sin pasar por el flujo dedicado de
+  // devolución (motivo obligatorio + doble confirmación).
+  if (!Number.isFinite(amountEuros) || amountEuros <= 0) return { ok: false, error: "Introduce un importe válido." };
+
+  // El socio (y la suscripción, si se indica) tienen que ser de esta
+  // organización y estar en el ámbito de centro de quien cobra: `memberId` y
+  // `subscriptionId` llegan del `FormData` del cliente, manipulable.
+  const member = await prisma.member.findFirst({ where: { id: memberId, orgId: session.user.orgId }, select: { id: true } });
+  if (!member) return { ok: false, error: "Socio no encontrado." };
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
+  if (subscriptionId) {
+    // `member` ya está verificado dentro de `orgId`, así que acotar por
+    // `memberId` basta para que la suscripción también lo esté.
+    const subscription = await prisma.subscription.findFirst({ where: { id: subscriptionId, memberId } });
+    if (!subscription) return { ok: false, error: "Esa suscripción no pertenece a este socio." };
+  }
 
   await createPaymentWithReceipt({
     orgId: session.user.orgId,

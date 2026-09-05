@@ -144,6 +144,10 @@ export async function refineMesocycleAction(
   const detail = await getMesocycleDetail(session.user.orgId, mesocycleId);
   if (!detail) return { ok: false, error: "Mesociclo no encontrado." };
   if (!(await memberIsInScope(session.user, detail.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
+  // Antes de gastar una llamada al modelo: un mesociclo archivado no se edita
+  // (`replaceMesocyclePlan` lo rechazaría igual al guardar, pero sin este
+  // corte se pagaba la generación entera para nada).
+  if (detail.status === "ARCHIVED") return { ok: false, error: "Este mesociclo está archivado y no se puede editar." };
 
   const refined = await refineMesocyclePlan({
     plan: toPlan(detail),

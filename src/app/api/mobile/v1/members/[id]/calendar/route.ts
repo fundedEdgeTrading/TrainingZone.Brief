@@ -27,6 +27,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   );
   if (!inScope) return apiError("No se ha encontrado el socio.", 404);
 
-  const calendar = await getMemberCalendar(member.id, req.nextUrl.searchParams.get("month"));
+  const calendar = await getMemberCalendar(member.id, req.nextUrl.searchParams.get("month"), true);
   return apiOk(calendar);
 }

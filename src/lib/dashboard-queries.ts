@@ -330,9 +330,23 @@ export async function getPostalCodeMapData(orgId: string, opts: DashboardOpts = 
   // El selector de centro filtra los recuentos, no la geografía: los centros
   // siguen situándose todos para que la distancia por barrio (y con ella el
   // índice de oportunidad) no cambie de significado según lo que haya elegido
-  // quien mira.
-  const leadCenter = opts.centerId ? Prisma.sql`AND "centerId" = ${opts.centerId}` : Prisma.empty;
-  const memberCenter = opts.centerId ? Prisma.sql`AND "primaryCenterId" = ${opts.centerId}` : Prisma.empty;
+  // quien mira. `centerIds` (ámbito de center-scope.ts) manda sobre `centerId`
+  // (la elección puntual del selector) cuando ambos vienen: sin esto, el mapa
+  // de barrios enseñaba siempre leads y socios de TODA la organización, para
+  // cualquier rol — no lo acotaba nadie, a diferencia del resto del panel de
+  // control.
+  const leadCenter =
+    opts.centerIds !== undefined
+      ? Prisma.sql`AND "centerId" = ANY(${opts.centerIds})`
+      : opts.centerId
+        ? Prisma.sql`AND "centerId" = ${opts.centerId}`
+        : Prisma.empty;
+  const memberCenter =
+    opts.centerIds !== undefined
+      ? Prisma.sql`AND "primaryCenterId" = ANY(${opts.centerIds})`
+      : opts.centerId
+        ? Prisma.sql`AND "primaryCenterId" = ${opts.centerId}`
+        : Prisma.empty;
 
   const [rows, centerRows, org] = await Promise.all([
     prisma.$queryRaw<

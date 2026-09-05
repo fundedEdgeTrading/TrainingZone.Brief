@@ -215,6 +215,7 @@ export function FloatingChat({
             <input
               ref={inputRef}
               name="body"
+              maxLength={2000}
               placeholder="Escribe un mensaje..."
               className="flex-1 min-w-0 border border-brand-border rounded-[10px] px-3 py-2.5 text-sm bg-surface-soft text-brand-text placeholder:text-faint outline-none focus:border-brand-ink"
             />

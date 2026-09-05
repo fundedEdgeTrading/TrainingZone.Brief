@@ -13,7 +13,7 @@ export async function GET() {
   const member = await getMemberForUser(session.user.id);
   if (!member) return NextResponse.json({ error: "No se ha encontrado tu ficha de socio." }, { status: 404 });
 
-  const data = await getMemberDataExport(member.id);
+  const data = await getMemberDataExport(member.id, session.user.orgId);
   const fileName = `mis-datos-${new Date().toISOString().slice(0, 10)}.json`;
 
   return new NextResponse(JSON.stringify(data, null, 2), {

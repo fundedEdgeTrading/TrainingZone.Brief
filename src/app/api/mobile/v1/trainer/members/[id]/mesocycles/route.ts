@@ -68,9 +68,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!Number.isInteger(weeks) || weeks < MIN_WEEKS || weeks > MAX_WEEKS) {
     return apiError(`El mesociclo va de ${MIN_WEEKS} a ${MAX_WEEKS} semanas.`, 400);
   }
+  // Mismo criterio que la web (`lines()` en `members/[id]/mesociclos/actions.ts`):
+  // quita también viñetas iniciales, para que "- Lunes TZ" llegue igual al
+  // modelo se mande desde donde se mande.
   const availability = (body?.availability ?? "")
     .split("\n")
-    .map((l) => l.trim())
+    .map((l) => l.replace(/^[-*·]\s*/, "").trim())
     .filter(Boolean);
   if (availability.length === 0) return apiError("Indica al menos un día de disponibilidad.", 400);
 

@@ -67,6 +67,40 @@ export async function removeStaffMember(params: {
       // reincorporar: se rehacen desde "Imputar a un centro".
       await tx.centerMembership.deleteMany({ where: { userId: target.id, orgId } });
       await tx.mobileRefreshToken.deleteMany({ where: { userId: target.id } });
+
+      // Sus leads asignados quedan sin responsable EN LAS DOS FORMAS de baja
+      // (antes solo se soltaban al borrar de verdad): con la persona
+      // desactivada, `runLeadOwnerAlertRule` solo avisa de un lead huérfano
+      // cuando `ownerUserId` es null, así que dejarlo apuntando a alguien sin
+      // acceso los volvía invisibles para esa alerta.
+      await tx.lead.updateMany({ where: { orgId, ownerUserId: target.id }, data: { ownerUserId: null } });
+
+      // Sus tareas pendientes o en curso NO se pierden: se reasignan a quien
+      // se las encargó (o a dirección si no hay quien, o si se las encargó
+      // ella misma) para que sigan en el tablero de alguien. Antes se borraban
+      // sin más —"sin rastro no hay histórico que perder"— pero una tarea
+      // abierta es trabajo real en curso, no un dato colgante.
+      const openTasks = await tx.notification.findMany({
+        where: { orgId, recipientUserId: target.id, kind: "TASK", resolvedAt: null },
+        select: { id: true, createdByUserId: true },
+      });
+      if (openTasks.length > 0) {
+        const fallbackOwner = await tx.user.findFirst({
+          where: { orgId, role: "OWNER", deactivatedAt: null, id: { not: target.id } },
+          select: { id: true },
+        });
+        for (const task of openTasks) {
+          const reassignTo = task.createdByUserId && task.createdByUserId !== target.id ? task.createdByUserId : fallbackOwner?.id;
+          if (reassignTo) {
+            await tx.notification.update({ where: { id: task.id }, data: { recipientUserId: reassignTo } });
+          }
+        }
+      }
+      // Red de seguridad: lo que quede (notificaciones ya resueltas, avisos que
+      // no son tareas, o una tarea abierta sin nadie a quien reasignar en el
+      // caso límite de una organización sin ningún OWNER activo) se descarta
+      // aquí, tanto para no dejar ruido en la baja como para no violar la FK de
+      // `Notification.recipientUserId` cuando el usuario se borra de verdad.
       await tx.notification.deleteMany({ where: { recipientUserId: target.id } });
       await tx.invitation.deleteMany({ where: { userId: target.id } });
 
@@ -80,11 +114,10 @@ export async function removeStaffMember(params: {
       } else {
         // Sin rastro no hay histórico que perder, pero sí filas que pueden
         // existir sin contar como trabajo hecho (una plantilla de sesión sin
-        // estrenar, un lead asignado y no trabajado): se sueltan antes de
-        // borrar. Borrar de verdad libera además el email, que es único por
-        // organización, para volver a invitar a esa persona.
+        // estrenar): se suelta antes de borrar. Borrar de verdad libera además
+        // el email, que es único por organización, para volver a invitar a esa
+        // persona. (El lead sin trabajar ya se soltó arriba, en las dos ramas.)
         await tx.sessionTemplate.updateMany({ where: { trainerId: target.id }, data: { trainerId: null } });
-        await tx.lead.updateMany({ where: { ownerUserId: target.id }, data: { ownerUserId: null } });
         await tx.healthRecord.updateMany({ where: { reportedByUserId: target.id }, data: { reportedByUserId: null } });
         await tx.aptitudeRule.updateMany({ where: { editedByUserId: target.id }, data: { editedByUserId: null } });
         await tx.referenceRange.updateMany({ where: { editedByUserId: target.id }, data: { editedByUserId: null } });

@@ -28,6 +28,14 @@ export function parseRange(value: string | undefined): DashboardRange {
 export type DashboardOpts = {
   /** Centro activo del selector, o null/undefined para toda la organización. */
   centerId?: string | null;
+  /**
+   * Ámbito de centro (center-scope.ts) de quien pregunta, cuando la consulta
+   * necesita filtrar por MÁS de un centro a la vez (p. ej. mapa de barrios con
+   * un director imputado a varios centros). `undefined` = sin restricción.
+   * Distinto de `centerId`, que es la elección puntual de un único centro en
+   * el selector de la pantalla.
+   */
+  centerIds?: string[];
   range?: DashboardRange;
 };
 

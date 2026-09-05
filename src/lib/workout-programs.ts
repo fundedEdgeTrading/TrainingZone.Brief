@@ -47,6 +47,19 @@ export async function requestWorkoutProgram(orgId: string, memberId: string): Pr
   return { ok: true, programId: program.id };
 }
 
+/**
+ * Ámbito de un programa: el socio real al que pertenece, no el `memberId` que
+ * mande el cliente. Se resuelve ANTES de comprobar centro (`memberIsInScope`)
+ * en `workout-actions.ts`: sin esto, un entrenador podía activar/completar la
+ * rutina de un socio de otro centro pasando un socio propio como coartada,
+ * porque el ámbito se comprobaba sobre un parámetro decorativo que nunca
+ * participaba en la escritura.
+ */
+export async function getWorkoutProgramMemberId(orgId: string, programId: string): Promise<string | null> {
+  const program = await prisma.workoutProgram.findFirst({ where: { id: programId, orgId }, select: { memberId: true } });
+  return program?.memberId ?? null;
+}
+
 /** RB-IA-003: el entrenador asignado SIEMPRE confirma antes de activar. */
 export async function confirmWorkoutProgram(orgId: string, programId: string, confirmedByUserId: string): Promise<WorkoutWriteResult> {
   const program = await prisma.workoutProgram.findFirst({ where: { id: programId, orgId }, select: { id: true, status: true, memberId: true } });

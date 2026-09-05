@@ -101,6 +101,13 @@ export async function updateAnnouncement(id: string, formData: FormData): Promis
 
   const existing = await prisma.announcement.findFirst({ where: { id, orgId: session.user.orgId } });
   if (!existing) return { ok: false, error: "No se ha encontrado el anuncio." };
+  // El centro ACTUAL del anuncio también tiene que estar en el ámbito de quien
+  // edita, no solo el que proponga el formulario: si no, se podía tocar el
+  // anuncio de otro centro (o uno global) con solo conocer su id, aunque el
+  // listado ya lo filtrara.
+  if (!(await centerAllowed(session.user, existing.centerId))) {
+    return { ok: false, error: "No se ha encontrado el anuncio." };
+  }
 
   const data = parseForm(formData);
   if (!data.title) return { ok: false, error: "El anuncio necesita un título." };
@@ -138,6 +145,9 @@ export async function toggleAnnouncementActive(id: string, active: boolean): Pro
   if (!session) return { ok: false, error: "No tienes permiso para gestionar anuncios." };
   const existing = await prisma.announcement.findFirst({ where: { id, orgId: session.user.orgId } });
   if (!existing) return { ok: false, error: "No se ha encontrado el anuncio." };
+  if (!(await centerAllowed(session.user, existing.centerId))) {
+    return { ok: false, error: "No se ha encontrado el anuncio." };
+  }
   await prisma.announcement.update({ where: { id }, data: { active } });
   revalidatePath("/anuncios");
   revalidatePath("/portal");
@@ -149,6 +159,9 @@ export async function deleteAnnouncement(id: string): Promise<AnnouncementAction
   if (!session) return { ok: false, error: "No tienes permiso para gestionar anuncios." };
   const existing = await prisma.announcement.findFirst({ where: { id, orgId: session.user.orgId } });
   if (!existing) return { ok: false, error: "No se ha encontrado el anuncio." };
+  if (!(await centerAllowed(session.user, existing.centerId))) {
+    return { ok: false, error: "No se ha encontrado el anuncio." };
+  }
   await prisma.announcement.delete({ where: { id } });
   revalidatePath("/anuncios");
   revalidatePath("/portal");

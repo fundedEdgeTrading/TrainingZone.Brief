@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
 import type { AssessmentKind, Role, HealthRecordType, HealthSeverity, HealthStatus } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { canUseClinicalDataForAI } from "@/lib/consent";
 import { parseAnswers } from "@/lib/assessments/queries";
 import {
   ASSESSMENT_KIND_LABEL,
@@ -9,7 +10,6 @@ import {
   PAIN_ZONE_LABEL,
   isInitialAnswers,
 } from "@/lib/assessments/schemas";
-import { canUseClinicalDataForAI } from "@/lib/consent";
 
 /**
  * Punto único de lectura de datos de salud (A.2.4 / ADR-005 / ADR-008).
@@ -400,6 +400,9 @@ export async function getMesocycleBriefingForMember({
   });
   if (!member) return null;
 
+  // `consentAI` a secas no basta: sin `consentHealth`, el socio se opuso al
+  // tratamiento de sus datos de salud y no hay dato que enviar aunque siga
+  // consintiendo el uso de IA (ver `canUseClinicalDataForAI` en consent.ts).
   const clinicalAllowed = canUseClinicalDataForAI(member);
 
   const [goals, metrics, assessment, healthRecords] = await Promise.all([

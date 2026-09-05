@@ -38,7 +38,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (event.account) {
-    await handleConnectEvent(event);
+    const result = await handleConnectEvent(event);
+    if (!result.ok) {
+      // 500 a propósito, igual que en `handlePlatformEvent`: Stripe reintenta
+      // con backoff. El caso real es el `invoice.paid` de una suscripción
+      // recién creada llegando antes que el `customer.subscription.created`
+      // que la crea localmente (Stripe no garantiza el orden) — antes esto se
+      // tragaba con 200 y el evento se daba por consumido para siempre.
+      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+    }
   } else {
     const result = await handlePlatformEvent(event);
     if (!result.ok) {
@@ -60,7 +68,9 @@ export async function POST(req: NextRequest) {
  * cuenta conectada no está en nuestra base (cuenta huérfana, evento de test
  * de otra org...), se descarta sin más.
  */
-async function handleConnectEvent(event: Stripe.Event) {
+type ConnectEventResult = { ok: true } | { ok: false; error: string };
+
+async function handleConnectEvent(event: Stripe.Event): Promise<ConnectEventResult> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -95,18 +105,21 @@ async function handleConnectEvent(event: Stripe.Event) {
     case "invoice.paid": {
       const orgId = await resolveConnectOrgId(event.account);
       if (!orgId) break;
-      await reconcileMemberInvoicePaid(orgId, event.data.object as Stripe.Invoice);
+      const result = await reconcileMemberInvoicePaid(orgId, event.data.object as Stripe.Invoice);
+      if (!result.ok) return { ok: false, error: result.error };
       break;
     }
     case "invoice.payment_failed": {
       const orgId = await resolveConnectOrgId(event.account);
       if (!orgId) break;
-      await reconcileMemberInvoicePaymentFailed(orgId, event.data.object as Stripe.Invoice);
+      const result = await reconcileMemberInvoicePaymentFailed(orgId, event.data.object as Stripe.Invoice);
+      if (!result.ok) return { ok: false, error: result.error };
       break;
     }
     default:
       break;
   }
+  return { ok: true };
 }
 
 /** F5: `event.account` (acct_...) → `orgId` local, o `null` si no reconocemos la cuenta. */

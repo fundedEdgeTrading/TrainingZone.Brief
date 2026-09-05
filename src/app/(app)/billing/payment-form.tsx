@@ -54,6 +54,7 @@ export default function PaymentForm({ members }: { members: MemberOption[] }) {
           name="amount"
           type="number"
           step="0.01"
+          min="0.01"
           required
           defaultValue={sub ? (sub.priceCents / 100).toFixed(2) : undefined}
           key={sub?.id ?? "none"}

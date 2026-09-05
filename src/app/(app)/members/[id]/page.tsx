@@ -342,12 +342,13 @@ export default async function MemberDetailPage({
   );
 
   // CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
-  // serie para la gráfica de evolución. Rango de referencia sin filtro de sexo (dato no
-  // capturado hoy — ver §8.1 "riesgos abiertos" del doc de composición).
+  // serie para la gráfica de evolución, con el rango de referencia filtrado por sexo cuando
+  // el centro lo tiene configurado.
   const { compositionTiles, compositionChartPoints, bodyFatChartPoints, measuredAt } = await buildCompositionView(
     session.user.orgId,
     member.birthDate,
-    member.progressEntries
+    member.progressEntries,
+    member.sex
   );
 
   // ---- Franja de métricas de la cabecera --------------------------------

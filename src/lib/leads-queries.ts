@@ -3,6 +3,20 @@ import type { LeadCloseType, LeadStatus, Role, Sex } from "@prisma/client";
 import { createMemberWithInvitation } from "@/lib/invitations";
 import { createNotificationOnce } from "@/lib/notifications";
 import { createHealthRecordForLead } from "@/lib/health-access";
+import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
+
+/**
+ * Ámbito de centro de un lead (center-scope.ts), igual que ya se aplica a
+ * socios: dirección de organización ve toda la empresa; el resto del equipo,
+ * solo los leads de los centros a los que está imputado. La API móvil ya lo
+ * aplicaba (`api/mobile/v1/leads/route.ts`); la web filtraba solo por
+ * organización.
+ */
+export async function leadIsInScope(user: ScopedUser, leadId: string): Promise<boolean> {
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId: user.orgId }, select: { centerId: true } });
+  if (!lead) return false;
+  return isCenterInScope(user, lead.centerId);
+}
 
 export async function listLeadChannels(orgId: string) {
   return prisma.leadChannel.findMany({ where: { orgId, active: true }, orderBy: { label: "asc" } });
@@ -25,18 +39,22 @@ export async function addNoCloseReason(orgId: string, label: string) {
   return { ok: true as const };
 }
 
-export async function listCentersForLead(orgId: string) {
-  return prisma.center.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+export async function listCentersForLead(orgId: string, centerIds?: string[]) {
+  return prisma.center.findMany({
+    where: { orgId, ...(centerIds !== undefined ? { id: { in: centerIds } } : {}) },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 }
 
 export async function listLeads(
   orgId: string,
-  opts: { status?: LeadStatus; centerId?: string; ownerUserId?: string; q?: string } = {}
+  opts: { status?: LeadStatus; centerId?: string; centerIds?: string[]; ownerUserId?: string; q?: string } = {}
 ) {
   return prisma.lead.findMany({
     where: {
       orgId,
-      centerId: opts.centerId || undefined,
+      ...(opts.centerIds !== undefined ? { centerId: { in: opts.centerIds } } : { centerId: opts.centerId || undefined }),
       status: opts.status || undefined,
       ownerUserId: opts.ownerUserId || undefined,
       ...(opts.q
@@ -284,8 +302,13 @@ export async function revertLeadClosureForFailedPayment(orgId: string, memberId:
 // desde el programador (F10/route /api/jobs/*).
 export async function runLeadOwnerAlertRule(orgId: string) {
   const threshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // RB-LEAD-009 exige avisar de CUALQUIER lead sin responsable pasado el
+  // plazo, no solo el que aún no se ha contactado: un cierre "Online" (o la
+  // baja de quien lo tenía asignado) deja el lead sin dueño en `SEGUIMIENTO`
+  // o `CON_FECHA_VALORACION`, y con el filtro estrecho a `SIN_CONTACTAR` esos
+  // casos nunca generaban la alerta.
   const staleLeads = await prisma.lead.findMany({
-    where: { orgId, ownerUserId: null, contactedAt: { lt: threshold }, status: "SIN_CONTACTAR" },
+    where: { orgId, ownerUserId: null, contactedAt: { lt: threshold }, status: { notIn: ["CERRADO", "NO_CERRADO"] } },
   });
   if (!staleLeads.length) return 0;
 
@@ -320,13 +343,13 @@ export function leadIsArchived(status: LeadStatus) {
 /** RB-BI-009: tasa de cierre y desglose del embudo (SIN_CONTACTAR → SEGUIMIENTO → CON_FECHA_VALORACION → CERRADO/NO_CERRADO). */
 export async function getLeadCloseRate(
   orgId: string,
-  opts: { from?: Date; to?: Date; centerId?: string | null } = {}
+  opts: { from?: Date; to?: Date; centerId?: string | null; centerIds?: string[] } = {}
 ) {
   const rows = await prisma.lead.groupBy({
     by: ["status"],
     where: {
       orgId,
-      ...(opts.centerId ? { centerId: opts.centerId } : {}),
+      ...(opts.centerIds !== undefined ? { centerId: { in: opts.centerIds } } : opts.centerId ? { centerId: opts.centerId } : {}),
       ...(opts.from || opts.to ? { createdAt: { gte: opts.from, lte: opts.to } } : {}),
     },
     _count: { _all: true },
@@ -348,10 +371,10 @@ export async function getLeadCloseRate(
 }
 
 /** Desglose de leads CERRADO por tipo de cierre, para el KPI "Cerrados". */
-export async function getLeadCloseTypeBreakdown(orgId: string) {
+export async function getLeadCloseTypeBreakdown(orgId: string, centerIds?: string[]) {
   const rows = await prisma.lead.groupBy({
     by: ["closeType"],
-    where: { orgId, status: "CERRADO" },
+    where: { orgId, status: "CERRADO", ...(centerIds !== undefined ? { centerId: { in: centerIds } } : {}) },
     _count: { _all: true },
   });
   const countFor = (t: LeadCloseType) => rows.find((r) => r.closeType === t)?._count._all ?? 0;
@@ -359,17 +382,22 @@ export async function getLeadCloseTypeBreakdown(orgId: string) {
 }
 
 /** Leads sin responsable asignado y no archivados (requieren asignación). */
-export async function countLeadsWithoutOwner(orgId: string) {
+export async function countLeadsWithoutOwner(orgId: string, centerIds?: string[]) {
   return prisma.lead.count({
-    where: { orgId, ownerUserId: null, status: { notIn: ["CERRADO", "NO_CERRADO"] } },
+    where: {
+      orgId,
+      ownerUserId: null,
+      status: { notIn: ["CERRADO", "NO_CERRADO"] },
+      ...(centerIds !== undefined ? { centerId: { in: centerIds } } : {}),
+    },
   });
 }
 
 /** Canales de origen — de dónde llegan los leads (gráfica de barras). */
-export async function getLeadChannelDistribution(orgId: string) {
+export async function getLeadChannelDistribution(orgId: string, centerIds?: string[]) {
   const rows = await prisma.lead.groupBy({
     by: ["channel"],
-    where: { orgId },
+    where: { orgId, ...(centerIds !== undefined ? { centerId: { in: centerIds } } : {}) },
     _count: { _all: true },
     orderBy: { _count: { channel: "desc" } },
   });
@@ -377,10 +405,15 @@ export async function getLeadChannelDistribution(orgId: string) {
 }
 
 /** Motivos de no cierre — por qué se pierden los leads (gráfica de barras). */
-export async function getLeadNoCloseReasonDistribution(orgId: string) {
+export async function getLeadNoCloseReasonDistribution(orgId: string, centerIds?: string[]) {
   const rows = await prisma.lead.groupBy({
     by: ["noCloseReason"],
-    where: { orgId, status: "NO_CERRADO", noCloseReason: { not: null } },
+    where: {
+      orgId,
+      status: "NO_CERRADO",
+      noCloseReason: { not: null },
+      ...(centerIds !== undefined ? { centerId: { in: centerIds } } : {}),
+    },
     _count: { _all: true },
     orderBy: { _count: { noCloseReason: "desc" } },
   });

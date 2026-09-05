@@ -1,3 +1,4 @@
+import type { Sex } from "@prisma/client";
 import { getReferenceRange, statusForValue, ageFromBirthDate } from "@/lib/reference-ranges";
 
 type ProgressEntryLike = {
@@ -18,15 +19,20 @@ type ProgressEntryLike = {
 // CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
 // serie para la gráfica de evolución. Compartido entre la ficha del socio (vista entrenador)
 // y el portal del socio para no duplicar el cálculo de tiles/rangos.
-export async function buildCompositionView(orgId: string, birthDate: Date | null, progressEntries: ProgressEntryLike[]) {
+export async function buildCompositionView(
+  orgId: string,
+  birthDate: Date | null,
+  progressEntries: ProgressEntryLike[],
+  sex: Sex | null = null
+) {
   const age = ageFromBirthDate(birthDate);
   const latestComposition = progressEntries.find(
     (e) => e.bodyFatPct != null || e.muscleMassKg != null || e.bmi != null || e.visceralFatRating != null
   );
   const [bodyFatRange, bmiRange, visceralRange] = await Promise.all([
-    getReferenceRange(orgId, "bodyFatPct", { age }),
-    getReferenceRange(orgId, "bmi", { age }),
-    getReferenceRange(orgId, "visceralFatRating", { age }),
+    getReferenceRange(orgId, "bodyFatPct", { age, sex }),
+    getReferenceRange(orgId, "bmi", { age, sex }),
+    getReferenceRange(orgId, "visceralFatRating", { age, sex }),
   ]);
 
   const compositionTiles = latestComposition

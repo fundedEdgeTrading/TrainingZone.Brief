@@ -1,4 +1,5 @@
 import { requireRole } from "@/lib/guard";
+import { centerScopeFor } from "@/lib/center-scope";
 import { getPostalCodeMapData } from "@/lib/dashboard-queries";
 import { groupBarriosByCity } from "@/lib/barrio-map";
 import { ROLE_LABEL } from "@/lib/rbac";
@@ -12,7 +13,10 @@ import { BarrioMapView } from "./barrio-map-view";
  */
 export default async function MapaBarriosPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
-  const { points, centers } = await getPostalCodeMapData(session.user.orgId);
+  // Ámbito de centro (center-scope.ts): antes se pasaba siempre la
+  // organización entera, para cualquier rol.
+  const scope = await centerScopeFor(session.user);
+  const { points, centers } = await getPostalCodeMapData(session.user.orgId, { centerIds: scope ?? undefined });
   const cities = groupBarriosByCity(points, centers);
 
   if (cities.length === 0) {

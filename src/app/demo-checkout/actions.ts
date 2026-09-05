@@ -1,7 +1,8 @@
 "use server";
 
 import { z } from "zod";
-import { getPlatformPlan } from "@/lib/platform-plans";
+import { prisma } from "@/lib/prisma";
+import { fundadorEnabled, fundadorMaxSeats, getPlatformPlan } from "@/lib/platform-plans";
 import { provisionDemoOrganization } from "@/lib/provisioning";
 
 export type DemoCheckoutResult = { ok: true; activationUrl: string } | { ok: false; error: string };
@@ -20,6 +21,16 @@ const schema = z.object({
 export async function confirmDemoCheckoutAction(planCode: string, formData: FormData): Promise<DemoCheckoutResult> {
   const plan = getPlatformPlan(planCode);
   if (!plan) return { ok: false, error: "Ese plan no está disponible." };
+  // Defensa en profundidad: la pantalla ya bloquea esto, pero la action es
+  // invocable directamente (mismas comprobaciones que `createLicenseCheckoutSession`).
+  if (plan.limitedOffer) {
+    if (!fundadorEnabled()) return { ok: false, error: "Ese plan no está disponible." };
+    const maxSeats = fundadorMaxSeats();
+    if (maxSeats > 0) {
+      const sold = await prisma.organization.count({ where: { platformPlan: plan.code } });
+      if (sold >= maxSeats) return { ok: false, error: "La oferta Fundador ha agotado sus plazas." };
+    }
+  }
 
   const parsed = schema.safeParse({ name: formData.get("name"), email: formData.get("email") });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]!.message };

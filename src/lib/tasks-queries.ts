@@ -34,9 +34,21 @@ export type TaskActionResult = { ok: true } | { ok: false; error: string };
  */
 const ASSIGNABLE: Prisma.UserWhereInput = { role: { notIn: ["MEMBER", "PLATFORM_ADMIN"] }, deactivatedAt: null };
 
-export async function listAssignableUsers(orgId: string) {
+/**
+ * `centerIds`: ámbito de centro (center-scope.ts) de quien pregunta.
+ * `undefined` = dirección de organización, sin restricción. Sin esto, el
+ * selector "Asignar a" ofrecía a todo el equipo de la organización, y un
+ * director de un centro podía repartir trabajo a personal de otro.
+ */
+export async function listAssignableUsers(orgId: string, centerIds?: string[]) {
   return prisma.user.findMany({
-    where: { orgId, ...ASSIGNABLE },
+    where: {
+      orgId,
+      ...ASSIGNABLE,
+      ...(centerIds !== undefined
+        ? { OR: [{ centerId: { in: centerIds } }, { centerMemberships: { some: { centerId: { in: centerIds } } } }] }
+        : {}),
+    },
     select: { id: true, name: true, role: true },
     orderBy: { name: "asc" },
   });
@@ -201,7 +213,7 @@ function scopeOrder(scope: TaskScope): Prisma.NotificationOrderByWithRelationInp
  */
 export async function listTasks(
   orgId: string,
-  opts: { scope?: TaskScope; recipientUserId?: string; q?: string } = {}
+  opts: { scope?: TaskScope; recipientUserId?: string; q?: string; centerIds?: string[] } = {}
 ): Promise<TaskRow[]> {
   const scope = opts.scope ?? "activas";
   // La busqueda va a la consulta y los ejes de la barra se resuelven en
@@ -213,6 +225,15 @@ export async function listTasks(
       orgId,
       kind: "TASK",
       recipientUserId: opts.recipientUserId,
+      // Ámbito de centro (center-scope.ts): dirección de un centro solo ve el
+      // tablero de sus centros, no el de toda la organización.
+      ...(opts.centerIds !== undefined
+        ? {
+            recipient: {
+              OR: [{ centerId: { in: opts.centerIds } }, { centerMemberships: { some: { centerId: { in: opts.centerIds } } } }],
+            },
+          }
+        : {}),
       ...scopeWhere(scope),
       ...(q
         ? {

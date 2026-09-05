@@ -294,10 +294,31 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
       // devolver el socio equivocado y sobrescribir sus datos con los de otra
       // persona.
       const existing = d.externalRef
-        ? await prisma.member.findFirst({ where: { orgId, externalRef: d.externalRef }, select: { id: true } })
+        ? await prisma.member.findFirst({
+            where: { orgId, externalRef: d.externalRef },
+            select: { id: true, primaryCenterId: true },
+          })
         : d.email
-          ? await prisma.member.findFirst({ where: { orgId, email: d.email }, select: { id: true } })
+          ? await prisma.member.findFirst({
+              where: { orgId, email: d.email },
+              select: { id: true, primaryCenterId: true },
+            })
           : null;
+
+      // El emparejamiento anterior solo acota por organización: sin esta
+      // comprobación, una fila cuyo email/externalRef coincidiera con un socio
+      // de OTRO centro de la misma organización lo actualizaba igual, fuera del
+      // ámbito de quien importa (el centro elegido en el desplegable solo se
+      // valida como destino de las filas nuevas, nunca como filtro de las que
+      // encuentran coincidencia).
+      if (existing && !(await centerIsInScope(session.user, existing.primaryCenterId))) {
+        summary.skipped++;
+        summary.errors.push({
+          row: row.rowNumber,
+          messages: ["Esta fila coincide con un socio de un centro fuera de tu ámbito: se ha omitido sin tocarlo."],
+        });
+        continue;
+      }
 
       if (existing) {
         await prisma.member.update({

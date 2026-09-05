@@ -64,13 +64,20 @@ export async function listMessages(conversationId: string) {
 
 export type ChatWriteResult = { ok: true } | { ok: false; error: string };
 
+/** Mismo orden de magnitud que el resto de textos libres del portal (feedback, notas). */
+const MAX_MESSAGE_LENGTH = 2000;
+
 export async function sendMessage(
   conversationId: string,
   senderKind: "MEMBER" | "TRAINER" | "AI" | "DIRECTION",
   senderUserId: string | null,
   body: string
 ): Promise<ChatWriteResult> {
-  if (!body.trim()) return { ok: false, error: "El mensaje no puede estar vacío." };
-  await prisma.chatMessage.create({ data: { conversationId, senderKind, senderUserId, body: body.trim() } });
+  const trimmed = body.trim();
+  if (!trimmed) return { ok: false, error: "El mensaje no puede estar vacío." };
+  if (trimmed.length > MAX_MESSAGE_LENGTH) {
+    return { ok: false, error: `El mensaje es demasiado largo (máximo ${MAX_MESSAGE_LENGTH} caracteres).` };
+  }
+  await prisma.chatMessage.create({ data: { conversationId, senderKind, senderUserId, body: trimmed } });
   return { ok: true };
 }

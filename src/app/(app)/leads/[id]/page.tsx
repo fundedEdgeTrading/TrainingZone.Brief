@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { resolveTimezone } from "@/lib/timezone";
 import { formatInstantDateTime } from "@/lib/date-utils";
 import Link from "next/link";
-import { requireRole } from "@/lib/guard";
+import { requireRole, centerIsInScope } from "@/lib/guard";
 import { getLeadDetail, listNoCloseReasons, leadIsArchived } from "@/lib/leads-queries";
 import { getHealthRecordsForLead } from "@/lib/health-access";
 import { canViewHealthData } from "@/lib/rbac";
@@ -37,6 +37,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   const lead = await getLeadDetail(session.user.orgId, id);
   if (!lead) notFound();
+  // Ámbito de centro: abrir por URL el detalle de un lead de otro centro
+  // (fuera del que gestiona quien pregunta) es el mismo agujero que ya se
+  // cerró para la ficha de un socio (center-scope.ts).
+  if (!(await centerIsInScope(session.user, lead.centerId))) notFound();
 
   const canSeeHealth = canViewHealthData(session.user.role);
   const [healthRecords, reasons, staff, plans] = await Promise.all([
@@ -44,7 +48,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       ? getHealthRecordsForLead({ leadId: id, orgId: session.user.orgId, actorUserId: session.user.id, actorRole: session.user.role })
       : Promise.resolve(null),
     listNoCloseReasons(session.user.orgId),
-    listAssignableStaff(session.user.orgId, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]),
+    listAssignableStaff(session.user.orgId, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], lead.centerId),
     listActivePlansForOrg(session.user.orgId),
   ]);
 

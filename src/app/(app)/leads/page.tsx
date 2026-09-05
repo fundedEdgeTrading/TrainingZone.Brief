@@ -12,6 +12,7 @@ import {
   getLeadNoCloseReasonDistribution,
 } from "@/lib/leads-queries";
 import { listActivePlansForOrg } from "@/lib/members-queries";
+import { centerScopeFor } from "@/lib/center-scope";
 import { KpiCard } from "@/components/kpi-card";
 import { FilterToolbar, type FilterGroup } from "@/components/ui/filter-toolbar";
 import { parseFilterValues } from "@/lib/filter-params";
@@ -77,19 +78,26 @@ export default async function LeadsPage({
     ownerId: parseFilterValues(params.ownerId),
   };
 
+  // Ámbito de centro (center-scope.ts), igual que en /members y /billing:
+  // dirección de organización ve toda la empresa; el resto del equipo, solo
+  // los leads de los centros a los que está imputado. La API móvil ya lo
+  // aplicaba; la web filtraba únicamente por organización.
+  const scope = await centerScopeFor(session.user);
+  const centerIds = scope ?? undefined;
+
   // Solo la búsqueda va a la query: los ejes se resuelven sobre el mismo
   // conjunto que alimenta los recuentos por opción, así que un filtro nunca
   // deja el tablero vacío sin avisar de cuántos leads dejaría cada valor.
   const [allLeads, channels, , centers, closeRate, closeBreakdown, withoutOwner, channelDist, reasonDist, plans] = await Promise.all([
-    listLeads(session.user.orgId, { q: params.q }),
+    listLeads(session.user.orgId, { q: params.q, centerIds }),
     listLeadChannels(session.user.orgId),
     listNoCloseReasons(session.user.orgId),
-    listCentersForLead(session.user.orgId),
-    getLeadCloseRate(session.user.orgId),
-    getLeadCloseTypeBreakdown(session.user.orgId),
-    countLeadsWithoutOwner(session.user.orgId),
-    getLeadChannelDistribution(session.user.orgId),
-    getLeadNoCloseReasonDistribution(session.user.orgId),
+    listCentersForLead(session.user.orgId, centerIds),
+    getLeadCloseRate(session.user.orgId, { centerIds }),
+    getLeadCloseTypeBreakdown(session.user.orgId, centerIds),
+    countLeadsWithoutOwner(session.user.orgId, centerIds),
+    getLeadChannelDistribution(session.user.orgId, centerIds),
+    getLeadNoCloseReasonDistribution(session.user.orgId, centerIds),
     listActivePlansForOrg(session.user.orgId),
   ]);
 
