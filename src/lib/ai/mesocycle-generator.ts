@@ -7,12 +7,24 @@ import {
 } from "@/lib/ai/anthropic";
 import { MesocyclePlanSchema, type MesocyclePlan } from "@/lib/ai/mesocycle-schema";
 import {
-  MESOCYCLE_SYSTEM_METHODOLOGY,
-  MESOCYCLE_SYSTEM_REFINE,
+  MESOCYCLE_CONTAINER_INSTRUCTIONS,
+  MESOCYCLE_REFINE_INSTRUCTIONS,
   buildMesocycleBriefing,
   buildRefineRequest,
 } from "@/lib/ai/mesocycle-prompt";
+import { buildMethodologySystem, DEFAULT_PROFILE } from "@/lib/ai/methodology";
 import type { MesocycleBriefing } from "@/lib/health-access";
+
+/**
+ * Sistema por perfil (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2-3). Hasta
+ * que el esquema del mesociclo tenga un campo `profile` propio (fase 1 de la
+ * guía) se usa siempre `DEFAULT_PROFILE`: el briefing deja constancia de que el
+ * grupo real del socio no se ha confirmado (ver `buildMesocycleBriefing`).
+ * Calculado una sola vez por proceso: son ficheros estáticos del repo, no hay
+ * nada que recargar en caliente.
+ */
+const METHODOLOGY_SYSTEM = `${buildMethodologySystem(DEFAULT_PROFILE)}\n\n---\n\n${MESOCYCLE_CONTAINER_INSTRUCTIONS}`;
+const REFINE_SYSTEM = `${METHODOLOGY_SYSTEM}\n\n---\n\n${MESOCYCLE_REFINE_INSTRUCTIONS}`;
 
 /**
  * Historial multi-turno del refinado, tal y como se guarda en
@@ -43,7 +55,7 @@ export async function generateMesocyclePlan(briefing: MesocycleBriefing): Promis
       system: [
         // El punto de corte del caché va al final de la metodología: lo del
         // socio viene después, en el mensaje de usuario, y no lo invalida.
-        { type: "text", text: MESOCYCLE_SYSTEM_METHODOLOGY, cache_control: { type: "ephemeral" } },
+        { type: "text", text: METHODOLOGY_SYSTEM, cache_control: { type: "ephemeral" } },
       ],
       messages: [{ role: "user", content: userMessage }],
       output_config: { format: zodOutputFormat(MesocyclePlanSchema) },
@@ -93,7 +105,7 @@ export async function refineMesocyclePlan({
     const stream = client.messages.stream({
       model: MESOCYCLE_REFINE_MODEL,
       max_tokens: MAX_TOKENS,
-      system: [{ type: "text", text: MESOCYCLE_SYSTEM_REFINE, cache_control: { type: "ephemeral" } }],
+      system: [{ type: "text", text: REFINE_SYSTEM, cache_control: { type: "ephemeral" } }],
       messages,
       output_config: { format: zodOutputFormat(MesocyclePlanSchema) },
     });
