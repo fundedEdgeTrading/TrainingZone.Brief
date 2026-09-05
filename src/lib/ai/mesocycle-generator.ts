@@ -12,19 +12,38 @@ import {
   buildMesocycleBriefing,
   buildRefineRequest,
 } from "@/lib/ai/mesocycle-prompt";
-import { buildMethodologySystem, DEFAULT_PROFILE } from "@/lib/ai/methodology";
+import { buildMethodologySystem } from "@/lib/ai/methodology";
+import type { EpProfile } from "@/lib/ai/ep-profile";
 import type { MesocycleBriefing } from "@/lib/health-access";
 
 /**
- * Sistema por perfil (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2-3). Hasta
- * que el esquema del mesociclo tenga un campo `profile` propio (fase 1 de la
- * guía) se usa siempre `DEFAULT_PROFILE`: el briefing deja constancia de que el
- * grupo real del socio no se ha confirmado (ver `buildMesocycleBriefing`).
- * Calculado una sola vez por proceso: son ficheros estáticos del repo, no hay
- * nada que recargar en caliente.
+ * Sistema por perfil (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2-3),
+ * memoizado: son ficheros estáticos del repo, así que el mismo perfil siempre
+ * produce los mismos bytes y no hay nada que recalcular en cada llamada. El
+ * mapa es lo que permite que "cinco prefijos cacheados, uno por grupo" (§2.1
+ * de la guía) sea también cierto en este proceso, no solo en el lado de
+ * Anthropic.
  */
-const METHODOLOGY_SYSTEM = `${buildMethodologySystem(DEFAULT_PROFILE)}\n\n---\n\n${MESOCYCLE_CONTAINER_INSTRUCTIONS}`;
-const REFINE_SYSTEM = `${METHODOLOGY_SYSTEM}\n\n---\n\n${MESOCYCLE_REFINE_INSTRUCTIONS}`;
+const methodologySystemByProfile = new Map<EpProfile, string>();
+const refineSystemByProfile = new Map<EpProfile, string>();
+
+function methodologySystemFor(profile: EpProfile): string {
+  let system = methodologySystemByProfile.get(profile);
+  if (!system) {
+    system = `${buildMethodologySystem(profile)}\n\n---\n\n${MESOCYCLE_CONTAINER_INSTRUCTIONS}`;
+    methodologySystemByProfile.set(profile, system);
+  }
+  return system;
+}
+
+function refineSystemFor(profile: EpProfile): string {
+  let system = refineSystemByProfile.get(profile);
+  if (!system) {
+    system = `${methodologySystemFor(profile)}\n\n---\n\n${MESOCYCLE_REFINE_INSTRUCTIONS}`;
+    refineSystemByProfile.set(profile, system);
+  }
+  return system;
+}
 
 /**
  * Historial multi-turno del refinado, tal y como se guarda en
@@ -55,7 +74,7 @@ export async function generateMesocyclePlan(briefing: MesocycleBriefing): Promis
       system: [
         // El punto de corte del caché va al final de la metodología: lo del
         // socio viene después, en el mensaje de usuario, y no lo invalida.
-        { type: "text", text: METHODOLOGY_SYSTEM, cache_control: { type: "ephemeral" } },
+        { type: "text", text: methodologySystemFor(briefing.profile), cache_control: { type: "ephemeral" } },
       ],
       messages: [{ role: "user", content: userMessage }],
       output_config: { format: zodOutputFormat(MesocyclePlanSchema) },
@@ -105,7 +124,7 @@ export async function refineMesocyclePlan({
     const stream = client.messages.stream({
       model: MESOCYCLE_REFINE_MODEL,
       max_tokens: MAX_TOKENS,
-      system: [{ type: "text", text: REFINE_SYSTEM, cache_control: { type: "ephemeral" } }],
+      system: [{ type: "text", text: refineSystemFor(plan.profile), cache_control: { type: "ephemeral" } }],
       messages,
       output_config: { format: zodOutputFormat(MesocyclePlanSchema) },
     });

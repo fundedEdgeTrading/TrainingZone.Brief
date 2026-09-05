@@ -6,8 +6,9 @@ import { useRouter } from "next/navigation";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { BrandLoader, MESOCYCLE_STEPS, usePacedLoader } from "@/components/ui/brand-loader";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
+import { EP_PROFILES, EP_PROFILE_LABEL, DEFAULT_PROFILE, type EpProfile } from "@/lib/ai/ep-profile";
 import { generateMesocycleAction } from "./actions";
 
 /**
@@ -34,6 +35,7 @@ export type MesocycleSummary = {
   id: string;
   title: string;
   status: string;
+  profile: EpProfile;
   createdAt: Date;
   approvedAt: Date | null;
 };
@@ -50,6 +52,7 @@ export function MesocyclePanel({
   const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
+  const [profile, setProfile] = useState<EpProfile>(DEFAULT_PROFILE);
   const [level, setLevel] = useState("");
   const [weeks, setWeeks] = useState("8");
   const [availability, setAvailability] = useState("");
@@ -62,6 +65,7 @@ export function MesocyclePanel({
 
     startTransition(async () => {
       const result = await generateMesocycleAction(memberId, {
+        profile,
         level,
         weeks: Number(weeks),
         availability,
@@ -93,6 +97,16 @@ export function MesocyclePanel({
             no vale hasta que lo apruebes.
           </p>
         </div>
+
+        <Field label="Grupo Training Zone" hint="Decide la metodología con la que programa la IA.">
+          <Select value={profile} onChange={(e) => setProfile(e.target.value as EpProfile)}>
+            {EP_PROFILES.map((p) => (
+              <option key={p} value={p}>
+                {EP_PROFILE_LABEL[p]}
+              </option>
+            ))}
+          </Select>
+        </Field>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Nivel de partida" hint="Déjalo vacío para tomarlo de la valoración inicial.">
@@ -133,7 +147,7 @@ export function MesocyclePanel({
                 <span>
                   <span className="font-semibold">{m.title}</span>
                   <span className="text-xs text-brand-muted block">
-                    {m.createdAt.toLocaleDateString("es-ES")}
+                    {EP_PROFILE_LABEL[m.profile]} · {m.createdAt.toLocaleDateString("es-ES")}
                     {m.approvedAt && ` · aprobado el ${m.approvedAt.toLocaleDateString("es-ES")}`}
                   </span>
                 </span>

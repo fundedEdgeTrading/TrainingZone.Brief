@@ -15,6 +15,7 @@ import type { MesocyclePlan } from "./mesocycle-schema";
 const PLAN: MesocyclePlan = {
   title: "Reconstrucción de base tras lesión de hombro",
   objective: "Recuperar fuerza de empuje sin dolor.",
+  profile: "REHABILITACION",
   safetyCriteria: ["Sin press por encima de la cabeza hasta la semana 5"],
   weeklyLayout: ["Lun TZ", "Mié Gym"],
   milestones: [{ week: 4, milestone: "Remo con mancuerna 3×10 a 16 kg" }],

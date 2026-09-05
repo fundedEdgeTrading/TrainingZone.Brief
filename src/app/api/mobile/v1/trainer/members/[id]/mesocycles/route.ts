@@ -5,6 +5,7 @@ import { canManageMesocycles } from "@/lib/rbac";
 import { isAiConfigured } from "@/lib/ai/anthropic";
 import { getMesocycleBriefingForMember } from "@/lib/health-access";
 import { generateMesocyclePlan } from "@/lib/ai/mesocycle-generator";
+import { DEFAULT_PROFILE, EP_PROFILE_LABEL, isEpProfile } from "@/lib/ai/ep-profile";
 import { createMesocycleFromPlan, listMesocyclesForMember } from "@/lib/mesocycle-queries";
 import { requireApiRole } from "../../../../_lib/api-session";
 import { apiOk, apiError } from "../../../../_lib/response";
@@ -47,13 +48,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       id: m.id,
       title: m.title,
       status: m.status,
+      profile: m.profile,
+      profileLabel: EP_PROFILE_LABEL[m.profile],
       createdAt: m.createdAt.toISOString(),
       approvedAt: m.approvedAt?.toISOString() ?? null,
     })),
   });
 }
 
-type GenerateBody = { level?: string; weeks?: number; availability?: string };
+type GenerateBody = { profile?: string; level?: string; weeks?: number; availability?: string };
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -64,6 +67,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!isAiConfigured()) return apiError("La generación con IA no está configurada en este entorno.", 400);
 
   const body = (await req.json().catch(() => null)) as GenerateBody | null;
+  const profileInput = body?.profile ?? DEFAULT_PROFILE;
+  if (!isEpProfile(profileInput)) return apiError("Elige un grupo Training Zone válido.", 400);
   const weeks = Number(body?.weeks ?? 8);
   if (!Number.isInteger(weeks) || weeks < MIN_WEEKS || weeks > MAX_WEEKS) {
     return apiError(`El mesociclo va de ${MIN_WEEKS} a ${MAX_WEEKS} semanas.`, 400);
@@ -83,6 +88,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     orgId: claims.orgId,
     actorUserId: claims.sub,
     actorRole: claims.role,
+    profile: profileInput,
     level: (body?.level ?? "").trim(),
     weeks,
     availability,

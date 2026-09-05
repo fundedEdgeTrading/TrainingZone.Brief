@@ -3,6 +3,7 @@ import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
 import type { AssessmentKind, Role, HealthRecordType, HealthSeverity, HealthStatus } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { canUseClinicalDataForAI } from "@/lib/consent";
+import type { EpProfile } from "@/lib/ai/ep-profile";
 import { parseAnswers } from "@/lib/assessments/queries";
 import {
   ASSESSMENT_KIND_LABEL,
@@ -352,6 +353,8 @@ export async function createHealthRecordsFromAssessment({
  * NUNCA nombre, DNI, teléfono ni email.
  */
 export type MesocycleBriefing = {
+  /** Grupo Training Zone elegido por el entrenador; decide la metodología del sistema. */
+  profile: EpProfile;
   age: number | null;
   sex: string | null;
   level: string;
@@ -380,6 +383,7 @@ export async function getMesocycleBriefingForMember({
   orgId,
   actorUserId,
   actorRole,
+  profile,
   level,
   weeks,
   availability,
@@ -388,6 +392,7 @@ export async function getMesocycleBriefingForMember({
   orgId: string;
   actorUserId: string;
   actorRole: Role;
+  profile: EpProfile;
   level: string;
   weeks: number;
   availability: string[];
@@ -430,6 +435,7 @@ export async function getMesocycleBriefingForMember({
   const context = assessment ? assessmentContext(assessment.kind, assessment.answers) : null;
 
   const briefing: MesocycleBriefing = {
+    profile,
     age: ageFrom(member.birthDate) ?? context?.age ?? null,
     sex: (member.sex ? SEX_LABEL[member.sex] : null) ?? context?.sex ?? null,
     level: level.trim() || context?.level || "no registrado",
@@ -462,6 +468,7 @@ export async function getMesocycleBriefingForMember({
         consentAI: member.consentAI,
         consentHealth: member.consentHealth,
         clinicalItems: briefing.clinical?.length ?? 0,
+        profile,
         weeks,
       },
     },
