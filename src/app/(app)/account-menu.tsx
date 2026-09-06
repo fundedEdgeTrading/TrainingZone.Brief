@@ -28,6 +28,10 @@ export function initials(name: string) {
 
 const MENU_ITEMS = [
   { href: "/portal/perfil", label: "Mi perfil" },
+  // E5-01: acceso directo a gestionar el pago y darse de baja. Antes de esta
+  // historia no había ninguna entrada de menú para esto — solo "Mi membresía"
+  // en el sidebar, sin enlazar el Billing Portal ni la baja.
+  { href: "/portal/membresia#suscripcion", label: "Mi suscripción" },
   // No hay página dedicada para salud/notificaciones (RB-PERFIL-004 ya cubre
   // consentimientos en "Mi perfil"): se enlaza a la sección correspondiente
   // dentro de esa misma página en vez de inventar rutas nuevas.

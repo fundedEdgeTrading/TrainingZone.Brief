@@ -21,6 +21,7 @@ import { PendingSessionsRating } from "./pending-sessions";
 import { SERVICE_LABEL } from "@/lib/service-labels";
 import { getMemberBillingSnapshot } from "./billing-view";
 import { ReceiptDownloadButton } from "./receipt-download-button";
+import { SubscriptionManagement } from "./subscription-management";
 
 const RECEIPT_STATUS_LABEL: Record<string, string> = { PAID: "Cobrado", FAILED: "Fallido", REFUNDED: "Devuelto" };
 
@@ -293,6 +294,17 @@ export default async function PortalMembresiaPage({
             </div>
           )}
         </div>
+      )}
+
+      {/* E5-01: gestionar la suscripción y darse de baja sin salir del portal. */}
+      {billing.hasSubscription && (
+        <SubscriptionManagement
+          recurring={billing.recurring}
+          hasStripeCustomer={!!member.stripeCustomerId}
+          initialCancelAt={billing.cancelAt}
+          centerName={member.primaryCenter.name}
+          centerPhone={member.primaryCenter.phone}
+        />
       )}
 
       {/* Valora tus sesiones (F16) — el badge de "Mi membresía" en el sidebar cuenta estas pendientes */}
