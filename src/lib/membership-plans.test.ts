@@ -29,6 +29,7 @@ before(async () => {
 
 after(async () => {
   if (!orgId) return;
+  await prisma.onlineWorkout.deleteMany({ where: { orgId } });
   await prisma.membershipPlan.deleteMany({ where: { orgId } });
   await prisma.organization.deleteMany({ where: { id: orgId } });
   await prisma.$disconnect();
@@ -159,6 +160,67 @@ test("E4-29 · un producto de otra organización no se toca", async () => {
 
   await prisma.membershipPlan.deleteMany({ where: { orgId: otra.id } });
   await prisma.organization.delete({ where: { id: otra.id } });
+});
+
+// ---------------------------------------------------------------------------
+// E12-03 · el plan ONLINE no es vendible sin contenido que entregar
+// ---------------------------------------------------------------------------
+
+test("E12-03 · un plan ONLINE sin contenido se guarda oculto y avisa", async () => {
+  const result = await saveMembershipPlan(orgId, {
+    name: "Online sin vídeos",
+    planType: "ONLINE",
+    priceCents: 2900,
+    active: true,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(result.warning, "sin contenido, tiene que avisar de que se ha guardado oculto");
+
+  const plan = await prisma.membershipPlan.findUniqueOrThrow({ where: { id: result.id } });
+  assert.equal(plan.active, false, "no puede quedar visible sin contenido que entregar");
+});
+
+test("E12-03 · activar un plan ONLINE sin contenido se rechaza", async () => {
+  const created = await saveMembershipPlan(orgId, {
+    name: "Online por activar",
+    planType: "ONLINE",
+    priceCents: 2900,
+    active: false,
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) return;
+
+  const activated = await setMembershipPlanActive(orgId, created.id, true);
+  assert.equal(activated.ok, false);
+});
+
+test("E12-03 · con contenido publicado, el plan ONLINE se activa sin problema", async () => {
+  await prisma.onlineWorkout.create({
+    data: {
+      orgId,
+      title: "Movilidad en casa",
+      category: "Movilidad",
+      level: "Principiante",
+      durationMin: 20,
+      videoUrl: "https://example.com/video.mp4",
+    },
+  });
+
+  const result = await saveMembershipPlan(orgId, {
+    name: "Online con contenido",
+    planType: "ONLINE",
+    priceCents: 2900,
+    active: true,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.warning, undefined);
+
+  const plan = await prisma.membershipPlan.findUniqueOrThrow({ where: { id: result.id } });
+  assert.equal(plan.active, true);
+
+  await prisma.onlineWorkout.deleteMany({ where: { orgId } });
 });
 
 // ---------------------------------------------------------------------------

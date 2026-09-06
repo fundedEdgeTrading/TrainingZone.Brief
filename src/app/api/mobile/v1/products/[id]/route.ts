@@ -28,6 +28,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const plan = await prisma.membershipPlan.findFirst({ where: { id, orgId: claims.orgId } });
   if (!plan) return apiError("No se ha encontrado el producto.", 404);
+  // E12-03/D-S3: el plan ONLINE se gestiona desde la web, no desde la app.
+  if (plan.type === "ONLINE") return apiError("El plan ONLINE se gestiona desde la web.", 403);
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Datos inválidos.", 400);

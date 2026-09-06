@@ -39,7 +39,7 @@ function slugify(s: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export type OrgActionResult = { ok: true } | { ok: false; error: string };
+export type OrgActionResult = { ok: true; warning?: string } | { ok: false; error: string };
 
 // ---------- Organización (marca / logo) ----------
 export async function updateOrganization(formData: FormData): Promise<OrgActionResult> {
@@ -446,7 +446,7 @@ export async function createMembershipPlan(formData: FormData): Promise<OrgActio
   const result = await saveMembershipPlan(session.user.orgId, parsed.input);
   if (!result.ok) return result;
   revalidatePath("/organization");
-  return { ok: true };
+  return { ok: true, warning: result.warning };
 }
 
 export async function updateMembershipPlan(formData: FormData): Promise<OrgActionResult> {
@@ -458,7 +458,7 @@ export async function updateMembershipPlan(formData: FormData): Promise<OrgActio
   const result = await saveMembershipPlan(session.user.orgId, parsed.input);
   if (!result.ok) return result;
   revalidatePath("/organization");
-  return { ok: true };
+  return { ok: true, warning: result.warning };
 }
 
 /**

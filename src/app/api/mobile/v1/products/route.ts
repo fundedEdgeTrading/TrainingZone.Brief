@@ -34,7 +34,10 @@ export async function GET(req: NextRequest) {
 
   const [plans, center] = await Promise.all([
     prisma.membershipPlan.findMany({
-      where: { orgId: claims.orgId, ...(canManage ? {} : { active: true }) },
+      // E12-03/D-S3: el plan ONLINE no se vende desde la app (sigue
+      // existiendo y vendiéndose en web). Ni el socio ni quien gestiona desde
+      // el móvil lo ven en este catálogo.
+      where: { orgId: claims.orgId, type: { not: "ONLINE" }, ...(canManage ? {} : { active: true }) },
       orderBy: [{ active: "desc" }, { priceCents: "asc" }],
       include: { _count: { select: { subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN"] } } } } } },
     }),
@@ -79,6 +82,11 @@ export async function POST(req: NextRequest) {
   const parsed = productSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Datos inválidos.", 400);
   const body = parsed.data;
+
+  // E12-03/D-S3: el plan ONLINE se gestiona desde la web, no desde la app.
+  if (body.planType === "ONLINE" || body.serviceKind === "ONLINE") {
+    return apiError("El plan ONLINE se gestiona desde la web.", 403);
+  }
 
   // Misma función que `/organization` en la web (E4-29): mismos tipos, misma
   // validación, mismo trato del duplicado y mismo espejo de Stripe.
