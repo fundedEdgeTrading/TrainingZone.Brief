@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import { stripeClientOptions, warnOnStripeApiVersionDrift } from "@/lib/stripe-api-version";
 
 /**
  * F12/RB-PAGO-001 + Parte C (Connect). Sin cuenta Stripe real en este entorno
@@ -13,11 +14,21 @@ import { prisma } from "@/lib/prisma";
  */
 let stripeClient: Stripe | null = null;
 
-/** Cliente de plataforma (Apta): úsalo para cobrar la licencia SaaS (Parte A) y para operaciones Connect (OAuth, `stripeAccount.retrieve`). */
+/**
+ * Cliente de plataforma (Apta): úsalo para cobrar la licencia SaaS (Parte A) y
+ * para operaciones Connect (OAuth, `stripeAccount.retrieve`).
+ *
+ * HU-ST-03/RB-PAGO-021: se construye con `apiVersion` EXPLÍCITA. Sin ella la
+ * versión la decidía el paquete instalado, y un `npm update` podía cambiarla
+ * bajo los pies — el mecanismo exacto que produjo BUG-1.
+ */
 export function getStripeClient(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) return null;
-  if (!stripeClient) stripeClient = new Stripe(key);
+  if (!stripeClient) {
+    warnOnStripeApiVersionDrift();
+    stripeClient = new Stripe(key, stripeClientOptions());
+  }
   return stripeClient;
 }
 

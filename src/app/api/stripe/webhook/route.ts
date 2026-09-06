@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
+import { hasAnyWebhookSecret, readWebhookSecrets, verifyStripeWebhook } from "@/lib/stripe-webhook";
 import { reconcileConnectCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
 import {
   reconcileMemberSubscriptionUpserted,
@@ -10,19 +11,25 @@ import {
   reconcileMemberInvoicePaymentFailed,
 } from "@/lib/member-billing";
 import { prisma } from "@/lib/prisma";
-import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
+import { deauthorizeStripeAccount, refreshStripeAccountStatus } from "@/lib/stripe-connect";
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
+import { reconcilePlatformInvoicePaid, reconcilePlatformInvoicePaymentFailed } from "@/lib/platform-billing";
+import { claimStripeEvent, markStripeEventFailed, markStripeEventProcessed } from "@/lib/stripe-webhook-events";
 
 /**
  * F12/RB-PAGO-002 + Parte A.4/C.4. Un único endpoint para los dos planos de
  * cobro (§0): los eventos de cuentas CONECTADAS (Parte C, gimnasio → socios)
  * llegan con `event.account` presente; los de PLATAFORMA (Apta → gimnasio,
  * Parte A) llegan sin él. Se rutan por separado para no mezclarlos.
+ *
+ * HU-ST-01/RB-PAGO-020: cada uno de los dos flujos se firma con su propio
+ * signing secret (`STRIPE_WEBHOOK_SECRET` y `STRIPE_CONNECT_WEBHOOK_SECRET`).
+ * La verificación y el enrutado viven en `lib/stripe-webhook.ts`.
  */
 export async function POST(req: NextRequest) {
   const stripe = getStripeClient();
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!stripe || !webhookSecret) {
+  const secrets = readWebhookSecrets();
+  if (!stripe || !hasAnyWebhookSecret(secrets)) {
     return NextResponse.json({ ok: false, error: "Stripe no está configurado en este entorno." }, { status: 501 });
   }
 
@@ -30,34 +37,41 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   if (!signature) return NextResponse.json({ ok: false, error: "Falta la firma de Stripe." }, { status: 400 });
 
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch {
-    return NextResponse.json({ ok: false, error: "Firma inválida." }, { status: 400 });
+  // HU-ST-01/RB-PAGO-020: los eventos de plataforma y los de cuentas conectadas
+  // llegan firmados con secretos DISTINTOS. Verificar con uno solo condenaba a
+  // 400 a todo un flujo.
+  const verified = verifyStripeWebhook(stripe, rawBody, signature, secrets);
+  if (!verified.ok) {
+    return NextResponse.json({ ok: false, error: verified.error }, { status: 400 });
+  }
+  const { event } = verified;
+
+  // HU-ST-05/RB-PAGO-023: Stripe entrega AL MENOS una vez. La marca por
+  // `event.id` es la única idempotencia transversal; sin ella cada
+  // reconciliador tenía que defenderse solo, y los que no lo hacían duplicaban.
+  const claim = await claimStripeEvent(event);
+  if (!claim.claimed) {
+    // 200: para Stripe está consumido. Repetirlo no aporta nada y reprocesarlo
+    // sí puede escribir dinero dos veces.
+    return NextResponse.json({ ok: true, deduplicated: claim.reason });
   }
 
-  if (event.account) {
-    const result = await handleConnectEvent(event);
-    if (!result.ok) {
-      // 500 a propósito, igual que en `handlePlatformEvent`: Stripe reintenta
-      // con backoff. El caso real es el `invoice.paid` de una suscripción
-      // recién creada llegando antes que el `customer.subscription.created`
-      // que la crea localmente (Stripe no garantiza el orden) — antes esto se
-      // tragaba con 200 y el evento se daba por consumido para siempre.
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
-    }
-  } else {
-    const result = await handlePlatformEvent(event);
-    if (!result.ok) {
-      // 500 a propósito: Stripe reintenta con backoff. Devolver 200 aquí daba
-      // el evento por consumido, así que un alta que no llegara a completarse
-      // dejaba a un cliente que YA ha pagado sin organización y sin que nadie
-      // lo volviera a intentar.
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
-    }
+  const result =
+    verified.source === "connect" ? await handleConnectEvent(event) : await handlePlatformEvent(event);
+
+  if (!result.ok) {
+    // 500 a propósito: Stripe reintenta con backoff, y el evento NO queda
+    // marcado como procesado. El caso real en Connect es el `invoice.paid` de
+    // una suscripción recién creada llegando antes que el
+    // `customer.subscription.created` que la crea localmente (Stripe no
+    // garantiza el orden); en plataforma, un alta que no llega a completarse y
+    // dejaba a un cliente que YA ha pagado sin organización. Antes ambos se
+    // tragaban con 200 y el evento se daba por consumido para siempre.
+    await markStripeEventFailed(event.id, result.error);
+    return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
   }
 
+  await markStripeEventProcessed(event.id);
   return NextResponse.json({ ok: true });
 }
 
@@ -87,6 +101,15 @@ async function handleConnectEvent(event: Stripe.Event): Promise<ConnectEventResu
     case "account.updated": {
       const account = event.data.object as Stripe.Account;
       await refreshStripeAccountStatus(account.id);
+      break;
+    }
+    case "account.application.deauthorized": {
+      // HU-ST-06/RB-CONNECT-004: el gimnasio ha revocado el acceso desde su
+      // Dashboard. `event.data.object` es la Application, no la cuenta: quien
+      // identifica al gimnasio es `event.account`. Tampoco se puede llamar a
+      // `accounts.retrieve` (ya no tenemos permiso), así que se apagan los dos
+      // interruptores directamente en vez de refrescar desde Stripe.
+      await deauthorizeStripeAccount(event.account);
       break;
     }
     case "customer.subscription.created":
@@ -153,38 +176,14 @@ async function handlePlatformEvent(event: Stripe.Event): Promise<PlatformEventRe
       break;
     }
     case "invoice.paid": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId =
-        typeof (invoice as { subscription?: string | Stripe.Subscription | null }).subscription === "string"
-          ? (invoice as { subscription?: string }).subscription
-          : (invoice as { subscription?: Stripe.Subscription | null }).subscription?.id ?? null;
-      if (!subscriptionId) break;
-
-      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscriptionId } });
-      if (!org) break;
-
-      const periodEnd = invoice.lines?.data?.[0]?.period?.end;
-      await prisma.organization.update({
-        where: { id: org.id },
-        data: {
-          platformStatus: "ACTIVE",
-          currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : undefined,
-        },
-      });
+      // HU-ST-02: `Invoice.subscription` ya no existe en la API vigente. La
+      // resolución de los dos shapes vive en `lib/stripe-invoice.ts`, compartida
+      // con el plano 2.
+      await reconcilePlatformInvoicePaid(event.data.object as Stripe.Invoice);
       break;
     }
     case "invoice.payment_failed": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId =
-        typeof (invoice as { subscription?: string | Stripe.Subscription | null }).subscription === "string"
-          ? (invoice as { subscription?: string }).subscription
-          : (invoice as { subscription?: Stripe.Subscription | null }).subscription?.id ?? null;
-      if (!subscriptionId) break;
-
-      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscriptionId } });
-      if (!org) break;
-
-      await prisma.organization.update({ where: { id: org.id }, data: { platformStatus: "PAST_DUE" } });
+      await reconcilePlatformInvoicePaymentFailed(event.data.object as Stripe.Invoice);
       break;
     }
     case "customer.subscription.deleted": {

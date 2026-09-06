@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     planType: body.planType as PlanType | undefined,
     serviceKind: body.serviceKind,
     active: body.visible,
-  });
+  }, claims.sub);
   if (!result.ok) return apiError(result.error, 400);
 
   return apiOk({ updated: true });
