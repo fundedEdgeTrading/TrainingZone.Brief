@@ -62,7 +62,6 @@ export default async function FeedbackPage({
   // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
   // se saltaría el filtro del menú.
   await requireFeature("feedback_direccion");
-  const orgId = session.user.orgId;
   const params = await searchParams;
 
   const selection = {
@@ -74,9 +73,14 @@ export default async function FeedbackPage({
   // La query solo aplica búsqueda y orden: centro y alineación se resuelven
   // aquí, sobre el mismo conjunto con el que se calculan los recuentos por
   // opción de cada eje (lo que evita filtrar hasta dejar la lista vacía).
+  // E1-03: el ámbito de centro NO es el filtro de la barra, y por eso no se le
+  // pasa aquí — el conjunto base ya viene acotado a los centros de esta
+  // persona, y el filtro solo reduce dentro de él (los recuentos por opción
+  // siguen calculándose sobre el mismo conjunto). El selector, además, solo
+  // ofrece sus centros: un `?centerId=` a mano no amplía nada.
   const [allRows, centers] = await Promise.all([
-    listMemberFeedback(orgId, { q: params.q, sortBy }),
-    listCentersForFeedback(orgId),
+    listMemberFeedback(session.user, { q: params.q, sortBy }),
+    listCentersForFeedback(session.user),
   ]);
 
   const matches = (row: (typeof allRows)[number], sel: typeof selection) => {
