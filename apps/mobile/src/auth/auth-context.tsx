@@ -40,7 +40,11 @@ type AuthContextValue = {
   consumeJustSignedIn: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+// Exportado (no solo el hook `useAuth`) para que `@/theme/theme` pueda leer el
+// tema explícito del usuario con `useContext` sin lanzar cuando se llama
+// fuera de `<AuthProvider>` (el `RootLayout` pinta la barra de estado antes
+// de montarlo) — E13-02.
+export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<AuthState>({ status: "loading" });

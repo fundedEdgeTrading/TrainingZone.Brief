@@ -1,5 +1,7 @@
+import { useContext } from "react";
 import { useColorScheme } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AuthContext } from "@/auth/auth-context";
 
 // Tokens de marca (docs/BRANDING.md) portados a React Native. Misma paleta
 // que src/app/globals.css de la web, con equivalentes claro/oscuro.
@@ -185,6 +187,18 @@ export function shadow(theme: Theme, elevated = false) {
 
 export function useTheme(): Theme {
   const scheme = useColorScheme();
+  // `useContext` en vez de `useAuth()`: `RootLayout` pinta la barra de estado
+  // ANTES de montar `<AuthProvider>`, y `useAuth()` lanza fuera de él.
+  const auth = useContext(AuthContext);
+
+  // D-M5 (E13-02): con sesión iniciada, la preferencia EXPLÍCITA de
+  // `User.theme` manda sobre el ajuste del sistema — igual que en la web. Sin
+  // sesión (login, splash) se sigue el sistema, como siempre: no hay
+  // preferencia de nadie que leer todavía.
+  if (auth?.state.status === "signedIn") {
+    return auth.state.user.theme === "DARK" ? dark : light;
+  }
+
   // Piel oscura por defecto: solo el ajuste explícito "claro" del sistema la cambia.
   return scheme === "light" ? light : dark;
 }

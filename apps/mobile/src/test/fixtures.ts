@@ -43,6 +43,7 @@ export function meResponse(overrides: Partial<MeResponse> = {}): MeResponse {
     role,
     orgId: "org-1",
     centerId: "center-1",
+    theme: "LIGHT",
     member:
       role === "MEMBER"
         ? { id: "member-1", firstName: "Marina", centerName: "TRAINING ZONE La Jota", hasActiveMembership: true }

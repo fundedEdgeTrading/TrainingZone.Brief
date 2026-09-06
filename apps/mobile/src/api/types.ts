@@ -21,6 +21,8 @@ export type MeResponse = {
   role: Role;
   orgId: string;
   centerId: string | null;
+  /** Preferencia explícita del socio/entrenador, fuente única con la web (D-M5, E13-02). */
+  theme: "LIGHT" | "DARK";
   /** Solo para MEMBER: resuelve el gate de compra del primer login (A2). */
   member: {
     id: string;
