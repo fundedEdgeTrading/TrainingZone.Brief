@@ -7,7 +7,7 @@ import { ImageDropzone } from "@/components/ui/dropzone";
 import { Button } from "@/components/ui/button";
 import { ActionForm } from "@/components/ui/action-form";
 import { updateMembershipPlan } from "./actions";
-import { PLAN_TYPE_LABEL } from "@/lib/membership-plans";
+import { PLAN_TYPE_LABEL } from "@/lib/membership-plan-types";
 
 /**
  * Edición en un panel lateral, en la línea de la ficha de socio. El aviso sobre

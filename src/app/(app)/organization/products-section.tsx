@@ -7,7 +7,7 @@ import { DataTable, type DataTableColumn, type DataTableRow } from "@/components
 import { ActionForm } from "@/components/ui/action-form";
 import { createMembershipPlan, setMembershipPlanActive } from "./actions";
 import { EditPlanDrawer } from "./product-controls";
-import { PLAN_TYPE_LABEL } from "@/lib/membership-plans";
+import { PLAN_TYPE_LABEL } from "@/lib/membership-plan-types";
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
