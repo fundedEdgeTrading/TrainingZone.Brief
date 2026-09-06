@@ -4,6 +4,7 @@ import { createEpSlot } from "@/lib/agenda-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { isCenterInScope } from "@/lib/center-scope";
 import { parseDateParam } from "@/lib/date-utils";
+import { checkSessionSchedule } from "@/lib/session-time";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
@@ -22,7 +23,6 @@ const EP_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"
 
 const MIN_DURATION = 15;
 const MAX_DURATION = 240;
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 type Body = {
   centerId?: string;
@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
   const centerId = body?.centerId?.trim() || claims.centerId;
   if (!centerId) return apiError("Indica el centro del hueco.", 400);
   if (!body?.date || !body.startTime) return apiError("Faltan la fecha y la hora de inicio.", 400);
-  if (!TIME_RE.test(body.startTime)) return apiError("La hora de inicio no es válida.", 400);
+  // E2-12: el mismo validador que las tres vías de agenda, en vez de una copia
+  // local del patrón. Aquí no hay `endTime`: lo calcula la duración.
+  const schedule = checkSessionSchedule({ date: body.date, startTime: body.startTime });
+  if (!schedule.ok) return apiError(schedule.error, 400);
 
   const durationMin = Math.round(Number(body.durationMin ?? 60));
   if (!Number.isFinite(durationMin) || durationMin < MIN_DURATION || durationMin > MAX_DURATION) {

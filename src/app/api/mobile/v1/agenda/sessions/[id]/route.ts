@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { saveSession, deleteSession, type SaveSessionInput } from "@/lib/agenda-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { parseDateParam } from "@/lib/date-utils";
+import { checkSessionSchedule } from "@/lib/session-time";
 import { parseEditScope } from "@/lib/session-series";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRole } from "../../../_lib/api-session";
@@ -42,6 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!body?.centerId || !body.trainerId || !body.title || !body.type || !body.date || !body.startTime || !body.endTime) {
     return apiError("Faltan campos obligatorios.", 400);
   }
+  // E2-12: la tercera vía de escritura de agenda, con el mismo validador.
+  const schedule = checkSessionSchedule(body);
+  if (!schedule.ok) return apiError(schedule.error, 400);
 
   const input: SaveSessionInput = {
     id,

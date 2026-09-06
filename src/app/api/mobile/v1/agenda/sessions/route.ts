@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { saveSession, type SaveSessionInput } from "@/lib/agenda-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { parseDateParam } from "@/lib/date-utils";
+import { checkSessionSchedule } from "@/lib/session-time";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
@@ -34,6 +35,10 @@ export async function POST(req: NextRequest) {
   if (!body?.centerId || !body.trainerId || !body.title || !body.type || !body.date || !body.startTime || !body.endTime) {
     return apiError("Faltan campos obligatorios.", 400);
   }
+  // E2-12: mismo validador que la web y que el PATCH. Sin él, `startTime` y
+  // `endTime` entraban como string libre y "NaN:NaN" llegaba a la tabla.
+  const schedule = checkSessionSchedule(body);
+  if (!schedule.ok) return apiError(schedule.error, 400);
 
   const input: SaveSessionInput = {
     centerId: body.centerId,
