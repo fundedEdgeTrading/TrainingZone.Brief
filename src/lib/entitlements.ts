@@ -100,3 +100,17 @@ export async function featuresForOrg(orgId: string): Promise<Set<PlatformFeature
   const plan = getPlatformPlan(org.platformPlan);
   return new Set(plan?.features ?? []);
 }
+
+/**
+ * ¿Tiene esta organización la funcionalidad, ahora mismo? Igual que
+ * `requireFeature` pero SIN redirigir: para las pantallas que se ven en todos
+ * los planes y solo tienen que decidir si enseñan un botón de pago o el de
+ * verdad (E6-07: `/audit` se consulta con cualquier plan; exportarla, no).
+ */
+export async function orgHasFeatureNow(orgId: string, feature: PlatformFeature): Promise<boolean> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { platformPlan: true, platformStatus: true },
+  });
+  return Boolean(org && orgHasFeature(org, feature));
+}

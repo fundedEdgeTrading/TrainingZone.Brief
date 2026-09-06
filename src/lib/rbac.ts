@@ -86,6 +86,11 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   "/health/aptitude-rules": "salud_aptitud",
   "/health/reference-ranges": "salud_aptitud",
   "/audit": "exportaciones",
+  // `ia_programacion` no aparece aquí, y no es un olvido: no hay ninguna ruta
+  // que gatear —el coste no está en mirar un mesociclo, sino en generarlo—. Se
+  // comprueba donde se produce el gasto, antes de llamar al proveedor de IA:
+  // `members/[id]/mesociclos/actions.ts` en la web y el mapa de rutas móvil
+  // (`mobile-feature-routes.ts`) en la app. Ver E6-03.
 };
 
 /**

@@ -55,3 +55,22 @@ test("E6-02 · toda pantalla con gate heredado llama a la guarda", () => {
   );
 });
 
+// ---------------------------------------------------------------------------
+// E6-03 · ia_programacion se comprueba antes de gastar
+// ---------------------------------------------------------------------------
+
+test("E6-03 · las dos superficies rechazan ANTES de llamar al proveedor de IA", () => {
+  const surfaces = [
+    { file: "src/app/(app)/members/[id]/mesociclos/actions.ts", call: "generateMesocyclePlan(" },
+    { file: "src/app/api/mobile/v1/trainer/members/[id]/mesocycles/route.ts", call: "generateMesocyclePlan(" },
+  ];
+  for (const { file, call } of surfaces) {
+    const source = readFileSync(file, "utf8");
+    const gate = source.indexOf('"ia_programacion"');
+    const provider = source.indexOf(call);
+    assert.notEqual(gate, -1, `${file} no comprueba ia_programacion`);
+    assert.notEqual(provider, -1, `${file} ya no llama al generador: revisa este test`);
+    assert.ok(gate < provider, `${file} llama al proveedor antes de comprobar el plan`);
+  }
+});
+

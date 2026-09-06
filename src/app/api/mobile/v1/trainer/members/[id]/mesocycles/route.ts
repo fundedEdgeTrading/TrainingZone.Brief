@@ -8,6 +8,7 @@ import { generateMesocyclePlan } from "@/lib/ai/mesocycle-generator";
 import { DEFAULT_PROFILE, EP_PROFILE_LABEL, isEpProfile } from "@/lib/ai/ep-profile";
 import { createMesocycleFromPlan, listMesocyclesForMember } from "@/lib/mesocycle-queries";
 import { requireApiRole } from "../../../../_lib/api-session";
+import { requireApiFeature } from "../../../../_lib/api-guards";
 import { apiOk, apiError } from "../../../../_lib/response";
 
 // Pestaña «Plan» de la ficha del socio en la app (espejo de
@@ -63,6 +64,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const g = await guard(req, id);
   if (!g.ok) return g.response;
   const { claims } = g;
+
+  // E6-03 · Espejo exacto de la acción web: la generación con IA es el único
+  // módulo con coste marginal real, y se comprueba ANTES de leer la ficha del
+  // socio y de llamar al proveedor. Responde 402, así que la app puede ofrecer
+  // el cambio de plan en vez de enseñar un error.
+  const gate = await requireApiFeature(claims, "ia_programacion");
+  if (!gate.ok) return gate.response;
 
   if (!isAiConfigured()) return apiError("La generación con IA no está configurada en este entorno.", 400);
 
