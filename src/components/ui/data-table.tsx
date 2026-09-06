@@ -88,10 +88,14 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="3"
+      // E8-13: una flecha de 10 px al 25% de opacidad era la ÚNICA señal de
+      // qué columna estaba ordenada. Activa, ahora es más gruesa y opaca del
+      // todo; el propio rótulo de la columna se pone en negrita y en el color
+      // de texto fuerte (ver el botón más abajo) — dos señales, no una.
+      strokeWidth={active ? 3.5 : 3}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={clsx("shrink-0 transition-[opacity,transform] duration-150", active ? "opacity-100" : "opacity-25")}
+      className={clsx("shrink-0 transition-[opacity,transform] duration-150", active ? "opacity-100" : "opacity-40")}
       style={{ transform: active && dir === "desc" ? "rotate(180deg)" : undefined }}
     >
       <path d="M12 19V5M5 12l7-7 7 7" />
@@ -273,9 +277,13 @@ export function DataTable({
         <table className="w-full text-sm border-collapse">
           <thead className="sticky top-0 z-10 bg-tz-bone text-brand-muted text-[11px] font-bold uppercase tracking-[0.08em] shadow-[0_1px_0_var(--color-tz-sand)]">
             <tr>
-              {columns.map((col) => (
+              {columns.map((col) => {
+                const isSorted = sort?.key === col.key;
+                return (
                 <th
                   key={col.key}
+                  scope="col"
+                  aria-sort={col.sortable ? (isSorted ? (sort.dir === "asc" ? "ascending" : "descending") : "none") : undefined}
                   data-menu-root={col.filter ? "1" : undefined}
                   className={clsx(
                     "relative text-left px-3 lg:px-5 py-3 whitespace-nowrap",
@@ -290,13 +298,17 @@ export function DataTable({
                         type="button"
                         onClick={() => handleSort(col.key)}
                         className={clsx(
-                          "inline-flex items-center gap-1.5 uppercase tracking-[0.08em] font-bold text-[11px] hover:text-brand-text transition-colors cursor-pointer",
-                          col.filterActive ? "text-brand-text" : "text-brand-muted",
+                          "inline-flex items-center gap-1.5 uppercase tracking-[0.08em] text-[11px] hover:text-brand-text transition-colors cursor-pointer",
+                          // E8-13: la columna activa no depende solo de la
+                          // flecha — se pone en negrita y en el color de
+                          // texto fuerte, la misma pareja que ya usa el
+                          // subrayado dorado del filtro activo.
+                          isSorted || col.filterActive ? "text-brand-text font-extrabold" : "text-brand-muted font-bold",
                           col.align === "right" && "flex-row-reverse"
                         )}
                       >
                         {col.header}
-                        <SortIcon active={sort?.key === col.key} dir={sort?.key === col.key ? sort.dir : "asc"} />
+                        <SortIcon active={isSorted} dir={isSorted ? sort.dir : "asc"} />
                       </button>
                     ) : (
                       col.header
@@ -317,7 +329,8 @@ export function DataTable({
                     />
                   )}
                 </th>
-              ))}
+                );
+              })}
             </tr>
           </thead>
           <tbody key={sortRun}>

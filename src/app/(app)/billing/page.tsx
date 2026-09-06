@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
-import { listPayments, getBillingKpis, getDelinquentMembers, getMembersForPaymentForm } from "@/lib/billing-queries";
+import {
+  listPayments,
+  countPayments,
+  getBillingKpis,
+  getDelinquentMembers,
+  getMembersForPaymentForm,
+  type PaymentSort,
+} from "@/lib/billing-queries";
 import { centerScopeFor } from "@/lib/center-scope";
 import { listActivePlansForOrg } from "@/lib/members-queries";
 import { isStripeConfiguredForOrg } from "@/lib/stripe";
@@ -23,14 +30,18 @@ function euros(cents: number) {
 
 const STATUS_LABEL = PAYMENT_STATUS_LABEL;
 const PAYMENT_STATUSES: PaymentStatus[] = ["PAID", "PENDING", "FAILED", "REFUNDED"];
+const PAYMENT_SORTS: PaymentSort[] = ["date_desc", "date_asc", "amount_desc", "amount_asc"];
+/** E8-13: tamaño de página del listado de cobros, paginado en servidor. */
+const PAYMENTS_PAGE_SIZE = 25;
 
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
   const params = await searchParams;
+  const sort: PaymentSort = PAYMENT_SORTS.includes(params.sort as PaymentSort) ? (params.sort as PaymentSort) : "date_desc";
 
   // Mismo ámbito de centro que `/members` (center-scope.ts): dirección de
   // organización ve toda la empresa; recepción/dirección de centro, solo los
@@ -38,15 +49,26 @@ export default async function BillingPage({
   // filtraba únicamente por organización.
   const scope = await centerScopeFor(session.user);
   const centerIds = scope ?? undefined;
+  const statuses = parseFilterValues(params.status) as PaymentStatus[];
 
-  const [kpis, payments, delinquent, membersForForm, plans, stripeConfigured] = await Promise.all([
+  const [kpis, totalPayments, delinquent, membersForForm, plans, stripeConfigured] = await Promise.all([
     getBillingKpis(session.user.orgId, centerIds),
-    listPayments(session.user.orgId, { statuses: parseFilterValues(params.status) as PaymentStatus[], centerIds }),
+    countPayments(session.user.orgId, { statuses, centerIds }),
     getDelinquentMembers(session.user.orgId, centerIds),
     getMembersForPaymentForm(session.user.orgId, centerIds),
     listActivePlansForOrg(session.user.orgId),
     isStripeConfiguredForOrg(session.user.orgId),
   ]);
+
+  const pageCount = Math.max(1, Math.ceil(totalPayments / PAYMENTS_PAGE_SIZE));
+  const page = Math.min(Math.max(1, Number(params.page) || 1), pageCount);
+  const payments = await listPayments(session.user.orgId, {
+    statuses,
+    centerIds,
+    sort,
+    skip: (page - 1) * PAYMENTS_PAGE_SIZE,
+    take: PAYMENTS_PAGE_SIZE,
+  });
 
   // E6-06: exportar es cosa de dirección, igual que en /api/export/payments.
   const canExport = session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR";
@@ -88,10 +110,10 @@ export default async function BillingPage({
             <table className="tz-stack-table w-full text-sm">
               <thead className="text-xs text-faint text-left">
                 <tr>
-                  <th className="pb-2">Socio</th>
-                  <th className="pb-2">Centro</th>
-                  <th className="pb-2">Plan</th>
-                  <th className="pb-2">Último pago</th>
+                  <th scope="col" className="pb-2">Socio</th>
+                  <th scope="col" className="pb-2">Centro</th>
+                  <th scope="col" className="pb-2">Plan</th>
+                  <th scope="col" className="pb-2">Último pago</th>
                 </tr>
               </thead>
               <tbody>
@@ -139,13 +161,25 @@ export default async function BillingPage({
           <table className="tz-stack-table w-full text-sm">
             <thead className="text-xs text-faint text-left">
               <tr>
-                <th className="pb-2">Fecha</th>
-                <th className="pb-2">Socio</th>
-                <th className="pb-2">Importe</th>
-                <th className="pb-2">Método</th>
-                <th className="pb-2">Estado</th>
-                <th className="pb-2">Recibo</th>
-                <th className="pb-2">Acciones</th>
+                <PaymentSortHeader
+                  label="Fecha"
+                  ascSort="date_asc"
+                  descSort="date_desc"
+                  activeSort={sort}
+                  params={params}
+                />
+                <th scope="col" className="pb-2">Socio</th>
+                <PaymentSortHeader
+                  label="Importe"
+                  ascSort="amount_asc"
+                  descSort="amount_desc"
+                  activeSort={sort}
+                  params={params}
+                />
+                <th scope="col" className="pb-2">Método</th>
+                <th scope="col" className="pb-2">Estado</th>
+                <th scope="col" className="pb-2">Recibo</th>
+                <th scope="col" className="pb-2">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -184,7 +218,104 @@ export default async function BillingPage({
             </tbody>
           </table>
         </div>
+
+        <PaymentsPager page={page} pageCount={pageCount} total={totalPayments} params={params} />
       </Card>
+    </div>
+  );
+}
+
+/** E8-13: cabecera ordenable con scope, aria-sort y una indicación visible más allá de la flecha. */
+function PaymentSortHeader({
+  label,
+  ascSort,
+  descSort,
+  activeSort,
+  params,
+}: {
+  label: string;
+  ascSort: PaymentSort;
+  descSort: PaymentSort;
+  activeSort: PaymentSort;
+  params: { status?: string; sort?: string };
+}) {
+  const isSorted = activeSort === ascSort || activeSort === descSort;
+  const nextSort = activeSort === descSort ? ascSort : descSort;
+  const dir = activeSort === ascSort ? "asc" : "desc";
+
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  qs.set("sort", nextSort);
+  const href = `/billing?${qs.toString()}`;
+
+  return (
+    <th scope="col" aria-sort={isSorted ? (dir === "asc" ? "ascending" : "descending") : "none"} className="pb-2">
+      <Link
+        href={href}
+        className={`inline-flex items-center gap-1 hover:text-brand-text transition-colors ${
+          isSorted ? "text-brand-text font-extrabold" : "font-bold"
+        }`}
+      >
+        {label}
+        <span aria-hidden="true" className={isSorted ? "opacity-100" : "opacity-40"}>
+          {isSorted && dir === "asc" ? "↑" : "↓"}
+        </span>
+      </Link>
+    </th>
+  );
+}
+
+/** Enlaces `?page=N` que conservan el resto de filtros de la URL (E8-13, mismo patrón que /members). */
+function PaymentsPager({
+  page,
+  pageCount,
+  total,
+  params,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  params: { status?: string; page?: string; sort?: string };
+}) {
+  if (total === 0) return null;
+
+  function hrefFor(targetPage: number) {
+    const qs = new URLSearchParams();
+    if (params.status) qs.set("status", params.status);
+    if (params.sort) qs.set("sort", params.sort);
+    if (targetPage > 1) qs.set("page", String(targetPage));
+    const query = qs.toString();
+    return query ? `/billing?${query}` : "/billing";
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 flex-wrap px-1 pt-3 text-[12.5px] text-brand-muted">
+      <span>Página {page} de {pageCount} · {total} {total === 1 ? "cobro" : "cobros"} en total</span>
+      <div className="flex items-center gap-1">
+        <Link
+          href={hrefFor(page - 1)}
+          aria-disabled={page === 1}
+          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-brand-border text-brand-text-2 hover:bg-tz-bone transition-colors ${
+            page === 1 ? "opacity-35 pointer-events-none" : ""
+          }`}
+          aria-label="Página anterior"
+        >
+          ‹
+        </Link>
+        <span className="px-2 font-semibold text-brand-text-2 tz-nums">
+          {page} / {pageCount}
+        </span>
+        <Link
+          href={hrefFor(page + 1)}
+          aria-disabled={page === pageCount}
+          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-brand-border text-brand-text-2 hover:bg-tz-bone transition-colors ${
+            page === pageCount ? "opacity-35 pointer-events-none" : ""
+          }`}
+          aria-label="Página siguiente"
+        >
+          ›
+        </Link>
+      </div>
     </div>
   );
 }
