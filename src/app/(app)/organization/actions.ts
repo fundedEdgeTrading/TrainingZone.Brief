@@ -11,6 +11,12 @@ import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { canAddCenter } from "@/lib/entitlements";
 import type { PlanType, Role } from "@prisma/client";
+import {
+  PLAN_TYPES,
+  saveMembershipPlan,
+  setMembershipPlanActive as archiveMembershipPlan,
+  type SaveMembershipPlanInput,
+} from "@/lib/membership-plans";
 
 const STAFF_ROLES: Role[] = [
   "OWNER",
@@ -382,103 +388,90 @@ export async function removeCenterMembership(id: string): Promise<OrgActionResul
 // ---------- Productos (lo que el gimnasio vende a sus socios) ----------
 // Sin esto un gimnasio real no puede dar de alta sus cuotas ni sus bonos: los
 // planes solo existían si los creaba el seed.
+//
+// E4-29: la regla de negocio (tipos, validación, duplicados, invalidación del
+// espejo de Stripe y archivado) vive en `lib/membership-plans.ts`, compartida
+// con `api/mobile/v1/products`. Aquí solo queda leer el formulario.
 
-const PLAN_TYPES: PlanType[] = ["MONTHLY", "SESSION_PACK", "DROP_IN", "PERSONAL_TRAINING", "DUO", "ONLINE"];
+const PLAN_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"];
 
-/** Tipos que consumen sesiones de un bono: para ellos las sesiones incluidas son obligatorias. */
-const PACK_TYPES: PlanType[] = ["SESSION_PACK", "PERSONAL_TRAINING", "DUO"];
-
-function parsePlanForm(formData: FormData) {
-  const name = String(formData.get("name") ?? "").trim();
-  const type = String(formData.get("type") ?? "") as PlanType;
+/** Del formulario al contrato compartido. Lo único propio de la web. */
+function planFormInput(formData: FormData): { ok: true; input: SaveMembershipPlanInput } | { ok: false; error: string } {
   const priceEuros = String(formData.get("priceEuros") ?? "").trim().replace(",", ".");
+  const price = Number(priceEuros);
+  if (!Number.isFinite(price) || price <= 0) return { ok: false, error: "El precio debe ser mayor que 0." };
+
   const sessionsRaw = String(formData.get("sessionsIncluded") ?? "").trim();
   const validityRaw = String(formData.get("validityDays") ?? "").trim();
-
-  if (!name) return { ok: false as const, error: "Indica el nombre del producto." };
-  if (!PLAN_TYPES.includes(type)) return { ok: false as const, error: "Tipo de producto no válido." };
-
-  const price = Number(priceEuros);
-  if (!Number.isFinite(price) || price <= 0) return { ok: false as const, error: "El precio debe ser mayor que 0." };
-  // Céntimos: se redondea al entero para no arrastrar errores de coma flotante.
-  const priceCents = Math.round(price * 100);
-
-  const sessionsIncluded = sessionsRaw ? Number(sessionsRaw) : null;
-  if (sessionsIncluded !== null && (!Number.isInteger(sessionsIncluded) || sessionsIncluded <= 0)) {
-    return { ok: false as const, error: "Las sesiones incluidas deben ser un número entero mayor que 0." };
+  const sessions = sessionsRaw ? Number(sessionsRaw) : null;
+  const validity = validityRaw ? Number(validityRaw) : null;
+  if (sessions !== null && !Number.isFinite(sessions)) {
+    return { ok: false, error: "Las sesiones incluidas deben ser un número entero mayor que 0." };
   }
-  if (PACK_TYPES.includes(type) && sessionsIncluded === null) {
-    return { ok: false as const, error: "Un bono necesita indicar cuántas sesiones incluye." };
+  if (validity !== null && !Number.isFinite(validity)) {
+    return { ok: false, error: "La validez en días debe ser un número entero mayor que 0." };
   }
 
-  const validityDays = validityRaw ? Number(validityRaw) : null;
-  if (validityDays !== null && (!Number.isInteger(validityDays) || validityDays <= 0)) {
-    return { ok: false as const, error: "La validez en días debe ser un número entero mayor que 0." };
-  }
+  const type = String(formData.get("type") ?? "");
+  if (!PLAN_TYPES.includes(type as PlanType)) return { ok: false, error: "Tipo de producto no válido." };
 
-  return { ok: true as const, data: { name, type, priceCents, sessionsIncluded, validityDays } };
+  const planId = String(formData.get("planId") ?? "").trim();
+  // E4-29: `description` e `imageUrl` son el texto de venta y la foto que ve el
+  // socio en el catálogo y en `/hazte-socio`. Existían solo en el formulario de
+  // la app, así que un gimnasio que solo usara la web no podía rellenarlos.
+  const description = String(formData.get("description") ?? "").trim();
+  const imageUrl = String(formData.get("imageUrl") ?? "").trim();
+
+  return {
+    ok: true,
+    input: {
+      ...(planId ? { planId } : {}),
+      name: String(formData.get("name") ?? ""),
+      planType: type as PlanType,
+      // Céntimos: se redondea al entero para no arrastrar errores de coma flotante.
+      priceCents: Math.round(price * 100),
+      sessionsIncluded: sessions,
+      validityDays: validity,
+      description: description || null,
+      imageUrl: imageUrl || null,
+    },
+  };
 }
 
 export async function createMembershipPlan(formData: FormData): Promise<OrgActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
-  const parsed = parsePlanForm(formData);
+  const session = await requireRole(PLAN_ROLES);
+  const parsed = planFormInput(formData);
   if (!parsed.ok) return parsed;
 
-  const dup = await prisma.membershipPlan.findFirst({
-    where: { orgId: session.user.orgId, name: parsed.data.name, active: true },
-    select: { id: true },
-  });
-  if (dup) return { ok: false, error: "Ya tienes un producto activo con ese nombre." };
-
-  await prisma.membershipPlan.create({ data: { orgId: session.user.orgId, ...parsed.data } });
+  const result = await saveMembershipPlan(session.user.orgId, parsed.input);
+  if (!result.ok) return result;
   revalidatePath("/organization");
   return { ok: true };
 }
 
 export async function updateMembershipPlan(formData: FormData): Promise<OrgActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
-  const planId = String(formData.get("planId") ?? "");
-  const parsed = parsePlanForm(formData);
+  const session = await requireRole(PLAN_ROLES);
+  const parsed = planFormInput(formData);
   if (!parsed.ok) return parsed;
+  if (!parsed.input.planId) return { ok: false, error: "Producto no encontrado." };
 
-  const plan = await prisma.membershipPlan.findFirst({
-    where: { id: planId, orgId: session.user.orgId },
-    select: { id: true, priceCents: true },
-  });
-  if (!plan) return { ok: false, error: "Producto no encontrado." };
-
-  // F5/RB-VENTA-002: los precios de Stripe son inmutables — si cambia el
-  // importe, el espejo (`stripePriceId`) queda obsoleto y hay que invalidarlo
-  // para que `ensureStripePrice` cree uno nuevo en el próximo checkout. Las
-  // `Subscription` ya vivas no se ven afectadas: siguen colgando del precio
-  // de Stripe anterior, que nunca se borra.
-  const priceChanged = parsed.data.priceCents !== plan.priceCents;
-
-  await prisma.membershipPlan.update({
-    where: { id: plan.id },
-    data: { ...parsed.data, ...(priceChanged ? { stripePriceId: null } : {}) },
-  });
+  const result = await saveMembershipPlan(session.user.orgId, parsed.input);
+  if (!result.ok) return result;
   revalidatePath("/organization");
   return { ok: true };
 }
 
 /**
- * Archivar, nunca borrar (RB-VENTA-002): un producto tiene suscripciones y pagos
- * colgando, y borrarlo dejaría el histórico de cobros sin referencia. Archivado
- * desaparece de los selectores de venta y sigue visible en el histórico.
+ * Archivar, nunca borrar (RB-VENTA-002). La regla vive en el módulo compartido:
+ * la app hacía `delete()` sobre la misma tabla.
  */
 export async function setMembershipPlanActive(formData: FormData): Promise<OrgActionResult> {
-  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "PLATFORM_ADMIN"]);
+  const session = await requireRole(PLAN_ROLES);
   const planId = String(formData.get("planId") ?? "");
   const active = String(formData.get("active") ?? "") === "true";
 
-  const plan = await prisma.membershipPlan.findFirst({
-    where: { id: planId, orgId: session.user.orgId },
-    select: { id: true },
-  });
-  if (!plan) return { ok: false, error: "Producto no encontrado." };
-
-  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { active } });
+  const result = await archiveMembershipPlan(session.user.orgId, planId, active);
+  if (!result.ok) return result;
   revalidatePath("/organization");
   return { ok: true };
 }

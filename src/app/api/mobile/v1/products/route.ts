@@ -1,10 +1,10 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import type { Role } from "@prisma/client";
+import type { PlanType, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { planServiceKind } from "@/lib/members-queries";
 import { requireApiSession, requireApiRole } from "../_lib/api-session";
-import { planTypeFor } from "../_lib/products";
+import { PLAN_TYPES, PLAN_TYPE_LABEL, saveMembershipPlan } from "@/lib/membership-plans";
 import { apiOk, apiError } from "../_lib/response";
 
 // Catálogo de bonos (A2 del socio) y su gestión (D4/D5 de dirección). El
@@ -19,7 +19,11 @@ const productSchema = z.object({
   priceCents: z.number().int().min(0),
   sessionsIncluded: z.number().int().min(1).nullable().optional(),
   validityDays: z.number().int().min(1).nullable().optional(),
-  serviceKind: z.enum(["EP", "GROUP", "ONLINE"]),
+  // E4-29: los SEIS tipos del dominio son alcanzables desde la app. La
+  // modalidad de tres valores se mantiene por compatibilidad con la versión
+  // publicada, pero ya no puede convertir un producto en otro.
+  planType: z.enum(PLAN_TYPES as [string, ...string[]]).optional(),
+  serviceKind: z.enum(["EP", "GROUP", "ONLINE"]).optional(),
   visible: z.boolean().optional(),
 });
 
@@ -46,6 +50,9 @@ export async function GET(req: NextRequest) {
   return apiOk({
     canManage,
     centerName: center?.name ?? null,
+    // Catálogo de tipos con su rótulo, servido desde la fuente única: la app no
+    // mantiene su propia tabla (E4-29/E12-04).
+    planTypes: PLAN_TYPES.map((value) => ({ value, label: PLAN_TYPE_LABEL[value] })),
     products: plans.map((p) => ({
       id: p.id,
       name: p.name,
@@ -71,28 +78,22 @@ export async function POST(req: NextRequest) {
 
   const parsed = productSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Datos inválidos.", 400);
-  const { name, description, imageUrl, priceCents, sessionsIncluded, validityDays, serviceKind, visible } = parsed.data;
+  const body = parsed.data;
 
-  const duplicate = await prisma.membershipPlan.findFirst({
-    where: { orgId: claims.orgId, name: { equals: name, mode: "insensitive" } },
-    select: { id: true },
+  // Misma función que `/organization` en la web (E4-29): mismos tipos, misma
+  // validación, mismo trato del duplicado y mismo espejo de Stripe.
+  const result = await saveMembershipPlan(claims.orgId, {
+    name: body.name,
+    description: body.description ?? null,
+    imageUrl: body.imageUrl ?? null,
+    priceCents: body.priceCents,
+    sessionsIncluded: body.sessionsIncluded ?? null,
+    validityDays: body.validityDays ?? null,
+    planType: body.planType as PlanType | undefined,
+    serviceKind: body.serviceKind,
+    active: body.visible ?? true,
   });
-  if (duplicate) return apiError("Ya existe un producto con ese nombre.", 400);
+  if (!result.ok) return apiError(result.error, 400);
 
-  const plan = await prisma.membershipPlan.create({
-    data: {
-      orgId: claims.orgId,
-      name,
-      description: description ?? null,
-      imageUrl: imageUrl ?? null,
-      priceCents,
-      sessionsIncluded: sessionsIncluded ?? null,
-      validityDays: validityDays ?? null,
-      type: planTypeFor(serviceKind, sessionsIncluded ?? null),
-      active: visible ?? true,
-    },
-    select: { id: true },
-  });
-
-  return apiOk({ id: plan.id }, 201);
+  return apiOk({ id: result.id }, 201);
 }

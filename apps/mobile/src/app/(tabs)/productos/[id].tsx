@@ -18,7 +18,28 @@ import { useToast } from "@/components/Toast";
 import { pickImageAsDataUrl } from "@/utils/pick-image";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonList } from "@/components/Skeleton";
-import type { ProductItem, ServiceKind } from "@/api/types";
+import type { PlanTypeOption, ProductItem, ServiceKind } from "@/api/types";
+
+/**
+ * E4-29 · Qué tipos de producto caben en cada modalidad. Los SEIS del dominio
+ * son alcanzables desde la app: antes se mandaba solo la modalidad, así que
+ * "sesión suelta" y "dúo" no se podían crear —y guardar una sesión suelta la
+ * convertía en bono de sesiones—.
+ */
+const PLAN_TYPES_BY_SERVICE: Record<ServiceKind, string[]> = {
+  EP: ["PERSONAL_TRAINING"],
+  // El dúo consume sesiones de grupo (`planServiceKind` en el servidor lo
+  // clasifica así, y es quien decide de qué bono sale la reserva): aquí se usa
+  // la MISMA clasificación, no una propia.
+  GROUP: ["MONTHLY", "SESSION_PACK", "DROP_IN", "DUO"],
+  ONLINE: ["ONLINE"],
+};
+
+function serviceOf(planType: string): ServiceKind {
+  if (PLAN_TYPES_BY_SERVICE.EP.includes(planType)) return "EP";
+  if (PLAN_TYPES_BY_SERVICE.ONLINE.includes(planType)) return "ONLINE";
+  return "GROUP";
+}
 
 // D5 del handoff: editar producto y su foto.
 /**
@@ -53,10 +74,10 @@ export default function ProductFormScreen() {
     );
   }
 
-  return <ProductForm key={product?.id ?? "nuevo"} product={product} />;
+  return <ProductForm key={product?.id ?? "nuevo"} product={product} planTypes={data?.planTypes ?? []} />;
 }
 
-function ProductForm({ product }: { product?: ProductItem }) {
+function ProductForm({ product, planTypes }: { product?: ProductItem; planTypes: PlanTypeOption[] }) {
   const theme = useTheme();
   const toast = useToast();
   const saveProduct = useSaveProduct();
@@ -71,7 +92,17 @@ function ProductForm({ product }: { product?: ProductItem }) {
   const [price, setPrice] = useState(product ? String(product.priceCents / 100) : "");
   const [sessions, setSessions] = useState(product?.sessionsIncluded ?? 8);
   const [unlimited, setUnlimited] = useState(product ? product.sessionsIncluded == null : false);
-  const [serviceKind, setServiceKind] = useState<ServiceKind>(product?.serviceKind ?? "GROUP");
+  const [planType, setPlanType] = useState<string>(product?.planType ?? "MONTHLY");
+  const serviceKind = serviceOf(planType);
+
+  /** Cambiar de modalidad reasigna el tipo; quedarse en la misma lo conserva. */
+  function changeService(next: ServiceKind) {
+    if (next === serviceKind) return;
+    const [first] = PLAN_TYPES_BY_SERVICE[next];
+    setPlanType(next === "GROUP" && !unlimited ? "SESSION_PACK" : first);
+  }
+
+  const labelFor = (value: string) => planTypes.find((t) => t.value === value)?.label ?? value;
   const [visible, setVisible] = useState(product?.visible ?? true);
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +132,7 @@ function ProductForm({ product }: { product?: ProductItem }) {
         imageUrl,
         priceCents,
         sessionsIncluded: unlimited ? null : sessions,
+        planType,
         // La caducidad no se edita desde el móvil (vive en la web), así que se
         // reenvía la que ya tenía: mandar `null` la BORRABA en cada guardado.
         validityDays: product?.validityDays ?? null,
@@ -192,9 +224,23 @@ function ProductForm({ product }: { product?: ProductItem }) {
               { value: "ONLINE", label: "Online" },
             ]}
             value={serviceKind}
-            onChange={setServiceKind}
+            onChange={changeService}
           />
         </View>
+
+        {/* E4-29: el tipo concreto dentro de la modalidad. Sin esto, "sesión
+            suelta" y "dúo" no existían desde la app, y guardar una sesión
+            suelta la convertía en bono de sesiones. */}
+        {PLAN_TYPES_BY_SERVICE[serviceKind].length > 1 ? (
+          <View style={{ gap: 6 }}>
+            <Text style={[typo.label, { color: theme.textSecondary }]}>Tipo de producto</Text>
+            <Segmented
+              options={PLAN_TYPES_BY_SERVICE[serviceKind].map((value) => ({ value, label: labelFor(value) }))}
+              value={planType}
+              onChange={setPlanType}
+            />
+          </View>
+        ) : null}
 
         <ToggleRow label="Visible para socios" description="Si lo ocultas, deja de aparecer en el catálogo" value={visible} onValueChange={setVisible} />
 

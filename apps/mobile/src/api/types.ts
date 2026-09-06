@@ -432,7 +432,15 @@ export type ProductItem = {
   featured: boolean;
 };
 
-export type ProductsResponse = { canManage: boolean; centerName: string | null; products: ProductItem[] };
+/** Tipo de producto con su rótulo, servido por el servidor: la app no mantiene su propia tabla (E4-29). */
+export type PlanTypeOption = { value: string; label: string };
+
+export type ProductsResponse = {
+  canManage: boolean;
+  centerName: string | null;
+  planTypes: PlanTypeOption[];
+  products: ProductItem[];
+};
 
 export type SaveProductInput = {
   name: string;
@@ -441,6 +449,8 @@ export type SaveProductInput = {
   priceCents: number;
   sessionsIncluded: number | null;
   validityDays: number | null;
+  /** Los SEIS tipos del dominio (E4-29). Manda sobre `serviceKind`. */
+  planType: string;
   serviceKind: ServiceKind;
   visible: boolean;
 };

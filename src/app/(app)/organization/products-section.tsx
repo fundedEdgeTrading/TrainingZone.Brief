@@ -1,20 +1,13 @@
 import type { MembershipPlan, PlanType } from "@prisma/client";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { ImageDropzone } from "@/components/ui/dropzone";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
 import { createMembershipPlan, setMembershipPlanActive } from "./actions";
 import { EditPlanDrawer } from "./product-controls";
-
-const PLAN_TYPE_LABEL: Record<PlanType, string> = {
-  MONTHLY: "Cuota mensual",
-  SESSION_PACK: "Bono de sesiones",
-  DROP_IN: "Sesión suelta",
-  PERSONAL_TRAINING: "Entrenamiento personal",
-  DUO: "Dúo",
-  ONLINE: "Online",
-};
+import { PLAN_TYPE_LABEL } from "@/lib/membership-plans";
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
@@ -74,6 +67,22 @@ export function ProductsSection({ plans }: { plans: MembershipPlan[] }) {
           <Field label="Validez (días)">
             <Input name="validityDays" inputMode="numeric" placeholder="Opcional" />
           </Field>
+          {/* E4-29: el texto de venta y la foto los ve el socio en el catálogo
+              de la app y en /hazte-socio. Estaban solo en el formulario de la
+              app, así que un gimnasio que solo usara la web no podía
+              rellenarlos nunca. */}
+          <div className="sm:col-span-2 lg:col-span-4">
+            <Field label="Descripción (la ve el socio)">
+              <Textarea name="description" rows={3} maxLength={400} placeholder="Qué incluye este producto y para quién es." />
+            </Field>
+          </div>
+          <ImageDropzone
+            name="imageUrl"
+            label="Foto del producto"
+            hint="1600 × 1000"
+            shape="rounded"
+            sizeClassName="w-full h-[92px]"
+          />
           <div className="lg:col-span-5">
             <Button type="submit">Crear producto</Button>
           </div>
