@@ -1,14 +1,18 @@
 name: CI
 
 on:
+  # `main` es la rama de integración real: es donde se mezclan los PR y desde
+  # donde se ramifica. Hasta ahora este workflow solo escuchaba en `release`
+  # —una rama que ni siquiera existe en el remoto—, así que CI no llegaba a
+  # ejecutarse sobre ningún PR. Se mantiene `release` para no romper el flujo
+  # de publicación el día que se use.
   pull_request:
-    branches: [release]
+    branches: [main, release]
   push:
-    branches: [release]
+    branches: [main, release]
   # Sin esto, la única forma de volver a lanzar CI sobre una rama es empujar
-  # otro commit: un PR abierto por error contra `main` y luego reapuntado a
-  # `release` no dispara nada (el cambio de base es un evento `edited`, que no
-  # está entre los tipos por defecto de `pull_request`).
+  # otro commit: reapuntar la base de un PR es un evento `edited`, que no está
+  # entre los tipos por defecto de `pull_request`.
   workflow_dispatch:
 
 concurrency:
