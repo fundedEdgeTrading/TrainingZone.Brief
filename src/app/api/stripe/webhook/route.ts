@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
+import { hasAnyWebhookSecret, readWebhookSecrets, verifyStripeWebhook } from "@/lib/stripe-webhook";
 import { reconcileConnectCheckoutCompleted, reconcileStripePaymentFailed } from "@/lib/stripe-checkout";
 import {
   reconcileMemberSubscriptionUpserted,
@@ -18,11 +19,15 @@ import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "
  * cobro (§0): los eventos de cuentas CONECTADAS (Parte C, gimnasio → socios)
  * llegan con `event.account` presente; los de PLATAFORMA (Apta → gimnasio,
  * Parte A) llegan sin él. Se rutan por separado para no mezclarlos.
+ *
+ * HU-ST-01/RB-PAGO-020: cada uno de los dos flujos se firma con su propio
+ * signing secret (`STRIPE_WEBHOOK_SECRET` y `STRIPE_CONNECT_WEBHOOK_SECRET`).
+ * La verificación y el enrutado viven en `lib/stripe-webhook.ts`.
  */
 export async function POST(req: NextRequest) {
   const stripe = getStripeClient();
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!stripe || !webhookSecret) {
+  const secrets = readWebhookSecrets();
+  if (!stripe || !hasAnyWebhookSecret(secrets)) {
     return NextResponse.json({ ok: false, error: "Stripe no está configurado en este entorno." }, { status: 501 });
   }
 
@@ -30,14 +35,16 @@ export async function POST(req: NextRequest) {
   const rawBody = await req.text();
   if (!signature) return NextResponse.json({ ok: false, error: "Falta la firma de Stripe." }, { status: 400 });
 
-  let event: Stripe.Event;
-  try {
-    event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
-  } catch {
-    return NextResponse.json({ ok: false, error: "Firma inválida." }, { status: 400 });
+  // HU-ST-01/RB-PAGO-020: los eventos de plataforma y los de cuentas conectadas
+  // llegan firmados con secretos DISTINTOS. Verificar con uno solo condenaba a
+  // 400 a todo un flujo.
+  const verified = verifyStripeWebhook(stripe, rawBody, signature, secrets);
+  if (!verified.ok) {
+    return NextResponse.json({ ok: false, error: verified.error }, { status: 400 });
   }
+  const { event } = verified;
 
-  if (event.account) {
+  if (verified.source === "connect") {
     const result = await handleConnectEvent(event);
     if (!result.ok) {
       // 500 a propósito, igual que en `handlePlatformEvent`: Stripe reintenta
