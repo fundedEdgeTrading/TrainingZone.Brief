@@ -10,7 +10,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { useTheme, radii } from "@/theme/theme";
+import { useTheme, radii, layout } from "@/theme/theme";
 import { typo } from "@/theme/typography";
 import { useReducedMotion } from "@/theme/motion";
 import { Icon, type IconName } from "./Icon";
@@ -48,6 +48,8 @@ const INK_PALETTE: Record<ButtonVariant, { bg: string; fg: string; border: strin
 };
 
 const HEIGHT: Record<Size, number> = { sm: 36, md: 46, lg: 54 };
+/** E8-11: hueco por lado hasta llegar a `layout.touchMin` (44 px) de área efectiva. */
+const SM_HIT_SLOP = Math.max(0, (layout.touchMin - HEIGHT.sm) / 2);
 
 export function Button({
   title,
@@ -87,6 +89,10 @@ export function Button({
         accessibilityRole="button"
         accessibilityState={{ disabled: Boolean(disabled || loading), busy: Boolean(loading) }}
         disabled={disabled || loading}
+        // E8-11: el sm mide 36 px — layout.touchMin (44) estaba declarado y
+        // sin usar en ningún sitio. El hitSlop cierra el hueco hasta los
+        // 44 px de área efectiva, sin tocar el tamaño visual del botón.
+        hitSlop={size === "sm" ? SM_HIT_SLOP : undefined}
         onPressIn={(e) => {
           animateTo(0.96);
           onPressIn?.(e);

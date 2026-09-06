@@ -11,3 +11,17 @@ describe("Button · maxFontSizeMultiplier (E8-10)", () => {
     expect(screen.getByText("Reservar").props.maxFontSizeMultiplier).toBeLessThanOrEqual(2);
   });
 });
+
+describe("Button · hitSlop en sm (E8-11)", () => {
+  it("el botón sm lleva hitSlop hasta alcanzar 44 px de área efectiva", () => {
+    render(<Button title="Ver consumo" size="sm" onPress={() => {}} />);
+    const pressable = screen.getByRole("button");
+    // 36 (HEIGHT.sm) + 4 arriba + 4 abajo = 44 (layout.touchMin).
+    expect(pressable.props.hitSlop).toBe(4);
+  });
+
+  it("md y lg ya llegan a 44 px por su cuenta: sin hitSlop añadido", () => {
+    render(<Button title="Confirmar" size="lg" onPress={() => {}} />);
+    expect(screen.getByRole("button").props.hitSlop).toBeUndefined();
+  });
+});
