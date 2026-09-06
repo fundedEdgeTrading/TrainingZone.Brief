@@ -12,6 +12,7 @@ import {
 } from "@/lib/session-booking";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { resequenceWaitlist } from "@/lib/waitlist";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 
@@ -732,6 +733,7 @@ export async function bookSessionForMember(
       // condición dentro del UPDATE, dos personas avisadas del mismo hueco se
       // lo quedaban las dos y la clase acababa sobrevendida.
       const claimed = await claimWaitlistedBooking(tx, existing!.id, chargeSubscriptionId);
+      if (claimed) await resequenceWaitlist(tx, sessionId, occurrenceDate);
       if (!claimed) {
         // Otra persona de la lista se ha adelantado: se deshace el descuento
         // para no cobrarle una sesión que no ha llegado a reservar.
@@ -744,7 +746,13 @@ export async function bookSessionForMember(
     // La posición en lista de espera se numera sobre los que ya esperan, no
     // sobre el aforo: `activeCount` no crece al añadir gente a la lista, así que
     // contarlo con `activeCount - capacity + 1` daba la posición 1 a todos.
-    const waitlistedCount = dayBookings.filter((b) => b.status === "WAITLISTED").length;
+    //
+    // E2-08: se cuenta DENTRO de la transacción y no sobre la foto de
+    // `cls.bookings`, que se leyó antes; con la cola ya compactada por las
+    // salidas, `count + 1` es la posición correcta y no una repetida.
+    const waitlistedCount = await tx.booking.count({
+      where: { sessionId, occurrenceDate, status: "WAITLISTED" },
+    });
 
     await tx.booking.create({
       data: {
@@ -832,6 +840,10 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
         data: { sessionsRemaining: { increment: 1 } },
       });
     }
+    // E2-08: quien sale de la cola deja un hueco en la numeración. Se compacta
+    // dentro de la misma transacción para que nadie vea la lista con huecos ni
+    // con dos personas en la misma posición.
+    await resequenceWaitlist(tx, booking.sessionId, booking.occurrenceDate);
     return true;
   });
   if (!cancelled) return { ok: false, error: "Esta reserva ya no está activa." };

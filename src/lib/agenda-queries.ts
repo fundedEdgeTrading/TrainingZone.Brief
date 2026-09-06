@@ -17,6 +17,7 @@ import { trainerDiscardEffect } from "@/lib/attendee-discard";
 import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
 import { checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import { coversSessionKind } from "@/lib/member-session-scope";
+import { resequenceWaitlist } from "@/lib/waitlist";
 import { enforcementStartsAt } from "@/lib/portal-queries";
 import { sessionServiceKind } from "@/lib/members-queries";
 import {
@@ -415,6 +416,10 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
         data: { sessionsRemaining: { increment: 1 } },
       });
     }
+    // E2-08: si quien sale estaba en la cola, la numeración se compacta aquí
+    // mismo — un hueco convierte la posición de los de detrás en un número que
+    // no se corresponde con nadie.
+    await resequenceWaitlist(tx, booking.sessionId, booking.occurrenceDate);
     return true;
   });
   if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
@@ -611,6 +616,9 @@ export async function bookSessionForMemberAsStaff(
           // paga una plaza que se quedó otro.
           throw new StaffBookingError("Esa plaza ya la ha reclamado otra persona.");
         }
+        // E2-08: quien pasa a tener plaza sale de la cola, así que la cola se
+        // recoloca.
+        await resequenceWaitlist(tx, cls.id, day);
         return { ok: true as const, claimedFromWaitlist: true };
       }
 
@@ -1125,6 +1133,9 @@ export async function discardAttendeeAsStaff(
     if (effect.refunds && subscriptionId) {
       await tx.subscription.update({ where: { id: subscriptionId }, data: { sessionsRemaining: { increment: 1 } } });
     }
+
+    // E2-08: si el descartado estaba esperando, la cola se compacta.
+    await resequenceWaitlist(tx, booking.sessionId, booking.occurrenceDate);
 
     // Todo descarte deja traza, no solo el que fuerza la devolución: quien
     // revise el saldo de un socio necesita saber quién le quitó la plaza y con
