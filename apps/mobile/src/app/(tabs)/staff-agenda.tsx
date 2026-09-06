@@ -10,6 +10,9 @@ import {
   useCreateEpSlot,
   useDiscardAttendee,
   useDiscardPreview,
+  useMarkNoShow,
+  useClearNoShow,
+  useNoShowOptions,
 } from "@/api/queries";
 import { useAuth } from "@/auth/auth-context";
 import { canManageEpSlots, isTrainerRole } from "@/auth/routes";
@@ -830,6 +833,19 @@ function AttendeesSheet({
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [discarding, setDiscarding] = useState<StaffSessionAttendee | null>(null);
+  // E2-14: marcar la falta es una decisión con motivo y con efecto sobre el
+  // bono, así que abre hoja propia; rectificarla es un toque directo.
+  const [markingNoShow, setMarkingNoShow] = useState<StaffSessionAttendee | null>(null);
+  const clearNoShow = useClearNoShow(session.id);
+
+  async function handleClearNoShow(a: StaffSessionAttendee) {
+    try {
+      await clearNoShow.mutateAsync({ bookingId: a.bookingId });
+      toast.show(`${a.name}: falta deshecha. Vuelve a estar reservado.`, "good");
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : "No se pudo deshacer la falta.", "critical");
+    }
+  }
 
   const booked = data?.attendees.filter((a) => a.status !== "WAITLISTED" && a.status !== "CANCELLED") ?? [];
   const waitlisted = data?.attendees.filter((a) => a.status === "WAITLISTED") ?? [];
@@ -855,7 +871,7 @@ function AttendeesSheet({
 
   return (
     <>
-      <Sheet visible={!discarding && !adding} onClose={onClose} kicker="GRUPO REDUCIDO" title={session.name}>
+      <Sheet visible={!discarding && !adding && !markingNoShow} onClose={onClose} kicker="GRUPO REDUCIDO" title={session.name}>
         <View style={styles.attendeesHeaderRow}>
           <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1 }]}>
             {booked.length} de {capacity} plazas · {free} {free === 1 ? "libre" : "libres"}
@@ -884,6 +900,27 @@ function AttendeesSheet({
                       </Text>
                       <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>{ATTENDEE_STATUS_LABEL[a.status]}</Text>
                     </View>
+                    {/* E2-14: sin esto, quien no apareció se quedaba en BOOKED
+                        para siempre — no contaba la falta, no saltaba la alerta
+                        de tres y la tasa de no-show del panel era mentira. */}
+                    {a.status === "NO_SHOW" ? (
+                      <Button
+                        title="Deshacer falta"
+                        variant="outline"
+                        size="sm"
+                        loading={clearNoShow.isPending}
+                        onPress={() => handleClearNoShow(a)}
+                      />
+                    ) : (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Marcar que ${a.name} no se presentó`}
+                        onPress={() => setMarkingNoShow(a)}
+                        style={[styles.iconButton, { borderColor: theme.border }]}
+                      >
+                        <Icon name="alert" size={16} color={theme.textSecondary} />
+                      </Pressable>
+                    )}
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Descartar a ${a.name}`}
@@ -998,6 +1035,14 @@ function AttendeesSheet({
           sessionId={session.id}
           attendee={discarding}
           onClose={() => setDiscarding(null)}
+        />
+      ) : null}
+
+      {markingNoShow ? (
+        <NoShowSheet
+          sessionId={session.id}
+          attendee={markingNoShow}
+          onClose={() => setMarkingNoShow(null)}
         />
       ) : null}
     </>
@@ -1150,6 +1195,104 @@ function DiscardSheet({
             description="Le llega el motivo y qué pasa con su sesión."
             value={notifyMember}
             onValueChange={setNotifyMember}
+          />
+        </>
+      )}
+    </Sheet>
+  );
+}
+
+/**
+ * Marcar que un socio no se presentó (E2-14, decisión D-M1 · RB-RES-009).
+ *
+ * Espejo del diálogo de la web, no una versión reducida: el motivo es
+ * OBLIGATORIO —el servidor lo valida contra el enum, así que no vale mandar
+ * texto libre— y la devolución de la sesión es una decisión explícita del
+ * entrenador, reserva a reserva. Sin motivo no hay forma de distinguir una
+ * gripe avisada de un plantón, que es lo que decide si la falta suma a la
+ * racha de tres que avisa a dirección.
+ */
+function NoShowSheet({
+  sessionId,
+  attendee,
+  onClose,
+}: {
+  sessionId: string;
+  attendee: StaffSessionAttendee;
+  onClose: () => void;
+}) {
+  const theme = useTheme();
+  const toast = useToast();
+  // La lista de motivos viene del servidor: es el enum, no una copia.
+  const { data: options, isLoading } = useNoShowOptions(attendee.bookingId);
+  const markNoShow = useMarkNoShow(sessionId);
+  const [reason, setReason] = useState<string | null>(null);
+  const [refundSession, setRefundSession] = useState(false);
+
+  async function submit() {
+    if (!reason) return;
+    try {
+      const result = await markNoShow.mutateAsync({ bookingId: attendee.bookingId, reason, refundSession });
+      toast.show(
+        result.refunded
+          ? `${attendee.name}: falta registrada y sesión devuelta al bono.`
+          : `${attendee.name}: falta registrada. La sesión se consume.`,
+        result.refunded ? "good" : "neutral"
+      );
+      onClose();
+    } catch (err) {
+      toast.show(err instanceof Error ? err.message : "No se pudo registrar la falta.", "critical");
+    }
+  }
+
+  return (
+    <Sheet
+      visible
+      onClose={onClose}
+      kicker="NO SE PRESENTÓ"
+      title={attendee.name}
+      footer={
+        <Button
+          title={refundSession ? "Registrar falta y devolver sesión" : "Registrar falta"}
+          variant="danger"
+          size="lg"
+          loading={markNoShow.isPending}
+          /* Sin motivo no se puede enviar: el servidor lo rechaza igual, y
+             enterarse aquí es mejor que enterarse en el error. */
+          disabled={isLoading || !reason}
+          onPress={submit}
+        />
+      }
+    >
+      {isLoading || !options ? (
+        <SkeletonList rows={2} shape="card" />
+      ) : (
+        <>
+          <Text style={[typo.label, { color: theme.textSecondary }]}>Motivo (obligatorio)</Text>
+          <View style={{ gap: 8 }}>
+            {options.reasons.map((option) => (
+              <Pressable
+                key={option.value}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: reason === option.value }}
+                onPress={() => setReason(option.value)}
+                style={[
+                  styles.attendeeRow,
+                  { borderColor: reason === option.value ? theme.gold : theme.border },
+                ]}
+              >
+                <Text style={[typo.rowMeta, { color: theme.text, flex: 1 }]}>{option.help}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* La devolución no es automática ni imposible: se elige aquí, y
+              `noShowRefunded` impide que marcarla dos veces devuelva dos. */}
+          <ToggleRow
+            label="Devolver la sesión al bono"
+            description="Si luego deshaces la falta, se vuelve a descontar."
+            value={refundSession}
+            onValueChange={setRefundSession}
           />
         </>
       )}

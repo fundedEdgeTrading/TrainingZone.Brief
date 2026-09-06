@@ -63,6 +63,16 @@ function balanceInput(page: Page) {
   return page.getByLabel("Sesiones restantes").first();
 }
 
+/**
+ * E2-15: el ajuste manual escribe un asiento en el libro mayor del bono, y el
+ * asiento lleva MOTIVO obligatorio — es el movimiento que un socio va a
+ * discutir ("me falta una sesión"). Sin él, ni el cliente ni el servidor dejan
+ * guardar, así que rellenarlo es parte de ajustar el saldo.
+ */
+async function fillAdjustNote(page: Page, note: string) {
+  await page.getByLabel("Motivo del ajuste").first().fill(note);
+}
+
 test.describe("Plan y pagos en la ficha del socio", () => {
   test("un Entrenador Admin ajusta el saldo de un bono y persiste", async ({ page }) => {
     const fixture = await createBookingMember({ tag: `bonos${Date.now()}`, service: "EP" });
@@ -79,6 +89,7 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     await page.getByRole("button", { name: "Sumar una sesión" }).first().click();
     await expect(input).toHaveValue(String(before + 2));
 
+    await fillAdjustNote(page, "Dos sesiones de cortesía por la clase que se anuló.");
     await page.getByRole("button", { name: "Guardar" }).first().click();
     await expect(page.getByText("Saldo actualizado.")).toBeVisible();
 
@@ -120,6 +131,7 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     // En 0 el botón de restar se desactiva: no hay forma de pedir un negativo.
     await expect(minus).toBeDisabled();
 
+    await fillAdjustNote(page, "Sesiones dadas fuera de la agenda.");
     await page.getByRole("button", { name: "Guardar" }).first().click();
     await expect(page.getByText("Saldo actualizado.")).toBeVisible();
     await expect(balanceInput(page)).toHaveValue("0");
@@ -152,6 +164,7 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     await page.getByRole("button", { name: "Sumar una sesión" }).first().click();
     await expect(balanceInput(page)).toHaveValue("2");
 
+    await fillAdjustNote(page, "Dos sesiones compradas en mostrador.");
     await page.getByRole("button", { name: "Guardar" }).first().click();
     await expect(page.getByText("Saldo actualizado.")).toBeVisible();
 

@@ -924,6 +924,25 @@ export type DiscardResult = { refunded: boolean; withinWindow: boolean; overridd
 
 export type DiscardInput = { reason?: string | null; forceRefund?: boolean; notifyMember?: boolean };
 
+// ---------- No-show desde la app (E2-14, RB-RES-009) ----------
+
+/** Motivos del enum `NoShowReason`, servidos por la API para no copiarlos aquí. */
+export type NoShowReasonOption = { value: string; help: string };
+
+export type NoShowOptions = { reasons: NoShowReasonOption[] };
+
+/**
+ * El motivo es obligatorio y la devolución es una decisión explícita: el
+ * servidor no devuelve nada si no se le pide (RB-RES-009).
+ */
+export type MarkNoShowInput = { bookingId: string; reason: string; refundSession: boolean };
+
+/** `refunded` es lo que REALMENTE pasó, no lo que se pidió: `noShowRefunded`
+ *  impide devolver dos veces la misma sesión. */
+export type MarkNoShowResult = { status: "NO_SHOW"; reason: string; refunded: boolean };
+
+export type ClearNoShowResult = { status: "BOOKED" | "ATTENDED" };
+
 // ---------- Hueco de EP ----------
 
 export type CreateEpSlotInput = {
@@ -944,6 +963,8 @@ export type ConsumptionMovement = {
   serviceKind: "EP" | "GROUP" | null;
   /** Signo del movimiento: −1 al gastar, +1 al devolver, +N en la renovación. */
   delta: number;
+  /** Saldo que quedó tras el asiento. `null` en un bono ilimitado. */
+  balanceAfter: number | null;
   tone: "neutral" | "critical" | "good";
 };
 
@@ -958,6 +979,14 @@ export type ConsumptionResponse = {
     total: number | null;
     renewsAt: string | null;
   }[];
-  summary: { spent: number; returned: number; noShow: number };
+  /**
+   * E2-15: las dos cifras salen del MISMO libro mayor que el listado, así que
+   * no pueden contradecirlo. "No presentadas" ya no vive aquí: es una cuenta de
+   * asistencia, no un movimiento de saldo, y mezclarla era la mitad de la
+   * contradicción de esta pantalla.
+   */
+  summary: { spent: number; returned: number };
+  /** Día del asiento más antiguo: antes de esa fecha solo hay saldo de apertura. */
+  detailSince: string | null;
   movements: ConsumptionMovement[];
 };

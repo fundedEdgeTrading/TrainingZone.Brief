@@ -1,14 +1,15 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { briefScopeWhere } from "@/lib/brief-queries";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { expandOccurrences, isSameDay, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
-import { requireApiRole } from "../../_lib/api-session";
+import { requireApiRoute } from "../../_lib/api-session";
 import { apiOk } from "../../_lib/response";
 
 // Espejo de src/app/(app)/brief/page.tsx (índice de Session Brief).
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
 
@@ -20,6 +21,14 @@ export async function GET(req: NextRequest) {
     where: {
       orgId: claims.orgId,
       status: "SCHEDULED",
+      // E1-01: mismo `briefScopeWhere` que el índice web. El espejo móvil que
+      // no replica la guarda de la web es el fallo que más se repite aquí.
+      ...(await briefScopeWhere({
+        id: claims.sub,
+        role: claims.role,
+        orgId: claims.orgId,
+        centerId: claims.centerId,
+      })),
       ...sessionsInRangeWhere(today, endRange),
       ...(claims.role === "TRAINER" ? ownSessionsWhere(claims.sub) : {}),
     },

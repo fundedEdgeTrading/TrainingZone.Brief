@@ -47,6 +47,10 @@ const ACTION_LABEL: Record<string, string> = {
   SUBSCRIPTION_CANCELLATION_SCHEDULED: "Baja programada",
   SUBSCRIPTION_CANCELLATION_UNSCHEDULED: "Baja programada cancelada",
   ONE_OFF_PRODUCT_SOLD: "Producto suelto vendido",
+  // Reservas
+  BOOKING_DISCARDED: "Socio descartado de una sesión",
+  BOOKING_DISCARDED_REFUND_OVERRIDE: "Socio descartado con devolución forzada",
+  SESSION_DELETED: "Sesión borrada: bono devuelto",
   PAYMENT_POSTPONED: "Cobro aplazado",
   PAYMENT_REFUNDED_LOCAL: "Cobro devuelto (registro local)",
   // Feedback
