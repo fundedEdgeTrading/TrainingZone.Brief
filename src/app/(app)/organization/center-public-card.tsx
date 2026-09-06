@@ -4,7 +4,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { asOpeningHours, formatOpeningHours } from "@/lib/opening-hours";
 import { leadFormPath, membershipPath } from "@/lib/public-center-seo";
 import { updateCenterPublicProfile } from "./actions";
-import { CopyLink } from "./center-public-links";
+import { CopyLink } from "@/components/copy-link";
 
 /** Lo que la tarjeta necesita del centro. Se queda en lo publicable, sin `_count` ni relaciones. */
 export type CenterPublicData = {

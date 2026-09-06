@@ -6,7 +6,8 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 const NO_SUBSCRIBE = () => () => {};
 
 /**
- * E9-15 · Una URL pública con su botón de copiar.
+ * E9-15 · Una URL pública con su botón de copiar. La usan la tarjeta de centro
+ * de Organización y el paso "Tus enlaces públicos" de la puesta en marcha.
  *
  * El origen se resuelve en el cliente (`window.location.origin`) a propósito: es
  * el dominio por el que la persona ha entrado, que es el que va a pegar en su
