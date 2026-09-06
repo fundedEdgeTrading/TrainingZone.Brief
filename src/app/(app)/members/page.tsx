@@ -42,10 +42,13 @@ function initials(first: string, last: string) {
   return ((first[0] ?? "") + (last[0] ?? "")).toUpperCase();
 }
 
+/** E12-10: tamaño de página del listado, paginado en servidor. */
+const MEMBERS_PAGE_SIZE = 25;
+
 export default async function MembersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; state?: string; centerId?: string; plan?: string; joined?: string }>;
+  searchParams: Promise<{ q?: string; state?: string; centerId?: string; plan?: string; joined?: string; page?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const params = await searchParams;
@@ -108,7 +111,16 @@ export default async function MembersPage({
     now,
   );
 
-  const memberIds = members.map((m) => m.id);
+  // E12-10: `members` ya es el conjunto COMPLETO del ámbito con los filtros
+  // aplicados (listMembers ya no trunca en 300). El total real es su longitud,
+  // ANTES de recortar a la página que se pinta — recortar antes falsearía el
+  // recuento que enseña FilterRail.
+  const total = members.length;
+  const pageCount = Math.max(1, Math.ceil(total / MEMBERS_PAGE_SIZE));
+  const page = Math.min(Math.max(1, Number(params.page) || 1), pageCount);
+  const pageMembers = members.slice((page - 1) * MEMBERS_PAGE_SIZE, page * MEMBERS_PAGE_SIZE);
+
+  const memberIds = pageMembers.map((m) => m.id);
   // La caída de frecuencia (G.3) se lee aquí, en la columna que dirección ya
   // mira, en vez de en una pantalla aparte: «hace N días» dice cuándo vino por
   // última vez, y la alerta, si ese silencio rompe SU hábito o es su ritmo
@@ -177,16 +189,19 @@ export default async function MembersPage({
 
       <DataTable
         columns={columns}
-        rows={members.map((m, i) => memberToRow(m, i, lastVisits.get(m.id) ?? null, retentionAlerts.get(m.id) ?? null, now))}
+        rows={pageMembers.map((m, i) => memberToRow(m, i, lastVisits.get(m.id) ?? null, retentionAlerts.get(m.id) ?? null, now))}
         density="compact"
-        pageSize={12}
+        // E12-10: la paginación ya la resuelve este componente de servidor
+        // (MembersPager, más abajo), con el estado en la URL — DataTable solo
+        // pinta la página que le llega.
+        pagination={false}
         // Las 12 filas compactas caben de sobra: recortar el cuerpo a 560 px
         // metía un scroll dentro de la tarjeta y dejaba la última fila cortada.
         maxBodyHeight="none"
         toolbar={
           <FilterRail
             groups={groups}
-            total={members.length}
+            total={total}
             resultLabel={{ one: "socio", many: "socios" }}
             searchPlaceholder="Buscar nombre o email…"
           />
@@ -194,6 +209,64 @@ export default async function MembersPage({
         emptyTitle="Sin resultados"
         emptyDescription="No hay socios que coincidan con estos filtros."
       />
+
+      <MembersPager page={page} pageCount={pageCount} total={total} params={params} />
+    </div>
+  );
+}
+
+/** Enlaces `?page=N` que conservan el resto de filtros de la URL (E12-10). */
+function MembersPager({
+  page,
+  pageCount,
+  total,
+  params,
+}: {
+  page: number;
+  pageCount: number;
+  total: number;
+  params: Record<string, string | undefined>;
+}) {
+  if (total === 0) return null;
+
+  function hrefFor(targetPage: number) {
+    const qs = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (key !== "page" && value) qs.set(key, value);
+    }
+    if (targetPage > 1) qs.set("page", String(targetPage));
+    const query = qs.toString();
+    return query ? `/members?${query}` : "/members";
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-3 flex-wrap px-1 text-[12.5px] text-brand-muted">
+      <span>Página {page} de {pageCount} · {total} {total === 1 ? "socio" : "socios"} en total</span>
+      <div className="flex items-center gap-1">
+        <Link
+          href={hrefFor(page - 1)}
+          aria-disabled={page === 1}
+          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-brand-border text-brand-text-2 hover:bg-tz-bone transition-colors ${
+            page === 1 ? "opacity-35 pointer-events-none" : ""
+          }`}
+          aria-label="Página anterior"
+        >
+          ‹
+        </Link>
+        <span className="px-2 font-semibold text-brand-text-2 tz-nums">
+          {page} / {pageCount}
+        </span>
+        <Link
+          href={hrefFor(page + 1)}
+          aria-disabled={page === pageCount}
+          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border border-brand-border text-brand-text-2 hover:bg-tz-bone transition-colors ${
+            page === pageCount ? "opacity-35 pointer-events-none" : ""
+          }`}
+          aria-label="Página siguiente"
+        >
+          ›
+        </Link>
+      </div>
     </div>
   );
 }
