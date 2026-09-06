@@ -1,22 +1,45 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
-import type { Role, AptitudeLight } from "@prisma/client";
+import type { Prisma, Role, AptitudeLight } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { centerScopeFor, isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 
 const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
+
+/**
+ * E1-01 (RB-SEG-001): frontera de centro del Session Brief, para el índice.
+ *
+ * `canViewSessionDebrief` (rbac.ts) responde a "¿este rol puede abrir un
+ * debrief?", no a "¿de qué centros?": para `OWNER`/`CENTER_DIRECTOR` decía
+ * `true` ante cualquier sesión de la organización. Con eso, la dirección de La
+ * Jota listaba 43 sesiones de tres centros. El `where` que devuelve esta
+ * función es lo único que acota el índice, y sale del mismo `centerScopeFor`
+ * que la agenda: un solo criterio de "mis centros" en toda la aplicación.
+ *
+ * `{}` = sin frontera de centro (dirección de organización). El `orgId` lo
+ * sigue poniendo el llamante, siempre.
+ */
+export async function briefScopeWhere(user: ScopedUser): Promise<Prisma.ClassSessionWhereInput> {
+  const scope = await centerScopeFor(user);
+  if (scope === null) return {};
+  return { centerId: { in: scope } };
+}
 
 export async function getSessionBrief({
   orgId,
   sessionId,
   actorUserId,
   actorRole,
+  actorCenterId,
   d,
 }: {
   orgId: string;
   sessionId: string;
   actorUserId: string;
   actorRole: Role;
+  /** Centro base de quien pide (`User.centerId`); con las filas de `CenterMembership` forma su ámbito. */
+  actorCenterId: string | null;
   /** Día de la serie que se está briefando ("YYYY-MM-DD"); por defecto, la fecha base. */
   d?: string | null;
 }) {
@@ -36,6 +59,18 @@ export async function getSessionBrief({
     },
   });
   if (!row) return null;
+
+  // E1-01 (RB-SEG-001): el ámbito de centro va ANTES que cualquier otra cosa, y
+  // desde luego antes de tocar `HealthRecord` o de escribir en `AuditLog`: una
+  // sesión ajena no puede dejar rastro de "lectura legítima" de un dato de
+  // salud que nunca se debió leer. La comprobación vive aquí, y no en cada
+  // pantalla, porque web y app llaman a esta misma función: un solo arreglo
+  // cierra las dos superficies.
+  const inScope = await isCenterInScope(
+    { id: actorUserId, role: actorRole, orgId, centerId: actorCenterId },
+    row.centerId
+  );
+  if (!inScope) return null;
 
   // Solo el entrenador asignado (o quien dirigió la sesión) y dirección pueden
   // abrir el debrief individual. Devolvemos null → notFound() para no revelar

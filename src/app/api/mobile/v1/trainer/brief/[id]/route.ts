@@ -18,6 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     sessionId: id,
     actorUserId: claims.sub,
     actorRole: claims.role,
+    actorCenterId: claims.centerId,
     d: req.nextUrl.searchParams.get("d"),
   });
   if (!brief) return apiError("No se ha encontrado esa sesión.", 404);

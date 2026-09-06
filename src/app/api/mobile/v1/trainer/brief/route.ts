@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { briefScopeWhere } from "@/lib/brief-queries";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { expandOccurrences, isSameDay, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
@@ -20,6 +21,14 @@ export async function GET(req: NextRequest) {
     where: {
       orgId: claims.orgId,
       status: "SCHEDULED",
+      // E1-01: mismo `briefScopeWhere` que el índice web. El espejo móvil que
+      // no replica la guarda de la web es el fallo que más se repite aquí.
+      ...(await briefScopeWhere({
+        id: claims.sub,
+        role: claims.role,
+        orgId: claims.orgId,
+        centerId: claims.centerId,
+      })),
       ...sessionsInRangeWhere(today, endRange),
       ...(claims.role === "TRAINER" ? ownSessionsWhere(claims.sub) : {}),
     },
