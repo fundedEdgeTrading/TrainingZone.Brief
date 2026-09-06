@@ -16,8 +16,9 @@ import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
 import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
 import { statusesEndingAt } from "@/lib/booking-transitions";
+import { coversSessionKind } from "@/lib/member-session-scope";
 import { enforcementStartsAt } from "@/lib/portal-queries";
-import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { sessionServiceKind } from "@/lib/members-queries";
 import {
   chargeSessionToSubscription,
   claimWaitlistedBooking,
@@ -197,9 +198,18 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   if (!center) return { ok: false as const, error: "Centro no encontrado." };
   if (!trainer) return { ok: false as const, error: "Ese entrenador no está imputado a este centro." };
 
+  // RB-SEG-003: no basta con que el socio sea de la organización. El campo
+  // "Socio" del diálogo crea una reserva a su nombre, así que tiene que poder
+  // ocupar plaza AQUÍ: bono activo de esta modalidad en este centro, el mismo
+  // criterio que ofrece el selector y que ya exigía la reserva desde el roster.
   if (input.memberId) {
-    const member = await prisma.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
-    if (!member) return { ok: false as const, error: "Socio no encontrado." };
+    const bookable = await isMemberBookableInCenter(
+      orgId,
+      input.memberId,
+      input.centerId,
+      sessionServiceKind(input.type === "personal" ? "Personal Training" : "Grupo reducido")
+    );
+    if (!bookable) return { ok: false as const, error: "Ese socio no tiene bono de esta modalidad en este centro." };
   }
 
   const existing = input.id ? await prisma.classSession.findFirst({ where: { id: input.id, orgId } }) : null;
@@ -429,25 +439,60 @@ export async function listMembersBookableForSession(orgId: string, sessionId: st
     select: { centerId: true, classType: true },
   });
   if (!session) return [];
-  const kind = sessionServiceKind(session.classType);
+  return listMembersBookableInCenter(orgId, session.centerId, sessionServiceKind(session.classType));
+}
 
+/**
+ * RB-SEG-003 (E1-05): el mismo criterio, sin necesidad de una sesión que
+ * todavía no existe.
+ *
+ * El selector "Socio" de la agenda usaba `listActiveMembersForSelect(orgId)`,
+ * que devuelve la organización ENTERA. Verificado: un entrenador imputado a La
+ * Jota y Puerta del Carmen recibía los 49 socios de la organización, los 34 de
+ * Santander incluidos — y reservarle plaza a cualquiera de ellos funcionaba.
+ * El criterio correcto ya vivía justo al lado, en la variante por sesión.
+ */
+export async function listMembersBookableInCenter(orgId: string, centerId: string, kind: "EP" | "GROUP" | null) {
   const members = await prisma.member.findMany({
-    where: { orgId, subscriptions: { some: { status: "ACTIVE", centerId: session.centerId } } },
+    where: { orgId, subscriptions: { some: { status: "ACTIVE", centerId } } },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     select: {
       id: true,
       firstName: true,
       lastName: true,
       subscriptions: {
-        where: { status: "ACTIVE", centerId: session.centerId },
+        where: { status: "ACTIVE", centerId },
         select: { plan: { select: { type: true } } },
       },
     },
   });
 
   return members
-    .filter((m) => m.subscriptions.some((s) => planServiceKind(s.plan.type) === kind))
+    .filter((m) => coversSessionKind(m.subscriptions, kind))
     .map(({ id, firstName, lastName }) => ({ id, firstName, lastName }));
+}
+
+/**
+ * ¿Puede este socio ocupar una plaza en una sesión de esta modalidad en este
+ * centro? Es la comprobación de ESCRITURA que acompaña al selector: sin ella
+ * bastaba con conocer el id de un socio ajeno para agendarle una franja de EP
+ * desde el formulario (`saveSession`) o desde el endpoint móvil de huecos
+ * (`createEpSlot`), que no contrastaba el socio contra nada en absoluto.
+ */
+export async function isMemberBookableInCenter(
+  orgId: string,
+  memberId: string,
+  centerId: string,
+  kind: "EP" | "GROUP" | null
+): Promise<boolean> {
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: {
+      subscriptions: { where: { status: "ACTIVE", centerId }, select: { plan: { select: { type: true } } } },
+    },
+  });
+  if (!member) return false;
+  return coversSessionKind(member.subscriptions, kind);
 }
 
 /**
@@ -871,6 +916,16 @@ export async function createEpSlot(
   orgId: string,
   input: { centerId: string; trainerId: string; date: Date; startTime: string; durationMin: number; selfBookable: boolean; memberId?: string | null }
 ) {
+  // RB-SEG-003: el espejo móvil del campo "Socio". Aquí no se contrastaba el
+  // socio contra NADA —ni contra la organización—, así que con un id ajeno se
+  // le agendaba una franja de EP en un centro que no es el suyo.
+  if (
+    input.memberId &&
+    !(await isMemberBookableInCenter(orgId, input.memberId, input.centerId, sessionServiceKind("Personal Training")))
+  ) {
+    return { ok: false as const, error: "Ese socio no tiene bono de entrenamiento personal en este centro." };
+  }
+
   const endTime = addMinutesToTime(input.startTime, input.durationMin);
   const session = await prisma.classSession.create({
     data: {
@@ -893,7 +948,7 @@ export async function createEpSlot(
     });
   }
 
-  return session;
+  return { ok: true as const, session };
 }
 
 /** RB-AGENDA-004: entrenador que dirigió realmente la sesión (puede diferir del asignado). */

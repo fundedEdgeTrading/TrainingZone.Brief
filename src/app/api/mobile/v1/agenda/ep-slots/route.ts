@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
   const isDirection = claims.role === "OWNER" || claims.role === "CENTER_DIRECTOR";
   const trainerId = isDirection && body.trainerId ? body.trainerId : claims.sub;
 
-  const session = await createEpSlot(claims.orgId, {
+  const created = await createEpSlot(claims.orgId, {
     centerId,
     trainerId,
     date: parseDateParam(body.date),
@@ -72,6 +72,10 @@ export async function POST(req: NextRequest) {
     memberId: body.memberId ?? null,
   });
 
-  revalidateSessionViews(session.id);
-  return apiOk({ id: session.id, selfBookable: !body.memberId });
+  // RB-SEG-003: el socio asignado tiene que poder ocupar plaza en ESTE centro.
+  // 404 y no 403: para quien pide, un socio fuera de su ámbito no existe.
+  if (!created.ok) return apiError(created.error, 404);
+
+  revalidateSessionViews(created.session.id);
+  return apiOk({ id: created.session.id, selfBookable: !body.memberId });
 }

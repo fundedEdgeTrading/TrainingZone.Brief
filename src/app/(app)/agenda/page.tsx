@@ -1,7 +1,6 @@
 import { requireRole } from "@/lib/guard";
-import { getCentersForUser, getWeekSessions } from "@/lib/agenda-queries";
+import { getCentersForUser, getWeekSessions, listMembersBookableInCenter } from "@/lib/agenda-queries";
 import { listAssignableStaff } from "@/lib/org-queries";
-import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
@@ -57,7 +56,11 @@ export default async function AgendaPage({
   const [trainers, members] = centerId
     ? await Promise.all([
         listAssignableStaff(session.user.orgId, ["TRAINER", "TRAINER_ADMIN"], centerId),
-        listActiveMembersForSelect(session.user.orgId),
+        // RB-SEG-003 (E1-05): el campo "Socio" del diálogo es de Entrenamiento
+        // Personal, así que se ofrece a quien puede ocupar una franja de EP en
+        // ESTE centro. Antes salía `listActiveMembersForSelect(orgId)`: la
+        // organización entera, con los socios de los centros ajenos incluidos.
+        listMembersBookableInCenter(session.user.orgId, centerId, "EP"),
       ])
     : [[], []];
 
