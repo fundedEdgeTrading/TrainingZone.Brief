@@ -385,12 +385,27 @@ volver a marcar la misma falta no puede devolver la sesión dos veces;
 rectificarla (marcar check-in) la vuelve a descontar. Por defecto **no** se
 devuelve, que es el comportamiento que tenía el sistema.
 
-**Tres faltas seguidas sin avisar** del mismo cliente (motivo distinto de "avisó
-tarde" y "causa justificada"; una asistencia corta la racha, una cancelación a
-tiempo no) abren una tarea para **dirección** del centro, con el motor de
-`Notification`/`createNotificationOnce` que ya usan el resto de alertas
-automáticas. Se comprueba al marcar la falta y, como red de seguridad, en la
-pasada de `/api/jobs/run`.
+**Tres faltas seguidas sin avisar** del mismo cliente abren una tarea para
+**dirección** del centro, con el motor de `Notification`/`createNotificationOnce`
+que ya usan el resto de alertas automáticas. Se comprueba al marcar la falta y,
+como red de seguridad, en la pasada de `/api/jobs/run`.
+
+Solo suma **"no avisó"** (`FORGOT`), que es la única falta del socio. Los otros
+tres motivos quedan fuera, cada uno por su razón:
+
+- **"avisó tarde"** y **"causa justificada"** cortan la racha: el cliente dio
+  señales o tenía motivo.
+- **"error del centro"** (`OUR_ERROR`) ni suma ni corta: **se salta**, igual que
+  una cancelación a tiempo. Es una falta que provocó el centro —sesión mal
+  agendada, aviso no registrado—, así que no dice nada del socio y no puede
+  abrir una tarea comercial contra él. Contarla llevaba a que dirección
+  recibiera *"Fulano: 3 faltas seguidas sin avisar"* cuando **las tres las había
+  provocado el centro**.
+
+Una asistencia corta la racha; una cancelación a tiempo no es una falta y no la
+parte. Como la racha se **deriva del histórico en cada lectura**, el cambio
+recalcula también las rachas ya formadas; y la pasada de `/api/jobs/run` cierra
+las alertas que quedaran abiertas y ya no llegan al umbral.
 
 **`RB-PAGO-008`** — El saldo de sesiones de un bono (`Subscription.sessionsRemaining`) se puede
 **ajustar a mano** desde la pestaña "Bonos y calendario" de la ficha del socio. Es una corrección
