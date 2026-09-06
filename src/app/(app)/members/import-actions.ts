@@ -11,6 +11,7 @@ import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { createSubscriptionFromPlan, resolveSubscriptionTerms } from "@/lib/subscriptions";
+import { recordSessionsChange } from "@/lib/session-ledger";
 
 export type ImportSummary = {
   total: number;
@@ -89,7 +90,9 @@ async function upsertImportedSubscription(
   centerId: string,
   plan: PlanRef,
   sub: ParsedSubscriptionData,
-  joinedAt: Date | null
+  joinedAt: Date | null,
+  /** Organización y autor de la importación: firman el asiento (E2-15). */
+  ledger: { orgId: string; actorUserId: string }
 ): Promise<boolean> {
   const existing = await prisma.subscription.findFirst({
     where: { memberId, planId: plan.id, status: { in: ["ACTIVE", "FROZEN"] } },
@@ -114,15 +117,39 @@ async function upsertImportedSubscription(
     // La reimportación NO reescribe el saldo salvo que el CSV traiga uno: el
     // gimnasio corrige el fichero y lo vuelve a subir, y devolver el bono a su
     // saldo inicial le regalaría al socio las sesiones ya gastadas.
-    await prisma.subscription.update({
-      where: { id: existing.id },
-      data: {
-        priceCents: terms.priceCents,
-        startDate,
-        ...(sub.sessionsRemaining !== null
-          ? { sessionsRemaining: terms.sessionsRemaining, sessionsIncluded: terms.sessionsIncluded }
-          : {}),
-      },
+    const rewritesBalance = sub.sessionsRemaining !== null;
+    await prisma.$transaction(async (tx) => {
+      const before = await tx.subscription.findUnique({
+        where: { id: existing.id },
+        select: { sessionsRemaining: true },
+      });
+      await tx.subscription.update({
+        where: { id: existing.id },
+        data: {
+          priceCents: terms.priceCents,
+          startDate,
+          ...(rewritesBalance
+            ? { sessionsRemaining: terms.sessionsRemaining, sessionsIncluded: terms.sessionsIncluded }
+            : {}),
+        },
+      });
+
+      // E2-15: reescribir el saldo desde el CSV es mover `sessionsRemaining`, y
+      // eso deja asiento como cualquier otro movimiento. Es un valor ABSOLUTO,
+      // así que el delta es la diferencia contra lo que había.
+      if (!rewritesBalance) return;
+      const delta = (terms.sessionsRemaining ?? 0) - (before?.sessionsRemaining ?? 0);
+      await recordSessionsChange(
+        tx,
+        {
+          orgId: ledger.orgId,
+          subscriptionId: existing.id,
+          reason: "CORRECTION",
+          actorUserId: ledger.actorUserId,
+          note: "Saldo reescrito desde la importación de socios.",
+        },
+        delta
+      );
     });
     return false;
   }
@@ -348,7 +375,8 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
             center.id,
             plan,
             row.subscription,
-            d.joinedAt
+            d.joinedAt,
+            { orgId, actorUserId: session.user.id }
           );
           if (created) summary.subscriptionsCreated++;
         }
@@ -374,7 +402,8 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
             center.id,
             plan,
             row.subscription,
-            d.joinedAt
+            d.joinedAt,
+            { orgId, actorUserId: session.user.id }
           );
           if (created) summary.subscriptionsCreated++;
         }

@@ -13,6 +13,7 @@ import {
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { resequenceWaitlist } from "@/lib/waitlist";
+import { refundSession } from "@/lib/session-ledger";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 
@@ -723,7 +724,10 @@ export async function bookSessionForMember(
     const chargeSubscriptionId = choice.subscriptionId;
 
     // Va ANTES de escribir la reserva para poder abortar sin dejar nada a medias.
-    if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+    if (
+      chargeSubscriptionId &&
+      !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId: cls.orgId, reason: "BOOKING" }))
+    ) {
       return { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
     }
 
@@ -737,7 +741,16 @@ export async function bookSessionForMember(
       if (!claimed) {
         // Otra persona de la lista se ha adelantado: se deshace el descuento
         // para no cobrarle una sesión que no ha llegado a reservar.
-        if (chargeSubscriptionId) await refundSessionToSubscription(tx, chargeSubscriptionId);
+        // No es una cancelación: es deshacer un cobro que no llegó a comprar
+        // nada, así que el asiento va como corrección.
+        if (chargeSubscriptionId) {
+          await refundSessionToSubscription(tx, chargeSubscriptionId, {
+            orgId: cls.orgId,
+            bookingId: existing!.id,
+            reason: "CORRECTION",
+            note: "La plaza reclamada se la quedó otra persona.",
+          });
+        }
         return { ok: false as const, error: "Esa plaza ya la ha reclamado otra persona: sigues en la lista de espera." };
       }
       return { ok: true as const, waitlisted: false };
@@ -835,9 +848,11 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
     if (applied.count === 0) return false;
 
     if (refundSubscriptionId) {
-      await tx.subscription.update({
-        where: { id: refundSubscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
+      await refundSession(tx, {
+        orgId: booking.session.orgId,
+        subscriptionId: refundSubscriptionId,
+        bookingId: booking.id,
+        reason: "CANCELLATION",
       });
     }
     // E2-08: quien sale de la cola deja un hueco en la numeración. Se compacta

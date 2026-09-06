@@ -18,6 +18,7 @@ import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_A
 import { checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import { coversSessionKind } from "@/lib/member-session-scope";
 import { resequenceWaitlist } from "@/lib/waitlist";
+import { chargeSession, refundSession } from "@/lib/session-ledger";
 import { enforcementStartsAt } from "@/lib/portal-queries";
 import { sessionServiceKind } from "@/lib/members-queries";
 import {
@@ -420,9 +421,11 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
 
     // RB-RES-006: la lista de espera nunca descontó bono, así que no se devuelve.
     if (booking.status === "BOOKED" && booking.subscriptionId) {
-      await tx.subscription.update({
-        where: { id: booking.subscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
+      await refundSession(tx, {
+        orgId,
+        subscriptionId: booking.subscriptionId,
+        bookingId: booking.id,
+        reason: "CANCELLATION",
       });
     }
     // E2-08: si quien sale estaba en la cola, la numeración se compacta aquí
@@ -616,7 +619,10 @@ export async function bookSessionForMemberAsStaff(
       const chargeSubscriptionId = choice.subscriptionId;
 
       // Antes de escribir la reserva, para no dejarla creada sin cobrar.
-      if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+      if (
+        chargeSubscriptionId &&
+        !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId, reason: "BOOKING" }))
+      ) {
         throw new StaffBookingError("A ese socio no le quedan sesiones en su bono.");
       }
 
@@ -683,6 +689,8 @@ export async function markBookingNoShow(
     sessionId?: string;
     reason: NoShowReason;
     refundSession: boolean;
+    /** Quién marca la falta: firma el asiento de la devolución (E2-15). */
+    actorUserId?: string | null;
   }
 ): Promise<NoShowResult> {
   const booking = await prisma.booking.findFirst({
@@ -720,9 +728,12 @@ export async function markBookingNoShow(
       data: { noShowRefunded: true },
     });
     if (claimed.count > 0) {
-      await tx.subscription.update({
-        where: { id: booking.subscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
+      await refundSession(tx, {
+        orgId,
+        subscriptionId: booking.subscriptionId,
+        bookingId: booking.id,
+        reason: "NO_SHOW_REFUND",
+        actorUserId: opts.actorUserId ?? null,
       });
     }
     return true;
@@ -741,7 +752,9 @@ export async function markBookingNoShow(
 export async function clearBookingNoShow(
   orgId: string,
   bookingId: string,
-  nextStatus: "BOOKED" | "ATTENDED"
+  nextStatus: "BOOKED" | "ATTENDED",
+  /** Quién rectifica: firma el asiento de la corrección (E2-15). */
+  actorUserId?: string | null
 ): Promise<NoShowResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, session: { orgId } },
@@ -779,9 +792,16 @@ export async function clearBookingNoShow(
     // Solo se descuenta si el bono tiene saldo: dejarlo en negativo rompería
     // las cuentas de `bonoUsage` (session-balance.ts). Un bono ilimitado
     // (`sessionsRemaining` null) no se toca: NULL - 1 sigue siendo NULL.
-    await tx.subscription.updateMany({
-      where: { id: booking.subscriptionId, sessionsRemaining: { gt: 0 } },
-      data: { sessionsRemaining: { decrement: 1 } },
+    // La rectificación vuelve a descontar la sesión devuelta. Es un asiento
+    // nuevo (`CORRECTION`), nunca la edición del anterior: el libro es
+    // inmutable.
+    await chargeSession(tx, {
+      orgId,
+      subscriptionId: booking.subscriptionId,
+      bookingId: booking.id,
+      reason: "CORRECTION",
+      actorUserId: actorUserId ?? null,
+      note: "Falta rectificada: la sesión devuelta se vuelve a descontar.",
     });
   });
 
@@ -853,9 +873,15 @@ export async function deleteSession(
 
   await prisma.$transaction(async (tx) => {
     for (const booking of plan.refunds) {
-      await tx.subscription.update({
-        where: { id: booking.subscriptionId! },
-        data: { sessionsRemaining: { increment: 1 } },
+      // E2-15: la devolución por borrado de sesión también es un movimiento del
+      // bono, así que deja asiento — y el `bookingId` sobrevive al borrado de
+      // la reserva porque la FK es `SetNull`.
+      await refundSession(tx, {
+        orgId,
+        subscriptionId: booking.subscriptionId!,
+        bookingId: booking.id,
+        reason: "CANCELLATION",
+        note: `Sesión borrada: ${session.name}.`,
       });
       // Una entrada por devolución, no una por borrado: quien revise el saldo
       // de un socio tiene que poder cuadrar sesión a sesión.
@@ -1142,7 +1168,16 @@ export async function discardAttendeeAsStaff(
     if (updated.count === 0) return false;
 
     if (effect.refunds && subscriptionId) {
-      await tx.subscription.update({ where: { id: subscriptionId }, data: { sessionsRemaining: { increment: 1 } } });
+      await refundSession(tx, {
+        orgId,
+        subscriptionId,
+        bookingId: booking.id,
+        // Dentro de la ventana solo se devuelve forzándolo: eso es un ajuste
+        // manual del saldo (RB-RES-006), no una cancelación normal.
+        reason: effect.overridden ? "MANUAL_ADJUSTMENT" : "CANCELLATION",
+        actorUserId: opts.actorUserId,
+        note: opts.reason?.trim() || null,
+      });
     }
 
     // E2-08: si el descartado estaba esperando, la cola se compacta.

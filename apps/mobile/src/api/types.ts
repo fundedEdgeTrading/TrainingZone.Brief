@@ -955,6 +955,8 @@ export type ConsumptionMovement = {
   serviceKind: "EP" | "GROUP" | null;
   /** Signo del movimiento: −1 al gastar, +1 al devolver, +N en la renovación. */
   delta: number;
+  /** Saldo que quedó tras el asiento. `null` en un bono ilimitado. */
+  balanceAfter: number | null;
   tone: "neutral" | "critical" | "good";
 };
 
@@ -969,6 +971,14 @@ export type ConsumptionResponse = {
     total: number | null;
     renewsAt: string | null;
   }[];
-  summary: { spent: number; returned: number; noShow: number };
+  /**
+   * E2-15: las dos cifras salen del MISMO libro mayor que el listado, así que
+   * no pueden contradecirlo. "No presentadas" ya no vive aquí: es una cuenta de
+   * asistencia, no un movimiento de saldo, y mezclarla era la mitad de la
+   * contradicción de esta pantalla.
+   */
+  summary: { spent: number; returned: number };
+  /** Día del asiento más antiguo: antes de esa fecha solo hay saldo de apertura. */
+  detailSince: string | null;
   movements: ConsumptionMovement[];
 };

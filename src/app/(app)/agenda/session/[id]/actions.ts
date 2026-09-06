@@ -87,7 +87,7 @@ export async function toggleCheckIn(bookingId: string, sessionId: string): Promi
   // y, si aquella falta devolvió la sesión al bono, volver a descontarla
   // (RB-RES-009). Por eso pasa por `clearBookingNoShow` y no por un update suelto.
   if (booking.status === "NO_SHOW") {
-    const cleared = await clearBookingNoShow(actor.user.orgId, bookingId, newStatus);
+    const cleared = await clearBookingNoShow(actor.user.orgId, bookingId, newStatus, actor.user.id);
     if (!cleared.ok) return cleared;
   } else {
     // La condición de estado viaja también dentro del UPDATE: entre la lectura
@@ -132,7 +132,12 @@ export async function markNoShowAction(
   const reason = parseNoShowReason(reasonRaw);
   if (!reason) return { ok: false, error: "Indica el motivo de la falta." };
 
-  const result = await markBookingNoShow(actor.user.orgId, bookingId, { sessionId, reason, refundSession });
+  const result = await markBookingNoShow(actor.user.orgId, bookingId, {
+    sessionId,
+    reason,
+    refundSession,
+    actorUserId: actor.user.id,
+  });
   if (!result.ok) return result;
 
   // Tres faltas seguidas sin avisar son un aviso a dirección, no un incidente

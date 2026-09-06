@@ -28,7 +28,7 @@ import { apiOk, apiError } from "../../../../_lib/response";
  */
 const STAFF_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
 
-type Guarded = { ok: true; orgId: string } | { ok: false; response: NextResponse };
+type Guarded = { ok: true; orgId: string; actorUserId: string } | { ok: false; response: NextResponse };
 
 /**
  * Ámbito de centro: el centro sale de la SESIÓN de la reserva, nunca de nada
@@ -49,7 +49,7 @@ async function guard(req: NextRequest, bookingId: string): Promise<Guarded> {
   );
   if (!inScope) return { ok: false, response: apiError("No se ha encontrado esa reserva.", 404) };
 
-  return { ok: true, orgId: claims.orgId };
+  return { ok: true, orgId: claims.orgId, actorUserId: claims.sub };
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // entrenador descubra después. Sin ella, no se devuelve.
   const refundSession = body?.refundSession === true;
 
-  const result = await markBookingNoShow(g.orgId, id, { reason, refundSession });
+  const result = await markBookingNoShow(g.orgId, id, { reason, refundSession, actorUserId: g.actorUserId });
   // Estado de partida (E2-02): CANCELLED o WAITLISTED se rechazan con 409, que
   // es un conflicto de estado y no un "no existe".
   if (!result.ok) return apiError(result.error, result.conflict ? 409 : 404);
@@ -116,7 +116,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const asAttended = req.nextUrl.searchParams.get("status") === "ATTENDED";
   const nextStatus = asAttended ? ("ATTENDED" as const) : ("BOOKED" as const);
 
-  const result = await clearBookingNoShow(g.orgId, id, nextStatus);
+  const result = await clearBookingNoShow(g.orgId, id, nextStatus, g.actorUserId);
   if (!result.ok) return apiError(result.error, result.conflict ? 409 : 404);
 
   revalidateSessionViews(result.sessionId);

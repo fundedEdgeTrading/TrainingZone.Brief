@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { planServiceKind } from "@/lib/members-queries";
 import { isSameDay } from "@/lib/session-occurrences";
+import { chargeSession, refundSession, type LedgerContext } from "@/lib/session-ledger";
 
 /**
  * Núcleo compartido de la reserva de una plaza: qué bono la paga, cómo se
@@ -110,24 +111,27 @@ export function pickBookingSubscription(
  * así que es la base de datos —y no una lectura previa— la que decide si queda
  * saldo. Es la barrera final contra el bono en negativo cuando dos reservas
  * concurrentes llegan a la vez con el mismo bono.
+ *
+ * E2-15: mover el saldo y anotar el asiento es UNA operación. El invariante del
+ * trimestre —ninguna operación mueve `sessionsRemaining` sin escribir en
+ * `SessionLedger`, en la misma transacción— no se cumple recordando llamar a
+ * dos funciones seguidas, así que aquí solo hay una.
  */
 export async function chargeSessionToSubscription(
   tx: Prisma.TransactionClient,
-  subscriptionId: string
+  subscriptionId: string,
+  ledger: Omit<LedgerContext, "subscriptionId" | "reason"> & { reason?: LedgerContext["reason"] }
 ): Promise<boolean> {
-  const charged = await tx.subscription.updateMany({
-    where: { id: subscriptionId, sessionsRemaining: { gt: 0 } },
-    data: { sessionsRemaining: { decrement: 1 } },
-  });
-  return charged.count > 0;
+  return chargeSession(tx, { ...ledger, subscriptionId, reason: ledger.reason ?? "BOOKING" });
 }
 
-/** Devuelve la sesión al bono del que salió (RB-RES-006). */
-export async function refundSessionToSubscription(tx: Prisma.TransactionClient, subscriptionId: string) {
-  await tx.subscription.update({
-    where: { id: subscriptionId },
-    data: { sessionsRemaining: { increment: 1 } },
-  });
+/** Devuelve la sesión al bono del que salió (RB-RES-006), con su asiento. */
+export async function refundSessionToSubscription(
+  tx: Prisma.TransactionClient,
+  subscriptionId: string,
+  ledger: Omit<LedgerContext, "subscriptionId" | "reason"> & { reason?: LedgerContext["reason"] }
+) {
+  await refundSession(tx, { ...ledger, subscriptionId, reason: ledger.reason ?? "CANCELLATION" });
 }
 
 /**
