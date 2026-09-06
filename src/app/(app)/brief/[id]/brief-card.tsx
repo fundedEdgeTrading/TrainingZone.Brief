@@ -7,6 +7,8 @@ import { setDebrief } from "./actions";
 import type { DebriefFeeling } from "@prisma/client";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
+import { conditionLabel } from "@/lib/aptitude-light";
+import type { BriefCondition, BriefRule } from "@/lib/brief-queries";
 
 const LIGHT_STYLE: Record<string, { label: string; tone: BadgeTone; classes: string; dot: string }> = {
   RED: { label: "Evitar bloques marcados", tone: "critical", classes: "bg-critical-bg border-tz-linen", dot: "bg-critical" },
@@ -24,8 +26,10 @@ type RosterEntry = {
   bookingId: string;
   member: { id: string; firstName: string; lastName: string; state: string };
   isNew: boolean;
-  conditions: { zone: string | null; description: string; type: string }[];
-  matchedRules: { injuryZone: string; blockArea: string; light: string; adaptation: string | null }[];
+  conditions: BriefCondition[];
+  matchedRules: BriefRule[];
+  /** Declarado sin regla que lo traduzca: es lo que enciende el ámbar (E3-03). */
+  unmatchedConditions: BriefCondition[];
   light: string | null;
   debrief: { feeling: DebriefFeeling } | null;
 };
@@ -46,7 +50,6 @@ export default function BriefCard({
   const toast = useToast();
 
   const style = entry.light ? LIGHT_STYLE[entry.light] : null;
-  const otherConditions = entry.conditions.filter((c) => !c.zone);
 
   function tap(f: DebriefFeeling) {
     const previous = feeling;
@@ -83,9 +86,11 @@ export default function BriefCard({
           {style ? (
             <Badge tone={style.tone}>{style.label}</Badge>
           ) : (
+            // E3-03: a partir de ahora significa lo que dice — no hay NADA
+            // declarado. Una condición sin regla enciende ámbar, no esto.
             <Badge tone="neutral">Sin restricciones</Badge>
           )}
-          {(entry.matchedRules.length > 0 || otherConditions.length > 0) && (
+          {(entry.matchedRules.length > 0 || entry.unmatchedConditions.length > 0) && (
             <div className="text-xs text-text-2 space-y-1">
               {entry.matchedRules.map((r, i) => (
                 <p key={i} className="flex items-center gap-1.5">
@@ -96,8 +101,13 @@ export default function BriefCard({
                   </span>
                 </p>
               ))}
-              {otherConditions.map((c, i) => (
-                <p key={`c-${i}`}>{c.description}</p>
+              {entry.unmatchedConditions.map((c, i) => (
+                <p key={`c-${i}`} className="flex items-center gap-1.5">
+                  <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", LIGHT_STYLE.AMBER.dot)} />
+                  <span>
+                    <strong>{conditionLabel(c)}</strong> — condición declarada sin regla asignada
+                  </span>
+                </p>
               ))}
             </div>
           )}

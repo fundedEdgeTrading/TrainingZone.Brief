@@ -44,6 +44,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       isNew: r.isNew,
       conditions: r.conditions,
       matchedRules: r.matchedRules,
+      // E3-03: lo declarado que ninguna regla traduce viaja aparte, para que la
+      // app pueda pintarlo en ámbar en vez de dejarlo en "Sin restricciones".
+      unmatchedConditions: r.unmatchedConditions,
       light: r.light,
       debrief: r.debrief ? { feeling: r.debrief.feeling } : null,
     })),

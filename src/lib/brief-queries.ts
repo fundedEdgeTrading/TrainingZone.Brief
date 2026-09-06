@@ -3,9 +3,7 @@ import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
 import type { Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
-import { ruleMatchesRecord } from "@/lib/injury-zones";
-
-const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
+import { resolveAptitude } from "@/lib/aptitude-light";
 
 /** Condición declarada tal y como viaja al brief (web y app leen lo mismo). */
 export type BriefCondition = {
@@ -104,14 +102,10 @@ export async function getSessionBrief({
 
   const roster = session.bookings.map((b) => {
     const conditions = healthByMember.get(b.memberId) ?? [];
-    // E3-02: el emparejamiento es por ZONA del catálogo cerrado más lateralidad,
-    // no por igualdad de dos textos libres. `zone` sigue viajando al brief solo
-    // para pintarse; ya no decide nada.
-    const matchedRules = conditions.flatMap((c) => aptitudeRules.filter((r) => ruleMatchesRecord(r, c)));
-    const worstLight = matchedRules.reduce<AptitudeLight | null>((worst, r) => {
-      if (!worst || LIGHT_RANK[r.light] > LIGHT_RANK[worst]) return r.light;
-      return worst;
-    }, null);
+    // E3-02 empareja por ZONA del catálogo cerrado más lateralidad, no por
+    // igualdad de dos textos libres; E3-03 pone la luz, incluida la de las
+    // condiciones que todavía no tienen regla escrita.
+    const { light, matchedRules, unmatchedConditions } = resolveAptitude(conditions, aptitudeRules);
 
     const isNew = Date.now() - b.member.joinedAt.getTime() < 21 * 24 * 60 * 60 * 1000;
 
@@ -121,7 +115,11 @@ export async function getSessionBrief({
       isNew,
       conditions,
       matchedRules,
-      light: worstLight, // null = sin restricciones conocidas
+      /** Lo declarado que ningún regla traduce: es lo que justifica el ámbar. */
+      unmatchedConditions,
+      // `null` SOLO si no hay nada declarado: es lo que devuelve su significado a
+      // "Sin restricciones".
+      light,
       debrief: b.debrief,
     };
   });
