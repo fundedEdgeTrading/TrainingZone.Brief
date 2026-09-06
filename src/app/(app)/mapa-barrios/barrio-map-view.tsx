@@ -176,7 +176,17 @@ export function BarrioMapView({
     writeUrl({ ciudad: key });
   };
 
+  /**
+   * E11-10 · Conmutador, no interruptor: un segundo toque sobre el mismo barrio
+   * lo desenfoca. En táctil es la única salida —no hay `mouseout` que deshaga el
+   * foco— y con ratón tampoco estorba.
+   */
   const selectBarrio = (code: string) => {
+    if (code === focus) {
+      setFocus(null);
+      setHovered(null);
+      return;
+    }
     setFocus(code);
     setHovered(code);
     setPanTo({ code, signal: Date.now() });
@@ -202,7 +212,7 @@ export function BarrioMapView({
                 key={c.key}
                 type="button"
                 onClick={() => selectCity(c.key)}
-                className={`px-4 py-[7px] rounded-full text-[12.5px] font-semibold transition-all duration-150 ${
+                className={`px-4 min-h-[44px] rounded-full text-[12.5px] font-semibold transition-all duration-150 ${
                   c.key === city.key ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
                 }`}
               >
@@ -254,7 +264,7 @@ export function BarrioMapView({
                   // calcular. Se deshabilita CON explicación: un botón muerto y
                   // sin motivo se lee como una avería.
                   title={enabled ? m.question : "Ningún centro de tu organización tiene coordenadas: sin ellas no se puede calcular esta métrica."}
-                  className={`px-[15px] py-[9px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] whitespace-nowrap transition-colors duration-150 ${
+                  className={`px-[15px] min-h-[44px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] whitespace-nowrap transition-colors duration-150 ${
                     !enabled
                       ? "text-brand-faint cursor-not-allowed line-through decoration-1"
                       : m.key === metric
@@ -542,7 +552,10 @@ function MapButton({ onClick, children }: { onClick: () => void; children: React
     <button
       type="button"
       onClick={onClick}
-      className="border border-brand-border bg-brand-card/95 backdrop-blur-md rounded-full px-[15px] py-[9px] font-display text-[11.5px] font-bold tracking-[.03em] text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
+      // E11-10 · 44 px de alto: el objetivo táctil mínimo. Estos botones medían
+      // ≈34 px, las métricas ≈35 y los de ciudad ≈31 — todos por debajo, y en la
+      // pantalla que más se mira desde una tableta en la sala.
+      className="border border-brand-border bg-brand-card/95 backdrop-blur-md rounded-full px-[15px] min-h-[44px] font-display text-[11.5px] font-bold tracking-[.03em] text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
     >
       {children}
     </button>

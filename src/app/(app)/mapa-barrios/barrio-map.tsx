@@ -17,6 +17,32 @@ const RING_STROKE = "#8a8574";
 /** Trazo de los barrios con valor negativo (E11-06). */
 const NEGATIVE_DASH = "3 3";
 
+
+/**
+ * E11-10 · `prefers-reduced-motion`, de verdad.
+ *
+ * El bloque de `globals.css` anula las animaciones **CSS**, pero `panTo` y
+ * `flyTo` son animación JS de Leaflet: se seguían ejecutando enteras. Para quien
+ * marca esa preferencia porque el movimiento le marea, el mapa era justo lo que
+ * había pedido que no pasara.
+ *
+ * Se consulta en cada uso y no una vez al montar: la preferencia se puede
+ * cambiar con la pestaña abierta.
+ */
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+/**
+ * E11-10 · En táctil, `mouseover` dispara al tocar y `mouseout` **no llega
+ * nunca**: el barrio se quedaba señalado indefinidamente, y el siguiente toque
+ * en otro sitio dejaba dos señalados a la vez. Con puntero grueso se usa solo
+ * `click`.
+ */
+function isCoarsePointer(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
+}
+
 export type BarrioMapProps = {
   /** Barrios de la ciudad activa; al cambiar de ciudad se reconstruye la geometría. */
   points: BarrioStat[];
@@ -216,6 +242,10 @@ export function BarrioMap({
         dashArray: dash[code] ? NEGATIVE_DASH : undefined,
       });
       if (active) layer.bringToFront();
+      // El globo enseña la métrica ACTIVA: si no se actualizara aquí, seguiría
+      // contando la anterior.
+      const point = points.find((p) => p.code === code);
+      if (point) layer.setTooltipContent(tooltipHtml(point.name, viewRef.current.values[code] ?? ""));
       const el = labelMarkersRef.current.get(code)?.getElement();
       if (el) {
         el.classList.toggle("hi", active);
@@ -226,7 +256,7 @@ export function BarrioMap({
       }
     });
     layoutLabels();
-  }, [layoutLabels]);
+  }, [layoutLabels, points]);
 
   // --- Ciclo de vida del mapa ------------------------------------------------
 
@@ -316,9 +346,23 @@ export function BarrioMap({
         fillColor: fill[point.code],
         fillOpacity: base,
       });
-      cell.on("mouseover", () => handlersRef.current.onHover(point.code));
-      cell.on("mouseout", () => handlersRef.current.onHover(null));
+      // En táctil no se cuelgan los manejadores de ratón: `mouseout` no llega
+      // nunca y el barrio se queda señalado para siempre.
+      if (!isCoarsePointer()) {
+        cell.on("mouseover", () => handlersRef.current.onHover(point.code));
+        cell.on("mouseout", () => handlersRef.current.onHover(null));
+      }
       cell.on("click", () => handlersRef.current.onSelect(point.code));
+
+      // E11-10 · El polígono cuenta lo suyo sin depender de la tarjeta de foco,
+      // que bajo 1024 px no está. `sticky:false` para que el globo no persiga al
+      // dedo en táctil.
+      cell.bindTooltip(tooltipHtml(point.name, text[point.code] ?? ""), {
+        className: "tz-map-tip",
+        direction: "top",
+        sticky: false,
+        opacity: 1,
+      });
       cellsRef.current?.addLayer(cell);
       polysRef.current.set(point.code, cell);
 
@@ -402,7 +446,10 @@ export function BarrioMap({
     const map = mapRef.current;
     if (!map || !panTo) return;
     const point = points.find((p) => p.code === panTo.code);
-    if (point) map.panTo([point.lat, point.lng], { duration: 0.6 });
+    if (!point) return;
+    // E11-10 · Con movimiento reducido se llega igual, pero de un salto.
+    if (prefersReducedMotion()) map.setView([point.lat, point.lng], map.getZoom(), { animate: false });
+    else map.panTo([point.lat, point.lng], { duration: 0.6 });
   }, [panTo, points]);
 
   return (
@@ -417,6 +464,11 @@ export function BarrioMap({
       aria-label={`Mapa de barrios por coropletas. La misma información, ordenable y con las seis métricas a la vez, está en la tabla «Ranking» junto al mapa. ${points.length} barrios.`}
     />
   );
+}
+
+/** Contenido del globo: nombre y cifra de la métrica activa. */
+function tooltipHtml(name: string, value: string): string {
+  return `<b>${escapeHtml(name)}</b>${value ? ` · ${escapeHtml(value)}` : ""}`;
 }
 
 /** Los nombres de barrio y de centro entran en `innerHTML` del `divIcon`. */
