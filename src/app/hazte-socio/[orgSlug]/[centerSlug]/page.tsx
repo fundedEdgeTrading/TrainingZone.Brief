@@ -9,6 +9,7 @@ import { GENERIC_CENTER_METADATA, centerMembershipMetadata } from "@/lib/public-
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
 import { asOpeningHours } from "@/lib/opening-hours";
+import { CONVERSIONS, CONVERSION_ATTRIBUTE } from "@/lib/analytics";
 import MemberBillingLinkForm from "./member-billing-link-form";
 import { CenterNapBlock } from "./center-nap";
 import { SERVICE_LABEL } from "@/lib/service-labels";
@@ -100,7 +101,12 @@ export default async function PublicMembershipPage({
             Este centro no tiene planes disponibles ahora mismo.
           </div>
         ) : (
-          <form method="POST" action={checkoutAction} className="space-y-6">
+          <form
+            method="POST"
+            action={checkoutAction}
+            className="space-y-6"
+            {...{ [CONVERSION_ATTRIBUTE]: CONVERSIONS.centerCheckout }}
+          >
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Nombre">

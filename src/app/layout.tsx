@@ -8,6 +8,8 @@ import { isThemedPath, themeAttribute, themeForUser } from "@/lib/theme";
 import { ToastProvider } from "@/components/ui/toast";
 import { CelebrateProvider } from "@/components/ui/celebrate";
 import { BRAND, publicOrigin } from "@/lib/site";
+import { analyticsConfig, googleSiteVerification } from "@/lib/analytics";
+import { Analytics } from "@/components/analytics";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -48,6 +50,10 @@ export const metadata: Metadata = {
     title: BRAND.title,
     description: BRAND.description,
   },
+  // E9-09 · Search Console. La verificación buena es la de DNS —cubre el
+  // dominio entero y no se pierde al redesplegar—; esta meta es la segunda vía,
+  // la que sobrevive a un cambio de proveedor de DNS.
+  verification: { google: googleSiteVerification() },
 };
 
 export default async function RootLayout({
@@ -75,6 +81,9 @@ export default async function RootLayout({
           <ToastProvider>
             <CelebrateProvider>{children}</CelebrateProvider>
           </ToastProvider>
+          {/* E9-09 · Analítica sin cookies (no arrastra banner) y los tres
+              eventos de conversión, escuchados en un solo sitio. */}
+          <Analytics config={analyticsConfig()} />
         </SessionProvider>
       </body>
     </html>

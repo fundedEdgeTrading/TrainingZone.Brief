@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { CONVERSIONS, CONVERSION_ATTRIBUTE } from "@/lib/analytics";
 import {
   CORE_FEATURES,
   FEATURE_LABEL,
@@ -151,7 +152,7 @@ function PlanCard({ plan }: { plan: PlatformPlan }) {
         </p>
       )}
 
-      <form action="/api/checkout" method="POST" className="mt-5">
+      <form action="/api/checkout" method="POST" className="mt-5" {...{ [CONVERSION_ATTRIBUTE]: CONVERSIONS.planCheckout }}>
         <input type="hidden" name="planCode" value={plan.code} />
         <button
           type="submit"

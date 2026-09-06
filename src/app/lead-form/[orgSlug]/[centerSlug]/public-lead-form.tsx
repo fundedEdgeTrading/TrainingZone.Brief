@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { ActionForm } from "@/components/ui/action-form";
+import { CONVERSIONS } from "@/lib/analytics";
+import { trackConversion } from "@/components/analytics";
 import { submitPublicLead } from "./actions";
 
 export function PublicLeadForm({
@@ -34,10 +36,17 @@ export function PublicLeadForm({
     <ActionForm
       className="space-y-4"
       successMessage="Solicitud enviada"
-      action={(fd) => submitPublicLead(orgSlug, centerSlug, fd).then((r) => {
-        if (r.ok) setSent(true);
-        return r;
-      })}
+      action={(fd) =>
+        submitPublicLead(orgSlug, centerSlug, fd).then((r) => {
+          if (r.ok) {
+            setSent(true);
+            // E9-09 · El evento va aquí y no en el `submit`: este formulario no
+            // navega, y contar el envío contaría también los que fallan.
+            trackConversion(CONVERSIONS.lead);
+          }
+          return r;
+        })
+      }
     >
       <div className="grid grid-cols-2 gap-3">
         <Field label="Nombre">
