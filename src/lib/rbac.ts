@@ -92,9 +92,9 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   // igualmente—. Lo que sigue siendo de pago es la EXPORTACIÓN masiva, gateada
   // en `api/audit/export` con la funcionalidad `exportaciones`.
   //
-  // `ia_programacion` tampoco aparece aquí, y no es un olvido: no hay ninguna ruta
-  // que gatear —el coste no está en mirar un mesociclo, sino en generarlo—. Se
-  // comprueba donde se produce el gasto, antes de llamar al proveedor de IA:
+  // `ia_programacion` tampoco aparece aquí, y no es un olvido: no hay ninguna
+  // ruta que gatear —el coste no está en mirar un mesociclo, sino en generarlo—.
+  // Se comprueba donde se produce el gasto, antes de llamar al proveedor de IA:
   // `members/[id]/mesociclos/actions.ts` en la web y el mapa de rutas móvil
   // (`mobile-feature-routes.ts`) en la app. Ver E6-03.
 };
@@ -134,6 +134,10 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
     { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
+    // E12-11: dirección ve el panel de su propio equipo. `/trainer` estaba
+    // restringido a TRAINER, así que quien paga a los entrenadores no podía
+    // mirar cómo les va.
+    { href: "/trainer", label: "Panel del equipo", section: "Vista general", icon: "panel" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
     { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
@@ -154,6 +158,8 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   CENTER_DIRECTOR: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
     { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
+    // E12-11: los entrenadores de SUS centros, no los de toda la organización.
+    { href: "/trainer", label: "Panel del equipo", section: "Vista general", icon: "panel" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
     { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },

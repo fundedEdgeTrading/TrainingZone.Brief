@@ -5,6 +5,8 @@ import { expandOccurrences, isSameDay, occurrencesInRange, occursOn, ownSessions
 import { listPendingTrainerDebriefs } from "@/lib/feedback-capture";
 import type { AptitudeLight, Role } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { staffScopeFilter } from "@/lib/staff-queries";
+import type { ScopedUser } from "@/lib/center-scope";
 
 const ADHERENCE_PERIOD_DAYS = 90;
 const WEEKDAY_LABELS = ["L", "M", "X", "J", "V", "S", "D"];
@@ -556,3 +558,25 @@ export type TrainerPanelData = Awaited<ReturnType<typeof getTrainerPanelData>>;
 
 /** Una sesión de la tarjeta "Agenda de hoy" (también la de un día navegado). */
 export type TrainerAgendaSession = TrainerPanelData["agendaSessions"][number];
+
+/**
+ * E12-11 · El equipo que dirección puede mirar en `/trainer`.
+ *
+ * `/trainer` estaba restringido a `TRAINER`, así que quien paga a los
+ * entrenadores no podía ver su panel. El ámbito no lo da el rol, lo da la
+ * imputación real (`staffScopeFilter`): dirección de centro ve a los suyos y
+ * dirección de organización, a todos los de su organización.
+ */
+export async function listTrainersInScope(user: ScopedUser) {
+  return prisma.user.findMany({
+    where: {
+      orgId: user.orgId,
+      role: { in: ["TRAINER", "TRAINER_ADMIN"] },
+      // Quien está de baja de plantilla no tiene panel que enseñar.
+      deactivatedAt: null,
+      AND: [await staffScopeFilter(user)],
+    },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, role: true, centerId: true },
+  });
+}

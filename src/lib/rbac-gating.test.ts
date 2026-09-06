@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { FEATURE_BY_ROUTE, featureForRoute } from "@/lib/rbac";
+import { FEATURE_BY_ROUTE, NAV_BY_ROLE, featureForRoute } from "@/lib/rbac";
 
 /**
  * El muro de pago y quién entra a cada pantalla. Lo que se prueba aquí es lo
@@ -56,6 +56,22 @@ test("E6-02 · toda pantalla con gate heredado llama a la guarda", () => {
 });
 
 // ---------------------------------------------------------------------------
+// E6-07 · /audit sale del muro de pago, la exportación se queda dentro
+// ---------------------------------------------------------------------------
+
+test("E6-07 · la consulta del registro de accesos entra en todos los planes", () => {
+  assert.equal(FEATURE_BY_ROUTE["/audit"], undefined);
+  assert.equal(featureForRoute("/audit"), undefined);
+  const page = readFileSync(join(APP_DIR, "audit", "page.tsx"), "utf8");
+  assert.equal(/requireFeature\(/.test(page), false, "el gimnasio tiene que poder acreditar el art. 32 RGPD con su plan");
+});
+
+test("E6-07 · la exportación masiva sigue siendo de pago", () => {
+  const route = readFileSync("src/app/api/audit/export/route.ts", "utf8");
+  assert.match(route, /requireFeature\("exportaciones"\)/);
+});
+
+// ---------------------------------------------------------------------------
 // E6-03 · ia_programacion se comprueba antes de gastar
 // ---------------------------------------------------------------------------
 
@@ -75,18 +91,33 @@ test("E6-03 · las dos superficies rechazan ANTES de llamar al proveedor de IA",
 });
 
 // ---------------------------------------------------------------------------
-// E6-07 · /audit sale del muro de pago, la exportación se queda dentro
+// E12-11 · /trainer accesible para dirección
 // ---------------------------------------------------------------------------
 
-test("E6-07 · la consulta del registro de accesos entra en todos los planes", () => {
-  assert.equal(FEATURE_BY_ROUTE["/audit"], undefined);
-  assert.equal(featureForRoute("/audit"), undefined);
-  const page = readFileSync(join(APP_DIR, "audit", "page.tsx"), "utf8");
-  assert.equal(/requireFeature\(/.test(page), false, "el gimnasio tiene que poder acreditar el art. 32 RGPD con su plan");
+test("E12-11 · dirección tiene el panel del equipo en su navegación", () => {
+  for (const role of ["OWNER", "CENTER_DIRECTOR"] as const) {
+    assert.ok(
+      NAV_BY_ROLE[role].some((item) => item.href === "/trainer"),
+      `${role} debería poder ver el panel de su equipo`
+    );
+  }
 });
 
-test("E6-07 · la exportación masiva sigue siendo de pago", () => {
-  const route = readFileSync("src/app/api/audit/export/route.ts", "utf8");
-  assert.match(route, /requireFeature\("exportaciones"\)/);
+test("E12-11 · la pantalla deja entrar a dirección y el entrenador sigue viendo el suyo", () => {
+  const page = readFileSync(join(APP_DIR, "trainer", "page.tsx"), "utf8");
+  const roles = page.match(/requireRole\(\[([^\]]+)\]\)/);
+  assert.ok(roles, "la pantalla sigue exigiendo rol");
+  for (const role of ["TRAINER", "TRAINER_ADMIN", "OWNER", "CENTER_DIRECTOR"]) {
+    assert.match(roles[1], new RegExp(`"${role}"`), `falta ${role}`);
+  }
+  // El panel se calcula para el entrenador mirado, con el rol de quien mira:
+  // así el ámbito de salud sigue siendo el de dirección, no el del entrenador.
+  assert.match(page, /getTrainerPanelData\(session\.user\.orgId, subject\.id, session\.user\.role/);
 });
 
+test("E12-11 · el panel del socio no se toca", () => {
+  assert.equal(
+    NAV_BY_ROLE.MEMBER.some((item) => item.href === "/trainer"),
+    false
+  );
+});
