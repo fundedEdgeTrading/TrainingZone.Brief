@@ -3,8 +3,10 @@
 import clsx from "clsx";
 import {
   Children,
+  cloneElement,
   isValidElement,
   useCallback,
+  useId,
   useEffect,
   useMemo,
   useRef,
@@ -14,14 +16,40 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { fieldA11y, mergeIds } from "@/components/ui/field-a11y";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { usePopoverPosition, POPOVER_MAX_HEIGHT } from "@/lib/use-popover-position";
 
 const CONTROL =
-  "w-full rounded-control border border-brand-border bg-input px-3.5 py-2.5 text-sm text-brand-text placeholder:text-faint transition-[border-color,box-shadow] duration-200 focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none hover:border-brand-border-hover";
+  "w-full rounded-control border border-brand-border bg-input px-3.5 py-2.5 text-sm text-brand-text placeholder:text-faint transition-[border-color,box-shadow] duration-200 aria-invalid:border-critical focus:border-brand-ink focus:ring-2 focus:ring-tz-black/10 focus:outline-none hover:border-brand-border-hover";
 
 const LABEL = "block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5";
 
+/**
+ * Controles a los que `Field` inyecta el `id` y al que apunta el `htmlFor` de la
+ * etiqueta. Son los de este mismo módulo más los nativos etiquetables: al resto
+ * (un `div` envolviendo un widget propio, un `Button`, el `ImageDropzone`) se le
+ * pone nombre por el camino `role="group"`, porque un `<label for>` apuntando a
+ * un `div` no asocia nada.
+ */
+function acceptsControlProps(type: unknown): boolean {
+  if (type === Input || type === Select || type === Textarea) return true;
+  return typeof type === "string" && (type === "input" || type === "select" || type === "textarea");
+}
+
+/**
+ * Envoltorio de campo de formulario.
+ *
+ * E8-02: hasta ahora el `<label>` era **hermano** de `{children}` y sin
+ * `htmlFor`, así que los 221 usos de `<Field>` en `src/` quedaban sin nombre
+ * accesible y hacer clic en la etiqueta no enfocaba nada (WCAG 1.3.1, 3.3.2 y
+ * 4.1.2). El id se genera con `useId()` y se inyecta al hijo, de modo que un
+ * único fichero arregla los 221 sitios sin tocar ningún call-site.
+ *
+ * La estructura del DOM no cambia — la etiqueta sigue siendo hija directa del
+ * contenedor — porque `e2e/alta-socio-bonos.spec.ts` localiza el campo con
+ * `label:text-is(...)` + `xpath=..`.
+ */
 export function Field({
   label,
   hint,
@@ -35,14 +63,72 @@ export function Field({
   className?: string;
   children: React.ReactNode;
 }) {
+  const baseId = useId();
+  const { controlId, labelId, errorId, hintId, invalid } = fieldA11y(baseId, { error, hint });
+
+  const only = Children.count(children) === 1 ? Children.toArray(children)[0] : null;
+  const injectable = isValidElement(only) && acceptsControlProps(only.type) ? only : null;
+
+  // Si el call-site ya puso un `id` a mano, manda el suyo: hay formularios que
+  // lo usan desde fuera (`document.getElementById`, un `htmlFor` propio).
+  const childProps = (injectable?.props ?? {}) as Record<string, unknown>;
+  const ownId = typeof childProps.id === "string" ? childProps.id : undefined;
+  const targetId = ownId ?? controlId;
+
+  const described = mergeIds(
+    typeof childProps["aria-describedby"] === "string" ? childProps["aria-describedby"] : undefined,
+    errorId,
+    hintId,
+  );
+
+  // `Select` no es un `<select>`: su disparador es un `<button>`, y a un
+  // `<button>` asociado con `htmlFor` el navegador le da el texto de la
+  // etiqueta como nombre accesible y DESCARTA su contenido — que es justo el
+  // valor elegido. Así que la primera versión de este cambio dejó al lector de
+  // pantalla oyendo "Centro, botón", sin decir qué centro. Se le pasa la
+  // etiqueta por `aria-labelledby` y el propio `Select` la compone con su
+  // valor, para que se anuncie "Centro, La Jota" igual que un `<select>` nativo
+  // (y el `htmlFor` se queda, que es lo que enfoca al hacer clic en el rótulo).
+  const labelledBy = label && injectable?.type === Select ? labelId : undefined;
+
+  const control = injectable
+    ? cloneElement(injectable as React.ReactElement<Record<string, unknown>>, {
+        id: targetId,
+        "aria-invalid": invalid ?? childProps["aria-invalid"],
+        "aria-describedby": described,
+        "aria-labelledby": mergeIds(
+          typeof childProps["aria-labelledby"] === "string" ? childProps["aria-labelledby"] : undefined,
+          labelledBy,
+        ),
+      })
+    : children;
+
+  // Camino de respaldo: el hijo no es etiquetable, así que el nombre se da con
+  // `role="group"` + `aria-labelledby` sobre el propio contenedor.
+  const groupProps = injectable
+    ? null
+    : {
+        role: "group" as const,
+        "aria-labelledby": label ? labelId : undefined,
+        "aria-describedby": described,
+      };
+
   return (
-    <div className={className}>
-      {label && <label className={LABEL}>{label}</label>}
-      {children}
+    <div className={className} {...groupProps}>
+      {label && (
+        <label id={labelId} htmlFor={injectable ? targetId : undefined} className={LABEL}>
+          {label}
+        </label>
+      )}
+      {control}
       {error ? (
-        <p className="text-xs text-critical mt-1">{error}</p>
+        <p id={errorId} className="text-xs text-critical mt-1">
+          {error}
+        </p>
       ) : hint ? (
-        <p className="text-xs text-brand-muted mt-1">{hint}</p>
+        <p id={hintId} className="text-xs text-brand-muted mt-1">
+          {hint}
+        </p>
       ) : null}
     </div>
   );
@@ -165,8 +251,21 @@ export function Select({
   disabled,
   searchable,
   placeholder,
+  id,
+  // `aria-invalid` no está permitido en `role="button"`, que es el rol implícito
+  // del disparador: se traduce a estado visual, y la invalidez se le anuncia al
+  // lector de pantalla por el `aria-describedby` que apunta al mensaje de error.
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-label": ariaLabel,
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; placeholder?: string }) {
   const options = useMemo(() => optionsFromChildren(children), [children]);
+  const invalid = ariaInvalid === true || ariaInvalid === "true";
+  // Id del nodo que pinta el valor elegido: entra en el `aria-labelledby` junto
+  // a la etiqueta del campo, para que el nombre accesible del disparador sea
+  // "<etiqueta> <valor>" y no solo la etiqueta.
+  const valueId = `${useId()}-value`;
   const isControlled = value !== undefined;
   const [internalValue, setInternalValue] = useState(() => {
     if (defaultValue != null) return String(defaultValue);
@@ -385,11 +484,21 @@ export function Select({
       <button
         ref={triggerRef}
         type="button"
+        // El `id` va aquí y no en el input oculto: el `<button>` es etiquetable,
+        // así que el `htmlFor` de `Field` lo enfoca al hacer clic en la etiqueta
+        // (y el input oculto no se puede enfocar).
+        id={id}
         // Sin `role="combobox"` ni `role="option"`: ese rol prohíbe calcular el
         // nombre accesible a partir del contenido y dejaría sin nombre tanto al
         // disparador (cuya etiqueta es el valor elegido) como a cada opción.
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-describedby={ariaDescribedBy}
+        // Sin etiqueta que componer se deja tal cual: el nombre sale del
+        // contenido, que es el comportamiento que este disparador tenía y que
+        // los `<label>` envolventes (p. ej. el diálogo de falta) siguen usando.
+        aria-labelledby={ariaLabelledBy ? mergeIds(ariaLabelledBy, valueId) : undefined}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={toggle}
         className={clsx(
@@ -397,6 +506,7 @@ export function Select({
           // valor es largo, en vez de recortarlo con puntos suspensivos.
           "box-border flex w-full cursor-pointer items-start justify-between gap-2 rounded-control bg-white px-3.5 py-2.5 text-left text-sm transition-[border-color,box-shadow] duration-200 disabled:cursor-not-allowed disabled:opacity-50",
           open ? "border border-brand-ink ring-2 ring-tz-black/10" : "border border-brand-border hover:border-brand-border-hover",
+          invalid && !open && "border-critical",
         )}
       >
         <span className="inline-flex min-w-0 items-start gap-2">
@@ -414,7 +524,10 @@ export function Select({
           ) : selected?.tone ? (
             <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />
           ) : null}
-          <span className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}>
+          <span
+            id={valueId}
+            className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}
+          >
             {selected ? selected.label : placeholderText}
           </span>
         </span>

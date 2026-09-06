@@ -7,6 +7,7 @@ import { auth } from "@/auth";
 import { isThemedPath, themeAttribute, themeForUser } from "@/lib/theme";
 import { ToastProvider } from "@/components/ui/toast";
 import { CelebrateProvider } from "@/components/ui/celebrate";
+import { BRAND, publicOrigin } from "@/lib/site";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -15,9 +16,38 @@ const poppins = Poppins({
   display: "swap",
 });
 
+/**
+ * E9-03 · La marca y el origen salen de `@/lib/site`, no de literales aquí.
+ *
+ * `metadataBase` es lo que resuelve las rutas relativas de OpenGraph: sin él,
+ * una `openGraph.images` relativa se emite mal y el enlace compartido sale como
+ * texto plano — y en venta B2B a dueños de gimnasio la recomendación ocurre por
+ * mensajería.
+ *
+ * La imagen por defecto la genera `opengraph-image.tsx`; Next la enlaza sola y
+ * hereda a todas las rutas que no declaren la suya.
+ */
 export const metadata: Metadata = {
-  title: "TRAINING ZONE",
-  description: "Plataforma de gestión para centros de entrenamiento",
+  metadataBase: new URL(publicOrigin()),
+  title: {
+    default: BRAND.title,
+    template: BRAND.titleTemplate,
+  },
+  description: BRAND.description,
+  applicationName: BRAND.name,
+  openGraph: {
+    type: "website",
+    siteName: BRAND.name,
+    locale: BRAND.locale,
+    title: BRAND.title,
+    description: BRAND.description,
+    url: "/",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: BRAND.title,
+    description: BRAND.description,
+  },
 };
 
 export default async function RootLayout({

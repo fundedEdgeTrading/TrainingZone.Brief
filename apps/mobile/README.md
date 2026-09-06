@@ -56,6 +56,42 @@ tráfico en claro por defecto.
 su propio subconjunto de la app; recepción entra con socios, agenda y avisos, y
 RRHH con equipo y avisos.
 
+## Pruebas
+
+```bash
+npm test              # toda la batería
+npm test -- --watch   # en marcha mientras se escribe
+npm run test:ci       # como en CI: sin watch y con cobertura
+```
+
+Runner: **jest-expo** con **@testing-library/react-native**;
+`expo-router/testing-library` viene con `expo-router`, no se instala aparte.
+Ojo al importarlo: registra un `afterAll` al cargarse, así que va como import de
+módulo — un `require()` dentro de un `it()` falla con "Hooks cannot be defined
+inside tests" sin decir por qué.
+
+El andamiaje vive en `src/test/`:
+
+- **`render.tsx`** — `renderWithProviders`, que monta lo mismo que
+  `src/app/_layout.tsx` (QueryClient, `AuthProvider`, `ToastProvider`) con un
+  `QueryClient` de test: `retry: false` (un fallo declarado falla a la primera
+  en vez de agotar el timeout) y `gcTime: 0`. Cada llamada crea un cliente
+  nuevo, así que ningún test arrastra caché a otro.
+- **`server.ts`** — el doble de la frontera de red. La app habla con el servidor
+  por un único punto (`apiRequest` → `fetch`), así que **no hay MSW**: se dobla
+  el `fetch` global y se declaran respuestas por ruta con `reply`, `replyError`
+  y `replyNetworkError`, con el mismo sobre `{ ok, data }` que emite la API.
+  Pedir una ruta sin declarar falla diciendo cuál.
+- **`fixtures.ts`** — un constructor por respuesta, con sobrescritura parcial.
+  Se escriben **contra el tipo** de `src/api/types.ts`: si el servidor cambia el
+  contrato, rompe `tsc` aquí y no la app en producción. Nada de `as`.
+- **`setup.ts`** — dobla `expo-secure-store` con un almacén en memoria (el
+  refresco tras un 401 guarda y relee tokens de verdad) y vacía red y tokens
+  entre tests.
+
+No se instala Detox ni Maestro: caros, lentos, y no cazan ninguno de los fallos
+que este proyecto tiene.
+
 ## Qué incluye esta versión
 
 - **Auth por token** (`/auth/login`, `/auth/refresh`, `/auth/logout`): JWT de

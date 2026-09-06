@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { Prisma, type Role, type Sex } from "@prisma/client";
 import { ensureIdentity } from "@/lib/identity";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { absoluteUrl, publicOrigin } from "@/lib/site";
 
 type Tx = Prisma.TransactionClient;
 
@@ -15,22 +16,15 @@ export function invitationExpiry() {
   return new Date(Date.now() + INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
 }
 
-function appBaseUrl() {
-  const base = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000";
-  return base.replace(/\/$/, "");
-}
-
 export function onboardingUrlFor(token: string) {
-  return `${appBaseUrl()}/onboarding/${token}`;
+  return `${publicOrigin()}/onboarding/${token}`;
 }
 
 // Los clientes de email no tienen un "origen" desde el que resolver rutas
-// relativas (p. ej. "/brand/logo.png"), así que las imágenes de las
-// plantillas necesitan siempre una URL absoluta.
-export function absoluteUrl(path: string) {
-  if (/^https?:\/\//.test(path)) return path;
-  return `${appBaseUrl()}${path.startsWith("/") ? "" : "/"}${path}`;
-}
+// relativas (p. ej. "/brand/logo.png"), así que las imágenes de las plantillas
+// necesitan siempre una URL absoluta. La implementación vive en `site.ts`; aquí
+// se reexporta para no tocar los call sites que ya la importan de este módulo.
+export { absoluteUrl };
 
 /**
  * Alta pragmática del director (D-3/RB-PLAT-002): a diferencia de

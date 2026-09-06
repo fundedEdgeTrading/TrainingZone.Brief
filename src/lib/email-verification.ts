@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { publicOrigin } from "@/lib/site";
 
 /**
  * Tokens firmados sin tabla: base64url(purpose + subjectId + exp) + "." +
@@ -91,11 +92,6 @@ function verify(purpose: TokenPurpose, token: string): RawTokenResult {
   return { ok: true, subjectId };
 }
 
-function appBaseUrl() {
-  const base = process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000";
-  return base.replace(/\/$/, "");
-}
-
 export type VerifyEmailTokenResult = { ok: true; identityId: string } | { ok: false; error: "invalid" | "expired" };
 
 export function generateVerifyEmailToken(identityId: string) {
@@ -108,7 +104,7 @@ export function verifyEmailToken(token: string): VerifyEmailTokenResult {
 }
 
 export function verifyEmailUrlFor(token: string) {
-  return `${appBaseUrl()}/verificar-email/${token}`;
+  return `${publicOrigin()}/verificar-email/${token}`;
 }
 
 export type PasswordResetTokenResult = { ok: true; identityId: string } | { ok: false; error: "invalid" | "expired" };
@@ -123,7 +119,7 @@ export function verifyPasswordResetToken(token: string): PasswordResetTokenResul
 }
 
 export function passwordResetUrlFor(token: string) {
-  return `${appBaseUrl()}/recuperar-clave/${token}`;
+  return `${publicOrigin()}/recuperar-clave/${token}`;
 }
 
 /**
@@ -163,7 +159,7 @@ export function verifyMemberBillingOrDunningToken(token: string): MemberBillingT
 }
 
 export function memberBillingUrlFor(token: string) {
-  return `${appBaseUrl()}/gestionar-suscripcion/${token}`;
+  return `${publicOrigin()}/gestionar-suscripcion/${token}`;
 }
 
 /**
@@ -184,11 +180,11 @@ export function verifyEmailPreferencesToken(token: string): EmailPreferencesToke
 }
 
 export function emailPreferencesUrlFor(token: string) {
-  return `${appBaseUrl()}/preferencias/${token}`;
+  return `${publicOrigin()}/preferencias/${token}`;
 }
 
 export function emailUnsubscribeUrlFor(token: string) {
-  return `${appBaseUrl()}/baja/${token}`;
+  return `${publicOrigin()}/baja/${token}`;
 }
 
 /**
@@ -197,5 +193,5 @@ export function emailUnsubscribeUrlFor(token: string) {
  * que dar de baja y responder 200, no devolver HTML.
  */
 export function emailUnsubscribePostUrlFor(token: string) {
-  return `${appBaseUrl()}/api/email/baja/${token}`;
+  return `${publicOrigin()}/api/email/baja/${token}`;
 }

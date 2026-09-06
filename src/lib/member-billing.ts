@@ -6,16 +6,12 @@ import { createNotificationOnce } from "@/lib/notifications";
 import { sendMail } from "@/lib/mailer";
 import { renderPaymentFailedEmail } from "@/lib/emails/templates";
 import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-verification";
-import { absoluteUrl } from "@/lib/invitations";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import type { PlanType, SubscriptionStatus } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { absoluteUrl, publicOrigin } from "@/lib/site";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
-
-function appBaseUrl() {
-  return (process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000").replace(/\/$/, "");
-}
 
 /**
  * F5: MONTHLY y ONLINE son cuota recurrente (se cobran cada mes mientras el
@@ -144,8 +140,8 @@ export async function createMemberCheckout(params: {
       customer: stripeCustomerId,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
       payment_method_types: recurring ? ["card", "sepa_debit"] : ["card"],
-      success_url: `${appBaseUrl()}${returnPath}?checkout=success`,
-      cancel_url: `${appBaseUrl()}${returnPath}?checkout=cancelled`,
+      success_url: `${publicOrigin()}${returnPath}?checkout=success`,
+      cancel_url: `${publicOrigin()}${returnPath}?checkout=cancelled`,
       metadata: { orgId, memberId, planId, centerId, ...(soldByUserId ? { soldByUserId } : {}) },
       // Stripe copia este metadata a la Subscription resultante (no el del
       // checkout.session), que es donde lo lee el webhook al recibir
@@ -230,8 +226,8 @@ export async function createProspectMemberCheckout(params: {
       customer_email: email,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
       payment_method_types: recurring ? ["card", "sepa_debit"] : ["card"],
-      success_url: `${appBaseUrl()}/hazte-socio/gracias?checkout=success`,
-      cancel_url: `${appBaseUrl()}/hazte-socio/gracias?checkout=cancelled`,
+      success_url: `${publicOrigin()}/hazte-socio/gracias?checkout=success`,
+      cancel_url: `${publicOrigin()}/hazte-socio/gracias?checkout=cancelled`,
       metadata,
       // El Member no existe todavía cuando se crea este checkout, así que el
       // fallback de `reconcileMemberSubscriptionUpserted` por `metadata.memberId`
@@ -263,7 +259,7 @@ export async function createMemberBillingPortalSession(orgId: string, memberId: 
   if (!member?.stripeCustomerId) return { ok: false, error: "Este socio todavía no tiene un cliente de Stripe." };
 
   const portalSession = await stripe.billingPortal.sessions.create(
-    { customer: member.stripeCustomerId, return_url: `${appBaseUrl()}/portal/membresia` },
+    { customer: member.stripeCustomerId, return_url: `${publicOrigin()}/portal/membresia` },
     { stripeAccount: accountId }
   );
 
