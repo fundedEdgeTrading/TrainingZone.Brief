@@ -1,5 +1,6 @@
 import type { ClassSession, NoShowReason, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { serviceLabelLower } from "@/lib/service-labels";
 import { centerScopeFor, type ScopedUser } from "@/lib/center-scope";
 import { isSameDay, occursOn, resolveOccurrenceDate } from "@/lib/session-occurrences";
 import {
@@ -20,7 +21,6 @@ import {
   claimWaitlistedBooking,
   occupiedSpots,
   pickBookingSubscription,
-  SERVICE_LABEL,
   shouldNotifyVacancy,
 } from "@/lib/session-booking";
 import { addDays, DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
@@ -543,7 +543,7 @@ export async function bookSessionForMemberAsStaff(
       if (!choice.ok) {
         throw new StaffBookingError(
           choice.reason === "NO_PLAN"
-            ? `El bono de ese socio no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"} en este centro.`
+            ? `El bono de ese socio no incluye sesiones de ${serviceLabelLower(kind)} en este centro.`
             : "A ese socio no le quedan sesiones en su bono."
         );
       }

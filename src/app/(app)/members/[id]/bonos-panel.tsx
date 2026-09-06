@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { bonoUsage, type SessionBalance } from "@/lib/session-balance";
+import { serviceLabel } from "@/lib/service-labels";
 
 export type BonoRowData = {
   id: string;
@@ -41,12 +42,6 @@ const STATUS_LABEL: Record<string, string> = {
   FROZEN: "Congelado",
   CANCELLED: "Cancelado",
   EXPIRED: "Caducado",
-};
-
-const SERVICE_LABEL: Record<string, string> = {
-  EP: "Personal Training",
-  GROUP: "Grupos",
-  ONLINE: "Online",
 };
 
 // Las fechas se pintan desde los componentes "YYYY-MM-DD" y no con
@@ -96,7 +91,7 @@ export function BonosPanel({
           {balances.map((b) => (
             <div key={b.serviceKind} className="border border-brand-border rounded-xl p-[13px_14px]">
               <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-muted">
-                {SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}
+                {serviceLabel(b.serviceKind)}
               </div>
               <div className="font-display font-extrabold text-[22px] text-brand-text tz-nums leading-tight mt-1">
                 {b.unlimited ? "∞" : b.remaining}

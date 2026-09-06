@@ -8,14 +8,9 @@ import { getPublicMembershipContext } from "@/lib/public-membership-queries";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
 import MemberBillingLinkForm from "./member-billing-link-form";
+import { SERVICE_LABEL } from "@/lib/service-labels";
 
 export const metadata: Metadata = { title: "Hazte socio · Training Zone" };
-
-const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
-  EP: "Entrenamiento personal",
-  GROUP: "Grupos reducidos",
-  ONLINE: "Online",
-};
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });

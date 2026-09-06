@@ -76,6 +76,13 @@ export type ServiceKind = "GROUP" | "EP" | "ONLINE";
 
 export type SessionBalance = {
   serviceKind: ServiceKind;
+  /**
+   * Cómo se llama la modalidad. Lo resuelve el SERVIDOR con la fuente única
+   * (E12-04): la app no mantiene su propia tabla de rótulos, que es cómo el
+   * mismo bono acabó siendo "Personal" aquí y "Entrenamiento personal" en el
+   * portal del socio.
+   */
+  serviceLabel: string;
   remaining: number | null;
   unlimited: boolean;
   /** Sesiones ya gastadas del bono contratado (null si el bono es ilimitado). */

@@ -69,7 +69,16 @@ test("getSessionBalances: un bono sin sesiones contratadas también suma al tota
 
 test("getSessionBalances: un bono ilimitado deja la modalidad sin cifras que contar", () => {
   const [balance] = getSessionBalances([sub("MONTHLY", null, null), sub("SESSION_PACK", 8, 3)]);
-  assert.deepEqual(balance, { serviceKind: "GROUP", remaining: null, unlimited: true, used: null, total: null });
+  assert.deepEqual(balance, {
+    serviceKind: "GROUP",
+    // El rótulo viaja con el saldo desde E12-04: lo resuelve el servidor con la
+    // fuente única, para que la app nativa no mantenga la suya.
+    serviceLabel: "Grupos reducidos",
+    remaining: null,
+    unlimited: true,
+    used: null,
+    total: null,
+  });
 });
 
 test("effectiveSessionsIncluded: usa la capacidad propia del bono y cae al plan si falta", () => {

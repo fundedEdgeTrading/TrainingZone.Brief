@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { serviceLabelLower } from "@/lib/service-labels";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind } from "@/lib/members-queries";
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
@@ -7,7 +8,6 @@ import {
   claimWaitlistedBooking,
   pickBookingSubscription,
   refundSessionToSubscription,
-  SERVICE_LABEL,
   shouldNotifyVacancy,
 } from "@/lib/session-booking";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
@@ -689,7 +689,7 @@ export async function bookSessionForMember(
     });
     if (!choice.ok) {
       return choice.reason === "NO_PLAN"
-        ? { ok: false as const, error: `Tu plan no incluye sesiones de ${SERVICE_LABEL[kind] ?? "este tipo"}.` }
+        ? { ok: false as const, error: `Tu plan no incluye sesiones de ${serviceLabelLower(kind)}.` }
         : { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
     }
     const chargeSubscriptionId = choice.subscriptionId;

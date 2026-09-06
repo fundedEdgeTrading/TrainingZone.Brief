@@ -18,14 +18,9 @@ import { zonedToday } from "@/lib/date-utils";
 import PurchasePlanButton from "./purchase-plan-button";
 import { RenewalModal } from "./renewal-modal";
 import { PendingSessionsRating } from "./pending-sessions";
+import { SERVICE_LABEL } from "@/lib/service-labels";
 
 export const metadata: Metadata = { title: "Mi membresía · Training Zone" };
-
-const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
-  EP: "Entrenamiento personal",
-  GROUP: "Grupos reducidos",
-  ONLINE: "Online",
-};
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
