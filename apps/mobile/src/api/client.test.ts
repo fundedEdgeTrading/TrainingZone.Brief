@@ -104,4 +104,26 @@ describe("frontera de red de la app", () => {
     expect(error.message).toBe("No hay conexión con el servidor. Comprueba tu red e inténtalo de nuevo.");
     expect(error.status).toBe(0);
   });
+
+  it("T9 · el timeout de 12 s traduce a mensaje en castellano", async () => {
+    jest.useFakeTimers();
+    // El doble normal responde en el acto: aquí el servidor "no contesta
+    // nunca", que es justo lo que dispara el AbortController a los 12 s —
+    // el fetch de mentira SÍ escucha la señal de aborto, como el real.
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = jest.fn((_input, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+    const pending = apiErrorFrom(() => apiRequest<MeResponse>("/me"));
+    await jest.advanceTimersByTimeAsync(12_000);
+    const error = await pending;
+
+    expect(error.message).toBe("El servidor ha tardado demasiado en responder. Inténtalo de nuevo.");
+
+    globalThis.fetch = realFetch;
+    jest.useRealTimers();
+  });
 });
