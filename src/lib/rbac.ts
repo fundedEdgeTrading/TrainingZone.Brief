@@ -85,8 +85,14 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   "/brief": "salud_aptitud",
   "/health/aptitude-rules": "salud_aptitud",
   "/health/reference-ranges": "salud_aptitud",
-  "/audit": "exportaciones",
-  // `ia_programacion` no aparece aquí, y no es un olvido: no hay ninguna ruta
+  // `/audit` NO se gatea (E6-07, decisión D-C7). El responsable del tratamiento
+  // es el gimnasio: ante un requerimiento del art. 32 RGPD tiene que poder
+  // acreditar quién accedió a los datos de salud de sus socios, y no puede
+  // depender de haber comprado un plan superior —el `AuditLog` se escribe
+  // igualmente—. Lo que sigue siendo de pago es la EXPORTACIÓN masiva, gateada
+  // en `api/audit/export` con la funcionalidad `exportaciones`.
+  //
+  // `ia_programacion` tampoco aparece aquí, y no es un olvido: no hay ninguna ruta
   // que gatear —el coste no está en mirar un mesociclo, sino en generarlo—. Se
   // comprueba donde se produce el gasto, antes de llamar al proveedor de IA:
   // `members/[id]/mesociclos/actions.ts` en la web y el mapa de rutas móvil

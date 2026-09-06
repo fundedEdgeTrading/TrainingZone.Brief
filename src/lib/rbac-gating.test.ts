@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { featureForRoute } from "@/lib/rbac";
+import { FEATURE_BY_ROUTE, featureForRoute } from "@/lib/rbac";
 
 /**
  * El muro de pago y quién entra a cada pantalla. Lo que se prueba aquí es lo
@@ -72,5 +72,21 @@ test("E6-03 · las dos superficies rechazan ANTES de llamar al proveedor de IA",
     assert.notEqual(provider, -1, `${file} ya no llama al generador: revisa este test`);
     assert.ok(gate < provider, `${file} llama al proveedor antes de comprobar el plan`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// E6-07 · /audit sale del muro de pago, la exportación se queda dentro
+// ---------------------------------------------------------------------------
+
+test("E6-07 · la consulta del registro de accesos entra en todos los planes", () => {
+  assert.equal(FEATURE_BY_ROUTE["/audit"], undefined);
+  assert.equal(featureForRoute("/audit"), undefined);
+  const page = readFileSync(join(APP_DIR, "audit", "page.tsx"), "utf8");
+  assert.equal(/requireFeature\(/.test(page), false, "el gimnasio tiene que poder acreditar el art. 32 RGPD con su plan");
+});
+
+test("E6-07 · la exportación masiva sigue siendo de pago", () => {
+  const route = readFileSync("src/app/api/audit/export/route.ts", "utf8");
+  assert.match(route, /requireFeature\("exportaciones"\)/);
 });
 
