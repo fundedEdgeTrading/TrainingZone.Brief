@@ -6,6 +6,7 @@ import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMesocycleBriefingForMember } from "@/lib/health-access";
 import { generateMesocyclePlan, refineMesocyclePlan } from "@/lib/ai/mesocycle-generator";
+import { hasAiLiteracy, recordAiLiteracy } from "@/lib/ai/ai-literacy";
 import { isEpProfile } from "@/lib/ai/ep-profile";
 import {
   approveMesocycle,
@@ -100,6 +101,14 @@ const AI_NOT_INCLUDED = {
   error: "Tu plan no incluye la programación con IA. Puedes cambiar de plan en /planes.",
 };
 
+/** Gate del art. 4 del Reglamento de IA (E10-17), con la salida a la vista. */
+const AI_LITERACY_REQUIRED = {
+  ok: false as const,
+  error:
+    "Antes de generar con IA hay que dejar constancia de tu formación en alfabetización en IA (art. 4 del " +
+    "Reglamento de IA). Son seis puntos, en tu perfil: /mi-perfil.",
+};
+
 export async function generateMesocycleAction(
   memberId: string,
   input: { profile: string; level: string; weeks: number; availability: string }
@@ -113,6 +122,13 @@ export async function generateMesocycleAction(
   // proveedor: sin esto, cualquier organización en Esencial o Avanzado generaba
   // mesociclos que pagábamos nosotros.
   if (!(await orgHasFeatureNow(session.user.orgId, "ia_programacion"))) return AI_NOT_INCLUDED;
+
+  // E10-17 · art. 4 del Reglamento de IA, exigible desde el 2/2/2025 y también
+  // al responsable del despliegue: quien pulsa "Generar" está operando un
+  // sistema de IA, y tiene que constar que sabe qué está operando. El gate es
+  // barato a propósito —leer y aceptar— pero es un gate: sin él, "queda
+  // constancia de la formación" sería un cartel.
+  if (!(await hasAiLiteracy(session.user.orgId, session.user.id))) return AI_LITERACY_REQUIRED;
 
   if (!isEpProfile(input.profile)) return { ok: false, error: "Elige un grupo Training Zone válido." };
   const availability = lines(input.availability);
@@ -158,6 +174,8 @@ export async function refineMesocycleAction(
   const session = await requireRole(MESOCYCLE_ROLES);
   // E6-03: refinar también llama al modelo, así que también se comprueba.
   if (!(await orgHasFeatureNow(session.user.orgId, "ia_programacion"))) return AI_NOT_INCLUDED;
+  // E10-17: refinar también es operar el sistema; mismo gate del art. 4.
+  if (!(await hasAiLiteracy(session.user.orgId, session.user.id))) return AI_LITERACY_REQUIRED;
   if (!request.trim()) return { ok: false, error: "Escribe qué quieres cambiar." };
 
   const detail = await getMesocycleDetail(session.user.orgId, mesocycleId);
@@ -320,5 +338,16 @@ export async function deleteMesocycleExerciseAction(
   const result = await deleteMesocycleExercise(session.user.orgId, exerciseId);
   if (!result.ok) return result;
   revalidateMesocycle(memberId, mesocycleId);
+  return { ok: true };
+}
+
+/**
+ * E10-17 · El entrenador acredita haber leído los puntos de alfabetización en
+ * IA (art. 4). Queda en `AuditLog`, que es append-only: la constancia no se
+ * puede retocar después.
+ */
+export async function acknowledgeAiLiteracyAction(): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireRole(MESOCYCLE_ROLES);
+  await recordAiLiteracy(session.user.orgId, session.user.id);
   return { ok: true };
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { EP_PROFILE_LABEL } from "@/lib/ai/ep-profile";
+import { aiGeneratedLabel } from "@/lib/ai/ai-act";
 import type { MesocycleDetail } from "@/lib/mesocycle-queries";
 import { MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "../panel";
 import {
@@ -205,6 +206,12 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
 const CrossIcon = () => (
   <Icon width={2.6} className="mt-[3px]">
     <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);
+/** Marca del art. 50 (E10-17): la chispa que dice "esto lo propuso una IA". */
+const SparkIcon = () => (
+  <Icon size={14} width={2.2}>
+    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
   </Icon>
 );
 
@@ -568,8 +575,16 @@ function HeaderCard({
         </div>
       </div>
 
+      {/* E10-17 · art. 50 del Reglamento de IA, en vigor desde el 2/8/2026.
+          Va aquí arriba, junto al título, y NO en un pie: la marca tiene que
+          verla quien lee el plan, no quien busca la letra pequeña. */}
+      <p className="mt-[18px] inline-flex items-center gap-2 rounded-pill bg-white/[.09] px-[13px] py-[7px] text-[12.5px] font-semibold text-tz-bone/80">
+        <SparkIcon />
+        {aiGeneratedLabel({ reviewerName: mesocycle.approvedBy?.name, approved: mesocycle.status === "APPROVED" })}
+      </p>
+
       {isDraft && (
-        <p className="mt-[18px] flex gap-[9px] text-[12.5px] leading-[1.5] text-tz-bone/50 max-w-[78ch]">
+        <p className="mt-[14px] flex gap-[9px] text-[12.5px] leading-[1.5] text-tz-bone/50 max-w-[78ch]">
           <span className="w-1.5 h-1.5 rounded-full bg-ink-warning shrink-0 mt-1.5" aria-hidden="true" />
           Borrador generado por IA: no es un plan válido hasta que lo apruebes. Cualquier cambio posterior devuelve el
           mesociclo a borrador y hay que volver a aprobarlo.
@@ -1213,6 +1228,12 @@ function PrintDocument({ mesocycle, memberName }: { mesocycle: MesocycleDetail; 
   return (
     <div className="tz-print-doc hidden print:block">
       {mesocycle.status === "DRAFT" && <div className="tz-print-watermark">Borrador</div>}
+
+      {/* La marca del art. 50 viaja también en el papel: el plan impreso sale
+          del centro y es donde más fácil se pierde de dónde salió. */}
+      <p className="text-[10pt] font-semibold text-brand-text-2 mb-3">
+        {aiGeneratedLabel({ reviewerName: mesocycle.approvedBy?.name, approved: mesocycle.status === "APPROVED" })}
+      </p>
 
       <div className="border-b-2 border-brand-text pb-3.5 mb-5">
         <div className="text-[10pt] font-bold uppercase tracking-[.16em] text-gold">Training Zone · Mesociclo</div>

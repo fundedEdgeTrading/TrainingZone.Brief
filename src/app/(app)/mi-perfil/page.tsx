@@ -7,6 +7,8 @@ import { requireSession } from "@/lib/session";
 import { ThemeCard } from "../_perfil/theme-card";
 import { getOwnSubjectAccessStatus } from "@/lib/trainer-rating-access";
 import { SubjectAccessCard } from "./subject-access-card";
+import { listAiLiteracyRecords } from "@/lib/ai/ai-literacy";
+import { AiLiteracyCard } from "./ai-literacy-card";
 
 /**
  * Perfil del personal. El socio ya tenía el suyo en `/portal/perfil`; el resto
@@ -37,11 +39,19 @@ export default async function StaffProfilePage() {
   const canBeRated = user.role === "TRAINER" || user.role === "TRAINER_ADMIN";
   const accessStatus = canBeRated ? await getOwnSubjectAccessStatus(session.user.orgId, session.user.id) : null;
 
+  // E10-17: la constancia del art. 4 la necesita quien puede generar con IA.
+  const operatesAi = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"].includes(user.role);
+  const literacy = operatesAi
+    ? (await listAiLiteracyRecords(session.user.orgId)).find((r) => r.userId === session.user.id && r.current)
+    : undefined;
+
   return (
     <div className="max-w-[720px] mx-auto flex flex-col gap-4">
       <PageHeader description="Cómo ves la aplicación y los datos con los que entras. Tu nombre, tu email y tu rol los gestiona dirección." />
 
       <ThemeCard theme={user.theme} />
+
+      {operatesAi && <AiLiteracyCard acknowledgedAt={literacy?.acknowledgedAt.toISOString() ?? null} />}
 
       {canBeRated && (
         <SubjectAccessCard
