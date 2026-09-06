@@ -31,7 +31,7 @@ type RosterEntry = {
   /** Declarado sin regla que lo traduzca: es lo que enciende el ámbar (E3-03). */
   unmatchedConditions: BriefCondition[];
   light: string | null;
-  debrief: { feeling: DebriefFeeling } | null;
+  debrief: { feeling: DebriefFeeling; note: string | null } | null;
 };
 
 export default function BriefCard({
@@ -47,6 +47,9 @@ export default function BriefCard({
 }) {
   const [pending, startTransition] = useTransition();
   const [feeling, setFeeling] = useState<DebriefFeeling | null>(entry.debrief?.feeling ?? null);
+  // E3-07: el debrief es color MÁS una frase opcional. La frase no bloquea el
+  // flujo de sala: se guarda al salir del campo, y el color va por su cuenta.
+  const [note, setNote] = useState(entry.debrief?.note ?? "");
   // E3-05: el detalle clínico no viene con la tarjeta. Se pide, y pedirlo deja
   // rastro en AuditLog.
   const [detail, setDetail] = useState<ClinicalDetailEntry[] | null>(null);
@@ -72,11 +75,20 @@ export default function BriefCard({
     const previous = feeling;
     setFeeling(f);
     startTransition(async () => {
-      const result = await setDebrief(entry.bookingId, sessionId, f);
+      const result = await setDebrief(entry.bookingId, sessionId, f, note);
       if (!result.ok) {
         setFeeling(previous);
         toast.error(result.error);
       }
+    });
+  }
+
+  function saveNote() {
+    // Sin color todavía no hay debrief que anotar: la frase espera al toque.
+    if (!feeling || note === (entry.debrief?.note ?? "")) return;
+    startTransition(async () => {
+      const result = await setDebrief(entry.bookingId, sessionId, feeling, note);
+      if (!result.ok) toast.error(result.error);
     });
   }
 
@@ -180,6 +192,16 @@ export default function BriefCard({
             );
           })}
         </div>
+        <input
+          type="text"
+          value={note}
+          maxLength={600}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={saveNote}
+          placeholder="Una frase, si hace falta (opcional)"
+          aria-label={`Nota del debrief de ${entry.member.firstName} ${entry.member.lastName}`}
+          className="w-full h-8 rounded-control border border-tz-linen bg-white/70 px-2.5 text-xs text-brand-text placeholder:text-faint focus:border-brand-ink focus:outline-none"
+        />
         <p className="text-[11px] text-faint" aria-live="polite">
           {pending
             ? "Guardando…"

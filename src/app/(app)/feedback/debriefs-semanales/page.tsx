@@ -169,6 +169,12 @@ export default async function DebriefsSemanalesPage({
                             </div>
                             <div className="text-xs text-muted mt-0.5">
                               Debrief: {FEELING_ICON.green} {s.greenCount} · {FEELING_ICON.yellow} {s.yellowCount} · {FEELING_ICON.red} {s.redCount}
+                              {/* E3-07: los debriefs viejos derivaban el color de una media de ocho ejes.
+                                  Se conservan, pero marcados: mezclar los dos criterios sin decirlo hace
+                                  ilegible el informe. */}
+                              {s.derivedCount > 0 && (
+                                <span className="text-warning-text"> · {s.derivedCount} de criterio antiguo (derivado)</span>
+                              )}
                             </div>
                             {s.notes.length > 0 && <div className="text-xs text-brand-muted-2 mt-1">{s.notes.join(" · ")}</div>}
                             {feedback.length > 0 && (

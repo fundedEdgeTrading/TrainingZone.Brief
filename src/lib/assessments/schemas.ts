@@ -170,7 +170,47 @@ export const initialAssessmentSchema = vitalsSchema.extend({
   custom: customAnswersRecord,
 });
 
+/**
+ * Puntuación por ejes del entrenador (E3-07). Vivía en `SessionDebrief`, donde
+ * el color de la sesión se DERIVABA de su media: promediar movilidad con
+ * actitud no significa nada, y rellenar solo el RPE dejaba al socio marcado
+ * "regular" para siempre. Los ejes son una valoración del periodo, no un gesto
+ * de sala, así que se puntúan aquí — con el socio delante y una vez al mes, no
+ * ocho deslizadores después de cada clase.
+ *
+ * Todos opcionales: el bloque se puede dejar en blanco sin bloquear la
+ * valoración.
+ */
+export const ejesSchema = z.object({
+  esfuerzoPercibido: z.number().int().min(1).max(10).optional(),
+  tecnica: z.number().int().min(1).max(10).optional(),
+  actitud: z.number().int().min(1).max(10).optional(),
+  energia: z.number().int().min(1).max(10).optional(),
+  movilidad: z.number().int().min(1).max(10).optional(),
+  dolor: z.number().int().min(1).max(10).optional(),
+  adherencia: z.number().int().min(1).max(10).optional(),
+  progreso: z.number().int().min(1).max(10).optional(),
+});
+
+export type EjesAnswers = z.infer<typeof ejesSchema>;
+
+export const EJE_LABEL: Record<keyof EjesAnswers, string> = {
+  esfuerzoPercibido: "Esfuerzo percibido (RPE)",
+  tecnica: "Técnica",
+  actitud: "Actitud",
+  energia: "Energía",
+  movilidad: "Movilidad",
+  dolor: "Dolor",
+  adherencia: "Adherencia",
+  progreso: "Progreso",
+};
+
+export const EJE_KEYS = Object.keys(EJE_LABEL) as (keyof EjesAnswers)[];
+
 export const reviewAssessmentSchema = vitalsSchema.extend({
+  /** E3-07: los ocho ejes, fuera del debrief de sesión. Opcional para no
+   *  invalidar las revisiones ya guardadas. */
+  ejes: ejesSchema.optional(),
   /**
    * E3-06 · la revisión vuelve a preguntar por lesiones. Opcional a propósito:
    * las revisiones ya guardadas no lo llevan, y exigirlo las dejaría sin detalle

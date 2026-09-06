@@ -8,6 +8,8 @@ import { getScreeningDraftForMember } from "@/lib/health-access";
 import { milestoneLabelOf } from "@/lib/assessments/config";
 import {
   DAYS_PER_WEEK_LABEL,
+  EJE_KEYS,
+  EJE_LABEL,
   PAIN_ZONE_LABEL,
   PERFORMANCE_MARKS,
   isInitialAnswers,
@@ -198,6 +200,20 @@ export default async function AssessmentDetailPage({
                   <Row label="Objetivo del próximo periodo" value={answers.seguimiento.objetivoProximoPeriodo} />
                 </ul>
               </Card>
+              {/* E3-07: los ocho ejes, fuera del debrief de sesión. */}
+              {answers.ejes && EJE_KEYS.some((k) => answers.ejes?.[k] !== undefined) && (
+                <Card title="Ejes del entrenador" meta="1-10">
+                  <ul className="list-none">
+                    {EJE_KEYS.map((key) => (
+                      <Row
+                        key={key}
+                        label={EJE_LABEL[key]}
+                        value={answers.ejes?.[key] === undefined ? undefined : `${answers.ejes[key]}/10`}
+                      />
+                    ))}
+                  </ul>
+                </Card>
+              )}
               {/* E3-06: las revisiones anteriores a esta historia no llevan screening. */}
               {answers.screening && (
                 <Card title="Screening de salud" meta="Reconciliado con la ficha de salud">

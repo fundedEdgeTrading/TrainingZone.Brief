@@ -4,6 +4,7 @@ import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
 import type { Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { resolveAptitude } from "@/lib/aptitude-light";
+import { feelingOrigin } from "@/lib/session-debrief";
 
 /**
  * Condición declarada tal y como viaja al brief (web y app leen lo mismo).
@@ -151,6 +152,12 @@ export type WeeklyDebriefReport = {
     yellowCount: number;
     redCount: number;
     notes: string[];
+    /**
+     * E3-07 · histórico: cuántos de estos colores los DERIVÓ el endpoint de ocho
+     * ejes (criterio retirado) en vez de ponerlos el entrenador. Un informe
+     * mezclando los dos criterios no se puede leer sin saber la proporción.
+     */
+    derivedCount: number;
   }[];
 }[];
 
@@ -189,7 +196,7 @@ export async function getWeeklyDebriefReport(orgId: string, weekStart: Date): Pr
     const key = `${cls.id}:${d.booking.occurrenceDate.toISOString()}`;
     let sessionEntry = trainerEntry.sessionIndex.get(key);
     if (!sessionEntry) {
-      sessionEntry = { sessionId: cls.id, sessionDate: d.booking.occurrenceDate, sessionName: cls.name, greenCount: 0, yellowCount: 0, redCount: 0, notes: [] };
+      sessionEntry = { sessionId: cls.id, sessionDate: d.booking.occurrenceDate, sessionName: cls.name, greenCount: 0, yellowCount: 0, redCount: 0, notes: [], derivedCount: 0 };
       trainerEntry.sessionIndex.set(key, sessionEntry);
       trainerEntry.sessions.push(sessionEntry);
     }
@@ -198,6 +205,7 @@ export async function getWeeklyDebriefReport(orgId: string, weekStart: Date): Pr
     else if (d.feeling === "AMBER") sessionEntry.yellowCount++;
     else if (d.feeling === "RED") sessionEntry.redCount++;
     if (d.note?.trim()) sessionEntry.notes.push(d.note.trim());
+    if (feelingOrigin(d) === "DERIVED") sessionEntry.derivedCount++;
   }
 
   return [...byTrainer.values()]

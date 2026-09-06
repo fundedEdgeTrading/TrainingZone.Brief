@@ -431,6 +431,14 @@ export function useRemoveStaff() {
 }
 
 // ---------- Feedback 1-10 por socio (C4) ----------
+//
+// ⚠️ RETIRADO EN EL SERVIDOR POR E3-07. `/trainer/sessions/:id/feedback` responde
+// ahora 410: los ocho ejes salen del flujo de sala (el color de la sesión se
+// derivaba de su media, y eso creaba dos criterios incompatibles de `feeling`).
+// El color va por `/trainer/brief/:id/debrief` —🟢🟡🔴 más una frase opcional,
+// mismo contrato que la web— y los ejes se puntúan en la valoración periódica,
+// desde la ficha del socio en la web. La pantalla que usa estos dos hooks tiene
+// que retirarse: es trabajo de la pista de la app (E3-01 y siguientes).
 
 export function useSessionFeedback(sessionId: string, occurrenceDate?: string) {
   return useQuery({

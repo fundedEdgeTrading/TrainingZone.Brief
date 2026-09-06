@@ -11,8 +11,11 @@ import { useToast } from "@/components/ui/toast";
 import {
   DAYS_PER_WEEK_LABEL,
   PAIN_ZONES,
+  EJE_KEYS,
+  EJE_LABEL,
   PAIN_ZONE_LABEL,
   painZoneNeedsSide,
+  type EjesAnswers,
   type ScreeningAnswers,
   PERFORMANCE_MARKS,
   type MemberInitialPartAnswers,
@@ -209,6 +212,10 @@ export function AssessmentForm({
     plancha_s: "",
     circuito_agilidad_s: "",
   });
+  // E3-07: los ocho ejes salen del flujo de sala y se puntúan aquí, con el
+  // socio delante, una vez por periodo. Vacío = no puntuado, nunca un 5 puesto
+  // por el formulario.
+  const [ejes, setEjes] = useState<Record<string, string>>({});
   const [notasEntrenador, setNotasEntrenador] = useState("");
   // Respuestas a las preguntas propias del centro. Se guardan como texto
   // mientras se escribe y se convierten al tipo de la pregunta al enviar, igual
@@ -269,6 +276,9 @@ export function AssessmentForm({
           ...only("seguimiento.objetivoProximoPeriodo", { objetivoProximoPeriodo: seguimiento.objetivoProximoPeriodo }),
         },
         screening: { ...screening, zonasDolor, lateralidadDolor },
+        ejes: Object.fromEntries(
+          EJE_KEYS.filter((k) => (ejes[k] ?? "").trim() !== "").map((k) => [k, num(ejes[k])])
+        ) as EjesAnswers,
         marcas: marcasList,
         cierre: { ...only("cierre.notasEntrenador", { notasEntrenador }) },
         custom,
@@ -588,6 +598,29 @@ export function AssessmentForm({
           )}
         </div>
       </Card>
+
+      {!isInitial && (
+        <Card title="Ejes del entrenador" meta="1-10 · opcionales · antes iban en el debrief de sesión">
+          <p className="text-[13px] text-brand-muted -mt-3 mb-4">
+            Se puntúan aquí, con el socio delante y una vez por periodo — no ocho deslizadores después de cada
+            clase. Lo que se deje en blanco no se puntúa: no hay valor por defecto que luego parezca un dato.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {EJE_KEYS.map((key) => (
+              <Field key={key} label={`${EJE_LABEL[key]} (1-10)`}>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={ejes[key] ?? ""}
+                  placeholder="Sin puntuar"
+                  onChange={(e) => setEjes((x) => ({ ...x, [key]: e.target.value }))}
+                />
+              </Field>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {!isInitial && (
         <Card title="Seguimiento">
