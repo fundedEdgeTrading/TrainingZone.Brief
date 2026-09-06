@@ -1,6 +1,6 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
-import { createMemberCheckout, isRecurring } from "@/lib/member-billing";
+import { isRecurring } from "@/lib/member-billing";
 import { createPaymentWithReceipt } from "@/lib/payments";
 import { confirmLeadClosureForMember, revertLeadClosureForFailedPayment } from "@/lib/leads-queries";
 import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
@@ -10,17 +10,6 @@ import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
-
-/**
- * RB-PAGO-001 + Parte C: cobro por Stripe (checkout) contra la cuenta conectada del gimnasio
- * (RB-PAGO-018/RB-CONNECT-002). Firma sin cambios (la llaman ya las páginas de recepción): por
- * dentro delega en member-billing.ts (F5), que decide "payment" o "subscription" según el tipo
- * de plan — cobrar un plan MONTHLY/ONLINE desde aquí ahora abre una suscripción recurrente de
- * verdad, en vez del cobro único de antes.
- */
-export async function createCheckoutSession(orgId: string, memberId: string, planId: string, soldByUserId?: string): Promise<CheckoutResult> {
-  return createMemberCheckout({ orgId, memberId, planId, soldByUserId, origin: "staff" });
-}
 
 /**
  * Conciliación de `checkout.session.completed` en la cuenta CONECTADA (Parte C, D1). Un único
