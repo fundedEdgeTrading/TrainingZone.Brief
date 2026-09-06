@@ -64,7 +64,12 @@ export async function buildCompositionView(
         { label: "Masa ósea", value: latestComposition.boneMassKg != null ? `${latestComposition.boneMassKg} kg` : null },
         { label: "Agua corporal", value: latestComposition.bodyWaterPct != null ? `${latestComposition.bodyWaterPct} %` : null },
         { label: "BMR", value: latestComposition.bmrKcal != null ? `${latestComposition.bmrKcal} kcal` : null },
-        { label: "Edad metabólica", value: latestComposition.metabolicAge != null ? `${latestComposition.metabolicAge} años` : null },
+        // E3-10: "Edad metabólica" NO se pinta, ni en la ficha ni en el portal.
+        // En una ficha con membrete del centro, "Edad metabólica: 47" parece un
+        // diagnóstico, y es marketing de un fabricante de básculas. La columna
+        // sigue existiendo, se sigue importando de la báscula y sale en la
+        // exportación de datos del socio: lo que se retira es presentarla como
+        // métrica de seguimiento.
       ]
     : [];
 

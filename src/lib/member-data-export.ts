@@ -101,6 +101,9 @@ export async function getMemberDataExport(memberId: string, orgId: string) {
       cinturaCm: p.waistCm,
       masaMuscularKg: p.muscleMassKg,
       imc: p.bmi,
+      // E3-10: no se PRESENTA como métrica de seguimiento, pero es un dato suyo
+      // y en el ejercicio de sus derechos tiene que salir.
+      edadMetabolica: p.metabolicAge,
       origen: p.source,
     })),
     autovaloraciones: selfAssessments.map((a) => ({ tipo: a.kind, texto: a.text, datos: a.structured, fecha: a.createdAt })),
