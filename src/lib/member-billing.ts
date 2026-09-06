@@ -9,6 +9,7 @@ import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-ver
 import { absoluteUrl } from "@/lib/invitations";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import type { PlanType, SubscriptionStatus } from "@prisma/client";
+import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -355,27 +356,30 @@ export async function reconcileMemberSubscriptionUpserted(orgId: string, subscri
 
   const [member, plan] = await Promise.all([
     prisma.member.findFirst({ where: { id: meta.memberId, orgId }, select: { id: true, primaryCenterId: true } }),
-    prisma.membershipPlan.findFirst({ where: { id: meta.planId, orgId }, select: { id: true, priceCents: true } }),
+    // `sessionsIncluded` NO es opcional aquí: sin él, un plan con sesiones
+    // incluidas comprado por Stripe quedaba con `sessionsRemaining` null, que
+    // `bonoUsage` interpreta como ILIMITADO (E4-30).
+    prisma.membershipPlan.findFirst({
+      where: { id: meta.planId, orgId },
+      select: { id: true, priceCents: true, sessionsIncluded: true },
+    }),
   ]);
   if (!member || !plan) return;
 
   const startDate = item?.current_period_start ? new Date(item.current_period_start * 1000) : new Date();
 
-  await prisma.subscription.create({
-    data: {
-      memberId: member.id,
-      planId: plan.id,
-      // El checkout de socio no pide centro (el plan MONTHLY/ONLINE es de
-      // organización, no de un centro concreto): arranca en el centro
-      // habitual del socio, igual que cualquier bono se puede reasignar
-      // luego a mano si hiciera falta.
-      centerId: member.primaryCenterId,
-      startDate,
-      endDate,
-      status,
-      priceCents: plan.priceCents,
-      stripeSubscriptionId: subscription.id,
-    },
+  await createSubscriptionFromPlan(prisma, {
+    memberId: member.id,
+    plan,
+    // El checkout de socio no pide centro (el plan MONTHLY/ONLINE es de
+    // organización, no de un centro concreto): arranca en el centro habitual
+    // del socio, igual que cualquier bono se puede reasignar luego a mano si
+    // hiciera falta.
+    centerId: member.primaryCenterId,
+    startDate,
+    endDate,
+    status,
+    stripeSubscriptionId: subscription.id,
   });
 }
 

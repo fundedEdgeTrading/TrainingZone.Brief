@@ -13,6 +13,7 @@ import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
+import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -357,17 +358,10 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
   if (!(await centerIsInScope(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
 
-  const subscription = await prisma.subscription.create({
-    data: {
-      memberId: member.id,
-      planId: plan.id,
-      centerId: center.id,
-      startDate: new Date(),
-      priceCents: plan.priceCents,
-      status: "ACTIVE",
-      sessionsRemaining: plan.sessionsIncluded ?? null,
-      sessionsIncluded: plan.sessionsIncluded ?? null,
-    },
+  const subscription = await createSubscriptionFromPlan(prisma, {
+    memberId: member.id,
+    centerId: center.id,
+    plan,
   });
 
   await prisma.auditLog.create({

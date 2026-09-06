@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Prisma, type Role, type Sex } from "@prisma/client";
 import { ensureIdentity } from "@/lib/identity";
+import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 type Tx = Prisma.TransactionClient;
 
@@ -106,18 +107,7 @@ async function createBonoSubscription(
   ]);
   if (!plan || !center) return null;
 
-  return tx.subscription.create({
-    data: {
-      memberId: params.memberId,
-      planId: plan.id,
-      centerId: center.id,
-      startDate: new Date(),
-      priceCents: plan.priceCents,
-      status: "ACTIVE",
-      sessionsRemaining: plan.sessionsIncluded ?? null,
-      sessionsIncluded: plan.sessionsIncluded ?? null,
-    },
-  });
+  return createSubscriptionFromPlan(tx, { memberId: params.memberId, centerId: center.id, plan });
 }
 
 export async function createMemberWithInvitation(
