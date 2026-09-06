@@ -10,6 +10,10 @@ import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
 import { asOpeningHours } from "@/lib/opening-hours";
 import { CONVERSIONS, CONVERSION_ATTRIBUTE } from "@/lib/analytics";
+import { JsonLd } from "@/components/json-ld";
+import { centerJsonLd } from "@/lib/json-ld";
+import { absoluteUrl } from "@/lib/site";
+import { membershipPath } from "@/lib/public-center-seo";
 import MemberBillingLinkForm from "./member-billing-link-form";
 import { CenterNapBlock } from "./center-nap";
 import { SERVICE_LABEL } from "@/lib/service-labels";
@@ -72,6 +76,25 @@ export default async function PublicMembershipPage({
 
   return (
     <div className="min-h-dvh bg-tz-bone flex items-center justify-center p-4 sm:p-8">
+      {/* E9-07 · `SportsActivityLocation`, y SOLO si el centro tiene dirección y
+          coordenadas: un marcado incompleto no gana ningún resultado
+          enriquecido y sí puede costar una advertencia por datos estructurados
+          inválidos. `centerJsonLd` devuelve null y aquí no se pinta nada. */}
+      <JsonLd
+        node={centerJsonLd({
+          name: ctx.center.name,
+          url: absoluteUrl(membershipPath(orgSlug, centerSlug)),
+          description: ctx.center.description,
+          address: ctx.center.address,
+          city: ctx.center.city,
+          postalCode: ctx.center.postalCode,
+          phone: ctx.center.phone,
+          lat: ctx.center.lat,
+          lng: ctx.center.lng,
+          openingHours: asOpeningHours(ctx.center.openingHours),
+          offers: ctx.plans.map((plan) => ({ name: plan.name, priceCents: plan.priceCents })),
+        })}
+      />
       <div className="w-full max-w-2xl bg-white border border-brand-border rounded-card shadow-pop p-6 sm:p-9">
         <div className="flex flex-col items-center text-center mb-6">
           {ctx.organization.logoUrl ? (

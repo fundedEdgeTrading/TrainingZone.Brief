@@ -10,6 +10,8 @@ import { CelebrateProvider } from "@/components/ui/celebrate";
 import { BRAND, publicOrigin } from "@/lib/site";
 import { analyticsConfig, googleSiteVerification } from "@/lib/analytics";
 import { Analytics } from "@/components/analytics";
+import { JsonLd } from "@/components/json-ld";
+import { organizationJsonLd } from "@/lib/json-ld";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -77,6 +79,9 @@ export default async function RootLayout({
       className={`h-full antialiased ${poppins.variable}`}
     >
       <body className="min-h-full flex flex-col bg-brand-bg text-brand-text">
+        {/* E9-07 · `Organization` en la raíz: es lo que hace que el nombre de
+            marca se resuelva a una entidad y no a una cadena suelta. */}
+        <JsonLd node={organizationJsonLd()} />
         <SessionProvider session={session}>
           <ToastProvider>
             <CelebrateProvider>{children}</CelebrateProvider>

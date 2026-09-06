@@ -1,14 +1,16 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import AptaLogo from "@/components/apta-logo";
-import { FEATURE_LABEL, type PlatformFeature } from "@/lib/platform-plans";
+import { FEATURE_LABEL, listPurchasablePlans, type PlatformFeature } from "@/lib/platform-plans";
 import Hero from "./hero";
 import Tour from "./tour";
 import HowItWorks from "./how-it-works";
 import Testimonials from "./testimonials";
-import Faq from "./faq";
+import Faq, { FAQS } from "./faq";
 import FinalCta from "./final-cta";
 import { PricingBlock, PricingSkeleton } from "./pricing";
+import { JsonLd } from "@/components/json-ld";
+import { faqPageJsonLd, platformOffersJsonLd } from "@/lib/json-ld";
 
 /**
  * E9-08 · `/planes` conserva su `force-dynamic`, que está justificado: los
@@ -37,6 +39,13 @@ export default async function PlanesPage({
 
   return (
     <div className="min-h-screen bg-tz-bone">
+      {/* E9-07 · La FAQ se marca DESDE el array que pinta la página: escribirla
+          dos veces es garantizar que un día digan cosas distintas. Y el
+          `Product` va con ofertas SIN precio: `priceLabel` es presentación y el
+          importe real vive en Stripe (RB-PLAN-001). */}
+      <JsonLd node={faqPageJsonLd(FAQS)} />
+      <JsonLd node={platformOffersJsonLd(listPurchasablePlans())} />
+
       <header className="flex items-center justify-between px-6 py-5 sm:px-10">
         <AptaLogo variant="dark" className="text-3xl" />
         <Link href="/login" className="text-[13px] font-bold text-tz-black underline">

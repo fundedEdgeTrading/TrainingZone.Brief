@@ -60,3 +60,21 @@ Revisar el mismo cuadro **al mes, a los tres meses y a los seis**. Si a los tres
 meses las impresiones de `/planes` no se mueven, el problema no es de metadatos:
 es de que cuatro URLs no compiten contra blogs de cientos de artículos, y la
 respuesta está en E9-11.
+
+## Cierre pendiente de E9-07 · validación externa del marcado
+
+El JSON-LD se valida en test por su forma (`src/lib/json-ld.test.ts`: contexto,
+tipo, campos obligatorios, precios que sí se cobran, escapado de `</script>`).
+Eso cubre lo que se puede comprobar sin desplegar, pero **no sustituye a las dos
+validaciones externas** que la historia pone como criterio de cierre y que solo
+se pueden hacer contra una URL pública real:
+
+- [ ] **Rich Results Test** (`https://search.google.com/test/rich-results`) sobre
+      `/planes` — debe detectar `FAQPage` sin advertencias.
+- [ ] **Rich Results Test** sobre la ficha de un centro publicado — debe detectar
+      `SportsActivityLocation` con dirección, coordenadas y horario.
+- [ ] **validator.schema.org** sobre las dos anteriores, que es más estricto que
+      el de Google y avisa de propiedades mal tipadas que Google ignora.
+
+Hasta que estas tres casillas estén marcadas, el marcado está escrito pero no
+dado por bueno.
