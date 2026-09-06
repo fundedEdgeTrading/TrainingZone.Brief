@@ -67,7 +67,9 @@ const TAB_META: Record<TabName, { label: string; icon: IconName }> = {
   socios: { label: "Socios", icon: "users" },
   productos: { label: "Productos", icon: "box" },
   anuncios: { label: "Anuncios", icon: "bell" },
-  organizacion: { label: "Equipo", icon: "building" },
+  // E8-18: "Organización", igual que la web (`rbac.ts`) — antes decía "Equipo",
+  // un nombre distinto para la misma sección.
+  organizacion: { label: "Organización", icon: "building" },
   notificaciones: { label: "Avisos", icon: "bell" },
   mas: { label: "Más", icon: "grid" },
   perfil: { label: "Perfil", icon: "user" },

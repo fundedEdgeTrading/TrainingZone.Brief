@@ -51,7 +51,7 @@ export default function StaffScreen() {
       <FadeInUp>
         <ScreenHeader
           kicker={`ORGANIZACIÓN · ${data ? pluralize(data.centers.length, "CENTRO", "CENTROS").toUpperCase() : ""}`}
-          title="Equipo"
+          title="Organización"
           right={
             data ? (
               <Text style={[typo.rowMeta, { color: theme.textMuted }]}>{pluralize(data.staff.length, "persona", "personas")}</Text>
