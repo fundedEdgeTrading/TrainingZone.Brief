@@ -16,7 +16,7 @@ import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
 import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
 import { statusesEndingAt } from "@/lib/booking-transitions";
-import { zonedTimeToInstant } from "@/lib/date-utils";
+import { enforcementStartsAt } from "@/lib/portal-queries";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import {
   chargeSessionToSubscription,
@@ -1015,7 +1015,9 @@ export async function discardAttendeeAsStaff(
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
-  const startsAt = zonedTimeToInstant(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+  // RB-RES-012: misma puerta que el portal — la zona del centro decide, y un
+  // centro sin zona configurada cae al valor por defecto en vez de romper.
+  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
   const effect = trainerDiscardEffect({
     startsAt,
     now: opts.now ?? new Date(),

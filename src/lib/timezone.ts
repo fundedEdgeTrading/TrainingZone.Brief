@@ -16,6 +16,12 @@ export const TIMEZONE_COOKIE = "tz";
  *
  * Nunca la del servidor: en producción corre en UTC, y de ahí venían los
  * "quedan X minutos" con dos horas de desfase.
+ *
+ * ATENCIÓN (RB-RES-012): esto sirve para PINTAR, no para DECIDIR. La cookie la
+ * elige el navegador y desplaza el instante hasta ~26 h. Toda regla que dependa
+ * de la hora real de una clase —antelación mínima, ventana de cancelación, "ya
+ * ha empezado"— pasa por `enforcementStartsAt` (portal-queries.ts), que usa
+ * siempre `Center.timezone`.
  */
 export async function resolveTimezone(centerTimezone?: string | null): Promise<string> {
   return (await timezoneFromCookie()) ?? centerTimezone ?? DEFAULT_TIMEZONE;
