@@ -36,6 +36,15 @@ export const PUBLIC_PATHS = [
   // chequeo de cookie de aquí la rebotaba entera a /login — incluido su
   // propio endpoint de login, con lo que la app no podía autenticarse nunca.
   "/api/mobile",
+  // E9-01 · Rastreo. El matcher del proxy ya los excluye por extensión y por
+  // prefijo, así que en condiciones normales no llegan hasta aquí; se listan
+  // igualmente para que el día que alguien reescriba el matcher la respuesta
+  // siga siendo la correcta y no un rebote a /login. `/.well-known` cubre
+  // `assetlinks.json` (Android) y `apple-app-site-association` (iOS), que no
+  // lleva extensión.
+  "/robots.txt",
+  "/sitemap.xml",
+  "/.well-known",
 ];
 
 /**
