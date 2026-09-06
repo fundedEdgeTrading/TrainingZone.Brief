@@ -18,6 +18,8 @@
  */
 
 const INK = "#1D1D1C"; // Negro corporativo
+import { absoluteUrl } from "@/lib/site";
+
 const PAPER = "#F4F0E8"; // Hueso
 const SAND = "#E7DFD2"; // Arena (color de firma)
 const LINEN = "#D8CCB8"; // Lino (bordes y filetes)
@@ -28,14 +30,15 @@ const FAINT = "#A8A296";
 const FONT = "Poppins,Helvetica,Arial,sans-serif";
 
 /**
- * Dominio público de la app; se usa para los enlaces del pie. Mismo criterio
- * que `invitations.absoluteUrl`, pero sin importarlo: este módulo se mantiene
- * puro (nada de Prisma) para poder renderizar y probar una plantilla sin BD.
+ * Dominio público de la app; se usa para los enlaces del pie. Sale de
+ * `site.ts`, que es igual de puro que este módulo (nada de Prisma, nada de
+ * `next/*`): una plantilla se sigue pudiendo renderizar y probar sin BD.
+ *
+ * Solo se toma de ahí el origen, nunca `BRAND`: el correo va firmado como
+ * Training Zone o como el centro, y no menciona a Apta ni en el cuerpo ni en
+ * el pie.
  */
-function appUrl(path: string) {
-  const base = (process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000").replace(/\/$/, "");
-  return `${base}${path}`;
-}
+const appUrl = absoluteUrl;
 
 export type EmailRow = { label: string; value: string };
 
