@@ -76,3 +76,39 @@ export async function refreshStripeAccountStatus(accountId: string) {
     data: { chargesEnabled: !!account.charges_enabled, payoutsEnabled: !!account.payouts_enabled },
   });
 }
+
+/**
+ * HU-ST-06 / RB-CONNECT-004 · El gimnasio ha revocado el acceso de Apta desde su
+ * propio Dashboard de Stripe (`account.application.deauthorized`).
+ *
+ * Se apagan `chargesEnabled` y `payoutsEnabled`, que es lo que gatea toda la UI
+ * de cobro (`isStripeConfiguredForOrg`, la tarjeta "Cobros a socios" de
+ * /organization): el gimnasio vuelve a ver "Conectar cobros con Stripe" en vez
+ * de un botón de cobro que fallaría con un 401 de Stripe.
+ *
+ * Lo que NO se hace, a propósito: no se borra el `acct_…` ni el espejo de
+ * precios de `MembershipPlan` (`stripeProductId`/`stripePriceId`/
+ * `stripeAccountId`). Un gimnasio que reconecta LA MISMA cuenta —el caso
+ * habitual: revocó por error, o rehízo el permiso— recupera su catálogo y sus
+ * suscripciones vivas tal cual. Borrarlo dejaría huérfanos en Stripe cobros que
+ * siguen ejecutándose, y obligaría a recrear productos y precios que ya existen.
+ * Si reconecta OTRA cuenta, `ensureStripePrice` ya detecta el cambio por
+ * `stripeAccountId` y rehace el espejo.
+ *
+ * Cuenta desconocida (evento de otra plataforma reenviado, cuenta ya purgada):
+ * se descarta sin escribir nada.
+ */
+export async function deauthorizeStripeAccount(accountId: string | null | undefined): Promise<void> {
+  if (!accountId) return;
+
+  const existing = await prisma.stripeAccount.findUnique({
+    where: { accountId },
+    select: { id: true },
+  });
+  if (!existing) return;
+
+  await prisma.stripeAccount.update({
+    where: { accountId },
+    data: { chargesEnabled: false, payoutsEnabled: false },
+  });
+}

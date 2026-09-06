@@ -11,7 +11,7 @@ import {
   reconcileMemberInvoicePaymentFailed,
 } from "@/lib/member-billing";
 import { prisma } from "@/lib/prisma";
-import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
+import { deauthorizeStripeAccount, refreshStripeAccountStatus } from "@/lib/stripe-connect";
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
 import { reconcilePlatformInvoicePaid, reconcilePlatformInvoicePaymentFailed } from "@/lib/platform-billing";
 import { claimStripeEvent, markStripeEventFailed, markStripeEventProcessed } from "@/lib/stripe-webhook-events";
@@ -101,6 +101,15 @@ async function handleConnectEvent(event: Stripe.Event): Promise<ConnectEventResu
     case "account.updated": {
       const account = event.data.object as Stripe.Account;
       await refreshStripeAccountStatus(account.id);
+      break;
+    }
+    case "account.application.deauthorized": {
+      // HU-ST-06/RB-CONNECT-004: el gimnasio ha revocado el acceso desde su
+      // Dashboard. `event.data.object` es la Application, no la cuenta: quien
+      // identifica al gimnasio es `event.account`. Tampoco se puede llamar a
+      // `accounts.retrieve` (ya no tenemos permiso), así que se apagan los dos
+      // interruptores directamente en vez de refrescar desde Stripe.
+      await deauthorizeStripeAccount(event.account);
       break;
     }
     case "customer.subscription.created":
