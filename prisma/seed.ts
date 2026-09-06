@@ -1370,14 +1370,24 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   });
 
   // ---------- Rangos de referencia de composición corporal (CC2) ----------
+  // E3-09 · RB-SALUD-013: por SEXO y TRAMO DE EDAD. Los valores unisex y sin
+  // edad de antes eran los del informe Tanita de un hombre de 28 años, y con
+  // ellos una socia de 52 con un 29 % de grasa —perfectamente normal— salía en
+  // rojo en su propia ficha y en su portal. Lo que no tenga fila para un socio
+  // se muestra sin semáforo, nunca en rojo por defecto.
   await prisma.referenceRange.createMany({
     data: [
-      { metric: "bodyFatPct", sex: "M", min: 8, max: 19 },
-      { metric: "bodyFatPct", sex: "F", min: 18, max: 28 },
-      { metric: "bmi", sex: null, min: 18.5, max: 25 },
-      { metric: "visceralFatRating", sex: null, min: 1, max: 9 },
-      { metric: "bodyWaterPct", sex: "M", min: 50, max: 65 },
-      { metric: "bodyWaterPct", sex: "F", min: 45, max: 60 },
+      { metric: "bodyFatPct", sex: "M", ageMin: 18, ageMax: 39, min: 8, max: 19 },
+      { metric: "bodyFatPct", sex: "M", ageMin: 40, ageMax: 59, min: 11, max: 22 },
+      { metric: "bodyFatPct", sex: "M", ageMin: 60, ageMax: null, min: 13, max: 25 },
+      { metric: "bodyFatPct", sex: "F", ageMin: 18, ageMax: 39, min: 21, max: 33 },
+      { metric: "bodyFatPct", sex: "F", ageMin: 40, ageMax: 59, min: 23, max: 35 },
+      { metric: "bodyFatPct", sex: "F", ageMin: 60, ageMax: null, min: 24, max: 36 },
+      { metric: "bmi", sex: null, ageMin: 18, ageMax: 64, min: 18.5, max: 25 },
+      { metric: "bmi", sex: null, ageMin: 65, ageMax: null, min: 22, max: 27 },
+      { metric: "visceralFatRating", sex: null, ageMin: null, ageMax: null, min: 1, max: 9 },
+      { metric: "bodyWaterPct", sex: "M", ageMin: null, ageMax: null, min: 50, max: 65 },
+      { metric: "bodyWaterPct", sex: "F", ageMin: null, ageMax: null, min: 45, max: 60 },
     ].map((r) => ({ id: id(), orgId, editedByUserId: ownerId, ...r })),
   });
 

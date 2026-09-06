@@ -1,5 +1,11 @@
 import type { Sex } from "@prisma/client";
-import { getReferenceRange, statusForValue, ageFromBirthDate } from "@/lib/reference-ranges";
+import {
+  formatTrend,
+  getReferenceRange,
+  statusForValue,
+  ageFromBirthDate,
+  trendAgainstPrevious,
+} from "@/lib/reference-ranges";
 
 type ProgressEntryLike = {
   date: Date;
@@ -26,9 +32,15 @@ export async function buildCompositionView(
   sex: Sex | null = null
 ) {
   const age = ageFromBirthDate(birthDate);
-  const latestComposition = progressEntries.find(
+  const compositionEntries = progressEntries.filter(
     (e) => e.bodyFatPct != null || e.muscleMassKg != null || e.bmi != null || e.visceralFatRating != null
   );
+  const latestComposition = compositionEntries[0];
+  // E3-09: el % graso se presenta como TENDENCIA contra la medición anterior,
+  // que es lo único defendible sin normativa poblacional. `progressEntries`
+  // llega ordenado de más reciente a más antiguo.
+  const previousBodyFat = compositionEntries.find((e, i) => i > 0 && e.bodyFatPct != null)?.bodyFatPct ?? null;
+  const bodyFatTrend = trendAgainstPrevious(latestComposition?.bodyFatPct, previousBodyFat);
   const [bodyFatRange, bmiRange, visceralRange] = await Promise.all([
     getReferenceRange(orgId, "bodyFatPct", { age, sex }),
     getReferenceRange(orgId, "bmi", { age, sex }),
@@ -38,7 +50,14 @@ export async function buildCompositionView(
   const compositionTiles = latestComposition
     ? [
         { label: "Peso", value: latestComposition.weightKg != null ? `${latestComposition.weightKg} kg` : null },
-        { label: "% graso", value: latestComposition.bodyFatPct != null ? `${latestComposition.bodyFatPct} %` : null, status: statusForValue(latestComposition.bodyFatPct, bodyFatRange) },
+        {
+          label: "% graso",
+          value: latestComposition.bodyFatPct != null ? `${latestComposition.bodyFatPct} %` : null,
+          // "unknown" cuando no hay fila para su sexo y tramo de edad: se pinta
+          // el número, sin color. Nunca rojo por defecto (E3-09).
+          status: statusForValue(latestComposition.bodyFatPct, bodyFatRange),
+          foot: formatTrend(bodyFatTrend),
+        },
         { label: "IMC", value: latestComposition.bmi != null ? `${latestComposition.bmi}` : null, status: statusForValue(latestComposition.bmi, bmiRange) },
         { label: "Masa muscular", value: latestComposition.muscleMassKg != null ? `${latestComposition.muscleMassKg} kg` : null },
         { label: "Grasa visceral", value: latestComposition.visceralFatRating != null ? `${latestComposition.visceralFatRating}` : null, status: statusForValue(latestComposition.visceralFatRating, visceralRange) },
@@ -62,6 +81,8 @@ export async function buildCompositionView(
   }));
 
   return {
+    bodyFatTrend,
+    bodyFatTrendLabel: formatTrend(bodyFatTrend),
     compositionTiles,
     compositionChartPoints,
     bodyFatChartPoints,
