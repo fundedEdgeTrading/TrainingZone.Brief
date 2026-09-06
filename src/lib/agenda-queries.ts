@@ -26,7 +26,8 @@ import {
   pickBookingSubscription,
   shouldNotifyVacancy,
 } from "@/lib/session-booking";
-import { addDays, DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
+import { addDays, DEFAULT_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
+import { centerCapacityCeiling } from "@/lib/group-capacity";
 
 /**
  * Centros visibles para un usuario según su imputación real:
@@ -217,7 +218,9 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
 
   const isPersonal = input.type === "personal";
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
-  const groupCapacityCeiling = center.defaultGroupCapacity ?? MAX_GROUP_CAPACITY;
+  // E2-13: el tope del centro nunca por encima del global — un
+  // `defaultGroupCapacity` absurdo guardado de antes deja de ser el techo.
+  const groupCapacityCeiling = centerCapacityCeiling(center.defaultGroupCapacity);
   if (!isPersonal && input.capacity && input.capacity > groupCapacityCeiling) {
     return {
       ok: false as const,
