@@ -1,10 +1,11 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { PlanType } from "@prisma/client";
 import { OrgLogo } from "@/components/org-logo";
 import { Field, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-import { getPublicMembershipContext } from "@/lib/public-membership-queries";
+import { getCachedPublicMembershipContext } from "@/lib/public-membership-queries";
 import { GENERIC_CENTER_METADATA, centerMembershipMetadata } from "@/lib/public-center-seo";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
@@ -16,7 +17,32 @@ import { absoluteUrl } from "@/lib/site";
 import { membershipPath } from "@/lib/public-center-seo";
 import MemberBillingLinkForm from "./member-billing-link-form";
 import { CenterNapBlock } from "./center-nap";
+import { CheckoutNotice } from "./checkout-notice";
 import { SERVICE_LABEL } from "@/lib/service-labels";
+
+/**
+ * E9-14 · La ficha se sirve cacheada durante diez minutos.
+ *
+ * Antes no tenía ni `revalidate` ni `generateStaticParams`: dos consultas
+ * secuenciales más el catálogo más la comprobación de Stripe **en cada visita**,
+ * para una página que cambia cuando el gimnasio edita su ficha, es decir casi
+ * nunca. La invalidación no espera a los diez minutos: editar el centro o su
+ * catálogo llama a `updateTag` (ver `organization/actions.ts`).
+ *
+ * `/planes` NO entra aquí: conserva su `force-dynamic`, que está justificado
+ * porque sus precios se resuelven del entorno en cada petición.
+ */
+export const revalidate = 600;
+
+/**
+ * No se prerrenderiza ninguna ficha en compilación: qué centros existen y
+ * cuáles han publicado su página cambia sin desplegar. Declararlo vacío es lo
+ * que convierte la ruta en incremental —se cachea la primera vez que alguien la
+ * pide— en vez de dinámica pura.
+ */
+export function generateStaticParams() {
+  return [];
+}
 
 /**
  * E9-04 · Título, descripción, OpenGraph y canónica PROPIOS de este centro.
@@ -34,7 +60,7 @@ export async function generateMetadata({
   params: Promise<{ orgSlug: string; centerSlug: string }>;
 }): Promise<Metadata> {
   const { orgSlug, centerSlug } = await params;
-  const ctx = await getPublicMembershipContext(orgSlug, centerSlug);
+  const ctx = await getCachedPublicMembershipContext(orgSlug, centerSlug);
   // Centro sin datos: se degrada al título genérico en vez de romper. La página
   // devolverá su 404 por su cuenta.
   if (!ctx) return GENERIC_CENTER_METADATA;
@@ -62,14 +88,11 @@ function planPeriodLabel(plan: { type: PlanType; sessionsIncluded: number | null
 
 export default async function PublicMembershipPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ orgSlug: string; centerSlug: string }>;
-  searchParams: Promise<{ checkout?: string; motivo?: string }>;
 }) {
   const { orgSlug, centerSlug } = await params;
-  const { checkout, motivo } = await searchParams;
-  const ctx = await getPublicMembershipContext(orgSlug, centerSlug);
+  const ctx = await getCachedPublicMembershipContext(orgSlug, centerSlug);
   if (!ctx) notFound();
 
   const checkoutAction = `/api/hazte-socio/${orgSlug}/${centerSlug}/checkout`;
@@ -106,11 +129,12 @@ export default async function PublicMembershipPage({
           <p className="text-sm text-brand-text-2 mt-1">Elige tu plan y paga online — tu acceso queda listo en minutos.</p>
         </div>
 
-        {checkout === "error" && (
-          <div className="mb-6 rounded-control border border-critical/30 bg-critical-bg px-4 py-3 text-sm text-critical">
-            {motivo || "No se ha podido iniciar el pago. Inténtalo de nuevo."}
-          </div>
-        )}
+        {/* El aviso de checkout fallido se lee en el cliente: leer
+            `searchParams` aquí obligaría a renderizar en cada visita y tiraría
+            la caché por un caso que casi nunca ocurre. */}
+        <Suspense fallback={null}>
+          <CheckoutNotice />
+        </Suspense>
 
         {!ctx.stripeReady ? (
           <div className="rounded-control border border-brand-border bg-tz-bone px-4 py-4 text-sm text-brand-text-2">

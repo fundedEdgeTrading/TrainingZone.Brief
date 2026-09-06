@@ -1,9 +1,16 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { OrgLogo } from "@/components/org-logo";
-import { getPublicLeadFormContext } from "@/lib/public-lead-queries";
+import { getCachedPublicLeadFormContext } from "@/lib/public-lead-queries";
 import { GENERIC_CENTER_METADATA, centerLeadFormMetadata } from "@/lib/public-center-seo";
 import { PublicLeadForm } from "./public-lead-form";
+
+/** E9-14 · Mismo criterio que la ficha de alta: diez minutos, con invalidación por etiqueta al editar el centro. */
+export const revalidate = 600;
+
+export function generateStaticParams() {
+  return [];
+}
 
 /**
  * E9-04 · `/lead-form` y `/hazte-socio` compiten por la misma intención.
@@ -19,7 +26,7 @@ export async function generateMetadata({
   params: Promise<{ orgSlug: string; centerSlug: string }>;
 }): Promise<Metadata> {
   const { orgSlug, centerSlug } = await params;
-  const ctx = await getPublicLeadFormContext(orgSlug, centerSlug);
+  const ctx = await getCachedPublicLeadFormContext(orgSlug, centerSlug);
   if (!ctx) return { ...GENERIC_CENTER_METADATA, robots: { index: false, follow: true } };
 
   return centerLeadFormMetadata({
@@ -40,7 +47,7 @@ export default async function PublicLeadFormPage({
   params: Promise<{ orgSlug: string; centerSlug: string }>;
 }) {
   const { orgSlug, centerSlug } = await params;
-  const ctx = await getPublicLeadFormContext(orgSlug, centerSlug);
+  const ctx = await getCachedPublicLeadFormContext(orgSlug, centerSlug);
   if (!ctx) notFound();
 
   return (

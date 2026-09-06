@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { parseOpeningHours } from "@/lib/opening-hours";
-import { centerPublicTag } from "@/lib/public-center-seo";
+import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
 import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
@@ -123,9 +123,11 @@ export async function updateCenterPublicProfile(formData: FormData): Promise<Org
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const centerId = String(formData.get("centerId") ?? "");
 
+  // Se leen los slugs además del id: la caché de la ficha pública se etiqueta
+  // por URL (E9-14), no por identificador.
   const center = await prisma.center.findFirst({
     where: { id: centerId, orgId: session.user.orgId },
-    select: { id: true },
+    select: { id: true, slug: true, organization: { select: { slug: true } } },
   });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
 
@@ -174,7 +176,7 @@ export async function updateCenterPublicProfile(formData: FormData): Promise<Org
   // `updateTag` y no `revalidateTag`: esto es una acción de servidor y quien
   // acaba de guardar tiene que ver SU cambio, no una versión rancia mientras se
   // refresca por detrás.
-  updateTag(centerPublicTag(centerId));
+  updateTag(centerPublicTag(center.organization.slug, center.slug));
   return { ok: true };
 }
 
@@ -527,6 +529,7 @@ export async function createMembershipPlan(formData: FormData): Promise<OrgActio
   const result = await saveMembershipPlan(session.user.orgId, parsed.input);
   if (!result.ok) return result;
   revalidatePath("/organization");
+  await invalidateOrgCatalog(session.user.orgId);
   return { ok: true };
 }
 
@@ -539,6 +542,7 @@ export async function updateMembershipPlan(formData: FormData): Promise<OrgActio
   const result = await saveMembershipPlan(session.user.orgId, parsed.input);
   if (!result.ok) return result;
   revalidatePath("/organization");
+  await invalidateOrgCatalog(session.user.orgId);
   return { ok: true };
 }
 
@@ -554,5 +558,17 @@ export async function setMembershipPlanActive(formData: FormData): Promise<OrgAc
   const result = await archiveMembershipPlan(session.user.orgId, planId, active);
   if (!result.ok) return result;
   revalidatePath("/organization");
+  await invalidateOrgCatalog(session.user.orgId);
   return { ok: true };
+}
+
+/**
+ * E9-14 · Las fichas públicas de los centros enseñan el catálogo, y se sirven
+ * cacheadas: sin esto, una tarifa nueva no aparecería en ninguna de ellas hasta
+ * que expirase la revalidación de diez minutos. La etiqueta es de organización
+ * porque el catálogo lo es: un cambio afecta a todos sus centros a la vez.
+ */
+async function invalidateOrgCatalog(orgId: string) {
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
+  if (org) updateTag(orgCatalogTag(org.slug));
 }

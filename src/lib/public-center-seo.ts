@@ -41,14 +41,27 @@ export function membershipPath(orgSlug: string, centerSlug: string): string {
 }
 
 /**
- * Etiqueta de caché de la ficha pública de un centro (E9-14).
+ * Etiquetas de caché de la ficha pública (E9-14).
  *
- * Vive aquí, y no en la query, para que quien EDITA el centro pueda invalidarla
- * sin arrastrar Prisma a un módulo de acciones que ya lo tiene por otro lado:
- * es una cadena, y las dos puntas tienen que escribir exactamente la misma.
+ * Viven aquí, junto a las rutas, porque son la otra cara de la misma cadena: la
+ * página se cachea con una etiqueta y quien edita la invalida con la misma, y si
+ * las dos puntas no escriben exactamente lo mismo el cambio no se ve y nadie se
+ * entera hasta que un gimnasio se queja de que su teléfono nuevo no sale.
+ *
+ * Se etiqueta por **slug** y no por id: la página se cachea antes de saber el id
+ * del centro (la clave de caché es la URL), así que el id no está disponible en
+ * el punto donde se declara la etiqueta.
  */
-export function centerPublicTag(centerId: string): string {
-  return `center-public:${centerId}`;
+export function centerPublicTag(orgSlug: string, centerSlug: string): string {
+  return `center-public:${orgSlug}/${centerSlug}`;
+}
+
+/**
+ * Catálogo de una organización. Va aparte del centro porque su ciclo de vida es
+ * otro: cambiar una tarifa afecta a la ficha de TODOS sus centros a la vez.
+ */
+export function orgCatalogTag(orgSlug: string): string {
+  return `org-catalog:${orgSlug}`;
 }
 
 /** La URL del formulario de leads embebible. No se indexa (canoniza a la de arriba). */

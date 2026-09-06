@@ -1,7 +1,9 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 
 import { prisma } from "@/lib/prisma";
-import { PUBLIC_CENTER_SELECT } from "@/lib/public-membership-queries";
+import { PUBLIC_CENTER_SELECT, PUBLIC_CENTER_REVALIDATE } from "@/lib/public-membership-queries";
+import { centerPublicTag } from "@/lib/public-center-seo";
 
 /**
  * Contexto público (sin sesión) para el formulario de leads embebido por centro.
@@ -35,3 +37,16 @@ export const getPublicLeadFormContext = cache(async function getPublicLeadFormCo
 
   return { organization, center, channels };
 });
+
+/**
+ * E9-14 · La versión cacheada, para la página. La acción de servidor que crea el
+ * lead sigue usando la fresca: un canal de captación recién desactivado no puede
+ * seguir aceptando leads durante diez minutos.
+ */
+export function getCachedPublicLeadFormContext(orgSlug: string, centerSlug: string) {
+  return unstable_cache(
+    () => getPublicLeadFormContext(orgSlug, centerSlug),
+    ["public-lead-context", orgSlug, centerSlug],
+    { revalidate: PUBLIC_CENTER_REVALIDATE, tags: [centerPublicTag(orgSlug, centerSlug)] }
+  )();
+}
