@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withSignedPhotoUrls } from "@/lib/progress-photos";
 import { serviceLabelLower } from "@/lib/service-labels";
 import { buildCompositionView } from "@/lib/composition-view";
 import { sessionServiceKind } from "@/lib/members-queries";
@@ -35,7 +36,10 @@ export async function getMemberEvolution(memberId: string, orgId: string) {
   return {
     consentHealth: member.consentHealth,
     consentImages: member.consentImages,
-    progressEntries: member.progressEntries,
+    // E10-20: la columna guarda una referencia, no la foto. Lo que sale de aquí
+    // es un enlace firmado y caducado; los `data:` heredados pasan tal cual
+    // hasta que el backfill los mueva.
+    progressEntries: withSignedPhotoUrls(member.progressEntries, memberId),
     ...view,
   };
 }

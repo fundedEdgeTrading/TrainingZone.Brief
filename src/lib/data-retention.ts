@@ -1,6 +1,7 @@
 import type { RetentionCategory } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { deletePhotosOfEntries } from "@/lib/progress-photos";
 
 /**
  * E10-08 · Plazos de conservación: CONFIGURACIÓN, no código.
@@ -261,6 +262,14 @@ export async function runDataRetention(
   let photosPurged = 0;
   for (const member of forPhotoPurge) {
     if (await alreadyApplied(db, "PROGRESS_PHOTOS", member.id)) continue;
+    // E10-20: la foto vive fuera de la base de datos, así que vaciar la columna
+    // no la borra. Primero el fichero, después la referencia: al revés quedaría
+    // un fichero en disco sin nada que apunte a él.
+    const entries = await db.memberProgressEntry.findMany({
+      where: { memberId: member.id },
+      select: { photoFrontUrl: true, photoSideUrl: true, photoBackUrl: true },
+    });
+    await deletePhotosOfEntries(entries);
     const cleared = await db.memberProgressEntry.updateMany({
       where: { memberId: member.id },
       data: { photoFrontUrl: null, photoSideUrl: null, photoBackUrl: null },
@@ -286,6 +295,11 @@ export async function runDataRetention(
       where: { memberId: member.id },
       data: { memberId: null, reportedByUserId: null },
     });
+    const withPhotos = await db.memberProgressEntry.findMany({
+      where: { memberId: member.id },
+      select: { photoFrontUrl: true, photoSideUrl: true, photoBackUrl: true },
+    });
+    await deletePhotosOfEntries(withPhotos);
     const entries = await db.memberProgressEntry.deleteMany({ where: { memberId: member.id } });
     await mark(db, orgId, "HEALTH_DATA", member.id, {
       memberId: member.id,

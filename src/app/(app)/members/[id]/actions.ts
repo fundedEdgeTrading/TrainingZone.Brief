@@ -15,6 +15,12 @@ import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 import { ensureSuppressedMemberBucket, getSuppressionPlan } from "@/lib/member-suppression";
+import {
+  deletePhotosOfEntries,
+  deleteProgressPhoto,
+  isPhotoStoreConfigured,
+  putProgressPhoto,
+} from "@/lib/progress-photos";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -437,6 +443,12 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
   // y es el mismo plan que el diálogo acaba de enseñar.
   const plan = await getSuppressionPlan(memberId, session.user.orgId);
   if (!plan) return { ok: false, error: "No se ha encontrado ese socio." };
+  // Las referencias de foto se leen ANTES de borrar las filas: después ya no
+  // habría desde dónde saber qué ficheros quedan huérfanos en disco.
+  const photoEntries = await prisma.memberProgressEntry.findMany({
+    where: { memberId },
+    select: { photoFrontUrl: true, photoSideUrl: true, photoBackUrl: true },
+  });
   const healthAction = plan.effects.find((e) => e.key === "healthRecords")?.action ?? "ANONYMIZE";
 
   try {
@@ -477,6 +489,10 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       await tx.clientGoal.deleteMany({ where: { memberId } });
       await tx.memberNote.deleteMany({ where: { memberId } });
       await tx.memberProgressEntry.deleteMany({ where: { memberId } });
+      // E10-20 · borrar la fila no basta: la foto vive fuera de la base de
+      // datos, así que hay que borrar también el fichero. Se hace con las
+      // referencias leídas antes de la transacción.
+      await deletePhotosOfEntries(photoEntries);
       // F1/F6: `Assessment`, `PerformanceMetric` y `Mesocycle` tienen FK a
       // `Member` sin cascada (`ON DELETE RESTRICT`, ver la migración de F1) y
       // faltaban aquí — el borrado reventaba con P2003 para cualquier socio con
@@ -602,10 +618,14 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
 
   const numValues = Object.fromEntries(COMPOSITION_NUM_FIELDS.map((k) => [k, num(k)]));
   const intValues = Object.fromEntries(COMPOSITION_INT_FIELDS.map((k) => [k, int(k)]));
-  const photos = { photoFrontUrl: str("photoFrontUrl"), photoSideUrl: str("photoSideUrl"), photoBackUrl: str("photoBackUrl") };
+  const rawPhotos = {
+    photoFrontUrl: str("photoFrontUrl"),
+    photoSideUrl: str("photoSideUrl"),
+    photoBackUrl: str("photoBackUrl"),
+  };
 
   const hasMetrics = Object.values(numValues).some((v) => v != null) || Object.values(intValues).some((v) => v != null);
-  const hasPhotos = Object.values(photos).some((v) => v != null);
+  const hasPhotos = Object.values(rawPhotos).some((v) => v != null);
   if (!hasMetrics && !hasPhotos) return { ok: false, error: "Introduce al menos un dato." };
   if (hasPhotos && !member.consentImages) {
     return { ok: false, error: "Este socio no ha firmado el consentimiento de uso de imágenes." };
@@ -614,9 +634,54 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
     return { ok: false, error: "Este socio no ha firmado el consentimiento de datos de salud (Art. 9 RGPD)." };
   }
 
+  // E10-20 · la foto sale de la base de datos ANTES de crear la fila: lo que se
+  // guarda en la columna es la referencia al fichero cifrado, nunca los bytes.
+  // Si el almacén no está configurado se dice, en vez de caer al camino de
+  // antes y volver a meter un `data:` URL en Postgres sin que nadie se entere.
+  if (hasPhotos && !isPhotoStoreConfigured()) {
+    return {
+      ok: false,
+      error:
+        "El almacén de fotos no está configurado (PROGRESS_PHOTO_KEY). Las fotos de composición corporal no se " +
+        "guardan en la base de datos, así que hasta configurarlo solo se pueden registrar las métricas.",
+    };
+  }
+
+  const photos: Record<string, string | null> = {};
+  const storedRefs: string[] = [];
+  for (const [field, value] of Object.entries(rawPhotos)) {
+    if (!value) {
+      photos[field] = null;
+      continue;
+    }
+    const stored = await putProgressPhoto(value);
+    if (!stored) {
+      // Se limpia lo ya guardado: media entrada con dos fotos huérfanas en
+      // disco es peor que ninguna.
+      for (const ref of storedRefs) await deleteProgressPhoto(ref);
+      return { ok: false, error: "Alguna de las fotos no es una imagen válida (JPEG, PNG o WebP)." };
+    }
+    photos[field] = stored.ref;
+    storedRefs.push(stored.ref);
+  }
+
   const entry = await prisma.memberProgressEntry.create({
     data: { memberId, ...numValues, ...intValues, ...photos, source: "MANUAL" },
   });
+
+  if (storedRefs.length > 0) {
+    await prisma.auditLog.create({
+      data: {
+        orgId: session.user.orgId,
+        actorUserId: session.user.id,
+        action: "PROGRESS_PHOTO_STORED",
+        entityType: "MemberProgressEntry",
+        entityId: entry.id,
+        memberId,
+        metadata: { photos: storedRefs.length, encrypted: true, inDatabase: false },
+      },
+    });
+  }
 
   if (hasMetrics) {
     await prisma.auditLog.create({

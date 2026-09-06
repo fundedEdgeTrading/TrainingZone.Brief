@@ -51,3 +51,7 @@ next-env.d.ts
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# E10-20: fotos de composición corporal cifradas fuera de la base de datos.
+# Nunca al repositorio: son datos del art. 9 RGPD.
+.data/

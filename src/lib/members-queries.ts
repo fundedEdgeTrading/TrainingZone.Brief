@@ -3,6 +3,7 @@ import type { BookingStatus, MemberState, NoShowReason } from "@prisma/client";
 import { formatDateParam } from "@/lib/date-utils";
 import { toMin } from "@/app/(app)/agenda/agenda-utils";
 import { sessionServiceKind } from "@/lib/session-balance";
+import { withSignedPhotoUrls } from "@/lib/progress-photos";
 
 /**
  * Búsqueda por nombre/email, compartida por el listado y por la base de
@@ -123,7 +124,7 @@ export async function listActiveMembersForSelect(orgId: string) {
 }
 
 export async function getMemberDetail(orgId: string, memberId: string) {
-  return prisma.member.findFirst({
+  const member = await prisma.member.findFirst({
     where: { id: memberId, orgId },
     include: {
       primaryCenter: true,
@@ -139,6 +140,11 @@ export async function getMemberDetail(orgId: string, memberId: string) {
       clientGoals: { orderBy: { createdAt: "desc" } },
     },
   });
+  if (!member) return null;
+  // E10-20: la foto ya no está en la columna. Lo que se entrega a la pantalla
+  // es un enlace firmado y caducado que pasa por `/api/progress-photos`, donde
+  // se aplican los permisos de salud y se deja rastro en `AuditLog`.
+  return { ...member, progressEntries: withSignedPhotoUrls(member.progressEntries, member.id) };
 }
 
 // Modalidad de servicio y cuentas de saldo: viven en session-balance.ts, que no

@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "test:unit": "tsx --test $(find src -name '*.test.ts')",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "migrate:fotos": "tsx scripts/migrate-progress-photos.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
