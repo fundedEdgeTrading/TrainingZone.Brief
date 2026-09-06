@@ -545,6 +545,62 @@ export function renderPaymentFailedEmail(opts: {
   });
 }
 
+/**
+ * E10-13 · Preaviso de cargo SEPA.
+ *
+ * Es un correo de SERVICIO, no comercial: se envía aunque el socio haya
+ * desactivado las comunicaciones prescindibles, porque el esquema SEPA Core
+ * obliga a pre-notificar el adeudo y sin él el socio se entera del cargo por
+ * el extracto. Por eso el pie no lleva el enlace de preferencias.
+ *
+ * Los cuatro datos que exige el preaviso van en la ficha —importe, fecha,
+ * mandato y plazo— y el derecho de devolución de 8 semanas va en el cuerpo,
+ * no en la letra pequeña.
+ */
+export function renderSepaPrenotificationEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  amountLabel: string;
+  chargeDateLabel: string;
+  mandateReference: string;
+  noticeDaysLabel: string;
+  planName?: string;
+  portalUrl: string;
+  postalAddress?: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Cuota",
+    preheader: `Cargo de ${opts.amountLabel} en tu cuenta el ${opts.chargeDateLabel}. Sin sorpresas en el extracto.`,
+    eyebrow: "Aviso previo de cargo",
+    title: `Hola, ${esc(opts.memberFirstName)}.<br>Te avisamos antes de cobrar.`,
+    bodyHtml:
+      p(`El ${strong(opts.chargeDateLabel)} cargaremos ${strong(opts.amountLabel)} en la cuenta que nos domiciliaste. Te lo decimos con antelación para que no te sorprenda en el extracto y puedas comprobar que tienes saldo.`, true) +
+      p(`Si algo no cuadra —el importe, la fecha o la cuenta— escríbenos antes de esa fecha y lo revisamos.`) +
+      p(`Como es un adeudo domiciliado, puedes ${strong(`pedir la devolución a tu banco durante las 8 semanas siguientes al cargo`)}, sin tener que dar ningún motivo.`),
+    rows: [
+      ...(opts.planName ? [{ label: "Concepto", value: opts.planName }] : []),
+      { label: "Importe", value: opts.amountLabel },
+      { label: "Fecha del cargo", value: opts.chargeDateLabel },
+      { label: "Referencia del mandato", value: opts.mandateReference },
+      { label: "Aviso previo", value: opts.noticeDaysLabel },
+      { label: "Plazo de devolución", value: "8 semanas desde el cargo" },
+    ],
+    ctaLabel: "Ver mi cuota",
+    ctaUrl: opts.portalUrl,
+    noteHtml: "Este aviso no es un cobro: es la notificación previa que te debemos antes de pasarlo al banco.",
+    signOff: `Cualquier duda, aquí estamos,<br>${strong(`El equipo de ${opts.brandName}`)}`,
+    senderName: opts.brandName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este aviso porque tienes una cuota domiciliada. Es un correo de servicio y no se puede desactivar.",
+    // Sin enlace de preferencias a propósito: ofrecer "darse de baja" de un
+    // aviso obligatorio sería prometer algo que no se puede cumplir.
+    footerLinksHtml: PRIVACY(),
+  });
+}
+
 export function renderOwnerActivationEmail(opts: {
   orgName: string;
   planName: string;

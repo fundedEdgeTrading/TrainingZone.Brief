@@ -12,6 +12,7 @@ import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 import { runAssessmentDueRule } from "@/lib/assessment-jobs";
 import { runBirthdayRule } from "@/lib/birthday-jobs";
 import { runRetentionAlertRule } from "@/lib/retention";
+import { runSepaPrenotificationRule } from "@/lib/sepa-prenotification-job";
 import { reportJobFailures } from "@/lib/job-failure-report";
 
 /**
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
     feedbackCyclePrompts: 0,
     assessmentsDue: 0,
     birthdayGreetings: 0,
+    sepaPrenotifications: 0,
   };
 
 
@@ -84,6 +86,10 @@ export async function GET(req: NextRequest) {
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
     summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
     summary.birthdayGreetings += await run(org.id, "birthdayGreetings", () => runBirthdayRule(org.id));
+    // E10-13: el preaviso de cargo SEPA es correo de servicio y va con el resto
+    // de reglas temporales. Sin él, el socio domiciliado se entera del cargo
+    // por el extracto y el esquema SEPA Core queda incumplido.
+    summary.sepaPrenotifications += await run(org.id, "sepaPrenotifications", () => runSepaPrenotificationRule(org.id));
   }
 
   // El array de fallos no puede quedarse solo en la respuesta del cron: se
