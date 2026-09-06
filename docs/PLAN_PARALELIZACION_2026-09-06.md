@@ -131,7 +131,7 @@ No toca nada de S0-A, así que va en paralelo:
 | **T7** | Público, SEO y mapa | `app/planes/`, `hazte-socio/`, `lead-form/`, `proxy.ts`, `robots.ts`, `sitemap.ts`, `barrio-map*`, `public-*-queries.ts` | 24 · ver anexo | Sonnet 5 |
 | **T8** | Cumplimiento (código) | `consent.ts`, `app/privacidad/`, `retention.ts`, `api/portal/export-data/`, `api/jobs/run/` | 10 · ver anexo | Opus |
 | **T9** | Producto, menú e higiene | `platform-plans.ts`, `nav-icons.tsx`, `app/(app)/apta/`, `members-queries.ts`, `dashboard-queries.ts`, `_lib/dashboard.ts` | 31 · ver anexo | Sonnet 5 |
-| **T10** | **Jurídico — no es una sesión de Claude** | — | E10-03, E10-04, E10-05, E10-06, E10-10, E10-15, E13-03 | despacho |
+| **T10** | **Jurídico — no es una sesión de Claude** | expediente en [`docs/legal/`](./legal/) | 7 · ver anexo | despacho |
 
 ### Cesiones (historias que cambian de pista por propiedad de fichero)
 
@@ -243,7 +243,7 @@ Ordenadas por lo que ahorran de verdad.
 
 | Día | Qué corre |
 |---|---|
-| **Lun 7** | Ola 0: S0-A y S0-B. Merge a `main` por la tarde. **Encargo al despacho jurídico (T10) — hoy, no el jueves.** |
+| **Lun 7** | Ola 0: S0-A y S0-B. Merge a `main` por la tarde. **Encargo al despacho jurídico (T10) — hoy, no el jueves**: el expediente de entrada está en [`docs/legal/`](./legal/), y lo único que falta antes de mandarlo es el [cuestionario de dirección](./legal/00-CUESTIONARIO-DIRECCION.md). |
 | **Mar 8** | Arrancan T1…T9. T3 empieza por la fase 0 de Stripe. |
 | **Mié 9** | Primer merge completo de las nueve. Aquí se ve si la propiedad de ficheros aguanta. |
 | **Jue 10** | T2 cierra E2-01/E2-02 y arranca el ledger. T6 entra en la batería de pruebas. |
