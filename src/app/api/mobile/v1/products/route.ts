@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
     planType: body.planType as PlanType | undefined,
     serviceKind: body.serviceKind,
     active: body.visible ?? true,
-  });
+  }, claims.sub);
   if (!result.ok) return apiError(result.error, 400);
 
   return apiOk({ id: result.id }, 201);

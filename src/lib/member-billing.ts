@@ -35,6 +35,9 @@ export function isRecurring(planType: PlanType): boolean {
   return planType === "MONTHLY" || planType === "ONLINE";
 }
 
+/** HU-ST-08: mismo mensaje en las tres puertas de venta (recepción, portal, landing). */
+export const PLAN_ARCHIVED_ERROR = "Ese producto está archivado y ya no se puede vender.";
+
 /**
  * Crea o recupera el producto/precio espejo del plan en la cuenta CONECTADA
  * del gimnasio (RB-VENTA-002). Perezoso e idempotente: si ya hay
@@ -48,12 +51,16 @@ export function isRecurring(planType: PlanType): boolean {
  * anterior: puede haber `Subscription` vivas colgando de él.
  */
 export async function ensureStripePrice(orgId: string, planId: string): Promise<{ ok: true; priceId: string } | { ok: false; error: string }> {
+  // El plan se comprueba ANTES de resolver Stripe: que un producto esté
+  // archivado no depende de si hay pasarela configurada, y con el orden
+  // inverso el mensaje que veía recepción era "falta STRIPE_SECRET_KEY".
+  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId } });
+  if (!plan) return { ok: false, error: "Plan no encontrado." };
+  if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
+
   const resolved = await stripeForOrg(orgId);
   if (!resolved.ok) return { ok: false, error: resolved.error };
   const { stripe, accountId } = resolved;
-
-  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId } });
-  if (!plan) return { ok: false, error: "Plan no encontrado." };
 
   if (plan.stripePriceId && plan.stripeAccountId === accountId) {
     return { ok: true, priceId: plan.stripePriceId };
@@ -119,19 +126,27 @@ export async function createMemberCheckout(params: {
 }): Promise<MemberCheckoutResult> {
   const { orgId, memberId, planId, soldByUserId, origin } = params;
 
-  const resolved = await stripeForOrg(orgId);
-  if (!resolved.ok) return { ok: false, error: resolved.error };
-  const { stripe, accountId } = resolved;
-
   const [member, plan] = await Promise.all([
     prisma.member.findFirst({
       where: { id: memberId, orgId },
       select: { id: true, email: true, firstName: true, lastName: true, stripeCustomerId: true, stripeAccountId: true, primaryCenterId: true },
     }),
-    prisma.membershipPlan.findFirst({ where: { id: planId, orgId }, select: { id: true, name: true, priceCents: true, type: true } }),
+    prisma.membershipPlan.findFirst({
+      where: { id: planId, orgId },
+      select: { id: true, name: true, priceCents: true, type: true, active: true },
+    }),
   ]);
   if (!member) return { ok: false, error: "Socio no encontrado." };
   if (!plan) return { ok: false, error: "Plan no encontrado." };
+  // HU-ST-08: un plan archivado seguía siendo vendible desde recepción y desde
+  // el portal web — solo el catálogo del socio filtraba por `active`. La regla
+  // vive aquí, que es por donde pasan las tres superficies, y se comprueba antes
+  // que la pasarela: no depende de que haya Stripe configurado.
+  if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
+
+  const resolved = await stripeForOrg(orgId);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  const { stripe, accountId } = resolved;
   const centerId = params.centerId ?? member.primaryCenterId;
 
   const priceResult = await ensureStripePrice(orgId, planId);
@@ -254,12 +269,16 @@ export async function createProspectMemberCheckout(params: {
 }): Promise<MemberCheckoutResult> {
   const { orgId, centerId, planId, firstName, lastName, email, phone } = params;
 
+  const plan = await prisma.membershipPlan.findFirst({
+    where: { id: planId, orgId },
+    select: { id: true, type: true, active: true },
+  });
+  if (!plan) return { ok: false, error: "Plan no encontrado." };
+  if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
+
   const resolved = await stripeForOrg(orgId);
   if (!resolved.ok) return { ok: false, error: resolved.error };
   const { stripe, accountId } = resolved;
-
-  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId }, select: { id: true, type: true } });
-  if (!plan) return { ok: false, error: "Plan no encontrado." };
 
   const priceResult = await ensureStripePrice(orgId, planId);
   if (!priceResult.ok) return { ok: false, error: priceResult.error };
