@@ -180,11 +180,17 @@ export function useBriefDetail(sessionId: string, occurrenceDate?: string) {
   });
 }
 
+/**
+ * `feeling: null` desmarca: la Booking vuelve a BOOKED en el servidor (E2-03),
+ * en vez de quedarse solo en el estado local como antes.
+ */
 export function useSaveDebrief(sessionId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ bookingId, feeling }: { bookingId: string; feeling: "GREEN" | "AMBER" | "RED" }) =>
-      apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "POST", body: { bookingId, feeling } }),
+    mutationFn: ({ bookingId, feeling }: { bookingId: string; feeling: "GREEN" | "AMBER" | "RED" | null }) =>
+      feeling
+        ? apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "POST", body: { bookingId, feeling } })
+        : apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "DELETE", body: { bookingId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["brief-detail", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });

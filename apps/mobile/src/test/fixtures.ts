@@ -15,6 +15,8 @@ import type {
   AgendaResponse,
   BookableSession,
   BookingStatus,
+  BriefDetailResponse,
+  BriefRosterEntry,
   LoginOrganization,
   LoginResponse,
   MeResponse,
@@ -175,4 +177,33 @@ export function notificationItem(overrides: Partial<NotificationItem> = {}): Not
 
 export function notificationsResponse(overrides: Partial<NotificationsResponse> = {}): NotificationsResponse {
   return { notifications: [notificationItem()], ...overrides };
+}
+
+export function briefRosterEntry(overrides: Partial<BriefRosterEntry> = {}): BriefRosterEntry {
+  return {
+    bookingId: "booking-1",
+    member: { id: "member-1", firstName: "Marina", lastName: "Castillo", state: "ACTIVE" },
+    isNew: false,
+    conditions: [],
+    matchedRules: [],
+    light: null,
+    debrief: null,
+    ...overrides,
+  };
+}
+
+export function briefDetailResponse(overrides: Partial<BriefDetailResponse> = {}): BriefDetailResponse {
+  return {
+    session: {
+      id: "session-1",
+      name: "Grupo reducido",
+      startTime: "19:00",
+      centerName: "TRAINING ZONE La Jota",
+      trainerName: "Marcos Iglesias",
+      occurrenceDate: TEST_TODAY,
+    },
+    canSeeHealth: true,
+    roster: [briefRosterEntry()],
+    ...overrides,
+  };
 }

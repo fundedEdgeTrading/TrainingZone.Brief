@@ -27,8 +27,10 @@ export const ALLOWED_BOOKING_TRANSITIONS: Record<BookingStatus, readonly Booking
   // saliéndose.
   WAITLISTED: ["BOOKED", "CANCELLED"],
   // Rectificación de una asistencia mal marcada (RB-RES-009): la sesión pasa a
-  // falta, con motivo y decisión de devolución.
-  ATTENDED: ["NO_SHOW"],
+  // falta, con motivo y decisión de devolución. También se puede desmarcar sin
+  // más (un check-in puesto por error): vuelve a reservada, nunca a cancelada
+  // (E2-03).
+  ATTENDED: ["NO_SHOW", "BOOKED"],
   // Deshacer una falta (`clearBookingNoShow`): vuelve a asistida o a reservada.
   NO_SHOW: ["ATTENDED", "BOOKED"],
   CANCELLED: [],
