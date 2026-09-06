@@ -53,9 +53,14 @@ export default async function PlanesPage({
           <HowItWorks />
 
           <div id="planes" className="text-center max-w-2xl mx-auto mb-8">
-            <h1 className="font-display font-extrabold text-3xl sm:text-4xl uppercase tracking-[-.01em] text-tz-black">
+            {/* E9-10 · h2 y no h1: el único h1 de la página es el del hero.
+                Dos h1 obligan a Google a elegir cuál describe la página, y el
+                que elegía no llevaba la consulta principal. El nivel no lo
+                comprueba ningún e2e —buscan por rol `heading`, sin nivel—, así
+                que bajarlo no rompe nada. */}
+            <h2 className="font-display font-extrabold text-3xl sm:text-4xl uppercase tracking-[-.01em] text-tz-black">
               Elige tu plan
-            </h1>
+            </h2>
             <p className="text-sm text-muted mt-3">
               Todo lo esencial para gestionar tu centro está en cualquier plan. Los planes superiores añaden la capa que
               convierte tus datos en decisiones.

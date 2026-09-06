@@ -118,7 +118,7 @@ function PlanCard({ plan }: { plan: PlatformPlan }) {
       }`}
     >
       <div className="flex items-center justify-between gap-2 mb-1">
-        <h2 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">{plan.name}</h2>
+        <h3 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">{plan.name}</h3>
         {plan.recommended && (
           <span className="text-[10px] font-bold uppercase tracking-[0.08em] bg-tz-black text-tz-bone rounded-pill px-2 py-1">
             Recomendado
