@@ -89,51 +89,164 @@ export function readableMetricInk(color: string): string {
   return color === SEQUENTIAL_RAMP[0] || color === DIVERGING_RAMP[3] ? RAMP_FALLBACK_INK : color;
 }
 
-export type BarrioScale = {
-  kind: "seq" | "div";
+/** Cuántos escalones tiene la rampa. Es el largo de las dos rampas de arriba. */
+export const CLASS_COUNT = 7;
+
+/**
+ * Cómo se reparten los valores entre los siete escalones.
+ *
+ *  · `quantile` — mismo NÚMERO de barrios por escalón. Es lo que hace falta en
+ *    distribuciones sesgadas: un barrio dominante ya no achata el resto.
+ *  · `equal` — mismo ANCHO de valor por escalón. Correcto cuando la métrica ya
+ *    está acotada por construcción (un porcentaje, unos kilómetros).
+ *  · `diverging` — ancho igual pero simétrico alrededor del cero, para que el
+ *    escalón central sea siempre "sin cambio".
+ */
+export type ClassificationKind = "quantile" | "equal" | "diverging";
+
+export type BarrioClassification = {
+  kind: ClassificationKind;
+  /** Los SEIS cortes que separan los siete escalones, ascendentes. */
+  breaks: number[];
+  /** Los siete colores, ya invertidos si la métrica se lee al revés. */
+  ramp: string[];
+  /** En Conversión el terracota es el problema, no el récord. */
+  inverted: boolean;
   min: number;
   max: number;
-  /** La rampa se lee al revés: en Conversión el terracota es el problema. */
-  inverted: boolean;
 };
+
+/**
+ * Qué clasificación le toca a cada métrica.
+ *
+ * Con el reparto medido en el informe —escalón 0 con 11 barrios, escalón 1 con
+ * 6, escalón 2 con 1, escalones 3-5 VACÍOS y escalón 6 con 1— el mapa no está
+ * midiendo: está diciendo "hay un barrio grande y luego está todo lo demás". Es
+ * el problema clásico del intervalo igual sobre una distribución sesgada, y lo
+ * resuelven los cuantiles.
+ *
+ * Conversión y distancia se quedan en intervalo igual **a propósito**: ya están
+ * acotadas (un porcentaje es 0-100, la distancia no tiene cola larga a escala de
+ * ciudad) y ahí el cuantil exageraría diferencias de décimas.
+ */
+export function classificationKind(metric: BarrioMetric): ClassificationKind {
+  if (metric === "trend") return "diverging";
+  if (metric === "conv" || metric === "dist") return "equal";
+  return "quantile";
+}
 
 export function metricValue(point: BarrioStat, metric: BarrioMetric): number {
   return point[metric];
 }
 
 /**
- * Extremos de la métrica en la ciudad activa (no globales): al cambiar de
- * ciudad la rampa se reescala y la leyenda lo refleja. Tendencia se mapea sobre
- * `[-max|v|, +max|v|]` para que el escalón central sea siempre el cero.
+ * Los cortes de una serie de valores. Función pura y sin métricas dentro: se
+ * puede probar con números sueltos.
+ *
+ * `quantile` reparte por posición en la serie ordenada; los empates hacen que el
+ * reparto no sea exactamente igual y eso es correcto — dos barrios con el mismo
+ * valor tienen que caer en el mismo escalón, aunque desequilibre el recuento.
  */
-export function metricScale(points: BarrioStat[], metric: BarrioMetric): BarrioScale {
-  const values = points.map((p) => metricValue(p, metric));
-  if (values.length === 0) return { kind: metric === "trend" ? "div" : "seq", min: 0, max: 0, inverted: false };
-  if (metric === "trend") {
-    const bound = Math.max(1, ...values.map(Math.abs));
-    return { kind: "div", min: -bound, max: bound, inverted: false };
+export function classify(values: number[], kind: ClassificationKind, classes = CLASS_COUNT): number[] {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0 || classes < 2) return [];
+
+  if (kind === "diverging") {
+    // Simétrica alrededor del cero pase lo que pase: el escalón central es "sin
+    // cambio", y si dependiera de los extremos observados un barrio que cae un
+    // 40 % movería el cero de sitio.
+    const bound = Math.max(1, ...finite.map(Math.abs));
+    return equalBreaks(-bound, bound, classes);
   }
-  return { kind: "seq", min: Math.min(...values), max: Math.max(...values), inverted: metric === "conv" };
+
+  if (kind === "equal") {
+    return equalBreaks(Math.min(...finite), Math.max(...finite), classes);
+  }
+
+  const sorted = [...finite].sort((a, b) => a - b);
+  const breaks: number[] = [];
+  for (let i = 1; i < classes; i++) {
+    breaks.push(sorted[Math.min(sorted.length - 1, Math.floor((i * sorted.length) / classes))]);
+  }
+  return breaks;
 }
 
-/** Los 7 escalones tal y como se pintan en la leyenda (ya invertidos si toca). */
-export function rampForScale(scale: BarrioScale): string[] {
-  if (scale.kind === "div") return DIVERGING_RAMP;
-  return scale.inverted ? [...SEQUENTIAL_RAMP].reverse() : SEQUENTIAL_RAMP;
+function equalBreaks(min: number, max: number, classes: number): number[] {
+  const step = (max - min) / classes;
+  const breaks: number[] = [];
+  for (let i = 1; i < classes; i++) breaks.push(min + step * i);
+  return breaks;
 }
 
-export function colorForValue(value: number, scale: BarrioScale): string {
-  const span = scale.max - scale.min || 1;
-  let t = (value - scale.min) / span;
-  if (scale.kind === "seq" && scale.inverted) t = 1 - t;
-  const ramp = scale.kind === "div" ? DIVERGING_RAMP : SEQUENTIAL_RAMP;
-  return ramp[Math.min(6, Math.max(0, Math.round(t * 6)))];
+/** La clasificación completa de una métrica sobre la ciudad activa. */
+export function classifyMetric(points: BarrioStat[], metric: BarrioMetric): BarrioClassification {
+  const kind = classificationKind(metric);
+  const values = points.map((p) => metricValue(p, metric)).filter((v) => Number.isFinite(v));
+  const inverted = metric === "conv";
+  const base = kind === "diverging" ? DIVERGING_RAMP : SEQUENTIAL_RAMP;
+
+  return {
+    kind,
+    breaks: classify(values, kind),
+    ramp: inverted ? [...base].reverse() : base,
+    inverted,
+    min: values.length ? Math.min(...values) : 0,
+    max: values.length ? Math.max(...values) : 0,
+  };
+}
+
+/**
+ * A qué escalón (0-6) cae un valor. El escalón se cuenta SIEMPRE de menor a
+ * mayor; la inversión de Conversión vive en el orden de la rampa, no aquí, para
+ * que la leyenda y el mapa no puedan discrepar.
+ */
+export function classIndex(value: number, classification: BarrioClassification): number {
+  const { breaks } = classification;
+  if (breaks.length === 0) return 0;
+  let index = 0;
+  while (index < breaks.length && value >= breaks[index]) index++;
+  return Math.min(index, classification.ramp.length - 1);
+}
+
+export function colorForValueClassified(value: number, classification: BarrioClassification): string {
+  return classification.ramp[classIndex(value, classification)];
+}
+
+/** Un escalón de la leyenda: su color y el tramo de valores que representa. */
+export type LegendStep = {
+  color: string;
+  /** `null` en el primero: no hay cota inferior más allá del mínimo observado. */
+  from: number;
+  to: number | null;
+};
+
+/**
+ * Los siete escalones con sus cortes.
+ *
+ * La leyenda anterior enseñaba dos etiquetas, mínimo y máximo, y eso solo es
+ * honesto con intervalo igual. **Con cuantiles los escalones no son
+ * equidistantes**: una leyenda de dos extremos le haría creer a quien la lee que
+ * el color del medio es el valor del medio, que es exactamente lo contrario de
+ * lo que pasa en una distribución sesgada.
+ */
+export function legendSteps(classification: BarrioClassification): LegendStep[] {
+  const { breaks, ramp, min, max } = classification;
+  if (breaks.length === 0) return ramp.map((color) => ({ color, from: min, to: max }));
+
+  const lower = [classification.kind === "diverging" ? -Math.max(...breaks.map(Math.abs), 0) : min, ...breaks];
+  return ramp.map((color, i) => ({
+    color,
+    from: lower[i],
+    to: i < breaks.length ? breaks[i] : null,
+  }));
 }
 
 /** Color de cada barrio para la métrica activa, indexado por CP. */
 export function colorsByCode(points: BarrioStat[], metric: BarrioMetric): Record<string, string> {
-  const scale = metricScale(points, metric);
-  return Object.fromEntries(points.map((p) => [p.code, colorForValue(metricValue(p, metric), scale)]));
+  const classification = classifyMetric(points, metric);
+  return Object.fromEntries(
+    points.map((p) => [p.code, colorForValueClassified(metricValue(p, metric), classification)])
+  );
 }
 
 export function formatMetricValue(value: number, metric: BarrioMetric): string {

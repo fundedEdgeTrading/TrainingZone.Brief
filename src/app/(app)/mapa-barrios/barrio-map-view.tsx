@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import {
   BARRIO_METRICS,
-  colorForValue,
+  classifyMetric,
+  colorForValueClassified,
   colorsByCode,
   formatMetricValue,
   labelPriority,
+  legendSteps,
   metricDef,
-  metricScale,
   metricValue,
-  rampForScale,
   readableMetricInk,
   sortByMetric,
   type BarrioCity,
@@ -56,7 +56,7 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
     `${roleLabel} · ${city.label} · ${city.centers.length} ${city.centers.length === 1 ? "centro" : "centros"} · RB-LEAD-010`
   );
 
-  const scale = useMemo(() => metricScale(city.points, metric), [city, metric]);
+  const classification = useMemo(() => classifyMetric(city.points, metric), [city, metric]);
   const colors = useMemo(() => colorsByCode(city.points, metric), [city, metric]);
   const values = useMemo(
     () =>
@@ -65,6 +65,7 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
       ) as Record<string, string>,
     [city, metric]
   );
+  const steps = useMemo(() => legendSteps(classification), [classification]);
   const priority = useMemo(() => labelPriority(city.points, metric), [city, metric]);
   const rows = useMemo(() => sortByMetric(city.points, metric), [city, metric]);
   const maxAbs = useMemo(
@@ -183,7 +184,7 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
               <div className="text-right shrink-0">
                 <div
                   className="font-display font-extrabold text-[26px] leading-none tz-nums"
-                  style={{ color: readableMetricInk(colorForValue(metricValue(spotlight, metric), scale)) }}
+                  style={{ color: readableMetricInk(colorForValueClassified(metricValue(spotlight, metric), classification)) }}
                 >
                   {formatMetricValue(metricValue(spotlight, metric), metric)}
                 </div>
@@ -280,18 +281,30 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
             <span className="flex-1 h-px bg-tz-sand" />
             <span className="text-[11px] font-semibold text-brand-text-2">{def.note}</span>
           </div>
+          {/* E11-02 · Los SIETE cortes, no dos etiquetas de mínimo y máximo.
+              Con cuantiles los escalones no son equidistantes, y una leyenda de
+              dos extremos le haría creer a quien la lee que el color del medio
+              es el valor del medio — exactamente lo contrario de lo que pasa en
+              una distribución sesgada. */}
           <div className="flex gap-[3px] mt-[9px]">
-            {rampForScale(scale).map((color) => (
-              <span key={color} className="flex-1 h-3 rounded-[3px]" style={{ background: color }} />
+            {steps.map((step, i) => (
+              <span
+                key={i}
+                className="flex-1 h-3 rounded-[3px]"
+                style={{ background: step.color }}
+                title={stepRangeLabel(step, metric)}
+              />
             ))}
           </div>
-          <div className="flex items-center justify-between mt-1.5">
-            <span className="text-[11px] font-bold text-brand-text-2 tz-nums">
-              {formatMetricValue(scale.min, metric)}
-            </span>
-            <span className="text-[11px] font-bold text-brand-text-2 tz-nums">
-              {formatMetricValue(scale.max, metric)}
-            </span>
+          <div className="flex gap-[3px] mt-1.5">
+            {steps.map((step, i) => (
+              <span
+                key={i}
+                className="flex-1 text-[9.5px] font-bold text-brand-text-2 tz-nums text-center whitespace-nowrap overflow-hidden"
+              >
+                {formatMetricValue(step.from, metric)}
+              </span>
+            ))}
           </div>
           {/* Las dos claves solo se explican si hay algo que explicar: una ciudad
               sin centros situados no pinta ni cuadradito ni anillo. */}
@@ -321,6 +334,12 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
       </div>
     </div>
   );
+}
+
+/** «12 – 27» / «≥ 27»: lo que representa un escalón, para el `title` de su testigo. */
+function stepRangeLabel(step: { from: number; to: number | null }, metric: BarrioMetric): string {
+  const from = formatMetricValue(step.from, metric);
+  return step.to === null ? `≥ ${from}` : `${from} – ${formatMetricValue(step.to, metric)}`;
 }
 
 function SpotlightCell({ label, value, className }: { label: string; value: string; className?: string }) {
