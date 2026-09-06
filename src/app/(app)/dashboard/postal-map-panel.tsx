@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { postalCityLabel } from "@/lib/postal-codes";
+import { barrioMapHref } from "@/lib/barrio-map-params";
+import type { DashboardRange } from "@/lib/dashboard-range";
 import { SERIES } from "@/lib/chart-colors";
 import { PanelCard } from "./panel-card";
 import PostalHeatmap, { type MapMetric } from "./postal-heatmap-loader";
@@ -41,10 +43,15 @@ const METRIC_LABEL: Record<MapMetric, string> = {
 export function PostalMapPanel({
   points,
   opportunity,
+  range,
+  centerId,
 }: {
   points: PostalCodeStat[];
   /** Barrio con más leads en proporción a sus clientes. `null` si no hay ninguno con volumen. */
   opportunity: PostalCodeStat | null;
+  /** E11-07 · Periodo y centro activos del panel, para encadenarlos al mapa. */
+  range: DashboardRange;
+  centerId: string | null;
 }) {
   const [metric, setMetric] = useState<MapMetric>("all");
   const [hovered, setHovered] = useState<string | null>(null);
@@ -93,7 +100,10 @@ export function PostalMapPanel({
               (conversión, tendencia, distancia, oportunidad) piden el plano
               entero, y ahí es donde vive el mapa de barrios. */}
           <Link
-            href="/mapa-barrios"
+            // E11-07 · El enlace encadena el estado del panel: sin esto,
+            // dirección pasaba de "leads de este trimestre" a "leads desde
+            // siempre" sin que nada lo dijera, y con los mismos rótulos.
+            href={barrioMapHref({ range, centerId })}
             // Sin prefetch: pasar el ratón por encima no tiene por qué lanzar la
             // consulta geográfica entera en el servidor. Además el prefetch de
             // esta ruta compite con la navegación real —dos peticiones RSC para

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BARRIO_METRICS,
   NO_DATA_FILL,
@@ -22,10 +23,17 @@ import {
   type BarrioMetric,
   type BarrioStat,
 } from "@/lib/barrio-map";
+import { DASHBOARD_RANGES } from "@/lib/dashboard-range";
 import { HeaderActions, useHeaderSubtitle } from "../header-slot";
 import BarrioMap from "./barrio-map-loader";
 import { BarrioTable } from "./barrio-table";
 import { coverageSentence, geometryNote, hasGaps, type MapCoverage } from "@/lib/barrio-coverage";
+import {
+  BARRIO_STATE_FILTERS,
+  BARRIO_STATE_LABEL,
+  barrioMapQuery,
+  type BarrioMapParams,
+} from "@/lib/barrio-map-params";
 
 /**
  * E11-05 · La nota se condiciona a la geometría que se esté usando de verdad
@@ -55,13 +63,60 @@ export function BarrioMapView({
   cities,
   roleLabel,
   coverage,
+  params,
 }: {
   cities: BarrioCity[];
   roleLabel: string;
   coverage: MapCoverage;
+  params: BarrioMapParams;
 }) {
-  const [cityKey, setCityKey] = useState(cities[0].key);
-  const [metric, setMetric] = useState<BarrioMetric>("members");
+  const router = useRouter();
+  const pathname = usePathname();
+
+  /**
+   * E11-07 · La URL es el estado, pero no toda ella cuesta lo mismo.
+   *
+   * Ciudad y métrica solo cambian lo que se PINTA: los datos ya están en el
+   * cliente. Se llevan a la URL con `history.replaceState`, sin pasar por el
+   * router — un `router.replace` volvería al servidor, dispararía `loading.tsx`,
+   * desmontaría la vista y reconstruiría la geometría de Leaflet entera en cada
+   * clic de pastilla. Se comprobó: los e2e se caían esperando a que la pantalla
+   * dejara de parpadear.
+   *
+   * Periodo, estado y centro sí cambian el DATO, así que esos sí navegan.
+   *
+   * En los dos casos es `replace` y no `push`: cambiar de pastilla no es
+   * navegar, y llenar el historial de veinte entradas hace que "atrás" deje de
+   * volver al panel.
+   */
+  const initialCity = cities.some((c) => c.key === params.ciudad) ? (params.ciudad as string) : cities[0].key;
+  const [cityKey, setCityKey] = useState(initialCity);
+  const [metric, setMetric] = useState<BarrioMetric>(params.metrica);
+
+  const writeUrl = useCallback(
+    (next: Partial<BarrioMapParams>) => {
+      const query = barrioMapQuery({ ...params, ciudad: cityKey, metrica: metric, ...next });
+      window.history.replaceState(null, "", query ? `${pathname}?${query}` : pathname);
+    },
+    [params, cityKey, metric, pathname]
+  );
+
+  /** Lo que exige volver al servidor: cambia el dato, no el color. */
+  const navigate = useCallback(
+    (next: Partial<BarrioMapParams>) => {
+      const query = barrioMapQuery({ ...params, ciudad: cityKey, metrica: metric, ...next });
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [params, cityKey, metric, pathname, router]
+  );
+
+  const selectMetric = useCallback(
+    (next: BarrioMetric) => {
+      setMetric(next);
+      writeUrl({ metrica: next });
+    },
+    [writeUrl]
+  );
   const [focus, setFocus] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [showLabels, setShowLabels] = useState(true);
@@ -77,7 +132,9 @@ export function BarrioMapView({
   const def = metricDef(metric);
 
   useHeaderSubtitle(
-    `${roleLabel} · ${city.label} · ${city.centers.length} ${city.centers.length === 1 ? "centro" : "centros"} · RB-LEAD-010`
+    `${roleLabel} · ${city.label} · ${city.centers.length} ${city.centers.length === 1 ? "centro" : "centros"} · ${
+      DASHBOARD_RANGES.find((r) => r.id === params.range)?.meta ?? ""
+    } · RB-LEAD-010`
   );
 
   const classification = useMemo(() => classifyMetric(city.points, metric), [city, metric]);
@@ -116,6 +173,7 @@ export function BarrioMapView({
     setCityKey(key);
     setFocus(null);
     setHovered(null);
+    writeUrl({ ciudad: key });
   };
 
   const selectBarrio = (code: string) => {
@@ -132,6 +190,10 @@ export function BarrioMapView({
 
   return (
     <div data-full-bleed className="absolute inset-0">
+      {/* El header solo lleva el selector de ciudad, como antes. Los filtros de
+          periodo y estado viven en el panel del mapa: metidos aquí arriba
+          estrujaban la columna del título hasta dejarla a cero de ancho —los
+          e2e lo cazaron— y el header no es de esta pantalla. */}
       {cities.length > 1 && (
         <HeaderActions>
           <div className="hidden md:flex gap-[5px] bg-brand-bg border border-brand-border rounded-full p-1">
@@ -187,7 +249,7 @@ export function BarrioMapView({
                   key={m.key}
                   type="button"
                   disabled={!enabled}
-                  onClick={() => setMetric(m.key)}
+                  onClick={() => selectMetric(m.key)}
                   // E11-03 · Sin centros situados esta métrica no se puede
                   // calcular. Se deshabilita CON explicación: un botón muerto y
                   // sin motivo se lee como una avería.
@@ -210,6 +272,45 @@ export function BarrioMapView({
             className="self-start bg-tz-black rounded-xl px-[15px] py-[9px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.5)]"
           >
             <span className="text-[13px] font-semibold text-tz-bone">{def.question}</span>
+          </div>
+
+          {/* E11-07 · Periodo y estado, los mismos ejes que el resto del panel.
+              Sin ellos el mapa era acumulado histórico CON los rótulos del
+              panel: "leads de este trimestre" en /dashboard y "leads desde
+              siempre" aquí, sin que nada lo dijera. */}
+          <div
+            data-tz-overlay
+            className={`self-start flex flex-wrap items-center gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
+          >
+            {DASHBOARD_RANGES.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => navigate({ range: r.id })}
+                title={r.meta}
+                className={`px-3.5 min-h-[44px] rounded-[10px] text-[12.5px] font-bold transition-colors duration-150 ${
+                  r.id === params.range ? "bg-tz-black text-tz-bone" : "text-brand-text-2 hover:bg-brand-bg"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+            <span className="w-px self-stretch bg-tz-sand mx-1" aria-hidden="true" />
+            <label className="sr-only" htmlFor="tz-barrio-estado">
+              Estado de los socios que se cuentan
+            </label>
+            <select
+              id="tz-barrio-estado"
+              value={params.estado}
+              onChange={(e) => navigate({ estado: e.target.value as BarrioMapParams["estado"] })}
+              className="min-h-[44px] rounded-[10px] bg-transparent px-2 text-[12.5px] font-bold text-brand-text-2"
+            >
+              {BARRIO_STATE_FILTERS.map((state) => (
+                <option key={state} value={state}>
+                  {BARRIO_STATE_LABEL[state]}
+                </option>
+              ))}
+            </select>
           </div>
           {!available[metric] && (
             <div
@@ -306,7 +407,7 @@ export function BarrioMapView({
                 colors={colors}
                 hovered={hovered}
                 focus={focus}
-                onMetric={setMetric}
+                onMetric={selectMetric}
                 onHover={setHovered}
                 onSelect={selectBarrio}
                 geometryNote={GEOMETRY_NOTE}
