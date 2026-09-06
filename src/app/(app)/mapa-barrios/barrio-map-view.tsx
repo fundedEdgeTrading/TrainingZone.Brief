@@ -22,6 +22,7 @@ import {
 } from "@/lib/barrio-map";
 import { HeaderActions, useHeaderSubtitle } from "../header-slot";
 import BarrioMap from "./barrio-map-loader";
+import { BarrioTable } from "./barrio-table";
 
 /** Nota que desaparece el día que entren las geometrías reales de barrio. */
 const GEOMETRY_NOTE =
@@ -51,6 +52,10 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
   const [showLabels, setShowLabels] = useState(true);
   const [frameSignal, setFrameSignal] = useState(0);
   const [panTo, setPanTo] = useState<{ code: string; signal: number } | null>(null);
+  // E11-04 · La tabla está SIEMPRE en el DOM y visible por defecto, en cualquier
+  // ancho: es la única vía al dato para quien no usa ratón, y bajo 1024 px es la
+  // única vía a secas. Se puede plegar para mirar el plano entero.
+  const [panelOpen, setPanelOpen] = useState(true);
 
   const city = cities.find((c) => c.key === cityKey) ?? cities[0];
   const def = metricDef(metric);
@@ -71,11 +76,6 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
   const steps = useMemo(() => legendSteps(classification), [classification]);
   const priority = useMemo(() => labelPriority(city.points, metric), [city, metric]);
   const rows = useMemo(() => sortByMetric(city.points, metric), [city, metric]);
-  const maxAbs = useMemo(
-    () => Math.max(1, ...city.points.map((p) => Math.abs(metricValue(p, metric) ?? 0))),
-    [city, metric]
-  );
-
   // E11-03 · Qué se puede calcular en esta ciudad y qué no. `dist` y `opp`
   // dependen de que la organización tenga algún centro SITUADO, y sin él la
   // agregación devuelve ceros que no significan "está en la puerta" sino "no lo
@@ -202,12 +202,17 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
           )}
         </div>
 
+        {/* E11-04 · Este panel ya no desaparece bajo 1024 px: se convierte en una
+            hoja inferior. Antes, bajo ese ancho se perdían ranking y tarjeta de
+            foco, y bajo 768 px además la leyenda — lo que quedaba era un mapa de
+            colores sin escala, que no es un mapa degradado sino incorrecto. */}
         <div
           data-tz-overlay
-          className="hidden lg:flex w-[344px] shrink-0 flex-col gap-3 max-h-full min-h-0 pointer-events-auto"
+          hidden={!panelOpen}
+          className="absolute left-0 right-0 bottom-0 max-h-[52%] lg:static lg:max-h-full lg:w-[420px] shrink-0 flex flex-col gap-3 min-h-0 pointer-events-auto"
         >
           <div
-            className={`shrink-0 ${GLASS} rounded-card p-[18px] pb-4 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
+            className={`hidden lg:block shrink-0 ${GLASS} rounded-card p-[18px] pb-4 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
           >
             <div className="flex items-baseline justify-between gap-2.5">
               <div className="min-w-0">
@@ -257,52 +262,32 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
           <div
             className={`flex-1 min-h-24 overflow-hidden flex flex-col ${GLASS} rounded-card p-3.5 pb-2.5 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
           >
-            <div className="shrink-0 text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint px-1 pb-2">
-              Ranking · {def.label}
+            <div className="shrink-0 flex items-baseline justify-between gap-2 px-1 pb-2">
+              <span className="text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint">
+                Ranking · {def.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPanelOpen(false)}
+                className="text-[10.5px] font-bold uppercase tracking-[.08em] text-brand-muted hover:text-brand-text min-h-[44px] px-2"
+              >
+                Ocultar
+              </button>
             </div>
             {/* La altura tiene que encoger, no ser fija: en una ventana de 13" la
                 pila entera no cabe y sin esto las últimas filas son inalcanzables. */}
-            <div className="tz-scroll flex-1 min-h-0 overflow-y-auto max-h-[296px] pr-1 flex flex-col gap-0.5">
-              {rows.map((p) => (
-                <button
-                  key={p.code}
-                  type="button"
-                  onMouseEnter={() => setHovered(p.code)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={() => selectBarrio(p.code)}
-                  className={`flex items-center gap-2.5 px-[9px] py-2 rounded-[10px] text-left transition-colors duration-150 ${
-                    p.code === hovered || p.code === focus ? "bg-tz-sand" : "hover:bg-tz-sand"
-                  }`}
-                >
-                  <span
-                    className="w-2 h-[26px] rounded-[3px] shrink-0"
-                    style={{ background: colors[p.code] }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-[12.5px] font-semibold text-brand-text truncate">{p.name}</span>
-                      <span className="text-[12.5px] font-extrabold text-brand-text tz-nums shrink-0">
-                        {formatMetricValue(metricValue(p, metric), metric)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1 rounded-full bg-tz-sand overflow-hidden">
-                        <div
-                          className="h-full rounded-full origin-left"
-                          style={{
-                            background: colors[p.code],
-                            width: `${Math.round((Math.abs(metricValue(p, metric) ?? 0) / maxAbs) * 100)}%`,
-                            animation: "tzGrow .7s var(--ease-out-soft) both",
-                          }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-brand-muted whitespace-nowrap shrink-0 tz-nums">
-                        {p.members}c · {p.leads}l
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              ))}
+            <div className="tz-scroll flex-1 min-h-0 overflow-auto pr-1">
+              <BarrioTable
+                rows={rows}
+                metric={metric}
+                colors={colors}
+                hovered={hovered}
+                focus={focus}
+                onMetric={setMetric}
+                onHover={setHovered}
+                onSelect={selectBarrio}
+                geometryNote={GEOMETRY_NOTE}
+              />
             </div>
           </div>
         </div>
@@ -377,11 +362,22 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
       </div>
 
       <div data-tz-overlay className="absolute right-5 bottom-5 z-[500] flex gap-2">
+        {!panelOpen && <MapButton onClick={() => setPanelOpen(true)}>Ver tabla</MapButton>}
         <MapButton onClick={() => setShowLabels((v) => !v)}>
           {showLabels ? "Ocultar nombres" : "Ver nombres"}
         </MapButton>
         <MapButton onClick={resetView}>↺ Encuadrar</MapButton>
       </div>
+
+      {/* E11-04 · El cambio de foco se anuncia. Sin esto, seleccionar una fila
+          mueve el mapa y recolorea media pantalla sin que quien no la ve se
+          entere de nada. */}
+      <p aria-live="polite" className="sr-only">
+        {`Barrio en foco: ${spotlight.name}. ${def.label}: ${formatMetricValue(
+          metricValue(spotlight, metric),
+          metric
+        )}.`}
+      </p>
     </div>
   );
 }

@@ -6,6 +6,11 @@ import { loginAs } from "./helpers";
 // pregunta y el orden del ranking (con Conversión al revés, porque ahí lo
 // primero es el problema) y que la geometría llegue de verdad al DOM: un mapa
 // que se pinta sin polígonos es exactamente el fallo que esta vista arregla.
+//
+// E11-04 — El ranking dejó de ser una lista de botones y pasó a ser una <table>
+// accesible con las seis métricas a la vez, así que los selectores que leían
+// `button > span.tz-nums` ahora leen celdas de la fila. La columna que manda es
+// la de la métrica activa, que es la que ordena.
 
 test.describe("RB-LEAD-010 — Mapa de barrios", () => {
   test("dirección abre el mapa desde el panel y lee las seis métricas", async ({ page }) => {
@@ -48,11 +53,14 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios");
 
-    const rows = page.locator("button", { has: page.locator("span.tz-nums") });
+    // Las filas de la tabla del ranking, en el orden en que la vista las pinta.
+    const rows = page.locator("table tbody tr");
     await expect(page.getByText("¿Dónde están mis clientes?")).toBeVisible();
 
+    // La celda de la métrica activa es la que va en negrita: es la columna por
+    // la que la tabla está ordenada.
     const valueOf = async (index: number) => {
-      const text = await rows.nth(index).locator("span.tz-nums").first().innerText();
+      const text = await rows.nth(index).locator("td.font-extrabold").first().innerText();
       return Number(text.replace("%", "").replace(" km", "").replace("+", ""));
     };
 
@@ -67,6 +75,28 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     expect(firstByConv).toBeLessThanOrEqual(lastByConv);
   });
 
+  test("E11-04 — hay una vía no cartográfica al dato: tabla con las seis métricas", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/mapa-barrios");
+
+    // Una <table> de verdad, con su caption declarando fuente y aproximaciones.
+    const table = page.locator("table").first();
+    await expect(table).toBeVisible();
+    await expect(table.locator("caption")).toContainText(/teselación|aproximad/i);
+
+    // Las seis métricas a la vez, cosa que el mapa no puede hacer: solo pinta una.
+    for (const label of ["Clientes", "Leads", "Conversión", "Tendencia", "Distancia", "Oportunidad"]) {
+      await expect(table.locator("th[scope='col']", { hasText: label })).toHaveCount(1);
+    }
+
+    // La cabecera ordena Y cambia la métrica del mapa: son la misma acción.
+    await table.getByRole("button", { name: "Ordenar por Oportunidad" }).click();
+    await expect(page.getByText("¿Dónde abrir el próximo centro?")).toBeVisible();
+
+    // El contenedor del mapa se anuncia como lo que es.
+    await expect(page.locator(".tz-barrio-map")).toHaveAttribute("role", "application");
+  });
+
   test("el selector de ciudad reencuadra sobre los barrios de la otra ciudad", async ({ page }) => {
     await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios");
@@ -77,6 +107,7 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     // El subtítulo del header lo pone la propia pantalla con su estado.
     await expect(page.getByText(/Santander · \d+ centros?/)).toBeVisible();
     // Y la geometría se reconstruye: los barrios de Santander son otros.
+    // Sigue siendo un botón (la celda de nombre lo es), ahora dentro de la tabla.
     await expect(page.getByRole("button", { name: /Puertochico/ })).toBeVisible();
     await expect
       .poll(() => page.locator(".tz-barrio-map .leaflet-overlay-pane path").count(), { timeout: 15_000 })

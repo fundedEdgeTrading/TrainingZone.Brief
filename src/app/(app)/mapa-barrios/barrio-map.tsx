@@ -386,7 +386,18 @@ export function BarrioMap({
     if (point) map.panTo([point.lat, point.lng], { duration: 0.6 });
   }, [panTo, points]);
 
-  return <div ref={containerRef} className="tz-map tz-barrio-map absolute inset-0 bg-tz-sand" />;
+  return (
+    <div
+      ref={containerRef}
+      className="tz-map tz-barrio-map absolute inset-0 bg-tz-sand"
+      // E11-04 · Los polígonos son `<path>` con manejadores de ratón: no son
+      // focusables ni tienen rol, así que para un lector de pantalla esto es un
+      // rectángulo mudo. `role="application"` es lo honesto —hay interacción
+      // propia dentro— y la etiqueta dice qué es y dónde está la alternativa.
+      role="application"
+      aria-label={`Mapa de barrios por coropletas. La misma información, ordenable y con las seis métricas a la vez, está en la tabla «Ranking» junto al mapa. ${points.length} barrios.`}
+    />
+  );
 }
 
 /** Los nombres de barrio y de centro entran en `innerHTML` del `divIcon`. */
