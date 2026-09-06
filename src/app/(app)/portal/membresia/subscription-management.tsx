@@ -21,12 +21,15 @@ export function SubscriptionManagement({
   initialCancelAt,
   centerName,
   centerPhone,
+  children,
 }: {
   recurring: boolean;
   hasStripeCustomer: boolean;
   initialCancelAt: Date | null;
   centerName: string;
   centerPhone: string | null;
+  /** E5-06: bloque de congelación, montado por el caller — se mantiene fuera de este componente para no acoplarlo a Stripe/RB-PAGO-004. */
+  children?: React.ReactNode;
 }) {
   const [pendingPortal, startPortal] = useTransition();
   const [pendingCancel, startCancel] = useTransition();
@@ -150,6 +153,8 @@ export function SubscriptionManagement({
         cancelLabel="Seguir siendo socia"
         pendingLabel="Procesando…"
       />
+
+      {children}
     </div>
   );
 }

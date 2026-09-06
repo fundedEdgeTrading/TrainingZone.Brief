@@ -22,6 +22,8 @@ import { SERVICE_LABEL } from "@/lib/service-labels";
 import { getMemberBillingSnapshot } from "./billing-view";
 import { ReceiptDownloadButton } from "./receipt-download-button";
 import { SubscriptionManagement } from "./subscription-management";
+import { FreezeManagement } from "./freeze-management";
+import { getMemberFreezePolicyView } from "./freeze-view";
 
 const RECEIPT_STATUS_LABEL: Record<string, string> = { PAID: "Cobrado", FAILED: "Fallido", REFUNDED: "Devuelto" };
 
@@ -81,6 +83,8 @@ export default async function PortalMembresiaPage({
     getPendingSessionFeedback(member.id, timezone),
     getMemberBillingSnapshot(session.user.orgId, member.id),
   ]);
+
+  const freezePolicy = billing.subscriptionId ? await getMemberFreezePolicyView(billing.subscriptionId) : null;
 
   const activeSub = member.subscriptions[0];
   const kind = activeSub ? planServiceKind(activeSub.plan.type) : undefined;
@@ -304,7 +308,16 @@ export default async function PortalMembresiaPage({
           initialCancelAt={billing.cancelAt}
           centerName={member.primaryCenter.name}
           centerPhone={member.primaryCenter.phone}
-        />
+        >
+          {/* E5-06: congelar/reanudar el bono desde el propio portal. */}
+          {freezePolicy && (
+            <FreezeManagement
+              status={billing.status === "ACTIVE" || billing.status === "FROZEN" ? billing.status : null}
+              pauseUntil={billing.pauseUntil}
+              policy={freezePolicy}
+            />
+          )}
+        </SubscriptionManagement>
       )}
 
       {/* Valora tus sesiones (F16) — el badge de "Mi membresía" en el sidebar cuenta estas pendientes */}

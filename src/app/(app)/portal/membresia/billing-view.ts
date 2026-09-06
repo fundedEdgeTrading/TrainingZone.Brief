@@ -24,6 +24,7 @@ export type MemberReceipt = {
 
 export type MemberBillingSnapshot = {
   hasSubscription: boolean;
+  subscriptionId: string | null;
   recurring: boolean;
   priceCents: number | null;
   planName: string | null;
@@ -50,6 +51,7 @@ export async function getMemberBillingSnapshot(orgId: string, memberId: string):
       where: { memberId, status: { in: ["ACTIVE", "FROZEN"] } },
       orderBy: { startDate: "desc" },
       select: {
+        id: true,
         priceCents: true,
         status: true,
         cancelAt: true,
@@ -88,6 +90,7 @@ export async function getMemberBillingSnapshot(orgId: string, memberId: string):
   if (!subscription) {
     return {
       hasSubscription: false,
+      subscriptionId: null,
       recurring: false,
       priceCents: null,
       planName: null,
@@ -133,6 +136,7 @@ export async function getMemberBillingSnapshot(orgId: string, memberId: string):
 
   return {
     hasSubscription: true,
+    subscriptionId: subscription.id,
     recurring,
     priceCents: subscription.priceCents,
     planName: subscription.plan.name,
