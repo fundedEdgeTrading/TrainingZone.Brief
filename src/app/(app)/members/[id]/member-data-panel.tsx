@@ -9,8 +9,9 @@ import { Drawer, DrawerFooter } from "@/components/ui/drawer";
 import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { postalAreaLabel } from "@/lib/postal-codes";
-import { deleteMember, updateMemberData } from "./actions";
+import { deleteMember, updateMemberData, revokeMemberConsentAction } from "./actions";
 import { useFocusRequest } from "./section-rail";
+import type { ConsentKind } from "@/lib/consent";
 
 export type MemberDataPanelValues = {
   id: string;
@@ -292,8 +293,9 @@ export function MemberDataPanel({
             <div className="bg-tz-bone border border-brand-border rounded-xl px-4 py-3.5 text-[13px] text-brand-text-2 flex gap-2.5 items-start">
               <span className="w-2 h-2 rounded-full bg-apta-gold mt-1.5 shrink-0" />
               <span>
-                Los consentimientos no se editan aquí: los firma el propio socio desde su portal. Cada cambio de ficha
-                queda registrado en Auditoría.
+                Los consentimientos los firma el propio socio desde su portal. Los accesorios (imágenes, marketing,
+                IA) se pueden retirar a petición suya desde la sección «Consentimientos» de la ficha; la declaración
+                de salud no se toca por esta vía. Cada cambio queda registrado en Auditoría.
               </span>
             </div>
           </div>
@@ -422,5 +424,57 @@ export function DeleteMemberSection({
         }
       />
     </>
+  );
+}
+
+const CONSENT_LABEL: Record<ConsentKind, string> = {
+  health: "Datos de salud",
+  images: "Uso de imágenes",
+  marketing: "Comunicaciones comerciales",
+  ai: "Tratamiento con IA",
+};
+
+/** E12-12: retirar un consentimiento accesorio (imágenes, marketing, IA) a petición del socio. */
+export function ConsentRevokePanel({
+  memberId,
+  consents,
+}: {
+  memberId: string;
+  consents: Pick<MemberDataPanelValues, "consentImagesAt" | "consentMarketingAt" | "consentAIAt">;
+}) {
+  const [pending, startTransition] = useTransition();
+  const toast = useToast();
+
+  const rows: { kind: ConsentKind; grantedAt: string | null }[] = [
+    { kind: "images", grantedAt: consents.consentImagesAt },
+    { kind: "marketing", grantedAt: consents.consentMarketingAt },
+    { kind: "ai", grantedAt: consents.consentAIAt },
+  ];
+
+  function revoke(kind: ConsentKind) {
+    startTransition(async () => {
+      const result = await revokeMemberConsentAction(memberId, kind);
+      if (result.ok) toast.success(`${CONSENT_LABEL[kind]}: consentimiento retirado.`);
+      else toast.error(result.error);
+    });
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className={LABEL}>Consentimientos accesorios</p>
+      {rows.map((r) => (
+        <div key={r.kind} className="flex items-center justify-between gap-3 border border-brand-border rounded-xl px-3.5 py-2.5">
+          <div>
+            <p className="text-sm text-brand-text">{CONSENT_LABEL[r.kind]}</p>
+            <p className="text-xs text-brand-muted">{r.grantedAt ? `Concedido el ${fmtDay(r.grantedAt)}` : "No concedido"}</p>
+          </div>
+          {r.grantedAt && (
+            <Button type="button" variant="secondary" size="sm" disabled={pending} onClick={() => revoke(r.kind)}>
+              Retirar
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
   );
 }

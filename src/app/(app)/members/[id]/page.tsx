@@ -42,7 +42,7 @@ import { EditMemberDataButton, NewNoteButton } from "./member-header-actions";
 import { ActivityThread, type ActivityEntry } from "./activity-thread";
 import { ArchivedNotes, MemberNoteHighlights, type NoteView } from "./note-highlights";
 import { AddHealthRecordForm, HealthStatusSelect, HealthStatusLegend, AddNoteForm, ResendWelcomeButton } from "./member-forms";
-import { MemberDataPanel, DeleteMemberSection } from "./member-data-panel";
+import { MemberDataPanel, DeleteMemberSection, ConsentRevokePanel } from "./member-data-panel";
 import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
 import { BodyCompositionChart } from "./composition-chart";
@@ -696,9 +696,18 @@ export default async function MemberDetailPage({
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
               <ConsentTile label="Contrato" at={member.consentContractAt} pending="Sin contrato firmado" />
               <ConsentTile label="Salud" at={member.consentHealthAt} pending="Sin registros de salud" />
-              <ConsentTile label="Imágenes" at={member.consentImagesAt} pending="Sin fotos de evolución" />
-              <ConsentTile label="Marketing" at={member.consentMarketingAt} pending="Sin comunicaciones" />
             </div>
+            {/* E12-12: los accesorios se pueden retirar a petición del socio
+                (p. ej. por teléfono) — la declaración de salud, de arriba, no
+                se toca por esta vía: es condición del servicio (E10-03). */}
+            <ConsentRevokePanel
+              memberId={member.id}
+              consents={{
+                consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
+                consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                consentAIAt: member.consentAIAt ? member.consentAIAt.toISOString() : null,
+              }}
+            />
           </div>
 
           {canDelete && (

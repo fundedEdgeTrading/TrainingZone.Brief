@@ -43,3 +43,21 @@ export function needsReconsent(member: { consentVersion: string | null }): boole
 export function canUseClinicalDataForAI(member: { consentAI: boolean; consentHealth: boolean }): boolean {
   return member.consentAI && member.consentHealth;
 }
+
+/** Los cuatro consentimientos que guarda `Member`, con su pareja bandera/fecha. */
+export const CONSENT_FIELD = {
+  health: { flag: "consentHealth", at: "consentHealthAt" },
+  images: { flag: "consentImages", at: "consentImagesAt" },
+  marketing: { flag: "consentMarketing", at: "consentMarketingAt" },
+  ai: { flag: "consentAI", at: "consentAIAt" },
+} as const;
+
+export type ConsentKind = keyof typeof CONSENT_FIELD;
+
+/**
+ * E12-12: los que puede retirar el STAFF a petición del socio (p. ej. por
+ * teléfono). La declaración de salud queda fuera a propósito: es condición
+ * del servicio (ver E10-03), y retirarla implica la baja, no un botón de
+ * este panel.
+ */
+export const STAFF_REVOCABLE_CONSENTS: readonly ConsentKind[] = ["images", "marketing", "ai"];
