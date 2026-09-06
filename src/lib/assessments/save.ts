@@ -6,8 +6,10 @@ import {
   INJURY_ZONE_TO_PAIN_ZONE,
   PAIN_ZONE_LABEL,
   PAIN_ZONE_TO_INJURY_ZONE,
+  MOVEMENT_PATTERNS,
   PERFORMANCE_MARKS,
   isInitialAnswers,
+  loadMetricKey,
   type AssessmentAnswers,
   type InitialAssessmentAnswers,
   type ScreeningAnswers,
@@ -188,6 +190,22 @@ export async function saveAssessment({
         })),
       });
     }
+
+    // E3-11 · las cargas de referencia se propagan a `PerformanceMetric` en vez
+    // de quedarse dentro de `answers`. Es lo que las hace comparables entre
+    // valoraciones —y lo que permite que el generador de mesociclos las reciba—
+    // sin tener que releer y parsear todos los cuestionarios del socio.
+    const cargas = answers.movimiento?.cargas ?? {};
+    const cargaRows = MOVEMENT_PATTERNS.filter((p) => cargas[p] != null).map((p) => ({
+      orgId,
+      memberId,
+      key: loadMetricKey(p),
+      value: cargas[p] as number,
+      unit: "kg",
+      recordedAt: now,
+      source: "assessment",
+    }));
+    if (cargaRows.length) await tx.performanceMetric.createMany({ data: cargaRows });
 
     const labels = goalLabels(kind, answers);
     if (labels.length) {

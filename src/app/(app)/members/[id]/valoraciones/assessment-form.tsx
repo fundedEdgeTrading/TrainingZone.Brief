@@ -13,12 +13,22 @@ import {
   PAIN_ZONES,
   EJE_KEYS,
   EJE_LABEL,
+  MOBILITY_CHECKS,
+  MOBILITY_CHECK_LABEL,
+  MOVEMENT_PATTERNS,
+  MOVEMENT_PATTERN_LABEL,
+  PATTERN_EXECUTIONS,
+  PATTERN_EXECUTION_LABEL,
   PAIN_ZONE_LABEL,
   painZoneNeedsSide,
   type EjesAnswers,
   type ScreeningAnswers,
   PERFORMANCE_MARKS,
   type MemberInitialPartAnswers,
+  type MobilityCheck,
+  type MovementPattern,
+  type MovimientoAnswers,
+  type PatternExecution,
   type PainZone,
   type PerformanceMarkKey,
 } from "@/lib/assessments/schemas";
@@ -216,6 +226,11 @@ export function AssessmentForm({
   // socio delante, una vez por periodo. Vacío = no puntuado, nunca un 5 puesto
   // por el formulario.
   const [ejes, setEjes] = useState<Record<string, string>>({});
+  // E3-11 · patrones, movilidad y cargas. Todo vacío por defecto: lo que no se
+  // toca no se puntúa, y nada entra en la ficha por omisión.
+  const [patrones, setPatrones] = useState<Partial<Record<MovementPattern, { nivel: PatternExecution; nota: string }>>>({});
+  const [movilidad, setMovilidad] = useState<Partial<Record<MobilityCheck, boolean>>>({});
+  const [cargas, setCargas] = useState<Partial<Record<MovementPattern, string>>>({});
   const [notasEntrenador, setNotasEntrenador] = useState("");
   // Respuestas a las preguntas propias del centro. Se guardan como texto
   // mientras se escribe y se convierten al tipo de la pregunta al enviar, igual
@@ -242,6 +257,23 @@ export function AssessmentForm({
    */
   function only<T extends object>(key: string, value: T): T | Record<string, never> {
     return on(key) ? value : {};
+  }
+
+  function buildMovimiento(): MovimientoAnswers {
+    return {
+      patrones: Object.fromEntries(
+        MOVEMENT_PATTERNS.filter((p) => patrones[p]).map((p) => [
+          p,
+          { nivel: patrones[p]!.nivel, nota: patrones[p]!.nota.trim() },
+        ])
+      ),
+      movilidad: Object.fromEntries(
+        MOBILITY_CHECKS.filter((c) => movilidad[c] !== undefined).map((c) => [c, movilidad[c]!])
+      ),
+      cargas: Object.fromEntries(
+        MOVEMENT_PATTERNS.filter((p) => (cargas[p] ?? "").trim() !== "").map((p) => [p, num(cargas[p]!)])
+      ),
+    };
   }
 
   function buildAnswers() {
@@ -276,6 +308,7 @@ export function AssessmentForm({
           ...only("seguimiento.objetivoProximoPeriodo", { objetivoProximoPeriodo: seguimiento.objetivoProximoPeriodo }),
         },
         screening: { ...screening, zonasDolor, lateralidadDolor },
+        movimiento: buildMovimiento(),
         ejes: Object.fromEntries(
           EJE_KEYS.filter((k) => (ejes[k] ?? "").trim() !== "").map((k) => [k, num(ejes[k])])
         ) as EjesAnswers,
@@ -304,6 +337,7 @@ export function AssessmentForm({
         ...only("experiencia.ejerciciosNoTolera", { ejerciciosNoTolera: experiencia.ejerciciosNoTolera }),
       },
       screening: { ...screening, zonasDolor, lateralidadDolor },
+      movimiento: buildMovimiento(),
       marcas: marcasList,
       cierre: {
         ...only("cierre.notasEntrenador", { notasEntrenador }),
@@ -596,6 +630,102 @@ export function AssessmentForm({
               ))}
             </div>
           )}
+        </div>
+      </Card>
+
+      {/* E3-11 · patrones de movimiento, movilidad y cargas. Pensado para
+          rellenarse en menos de un minuto con el socio delante: siete toques,
+          tres toques y los kilos que haya. */}
+      <Card title="Movimiento" meta="Siete patrones · tres chequeos · cargas de referencia">
+        <p className="text-[13px] text-brand-muted -mt-3 mb-4">
+          De los siete patrones que la metodología exige no se evaluaba ninguno: lo más cercano era una
+          autopercepción de la técnica. Lo que no se toque queda sin evaluar — no hay valor por defecto.
+        </p>
+
+        <div className="space-y-2">
+          {MOVEMENT_PATTERNS.map((pattern) => {
+            const current = patrones[pattern];
+            return (
+              <div key={pattern} className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-brand-text-2 w-full sm:w-44 shrink-0">
+                  {MOVEMENT_PATTERN_LABEL[pattern]}
+                </span>
+                <div className="flex gap-1.5">
+                  {PATTERN_EXECUTIONS.map((nivel) => (
+                    <button
+                      key={nivel}
+                      type="button"
+                      aria-pressed={current?.nivel === nivel}
+                      onClick={() =>
+                        setPatrones((x) => ({
+                          ...x,
+                          [pattern]: { nivel, nota: x[pattern]?.nota ?? "" },
+                        }))
+                      }
+                      className={`rounded-pill px-3 py-1 text-xs font-semibold border transition-colors duration-200 ${
+                        current?.nivel === nivel
+                          ? "bg-tz-black text-tz-bone border-tz-black"
+                          : "bg-white text-brand-text-2 border-brand-border hover:border-brand-ink"
+                      }`}
+                    >
+                      {PATTERN_EXECUTION_LABEL[nivel]}
+                    </button>
+                  ))}
+                </div>
+                {current && (
+                  <Input
+                    value={current.nota}
+                    maxLength={200}
+                    placeholder="Nota corta (opcional)"
+                    onChange={(e) =>
+                      setPatrones((x) => ({ ...x, [pattern]: { nivel: current.nivel, nota: e.target.value } }))
+                    }
+                    className="flex-1 min-w-40"
+                  />
+                )}
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.5"
+                  value={cargas[pattern] ?? ""}
+                  placeholder="kg"
+                  onChange={(e) => setCargas((x) => ({ ...x, [pattern]: e.target.value }))}
+                  className="w-24"
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-4">
+          <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">
+            Movilidad · pasa / no pasa
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {MOBILITY_CHECKS.map((check) => {
+              const value = movilidad[check];
+              return (
+                <div key={check} className="flex items-center gap-1.5">
+                  <span className="text-sm text-brand-text-2">{MOBILITY_CHECK_LABEL[check]}</span>
+                  {[true, false].map((pass) => (
+                    <button
+                      key={String(pass)}
+                      type="button"
+                      aria-pressed={value === pass}
+                      onClick={() => setMovilidad((x) => ({ ...x, [check]: pass }))}
+                      className={`rounded-pill px-3 py-1 text-xs font-semibold border transition-colors duration-200 ${
+                        value === pass
+                          ? "bg-tz-black text-tz-bone border-tz-black"
+                          : "bg-white text-brand-text-2 border-brand-border hover:border-brand-ink"
+                      }`}
+                    >
+                      {pass ? "Pasa" : "No pasa"}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </Card>
 

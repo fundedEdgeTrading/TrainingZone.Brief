@@ -134,6 +134,86 @@ const customAnswersRecord = z
   .optional()
   .default({});
 
+
+/**
+ * E3-11 · Patrones de movimiento, movilidad y cargas de referencia.
+ *
+ * De los SIETE patrones que la propia metodología exige (bisagra, sentadilla,
+ * los dos empujes, las dos tracciones y marcha/lunge — ver
+ * `src/lib/ai/methodology/04-reglas-programacion.md`) no se evaluaba NINGUNO. Lo
+ * más cercano era `experiencia.tecnicaBasicos: BAJA|MEDIA|ALTA`, una
+ * autopercepción, y las marcas eran cuatro: dominadas, flexiones, plancha y
+ * circuito de agilidad. Ni bisagra, ni sentadilla, ni empuje horizontal, ni
+ * movilidad de tobillo u hombro, ni una sola carga de referencia.
+ *
+ * El bloque está pensado para rellenarse en menos de un minuto con el socio
+ * delante: siete toques, tres toques y los kilos que haya.
+ */
+export const MOVEMENT_PATTERNS = [
+  "BISAGRA",
+  "SENTADILLA",
+  "EMPUJE_HORIZONTAL",
+  "EMPUJE_VERTICAL",
+  "TRACCION_HORIZONTAL",
+  "TRACCION_VERTICAL",
+  "MARCHA_LUNGE",
+] as const;
+
+export type MovementPattern = (typeof MOVEMENT_PATTERNS)[number];
+
+export const MOVEMENT_PATTERN_LABEL: Record<MovementPattern, string> = {
+  BISAGRA: "Bisagra de cadera",
+  SENTADILLA: "Sentadilla",
+  EMPUJE_HORIZONTAL: "Empuje horizontal",
+  EMPUJE_VERTICAL: "Empuje vertical",
+  TRACCION_HORIZONTAL: "Tracción horizontal",
+  TRACCION_VERTICAL: "Tracción vertical",
+  MARCHA_LUNGE: "Marcha / lunge",
+};
+
+/** Tres estados, no una nota del 1 al 10: es lo que se puede juzgar de un vistazo. */
+export const PATTERN_EXECUTIONS = ["EJECUTA", "CON_REGRESION", "NO_EJECUTA"] as const;
+export type PatternExecution = (typeof PATTERN_EXECUTIONS)[number];
+
+export const PATTERN_EXECUTION_LABEL: Record<PatternExecution, string> = {
+  EJECUTA: "Ejecuta",
+  CON_REGRESION: "Con regresión",
+  NO_EJECUTA: "No ejecuta",
+};
+
+/** Pasa / no pasa. Tres chequeos, no una batería de fisioterapia. */
+export const MOBILITY_CHECKS = ["TOBILLO", "CADERA", "HOMBRO"] as const;
+export type MobilityCheck = (typeof MOBILITY_CHECKS)[number];
+
+export const MOBILITY_CHECK_LABEL: Record<MobilityCheck, string> = {
+  TOBILLO: "Tobillo (rodilla a la pared)",
+  CADERA: "Cadera (sentadilla profunda sin apoyo)",
+  HOMBRO: "Hombro (flexión sobre cabeza contra pared)",
+};
+
+const patternResultSchema = z.object({
+  nivel: z.enum(PATTERN_EXECUTIONS),
+  nota: text.max(200).optional().default(""),
+});
+
+export const movimientoSchema = z.object({
+  patrones: z.partialRecord(z.enum(MOVEMENT_PATTERNS), patternResultSchema).optional().default({}),
+  movilidad: z.partialRecord(z.enum(MOBILITY_CHECKS), z.boolean()).optional().default({}),
+  /** Kilos de referencia por patrón. La FECHA es la de la valoración, y por eso
+   *  se propagan a `PerformanceMetric`: es lo que los hace comparables entre
+   *  valoraciones sin releer todos los `answers`. */
+  cargas: z.partialRecord(z.enum(MOVEMENT_PATTERNS), z.number().nonnegative()).optional().default({}),
+});
+
+export type MovimientoAnswers = z.infer<typeof movimientoSchema>;
+
+/** Clave de `PerformanceMetric` para la carga de referencia de un patrón. */
+export function loadMetricKey(pattern: MovementPattern): string {
+  return `carga_${pattern.toLowerCase()}`;
+}
+
+export const LOAD_METRIC_KEYS = MOVEMENT_PATTERNS.map(loadMetricKey);
+
 /**
  * Screening clínico. Vive fuera de `initialAssessmentSchema` porque desde E3-06
  * lo pregunta TAMBIÉN la revisión: una lumbalgia que aparece en el mes 4 tiene
@@ -157,6 +237,8 @@ export const screeningSchema = z.object({
 export type ScreeningAnswers = z.infer<typeof screeningSchema>;
 
 export const initialAssessmentSchema = vitalsSchema.extend({
+  /** E3-11 · opcional para no invalidar las valoraciones ya guardadas. */
+  movimiento: movimientoSchema.optional(),
   perfil: perfilSchema,
   experiencia: experienciaSchema,
   screening: screeningSchema,
@@ -208,6 +290,8 @@ export const EJE_LABEL: Record<keyof EjesAnswers, string> = {
 export const EJE_KEYS = Object.keys(EJE_LABEL) as (keyof EjesAnswers)[];
 
 export const reviewAssessmentSchema = vitalsSchema.extend({
+  /** E3-11 · también en la revisión: sin repetirlo no hay histórico que comparar. */
+  movimiento: movimientoSchema.optional(),
   /** E3-07: los ocho ejes, fuera del debrief de sesión. Opcional para no
    *  invalidar las revisiones ya guardadas. */
   ejes: ejesSchema.optional(),

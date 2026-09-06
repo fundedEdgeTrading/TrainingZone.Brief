@@ -10,6 +10,11 @@ import {
   DAYS_PER_WEEK_LABEL,
   EJE_KEYS,
   EJE_LABEL,
+  MOBILITY_CHECKS,
+  MOBILITY_CHECK_LABEL,
+  MOVEMENT_PATTERNS,
+  MOVEMENT_PATTERN_LABEL,
+  PATTERN_EXECUTION_LABEL,
   PAIN_ZONE_LABEL,
   PERFORMANCE_MARKS,
   isInitialAnswers,
@@ -238,6 +243,34 @@ export default async function AssessmentDetailPage({
               </Card>
             </>
           )}
+
+          {/* E3-11 · patrones, movilidad y cargas de referencia. */}
+          {answers.movimiento &&
+            (MOVEMENT_PATTERNS.some((p) => answers.movimiento?.patrones?.[p]) ||
+              MOBILITY_CHECKS.some((c) => answers.movimiento?.movilidad?.[c] !== undefined)) && (
+              <Card title="Movimiento" meta="Siete patrones · movilidad · cargas">
+                <ul className="list-none">
+                  {MOVEMENT_PATTERNS.map((pattern) => {
+                    const result = answers.movimiento?.patrones?.[pattern];
+                    const carga = answers.movimiento?.cargas?.[pattern];
+                    if (!result && carga == null) return null;
+                    const parts = [
+                      result ? PATTERN_EXECUTION_LABEL[result.nivel] : null,
+                      carga != null ? `${carga} kg` : null,
+                      result?.nota || null,
+                    ].filter(Boolean);
+                    return <Row key={pattern} label={MOVEMENT_PATTERN_LABEL[pattern]} value={parts.join(" · ")} />;
+                  })}
+                  {MOBILITY_CHECKS.map((check) => (
+                    <Row
+                      key={check}
+                      label={MOBILITY_CHECK_LABEL[check]}
+                      value={yesNo(answers.movimiento?.movilidad?.[check])?.replace("Sí", "Pasa").replace("No", "No pasa")}
+                    />
+                  ))}
+                </ul>
+              </Card>
+            )}
 
           {customAnswers.length > 0 && (
             <Card title="Preguntas del centro">
