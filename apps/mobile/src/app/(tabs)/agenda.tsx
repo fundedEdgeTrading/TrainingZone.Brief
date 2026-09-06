@@ -352,11 +352,16 @@ function ConfirmSheet({
         <SheetRow
           label="Bono"
           value={
-            balance?.unlimited
-              ? "Sin consumo (bono ilimitado)"
-              : remainingAfter != null
-                ? `${kind === "EP" ? "Personal" : "Grupos"} · quedarán ${remainingAfter}`
-                : "Sin bono asociado"
+            // E2-11: con la sesión llena no se descuenta nada todavía —solo si
+            // se obtiene plaza—, así que anunciar "quedarán X" aquí es un
+            // descuento que nunca llega a pasar y que el socio se cree hecho.
+            full
+              ? "No se descuenta hasta obtener plaza"
+              : balance?.unlimited
+                ? "Sin consumo (bono ilimitado)"
+                : remainingAfter != null
+                  ? `${kind === "EP" ? "Personal" : "Grupos"} · quedarán ${remainingAfter}`
+                  : "Sin bono asociado"
           }
           accent
         />
