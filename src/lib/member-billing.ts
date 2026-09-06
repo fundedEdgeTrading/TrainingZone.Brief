@@ -38,6 +38,27 @@ export function isRecurring(planType: PlanType): boolean {
 /** HU-ST-08: mismo mensaje en las tres puertas de venta (recepción, portal, landing). */
 export const PLAN_ARCHIVED_ERROR = "Ese producto está archivado y ya no se puede vender.";
 
+export type CheckoutModeDecision = {
+  mode: "payment" | "subscription";
+  /** D-S2: Bizum SOLO en pagos únicos. */
+  bizumAvailable: boolean;
+};
+
+/**
+ * HU-ST-09 / decisión D-S2 · El modo del checkout y, con él, qué métodos de pago
+ * caben. **Un solo sitio**: la exclusión de Bizum no se reparte por el código,
+ * se deduce de `isRecurring()`.
+ *
+ * Bizum es un método de pago único: no tiene capacidad de recurrencia, así que
+ * en `mode:"subscription"` Stripe no lo ofrece ni aunque el gimnasio lo tenga
+ * activo. En `mode:"payment"` —bonos, sesiones sueltas, dúos, entrenamiento
+ * personal— sí, y es el método que más pide un socio español.
+ */
+export function resolveCheckoutMode(planType: PlanType): CheckoutModeDecision {
+  const recurring = isRecurring(planType);
+  return { mode: recurring ? "subscription" : "payment", bizumAvailable: !recurring };
+}
+
 /**
  * Crea o recupera el producto/precio espejo del plan en la cuenta CONECTADA
  * del gimnasio (RB-VENTA-002). Perezoso e idempotente: si ya hay
@@ -165,7 +186,8 @@ export async function createMemberCheckout(params: {
     await prisma.member.update({ where: { id: member.id }, data: { stripeCustomerId, stripeAccountId: accountId } });
   }
 
-  const recurring = isRecurring(plan.type);
+  const { mode } = resolveCheckoutMode(plan.type);
+  const recurring = mode === "subscription";
   // "landing" (checkout público anónimo, sin sesión) no tiene ni /billing ni
   // /portal/membresia a los que volver: aterriza en una confirmación pública
   // genérica, igual que el checkout anónimo de organizaciones vuelve a
@@ -176,10 +198,16 @@ export async function createMemberCheckout(params: {
 
   const checkoutSession = await stripe.checkout.sessions.create(
     {
-      mode: recurring ? "subscription" : "payment",
+      mode,
       customer: stripeCustomerId,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
-      payment_method_types: recurring ? ["card", "sepa_debit"] : ["card"],
+      // HU-ST-09/D-S2: `payment_method_types` NO se fija. Fijarlo a mano dejaba
+      // fuera Bizum, Link y los wallets (Apple Pay, Google Pay) y, peor, hacía
+      // fallar el checkout entero si alguno de los métodos listados no estaba
+      // activo en la cuenta del gimnasio. Omitiéndolo, Stripe ofrece los que ese
+      // gimnasio tenga habilitados —cuenta Standard, D-S1: los activa él— y
+      // filtra por capacidad: en `mode:"subscription"` Bizum no aparece porque
+      // no admite recurrencia.
       success_url: `${publicOrigin()}${returnPath}?checkout=success`,
       cancel_url: `${publicOrigin()}${returnPath}?checkout=cancelled`,
       metadata: { orgId, memberId, planId, centerId, ...(soldByUserId ? { soldByUserId } : {}) },
@@ -283,7 +311,7 @@ export async function createProspectMemberCheckout(params: {
   const priceResult = await ensureStripePrice(orgId, planId);
   if (!priceResult.ok) return { ok: false, error: priceResult.error };
 
-  const recurring = isRecurring(plan.type);
+  const recurring = resolveCheckoutMode(plan.type).mode === "subscription";
   const metadata = {
     orgId,
     centerId,
@@ -299,7 +327,8 @@ export async function createProspectMemberCheckout(params: {
       mode: recurring ? "subscription" : "payment",
       customer_email: email,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
-      payment_method_types: recurring ? ["card", "sepa_debit"] : ["card"],
+      // Mismo criterio que `createMemberCheckout` (HU-ST-09/D-S2): los métodos
+      // los decide la cuenta conectada, no una lista escrita a mano aquí.
       success_url: `${publicOrigin()}/hazte-socio/gracias?checkout=success`,
       cancel_url: `${publicOrigin()}/hazte-socio/gracias?checkout=cancelled`,
       metadata,
