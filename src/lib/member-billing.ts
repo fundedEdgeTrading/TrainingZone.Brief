@@ -14,6 +14,9 @@ import { absoluteUrl, publicOrigin } from "@/lib/site";
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
 // shape legado.
 import { resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
+import { isDemoModeActive } from "@/lib/platform-plans";
+import { demoMemberCheckoutUrl } from "@/lib/demo-member-checkout";
+import { isRecurring } from "@/lib/plan-recurrence";
 // HU-ST-04/RB-PAGO-022: ninguna creación contra Stripe sale sin clave de
 // idempotencia. El patrón y el registro de claves están en el módulo.
 import {
@@ -26,14 +29,9 @@ import {
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
-/**
- * F5: MONTHLY y ONLINE son cuota recurrente (se cobran cada mes mientras el
- * socio no cause baja). SESSION_PACK, DROP_IN, DUO y PERSONAL_TRAINING son
- * bonos puntuales: se agotan y el socio compra otro, nunca se renuevan solos.
- */
-export function isRecurring(planType: PlanType): boolean {
-  return planType === "MONTHLY" || planType === "ONLINE";
-}
+// F5: la regla de recurrencia vive en `plan-recurrence.ts` (ver allí por qué), y
+// se sigue reexportando desde aquí: es donde la buscan todos los call sites.
+export { isRecurring } from "@/lib/plan-recurrence";
 
 /** HU-ST-08: mismo mensaje en las tres puertas de venta (recepción, portal, landing). */
 export const PLAN_ARCHIVED_ERROR = "Ese producto está archivado y ya no se puede vender.";
@@ -191,10 +189,24 @@ export async function createMemberCheckout(params: {
   // que la pasarela: no depende de que haya Stripe configurado.
   if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
 
+  const centerId = params.centerId ?? member.primaryCenterId;
+  const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
+
+  // HU-ST-11/RB-PAGO-024: sin `STRIPE_SECRET_KEY` no hay cobro real posible en
+  // NINGUNO de los dos planos. El de licencia ya caía a `/demo-checkout`; el de
+  // socio se quedaba sin comprar, y con él toda la mitad del producto que se
+  // enseña en una demo (bono, saldo, reserva). Mismo criterio que
+  // `createLicenseCheckoutSession`.
+  if (isDemoModeActive()) {
+    return {
+      ok: true,
+      url: demoMemberCheckoutUrl({ orgId, memberId, planId, centerId, soldByUserId: soldByUserId ?? null, returnPath }),
+    };
+  }
+
   const resolved = await stripeForOrg(orgId);
   if (!resolved.ok) return { ok: false, error: resolved.error };
   const { stripe, accountId } = resolved;
-  const centerId = params.centerId ?? member.primaryCenterId;
 
   const priceResult = await ensureStripePrice(orgId, planId);
   if (!priceResult.ok) return { ok: false, error: priceResult.error };
@@ -219,8 +231,8 @@ export async function createMemberCheckout(params: {
   // genérica, igual que el checkout anónimo de organizaciones vuelve a
   // /activar en vez de a un panel (platform-billing.ts). "portal" (F6) vuelve
   // a /portal/membresia (hero + renovar/ampliar, fusión de las antiguas
-  // /portal/plan y /portal/comprar).
-  const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
+  // /portal/plan y /portal/comprar). Se resuelve arriba, porque el checkout de
+  // demostración (HU-ST-11) también necesita saber a dónde volver.
 
   const checkoutSession = await stripe.checkout.sessions.create(
     {

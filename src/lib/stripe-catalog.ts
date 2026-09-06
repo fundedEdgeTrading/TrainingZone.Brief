@@ -1,7 +1,7 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripeForOrg } from "@/lib/stripe";
-import { isRecurring } from "@/lib/member-billing";
+import { isRecurring } from "@/lib/plan-recurrence";
 import { priceKey, productKey } from "@/lib/stripe-idempotency";
 
 /**
