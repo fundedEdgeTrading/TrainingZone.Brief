@@ -14,6 +14,7 @@ import {
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
+import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
 import { zonedTimeToInstant } from "@/lib/date-utils";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import {
@@ -691,15 +692,132 @@ export async function clearBookingNoShow(orgId: string, bookingId: string, nextS
   return { ok: true as const };
 }
 
-export async function deleteSession(orgId: string, sessionId: string) {
-  const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId }, select: { id: true } });
+export type DeleteSessionResult =
+  | { ok: true; refunded: number; notified: number }
+  | { ok: false; error: string; needsConfirmation?: true; settledCount?: number };
+
+/**
+ * RB-AGENDA-010: borrar una sesión devuelve el bono a cada socio apuntado, lo
+ * audita y se lo cuenta.
+ *
+ * Antes esto eran tres `deleteMany` sueltos: la reserva desaparecía, el bono NO
+ * volvía y no quedaba ni una línea de `AuditLog` —a diferencia de
+ * `discardAttendeeAsStaff`, que audita cada descarte—. Borrar una clase entera
+ * era quedarse con la sesión de todos los apuntados a la vez.
+ *
+ * Todo va en UNA transacción a propósito (escenario "atomicidad"): si falla la
+ * devolución de un solo bono, no se borra la sesión y no se devuelve ninguno.
+ * Los avisos salen después, fuera de la transacción y best-effort, como el
+ * resto de notificaciones del módulo.
+ */
+export async function deleteSession(
+  orgId: string,
+  sessionId: string,
+  opts: {
+    /** Quién borra: firma cada devolución en `AuditLog`. */
+    actorUserId: string;
+    /** El usuario ya ha confirmado que quiere borrar asistencias registradas. */
+    confirmSettled?: boolean;
+    /** Avisar a los socios apuntados de que la clase se ha cancelado. */
+    notifyMembers?: boolean;
+  }
+): Promise<DeleteSessionResult> {
+  const session = await prisma.classSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: {
+      id: true,
+      name: true,
+      startTime: true,
+      bookings: {
+        select: {
+          id: true,
+          memberId: true,
+          status: true,
+          subscriptionId: true,
+          occurrenceDate: true,
+          member: { select: { userId: true } },
+        },
+      },
+    },
+  });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };
-  // Borrar la sesión implica borrar también sus reservas y, si las hay,
-  // los debriefs asociados (FK RESTRICT: Booking <- SessionDebrief).
-  await prisma.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
-  await prisma.booking.deleteMany({ where: { sessionId } });
-  await prisma.classSession.delete({ where: { id: sessionId } });
-  return { ok: true as const };
+
+  const plan = planSessionDeletion(session.bookings);
+
+  // Una asistencia ya registrada es histórico: borrarla lo destruye y no
+  // devuelve nada. Quien borra tiene que decirlo expresamente.
+  if (plan.settled.length > 0 && !opts.confirmSettled) {
+    return {
+      ok: false as const,
+      error: describeSettledAttendance(plan.settled.length),
+      needsConfirmation: true as const,
+      settledCount: plan.settled.length,
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const booking of plan.refunds) {
+      await tx.subscription.update({
+        where: { id: booking.subscriptionId! },
+        data: { sessionsRemaining: { increment: 1 } },
+      });
+      // Una entrada por devolución, no una por borrado: quien revise el saldo
+      // de un socio tiene que poder cuadrar sesión a sesión.
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId: opts.actorUserId,
+          action: SESSION_DELETED_AUDIT_ACTION,
+          entityType: "Booking",
+          entityId: booking.id,
+          memberId: booking.memberId,
+          metadata: {
+            sessionId,
+            sessionName: session.name,
+            occurrenceDate: booking.occurrenceDate.toISOString(),
+            subscriptionId: booking.subscriptionId,
+            refunded: true,
+          },
+        },
+      });
+    }
+
+    // Las reservas se borran con la sesión, así que hay que soltar antes los
+    // debriefs (FK RESTRICT: Booking <- SessionDebrief).
+    await tx.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
+    await tx.booking.deleteMany({ where: { sessionId } });
+    await tx.classSession.delete({ where: { id: sessionId } });
+  });
+
+  let notified = 0;
+  if (opts.notifyMembers !== false) {
+    for (const booking of plan.notify) {
+      if (!booking.member.userId) continue;
+      notified++;
+      const refunded = plan.refunds.some((r) => r.id === booking.id);
+      void createNotification({
+        orgId,
+        recipientUserId: booking.member.userId,
+        kind: "INFO",
+        title: `Se ha cancelado ${session.name}`,
+        body: [
+          `${formatOccurrenceLabel(booking.occurrenceDate)} · ${session.startTime}`,
+          refunded ? "La sesión vuelve a tu bono." : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        entityType: "ClassSession",
+        entityId: sessionId,
+      }).catch(() => {});
+    }
+  }
+
+  return { ok: true as const, refunded: plan.refunds.length, notified };
+}
+
+/** Día de la ocurrencia en castellano, para el aviso de clase cancelada. */
+function formatOccurrenceLabel(day: Date) {
+  return day.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
 }
 
 /** Arrastrar y soltar: reprograma día/hora conservando la duración original. */

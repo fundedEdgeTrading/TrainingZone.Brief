@@ -19,6 +19,16 @@ import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
+/**
+ * RB-AGENDA-010: borrar puede exigir una segunda vuelta. Si la sesión tiene
+ * asistencias ya registradas, la primera llamada no borra nada: devuelve
+ * `needsConfirmation` con el texto que hay que enseñar, y solo la segunda
+ * (`confirmSettled`) ejecuta el borrado.
+ */
+export type DeleteSessionActionResult =
+  | { ok: true }
+  | { ok: false; error: string; needsConfirmation?: true };
+
 const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"] as const;
 
 /** "HH:MM" en reloj de 24 h; nada más entra en `ClassSession.startTime`/`endTime`. */
@@ -111,7 +121,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   return { ok: true };
 }
 
-export async function deleteSessionAction(formData: FormData): Promise<SessionActionResult> {
+export async function deleteSessionAction(formData: FormData): Promise<DeleteSessionActionResult> {
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
@@ -124,7 +134,10 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   if (!centerId) return { ok: false, error: "Sesión no encontrada." };
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
-  const result = await deleteSession(session.user.orgId, id);
+  const result = await deleteSession(session.user.orgId, id, {
+    actorUserId: session.user.id,
+    confirmSettled: formData.get("confirmSettled") === "on",
+  });
   if (!result.ok) return result;
 
   revalidateSessionViews();

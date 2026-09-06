@@ -78,8 +78,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!canManageEpSlots(claims.role)) return apiError("No tienes permiso para borrar sesiones.", 403);
   const { id } = await params;
 
-  const result = await deleteSession(claims.orgId, id);
-  if (!result.ok) return apiError(result.error, 404);
+  // RB-AGENDA-010: mismo criterio que la web. Con asistencias ya registradas el
+  // borrado no se ejecuta a la primera: 409 con el texto a confirmar, y la app
+  // repite con `?confirmSettled=1`. 409 y no 404 porque la sesión existe: lo
+  // que falta es la decisión de quien borra.
+  const confirmSettled = req.nextUrl.searchParams.get("confirmSettled") === "1";
+  const result = await deleteSession(claims.orgId, id, { actorUserId: claims.sub, confirmSettled });
+  if (!result.ok) {
+    return result.needsConfirmation ? apiError(result.error, 409) : apiError(result.error, 404);
+  }
   revalidateSessionViews(id);
-  return apiOk({ deleted: true });
+  return apiOk({ deleted: true, refunded: result.refunded });
 }
