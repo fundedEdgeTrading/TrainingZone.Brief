@@ -13,6 +13,7 @@ import {
   addLeadChannel,
   addNoCloseReason,
   leadIsInScope,
+  updateLeadDetails,
   type CreateLeadInput,
   type LeadWriteResult,
 } from "@/lib/leads-queries";
@@ -136,6 +137,22 @@ export async function addNoCloseReasonAction(formData: FormData): Promise<LeadAc
   const result = await addNoCloseReason(session.user.orgId, String(formData.get("label") ?? ""));
   if (!result.ok) return result;
   revalidatePath("/leads");
+  return { ok: true };
+}
+
+/** E8-15: completar desde la ficha lo que quedó en blanco en la captura rápida. */
+export async function updateLeadDetailsAction(leadId: string, formData: FormData): Promise<LeadActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!canManageLeads(session.user.role)) return { ok: false, error: "No tienes permiso." };
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
+
+  const result = await updateLeadDetails(session.user.orgId, leadId, {
+    postalCode: String(formData.get("postalCode") ?? ""),
+    occupation: String(formData.get("occupation") ?? ""),
+    goals: String(formData.get("goals") ?? ""),
+  });
+  if (!result.ok) return result;
+  revalidatePath(`/leads/${leadId}`);
   return { ok: true };
 }
 

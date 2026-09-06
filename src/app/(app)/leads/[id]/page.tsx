@@ -3,7 +3,7 @@ import { resolveTimezone } from "@/lib/timezone";
 import { formatInstantDateTime } from "@/lib/date-utils";
 import Link from "next/link";
 import { requireRole, centerIsInScope } from "@/lib/guard";
-import { getLeadDetail, listNoCloseReasons, leadIsArchived } from "@/lib/leads-queries";
+import { getLeadDetail, listNoCloseReasons, leadIsArchived, missingLeadFields } from "@/lib/leads-queries";
 import { getHealthRecordsForLead } from "@/lib/health-access";
 import { canViewHealthData } from "@/lib/rbac";
 import { listAssignableStaff } from "@/lib/org-queries";
@@ -19,7 +19,10 @@ import {
   ConvertLeadForm,
 } from "./lead-detail-actions";
 import { WhatsAppButton } from "@/components/ui/whatsapp-button";
-import { logLeadWhatsappContactAction } from "../actions";
+import { logLeadWhatsappContactAction, updateLeadDetailsAction } from "../actions";
+import { ActionForm } from "@/components/ui/action-form";
+import { Field, Input, Textarea } from "@/components/ui/field";
+import { Button } from "@/components/ui/button";
 
 const STATUS_LABEL: Record<string, string> = {
   SIN_CONTACTAR: "Sin contactar",
@@ -55,6 +58,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   ]);
 
   const archived = leadIsArchived(lead.status);
+  const missing = missingLeadFields(lead);
   const age = Math.round((new Date().getTime() - lead.contactedAt.getTime()) / (24 * 60 * 60 * 1000));
 
   return (
@@ -113,6 +117,36 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               )}
             </dl>
           </Card>
+
+          {missing.length > 0 && !archived && (
+            <Card title="Datos por completar" meta={`${missing.length} pendientes`}>
+              <p className="text-sm text-brand-muted mb-3">
+                {missing.join(", ")}: se capturaron rápido para no hacer esperar al lead. Se pueden
+                añadir ahora o más adelante, sin que eso bloquee moverlo de etapa.
+              </p>
+              <ActionForm
+                action={updateLeadDetailsAction.bind(null, lead.id)}
+                successMessage="Datos guardados"
+                resetOnSuccess={false}
+                className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+              >
+                <Field label="Código postal">
+                  <Input name="postalCode" defaultValue={lead.postalCode} pattern="\d{5}" maxLength={5} placeholder="28001" />
+                </Field>
+                <Field label="Ocupación">
+                  <Input name="occupation" defaultValue={lead.occupation} placeholder="A qué se dedica" />
+                </Field>
+                <div className="sm:col-span-2">
+                  <Field label="Objetivos">
+                    <Textarea name="goals" defaultValue={lead.goals} rows={2} />
+                  </Field>
+                </div>
+                <Button type="submit" size="sm">
+                  Guardar
+                </Button>
+              </ActionForm>
+            </Card>
+          )}
 
           {canSeeHealth && healthRecords && (
             <Card title="Salud (Art. 9 RGPD)" meta="acceso restringido y auditado">
