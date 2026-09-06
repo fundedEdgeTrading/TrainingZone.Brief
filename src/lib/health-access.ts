@@ -1,10 +1,19 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canEditHealthData } from "@/lib/rbac";
-import type { AssessmentKind, Role, HealthRecordType, HealthSeverity, HealthStatus } from "@prisma/client";
+import type {
+  AssessmentKind,
+  Role,
+  HealthRecordType,
+  HealthSeverity,
+  HealthStatus,
+  InjuryZone,
+  Laterality,
+} from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { canUseClinicalDataForAI } from "@/lib/consent";
 import type { EpProfile } from "@/lib/ai/ep-profile";
 import { parseAnswers } from "@/lib/assessments/queries";
+import { injuryZoneLabel } from "@/lib/injury-zones";
 import {
   ASSESSMENT_KIND_LABEL,
   DAYS_PER_WEEK_LABEL,
@@ -161,7 +170,9 @@ export async function createHealthRecord({
   actorRole: Role;
   input: {
     type: HealthRecordType;
-    zone: string | null;
+    /** Zona del catálogo cerrado (E3-02). Es lo que empareja con `AptitudeRule`. */
+    zoneCode: InjuryZone | null;
+    side: Laterality | null;
     description: string;
     severity: HealthSeverity;
     /** Cuándo se lesionó, si se sabe. Distinta de `reportedAt` (cuándo se registró). */
@@ -183,7 +194,12 @@ export async function createHealthRecord({
     data: {
       memberId,
       type: input.type,
-      zone: input.zone,
+      // El texto libre se deriva del catálogo en vez de capturarse: los
+      // formularios ya no lo preguntan (E3-02), pero la columna sigue siendo el
+      // rótulo legible que leen las pantallas y exportaciones antiguas.
+      zone: input.zoneCode ? injuryZoneLabel(input.zoneCode, input.side) : null,
+      zoneCode: input.zoneCode,
+      side: input.side,
       description: input.description,
       severity: input.severity,
       status: "ACTIVE",
@@ -204,7 +220,8 @@ export async function createHealthRecord({
       memberId,
       metadata: {
         type: input.type,
-        zone: input.zone,
+        zone: input.zoneCode,
+        side: input.side,
         severity: input.severity,
         injuryDate: input.injuryDate?.toISOString() ?? null,
         injuryDateApprox: input.injuryDate ? (input.injuryDateApprox ?? false) : false,
@@ -303,7 +320,8 @@ export async function createHealthRecordsFromAssessment({
   assessmentId: string;
   records: {
     type: HealthRecordType;
-    zone: string | null;
+    zoneCode: InjuryZone | null;
+    side: Laterality | null;
     description: string;
     severity: HealthSeverity;
   }[];
@@ -323,7 +341,9 @@ export async function createHealthRecordsFromAssessment({
     data: records.map((r) => ({
       memberId,
       type: r.type,
-      zone: r.zone,
+      zone: r.zoneCode ? injuryZoneLabel(r.zoneCode, r.side) : null,
+      zoneCode: r.zoneCode,
+      side: r.side,
       description: r.description,
       severity: r.severity,
       status: "ACTIVE" as const,
@@ -340,7 +360,10 @@ export async function createHealthRecordsFromAssessment({
       entityType: "Assessment",
       entityId: assessmentId,
       memberId,
-      metadata: { count: records.length, zones: records.map((r) => r.zone) },
+      metadata: {
+        count: records.length,
+        zones: records.map((r) => (r.zoneCode ? { zone: r.zoneCode, side: r.side } : null)),
+      },
     },
   });
 

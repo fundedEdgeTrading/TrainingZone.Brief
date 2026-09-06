@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { AssessmentKind } from "@prisma/client";
+import type { AssessmentKind, InjuryZone, Laterality } from "@prisma/client";
+import { LATERALITIES, defaultSideFor } from "@/lib/injury-zones";
 import {
   ASSESSMENT_KIND_LABEL,
   DEFAULT_ASSESSMENT_CONFIG,
@@ -49,6 +50,9 @@ export const PAIN_ZONES = [
 ] as const;
 
 export type PainZone = (typeof PAIN_ZONES)[number];
+
+/** El enum `Laterality` en la forma que zod necesita para validar la respuesta. */
+const LATERALITY_VALUES = LATERALITIES as [Laterality, ...Laterality[]];
 
 const text = z.string().trim();
 const optionalText = text.max(2000).optional().default("");
@@ -141,6 +145,11 @@ export const initialAssessmentSchema = vitalsSchema.extend({
     cirugias: optionalText,
     lesionesActuales: optionalText,
     zonasDolor: z.array(z.enum(PAIN_ZONES)).default([]),
+    // E3-02: el lado va APARTE de la zona. La valoración escribía "hombro" sin
+    // lado mientras el catálogo de reglas estaba lateralizado, y de las ocho
+    // zonas solo dos encontraban regla. Ahora se pregunta lo que hay que
+    // preguntar, y la zona sigue siendo la misma para los dos lados.
+    lateralidadDolor: z.partialRecord(z.enum(PAIN_ZONES), z.enum(LATERALITY_VALUES)).optional().default({}),
   }),
   marcas: marksSchema,
   cierre: z.object({
@@ -283,24 +292,27 @@ export const PAIN_ZONE_LABEL: Record<PainZone, string> = {
 };
 
 /**
- * `HealthRecord.zone` se compara literalmente contra `AptitudeRule.injuryZone`
- * (lib/brief-queries.ts), así que la zona declarada tiene que escribirse con la
- * misma etiqueta que usa el catálogo de reglas o el Semáforo de Aptitud no se
- * entera. De ahí que LUMBAR sea "zona lumbar" y CUELLO "cervicales", y no lo
- * que dirían sus nombres. Las zonas que el catálogo lateraliza (hombro, rodilla,
- * tobillo) se guardan sin lado: el formulario no lo pregunta, y dirección puede
- * añadir la regla sin lado desde /health/aptitude-rules.
+ * Las zonas de dolor del cuestionario son un vocabulario de PREGUNTA (lo que se
+ * le dice al socio); `InjuryZone` es el vocabulario de DATO, el que empareja con
+ * las reglas de aptitud. Este mapa es el único puente entre los dos: mientras
+ * fueron dos textos libres comparados por igualdad, seis de las ocho zonas no
+ * encontraban regla y nadie veía el error (E3-02).
  */
-export const PAIN_ZONE_TO_HEALTH_ZONE: Record<PainZone, string> = {
-  CUELLO: "cervicales",
-  HOMBRO: "hombro",
-  ESPALDA_ALTA: "espalda alta",
-  LUMBAR: "zona lumbar",
-  CADERA: "cadera",
-  RODILLA: "rodilla",
-  TOBILLO: "tobillo",
-  OTRO: "otra zona",
+export const PAIN_ZONE_TO_INJURY_ZONE: Record<PainZone, InjuryZone> = {
+  CUELLO: "CERVICALES",
+  HOMBRO: "HOMBRO",
+  ESPALDA_ALTA: "DORSAL",
+  LUMBAR: "LUMBAR",
+  CADERA: "CADERA",
+  RODILLA: "RODILLA",
+  TOBILLO: "TOBILLO",
+  OTRO: "OTRA",
 };
+
+/** Zonas del cuestionario que sí tienen lado, y por tanto lo preguntan. */
+export function painZoneNeedsSide(zone: PainZone): boolean {
+  return defaultSideFor(PAIN_ZONE_TO_INJURY_ZONE[zone]) === null;
+}
 
 export const DAYS_PER_WEEK_LABEL: Record<string, string> = {
   "1": "1 día",

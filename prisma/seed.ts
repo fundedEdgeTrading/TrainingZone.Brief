@@ -16,6 +16,8 @@ import {
   Role,
   Sex,
   Prisma,
+  type InjuryZone,
+  type Laterality,
 } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { faker } from "@faker-js/faker";
@@ -24,6 +26,7 @@ import { randomUUID } from "crypto";
 import { POSTAL_CODES, postalCityLabel } from "@/lib/postal-codes";
 import { CONSENT_VERSION } from "@/lib/consent";
 import { runRetentionAlertRule } from "@/lib/retention";
+import { injuryZoneLabel } from "@/lib/injury-zones";
 import { dueDateForKind } from "@/lib/assessments/queries";
 import { startOfWeekMonday } from "@/lib/date-utils";
 import type { FeedbackDims } from "@/lib/feedback-queries";
@@ -232,7 +235,19 @@ type OrgSeedConfig = {
 
 // Datos de dominio compartidos (se crean por organización).
 const CLASS_TYPES = ["CrossTraining", "Funcional", "Fuerza", "HIIT", "Movilidad", "Personal Training"];
-const INJURY_ZONES = ["hombro derecho", "hombro izquierdo", "rodilla derecha", "rodilla izquierda", "zona lumbar", "tobillo derecho", "cervicales", "muñeca derecha"];
+// E3-02: zona del catálogo cerrado + lado APARTE. Con texto libre, "hombro
+// derecho" nunca casaba con una regla escrita "hombro", y el semáforo salía
+// verde con la lesión delante.
+const INJURY_ZONES: { zoneCode: InjuryZone; side: Laterality }[] = [
+  { zoneCode: "HOMBRO", side: "DERECHA" },
+  { zoneCode: "HOMBRO", side: "IZQUIERDA" },
+  { zoneCode: "RODILLA", side: "DERECHA" },
+  { zoneCode: "RODILLA", side: "IZQUIERDA" },
+  { zoneCode: "LUMBAR", side: "NO_APLICA" },
+  { zoneCode: "TOBILLO", side: "DERECHA" },
+  { zoneCode: "CERVICALES", side: "NO_APLICA" },
+  { zoneCode: "MUNECA", side: "DERECHA" },
+];
 const CONDITIONS = [
   { type: HealthRecordType.CHRONIC_CONDITION, desc: "Hipertensión controlada con medicación", severity: HealthSeverity.LOW },
   { type: HealthRecordType.CHRONIC_CONDITION, desc: "Asma leve inducida por esfuerzo", severity: HealthSeverity.LOW },
@@ -307,20 +322,20 @@ const OCCUPATIONS = [
   "Gerente de tienda",
   "Fisioterapeuta",
 ];
-const APTITUDE_RULES = [
-  { injuryZone: "hombro derecho", blockArea: "Empuje vertical", light: AptitudeLight.RED, adaptation: "Evitar por completo — sustituir por landmine press" },
-  { injuryZone: "hombro derecho", blockArea: "Empuje horizontal", light: AptitudeLight.AMBER, adaptation: "Reducir ROM, carga ≤60%" },
-  { injuryZone: "hombro derecho", blockArea: "Tren inferior", light: AptitudeLight.GREEN, adaptation: null },
-  { injuryZone: "hombro izquierdo", blockArea: "Empuje vertical", light: AptitudeLight.RED, adaptation: "Evitar por completo — sustituir por landmine press" },
-  { injuryZone: "hombro izquierdo", blockArea: "Empuje horizontal", light: AptitudeLight.AMBER, adaptation: "Reducir ROM, carga ≤60%" },
-  { injuryZone: "rodilla derecha", blockArea: "Sentadilla / tren inferior", light: AptitudeLight.RED, adaptation: "Sustituir por trabajo isométrico sin carga axial" },
-  { injuryZone: "rodilla izquierda", blockArea: "Sentadilla / tren inferior", light: AptitudeLight.RED, adaptation: "Sustituir por trabajo isométrico sin carga axial" },
-  { injuryZone: "rodilla derecha", blockArea: "Tren superior", light: AptitudeLight.GREEN, adaptation: null },
-  { injuryZone: "zona lumbar", blockArea: "Flexión de columna cargada", light: AptitudeLight.RED, adaptation: "Evitar peso muerto y buenos días" },
-  { injuryZone: "zona lumbar", blockArea: "Core anti-extensión", light: AptitudeLight.AMBER, adaptation: "Priorizar planchas y pallof press" },
-  { injuryZone: "tobillo derecho", blockArea: "Saltos / pliometría", light: AptitudeLight.RED, adaptation: "Sustituir por trabajo en máquina sentado" },
-  { injuryZone: "cervicales", blockArea: "Carga sobre cabeza", light: AptitudeLight.AMBER, adaptation: "Reducir rango, vigilar técnica" },
-  { injuryZone: "muñeca derecha", blockArea: "Apoyo de muñeca (flexiones, front rack)", light: AptitudeLight.AMBER, adaptation: "Usar muñequeras o sustituir agarre" },
+// Las reglas se declaran por ZONA y sin lado (E3-02): una limitación de hombro
+// lo es del hombro lesionado, no del derecho. Solo se lateraliza la que de
+// verdad depende del lado.
+const APTITUDE_RULES: { zoneCode: InjuryZone; side: Laterality | null; blockArea: string; light: AptitudeLight; adaptation: string | null }[] = [
+  { zoneCode: "HOMBRO", side: null, blockArea: "Empuje vertical", light: AptitudeLight.RED, adaptation: "Evitar por completo — sustituir por landmine press" },
+  { zoneCode: "HOMBRO", side: null, blockArea: "Empuje horizontal", light: AptitudeLight.AMBER, adaptation: "Reducir ROM, carga ≤60%" },
+  { zoneCode: "HOMBRO", side: null, blockArea: "Tren inferior", light: AptitudeLight.GREEN, adaptation: null },
+  { zoneCode: "RODILLA", side: null, blockArea: "Sentadilla / tren inferior", light: AptitudeLight.RED, adaptation: "Sustituir por trabajo isométrico sin carga axial" },
+  { zoneCode: "RODILLA", side: null, blockArea: "Tren superior", light: AptitudeLight.GREEN, adaptation: null },
+  { zoneCode: "LUMBAR", side: "NO_APLICA", blockArea: "Flexión de columna cargada", light: AptitudeLight.RED, adaptation: "Evitar peso muerto y buenos días" },
+  { zoneCode: "LUMBAR", side: "NO_APLICA", blockArea: "Core anti-extensión", light: AptitudeLight.AMBER, adaptation: "Priorizar planchas y pallof press" },
+  { zoneCode: "TOBILLO", side: null, blockArea: "Saltos / pliometría", light: AptitudeLight.RED, adaptation: "Sustituir por trabajo en máquina sentado" },
+  { zoneCode: "CERVICALES", side: "NO_APLICA", blockArea: "Carga sobre cabeza", light: AptitudeLight.AMBER, adaptation: "Reducir rango, vigilar técnica" },
+  { zoneCode: "MUNECA", side: null, blockArea: "Apoyo de muñeca (flexiones, front rack)", light: AptitudeLight.AMBER, adaptation: "Usar muñequeras o sustituir agarre" },
 ];
 
 async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
@@ -1144,6 +1159,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     memberId: string;
     type: HealthRecordType;
     zone: string | null;
+    zoneCode: InjuryZone | null;
+    side: Laterality | null;
     description: string;
     severity: HealthSeverity;
     status: HealthStatus;
@@ -1162,6 +1179,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     const reportedAt = addDays(m.joinedAt, randInt(5, Math.max(6, Math.floor((TODAY.getTime() - m.joinedAt.getTime()) / DAY))));
     if (Math.random() < 0.6) {
       const zone = pick(INJURY_ZONES);
+      const zoneText = injuryZoneLabel(zone.zoneCode, zone.side);
       // La lesión es anterior al registro: casi nadie llega el mismo día. Una de
       // cada tres solo se recuerda por el mes (injuryDateApprox).
       const injuryDate = addDays(reportedAt, -randInt(0, 45));
@@ -1176,8 +1194,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         id: id(),
         memberId: m.id,
         type: HealthRecordType.INJURY,
-        zone,
-        description: `Lesión: ${zone}, ${pick(["tendinopatía", "sobrecarga muscular", "esguince leve", "molestia crónica"])}`,
+        zone: zoneText,
+        zoneCode: zone.zoneCode,
+        side: zone.side,
+        description: `Lesión: ${zoneText.toLowerCase()}, ${pick(["tendinopatía", "sobrecarga muscular", "esguince leve", "molestia crónica"])}`,
         severity: weightedPick([[HealthSeverity.LOW, 40], [HealthSeverity.MEDIUM, 45], [HealthSeverity.HIGH, 15]]),
         status,
         injuryDate: approx ? new Date(injuryDate.getFullYear(), injuryDate.getMonth(), 1) : injuryDate,
@@ -1196,6 +1216,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         memberId: m.id,
         type: c.type,
         zone: null,
+        zoneCode: null,
+        side: null,
         description: c.desc,
         severity: c.severity,
         status: HealthStatus.ACTIVE,
@@ -1217,7 +1239,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       id: id(),
       memberId: m.id,
       type: HealthRecordType.INJURY,
-      zone: "cervicales",
+      zone: "Cervicales",
+      zoneCode: "CERVICALES",
+      side: "NO_APLICA",
       description: "Lesión: cervicales, contractura recurrente por trabajo de oficina",
       severity: HealthSeverity.MEDIUM,
       // En rehabilitación: sigue siendo vigente (enciende el mismo semáforo que
@@ -1239,7 +1263,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
       id: id(),
       memberId: m.id,
       type: HealthRecordType.INJURY,
-      zone: "zona lumbar",
+      zone: "Zona lumbar",
+      zoneCode: "LUMBAR",
+      side: "NO_APLICA",
       description: "Lesión: zona lumbar, hernia discal L4-L5 con limitación permanente",
       severity: HealthSeverity.HIGH,
       status: HealthStatus.CHRONIC,
@@ -1340,7 +1366,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
 
   // ---------- Semáforo de Aptitud (G.2) ----------
   await prisma.aptitudeRule.createMany({
-    data: APTITUDE_RULES.map((r) => ({ id: id(), orgId, injuryZone: r.injuryZone, blockArea: r.blockArea, light: r.light, adaptation: r.adaptation, editedByUserId: ownerId })),
+    data: APTITUDE_RULES.map((r) => ({ id: id(), orgId, injuryZone: injuryZoneLabel(r.zoneCode, r.side), zoneCode: r.zoneCode, side: r.side, blockArea: r.blockArea, light: r.light, adaptation: r.adaptation, editedByUserId: ownerId })),
   });
 
   // ---------- Rangos de referencia de composición corporal (CC2) ----------
@@ -1451,7 +1477,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
         weeksBack: number;
         noShowEvery: number; // cada cuántas sesiones falla (marca la adherencia)
         debriefEvery: number; // cada cuántas sesiones se queda sin debrief (pendientes)
-        health?: { zone: string; desc: string; severity: HealthSeverity };
+        health?: { zoneCode: InjuryZone; side: Laterality; desc: string; severity: HealthSeverity };
         note?: string;
         futureBooking: boolean;
         // Con esto el socio firma consentimiento de imágenes y se le genera una
@@ -1485,7 +1511,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           weeksBack: 8,
           noShowEvery: 4,
           debriefEvery: 3,
-          health: { zone: "muñeca derecha", desc: "Lesión: muñeca derecha, sobrecarga muscular", severity: HealthSeverity.MEDIUM },
+          health: { zoneCode: "MUNECA", side: "DERECHA", desc: "Lesión: muñeca derecha, sobrecarga muscular", severity: HealthSeverity.MEDIUM },
           note: "Usa muñequeras en empuje; ir progresiva con la carga.",
           futureBooking: true,
         },
@@ -1500,7 +1526,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           weeksBack: 9,
           noShowEvery: 2,
           debriefEvery: 6,
-          health: { zone: "rodilla derecha", desc: "Lesión: rodilla derecha, esguince leve", severity: HealthSeverity.HIGH },
+          health: { zoneCode: "RODILLA", side: "DERECHA", desc: "Lesión: rodilla derecha, esguince leve", severity: HealthSeverity.HIGH },
           note: "Ha faltado varias veces seguidas — hacer seguimiento.",
           futureBooking: false,
         },
@@ -1641,7 +1667,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
               id: id(),
               memberId,
               type: HealthRecordType.INJURY,
-              zone: spec.health.zone,
+              zone: injuryZoneLabel(spec.health.zoneCode, spec.health.side),
+              zoneCode: spec.health.zoneCode,
+              side: spec.health.side,
               description: spec.health.desc,
               severity: spec.health.severity,
               status: HealthStatus.ACTIVE,

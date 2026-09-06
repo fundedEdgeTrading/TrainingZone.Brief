@@ -7,6 +7,7 @@ import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
+import { injuryZoneLabel } from "@/lib/injury-zones";
 import DeleteButton from "./delete-button";
 import CreateRuleForm from "./create-rule-form";
 
@@ -26,7 +27,7 @@ export default async function AptitudeRulesPage() {
   const rules = await prisma.aptitudeRule.findMany({
     where: { orgId: session.user.orgId },
     include: { editedBy: { select: { name: true } } },
-    orderBy: [{ injuryZone: "asc" }, { light: "desc" }],
+    orderBy: [{ zoneCode: "asc" }, { injuryZone: "asc" }, { light: "desc" }],
   });
 
   return (
@@ -55,18 +56,31 @@ const ruleColumns: DataTableColumn[] = [
   { key: "actions", header: "" },
 ];
 
+/** Rótulo de la zona: del catálogo si ya está normalizada, del texto heredado si no. */
+function zoneText(r: Rule): string {
+  return r.zoneCode ? injuryZoneLabel(r.zoneCode, r.side) : r.injuryZone;
+}
+
 function ruleToRow(r: Rule, canEdit: boolean, timeZone: string): DataTableRow {
   return {
     key: r.id,
     sortValues: {
-      injuryZone: r.injuryZone,
+      injuryZone: zoneText(r),
       blockArea: r.blockArea,
       light: r.light,
       adaptation: r.adaptation ?? "",
       editedBy: r.updatedAt.getTime(),
     },
     cells: {
-      injuryZone: r.injuryZone,
+      injuryZone: r.zoneCode ? (
+        zoneText(r)
+      ) : (
+        // E3-02: regla heredada que el mapeo declarado no supo traducir. No se
+        // descarta ni se adivina: se enseña como está y se pide revisarla.
+        <span title="Zona sin normalizar: revísala para que vuelva a emparejar.">
+          {r.injuryZone} <span className="text-warning-text">· revisar</span>
+        </span>
+      ),
       blockArea: r.blockArea,
       light: (
         <span className="inline-flex items-center gap-1.5">

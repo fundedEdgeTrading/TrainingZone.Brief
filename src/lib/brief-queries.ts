@@ -1,10 +1,30 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
-import type { Role, AptitudeLight } from "@prisma/client";
+import type { Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { ruleMatchesRecord } from "@/lib/injury-zones";
 
 const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
+
+/** Condición declarada tal y como viaja al brief (web y app leen lo mismo). */
+export type BriefCondition = {
+  /** Texto libre heredado. Se pinta si no hay zona del catálogo; nunca compara. */
+  zone: string | null;
+  zoneCode: InjuryZone | null;
+  side: Laterality | null;
+  description: string;
+  type: string;
+};
+
+export type BriefRule = {
+  injuryZone: string;
+  zoneCode: InjuryZone | null;
+  side: Laterality | null;
+  blockArea: string;
+  light: AptitudeLight;
+  adaptation: string | null;
+};
 
 export async function getSessionBrief({
   orgId,
@@ -51,8 +71,8 @@ export async function getSessionBrief({
   const canSeeHealth = canViewHealthData(actorRole);
   const memberIds = session.bookings.map((b) => b.memberId);
 
-  const healthByMember = new Map<string, { zone: string | null; description: string; type: string }[]>();
-  let aptitudeRules: { injuryZone: string; blockArea: string; light: AptitudeLight; adaptation: string | null }[] = [];
+  const healthByMember = new Map<string, BriefCondition[]>();
+  let aptitudeRules: BriefRule[] = [];
 
   if (canSeeHealth && memberIds.length) {
     // Todo lo que sigue vigente, no solo lo "activo": una lesión en
@@ -60,12 +80,12 @@ export async function getSessionBrief({
     // deja de limitar por ser antigua. Solo RESOLVED se cae del brief.
     const records = await prisma.healthRecord.findMany({
       where: { memberId: { in: memberIds }, status: { in: OPEN_HEALTH_STATUSES } },
-      select: { memberId: true, zone: true, description: true, type: true },
+      select: { memberId: true, zone: true, zoneCode: true, side: true, description: true, type: true },
     });
     for (const r of records) {
       if (!r.memberId) continue;
       const list = healthByMember.get(r.memberId) ?? [];
-      list.push({ zone: r.zone, description: r.description, type: r.type });
+      list.push({ zone: r.zone, zoneCode: r.zoneCode, side: r.side, description: r.description, type: r.type });
       healthByMember.set(r.memberId, list);
     }
     aptitudeRules = await prisma.aptitudeRule.findMany({ where: { orgId } });
@@ -84,9 +104,10 @@ export async function getSessionBrief({
 
   const roster = session.bookings.map((b) => {
     const conditions = healthByMember.get(b.memberId) ?? [];
-    const matchedRules = conditions.flatMap((c) =>
-      c.zone ? aptitudeRules.filter((r) => r.injuryZone === c.zone) : []
-    );
+    // E3-02: el emparejamiento es por ZONA del catálogo cerrado más lateralidad,
+    // no por igualdad de dos textos libres. `zone` sigue viajando al brief solo
+    // para pintarse; ya no decide nada.
+    const matchedRules = conditions.flatMap((c) => aptitudeRules.filter((r) => ruleMatchesRecord(r, c)));
     const worstLight = matchedRules.reduce<AptitudeLight | null>((worst, r) => {
       if (!worst || LIGHT_RANK[r.light] > LIGHT_RANK[worst]) return r.light;
       return worst;

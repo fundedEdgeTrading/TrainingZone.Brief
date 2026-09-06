@@ -2,6 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import type { Laterality } from "@prisma/client";
+import { LATERALITY_LABEL } from "@/lib/injury-zones";
 import { Card } from "@/components/kpi-card";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
@@ -10,6 +12,7 @@ import {
   DAYS_PER_WEEK_LABEL,
   PAIN_ZONES,
   PAIN_ZONE_LABEL,
+  painZoneNeedsSide,
   PERFORMANCE_MARKS,
   type MemberInitialPartAnswers,
   type PainZone,
@@ -179,6 +182,9 @@ export function AssessmentForm({
     lesionesActuales: "",
   });
   const [zonasDolor, setZonasDolor] = useState<PainZone[]>([]);
+  // E3-02: el lado es un dato APARTE de la zona. Sin él la valoración escribía
+  // "hombro" a secas y la regla lateralizada del catálogo no encontraba nada.
+  const [lateralidadDolor, setLateralidadDolor] = useState<Partial<Record<PainZone, Laterality>>>({});
   const [seguimiento, setSeguimiento] = useState({
     adherenciaPercibida: "3",
     progresoPercibido: "3",
@@ -202,6 +208,13 @@ export function AssessmentForm({
 
   function toggleZone(zone: PainZone) {
     setZonasDolor((zs) => (zs.includes(zone) ? zs.filter((z) => z !== zone) : [...zs, zone]));
+    // Al desmarcar la zona se olvida su lado: si se vuelve a marcar, se pregunta
+    // de nuevo en vez de arrastrar una respuesta que ya nadie ha confirmado.
+    setLateralidadDolor((l) => {
+      const rest = { ...l };
+      delete rest[zone];
+      return rest;
+    });
   }
 
   /**
@@ -268,7 +281,7 @@ export function AssessmentForm({
         ...only("experiencia.tecnicaBasicos", { tecnicaBasicos: experiencia.tecnicaBasicos }),
         ...only("experiencia.ejerciciosNoTolera", { ejerciciosNoTolera: experiencia.ejerciciosNoTolera }),
       },
-      screening: { ...screening, zonasDolor },
+      screening: { ...screening, zonasDolor, lateralidadDolor },
       marcas: marcasList,
       cierre: {
         ...only("cierre.notasEntrenador", { notasEntrenador }),
@@ -530,6 +543,30 @@ export function AssessmentForm({
                   );
                 })}
               </div>
+              {zonasDolor.filter(painZoneNeedsSide).length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {zonasDolor.filter(painZoneNeedsSide).map((zone) => (
+                    <div key={zone} className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-brand-text-2 min-w-24">{PAIN_ZONE_LABEL[zone]}</span>
+                      {(["IZQUIERDA", "DERECHA", "BILATERAL"] as Laterality[]).map((side) => (
+                        <button
+                          key={side}
+                          type="button"
+                          aria-pressed={lateralidadDolor[zone] === side}
+                          onClick={() => setLateralidadDolor((l) => ({ ...l, [zone]: side }))}
+                          className={`rounded-pill px-3 py-1 text-xs font-semibold border transition-colors duration-200 ${
+                            lateralidadDolor[zone] === side
+                              ? "bg-tz-black text-tz-bone border-tz-black"
+                              : "bg-white text-brand-text-2 border-brand-border hover:border-brand-ink"
+                          }`}
+                        >
+                          {LATERALITY_LABEL[side]}
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </Card>
         </>

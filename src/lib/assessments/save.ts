@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { createHealthRecordsFromAssessment } from "@/lib/health-access";
-import type { AssessmentKind, HealthRecordType, HealthSeverity, Role } from "@prisma/client";
+import type { AssessmentKind, HealthRecordType, HealthSeverity, InjuryZone, Laterality, Role } from "@prisma/client";
+import { defaultSideFor } from "@/lib/injury-zones";
 import {
   PAIN_ZONE_LABEL,
-  PAIN_ZONE_TO_HEALTH_ZONE,
+  PAIN_ZONE_TO_INJURY_ZONE,
   PERFORMANCE_MARKS,
   isInitialAnswers,
   type AssessmentAnswers,
@@ -13,6 +14,14 @@ import {
 export type SaveAssessmentResult =
   | { ok: true; assessmentId: string; healthRecordsCreated: number }
   | { ok: false; error: string };
+
+type ScreeningHealthRecord = {
+  type: HealthRecordType;
+  zoneCode: InjuryZone | null;
+  side: Laterality | null;
+  description: string;
+  severity: HealthSeverity;
+};
 
 /**
  * El dolor declarado hoy gradúa la severidad de la lesión: una lumbalgia con un
@@ -30,15 +39,21 @@ function severityFromPain(dolorActual: number): HealthSeverity {
  * vez de quedarse enterrado en `answers`.
  */
 function healthRecordsFromScreening(answers: InitialAssessmentAnswers) {
-  const records: { type: HealthRecordType; zone: string | null; description: string; severity: HealthSeverity }[] = [];
+  const records: ScreeningHealthRecord[] = [];
   const { screening } = answers;
   const injurySeverity = severityFromPain(answers.dolorActual);
   const lesiones = screening.lesionesActuales.trim();
+  const lados = screening.lateralidadDolor ?? {};
 
   for (const zone of screening.zonasDolor) {
+    const zoneCode = PAIN_ZONE_TO_INJURY_ZONE[zone];
     records.push({
       type: "INJURY",
-      zone: PAIN_ZONE_TO_HEALTH_ZONE[zone],
+      zoneCode,
+      // E3-02: zona y lado se escriben por separado. Si la zona es axial el lado
+      // es `NO_APLICA`; si tiene lado y el formulario no lo recogió, se queda sin
+      // declarar en vez de inventarse uno.
+      side: defaultSideFor(zoneCode) ?? lados[zone] ?? null,
       description: lesiones || `Dolor declarado en la valoración inicial (${PAIN_ZONE_LABEL[zone]})`,
       severity: injurySeverity,
     });
@@ -46,14 +61,14 @@ function healthRecordsFromScreening(answers: InitialAssessmentAnswers) {
   // Lesión descrita sin localizar: se registra igual, pero sin zona no cruza con
   // ninguna regla de aptitud — queda como aviso en el Session Brief.
   if (lesiones && !screening.zonasDolor.length) {
-    records.push({ type: "INJURY", zone: null, description: lesiones, severity: injurySeverity });
+    records.push({ type: "INJURY", zoneCode: null, side: null, description: lesiones, severity: injurySeverity });
   }
 
   if (screening.cirugias.trim()) {
-    records.push({ type: "SURGERY", zone: null, description: screening.cirugias.trim(), severity: "LOW" });
+    records.push({ type: "SURGERY", zoneCode: null, side: null, description: screening.cirugias.trim(), severity: "LOW" });
   }
   if (screening.medicacion.trim()) {
-    records.push({ type: "MEDICATION", zone: null, description: screening.medicacion.trim(), severity: "LOW" });
+    records.push({ type: "MEDICATION", zoneCode: null, side: null, description: screening.medicacion.trim(), severity: "LOW" });
   }
   const chronic: [boolean, string][] = [
     [screening.cardiovascular, "Patología cardiovascular declarada en la valoración inicial"],
@@ -61,7 +76,7 @@ function healthRecordsFromScreening(answers: InitialAssessmentAnswers) {
     [screening.diabetes, "Diabetes declarada en la valoración inicial"],
   ];
   for (const [declared, description] of chronic) {
-    if (declared) records.push({ type: "CHRONIC_CONDITION", zone: null, description, severity: "MEDIUM" });
+    if (declared) records.push({ type: "CHRONIC_CONDITION", zoneCode: null, side: null, description, severity: "MEDIUM" });
   }
 
   return records;

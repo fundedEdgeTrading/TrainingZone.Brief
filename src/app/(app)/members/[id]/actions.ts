@@ -12,7 +12,8 @@ import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUr
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
+import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type InjuryZone, type Laterality, type Role, type Sex } from "@prisma/client";
+import { INJURY_ZONES, LATERALITIES, defaultSideFor } from "@/lib/injury-zones";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 const HEALTH_TYPES: HealthRecordType[] = [
@@ -69,12 +70,20 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
   const typeRaw = String(formData.get("type") ?? "");
   const severityRaw = String(formData.get("severity") ?? "");
   const description = String(formData.get("description") ?? "").trim();
-  const zone = String(formData.get("zone") ?? "").trim() || null;
+  // E3-02: zona de lista cerrada y lado aparte. Ya no hay campo de texto libre
+  // que teclear mal, así que lo que no esté en el catálogo no entra.
+  const zoneRaw = String(formData.get("zoneCode") ?? "");
+  const sideRaw = String(formData.get("side") ?? "");
+  const zoneCode = INJURY_ZONES.includes(zoneRaw as InjuryZone) ? (zoneRaw as InjuryZone) : null;
+  const side = LATERALITIES.includes(sideRaw as Laterality) ? (sideRaw as Laterality) : null;
 
   const type = HEALTH_TYPES.includes(typeRaw as HealthRecordType) ? (typeRaw as HealthRecordType) : null;
   const severity = SEVERITIES.includes(severityRaw as HealthSeverity) ? (severityRaw as HealthSeverity) : null;
   if (!memberId || !type || !severity || !description) {
     return { ok: false, error: "Completa el tipo, la severidad y la descripción." };
+  }
+  if (type === "INJURY" && !zoneCode) {
+    return { ok: false, error: "Elige la zona de la lesión." };
   }
 
   const injury = parseInjuryDate(
@@ -96,7 +105,10 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
     actorRole: session.user.role,
     input: {
       type,
-      zone: type === "INJURY" ? zone : null,
+      zoneCode: type === "INJURY" ? zoneCode : null,
+      // La zona axial no tiene lado: se guarda NO_APLICA aunque el formulario no
+      // llegue a preguntarlo.
+      side: type === "INJURY" && zoneCode ? (defaultSideFor(zoneCode) ?? side) : null,
       description,
       severity,
       injuryDate: injury.date,
