@@ -142,7 +142,7 @@ export function FloatingChat({
               <div className="font-display font-bold text-sm text-white">Asistente Training Zone</div>
               <div className="flex items-center gap-1.5 text-xs text-brand-muted-2 mt-px">
                 <span className="w-[7px] h-[7px] rounded-full bg-good" />
-                En línea · responde al instante
+                Te responden en horario de centro
               </div>
             </div>
             <button

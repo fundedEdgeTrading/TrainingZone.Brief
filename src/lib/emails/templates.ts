@@ -662,3 +662,44 @@ export function renderEmailPreferencesLinkEmail(opts: {
     footerLinksHtml: memberFooterLinks(opts.prefsToken),
   });
 }
+
+// ---------------------------------------------------------------------------
+// 09 · Aviso de mensaje nuevo en el chat de un socio (E12-02)
+//
+// El chat del portal ya no promete "responde al instante": lo que lo hace
+// honesto es que quien tiene que contestar se entera. Va a dirección, con el
+// mismo criterio que el resto de tareas automáticas.
+// ---------------------------------------------------------------------------
+export function renderNewChatMessageEmail(opts: {
+  recipientFirstName: string;
+  memberName: string;
+  orgName: string;
+  orgLogoUrl: string;
+  messagePreview: string;
+  chatUrl: string;
+  postalAddress?: string;
+}) {
+  return shell({
+    logoUrl: opts.orgLogoUrl,
+    logoAlt: opts.orgName,
+    section: "Chat",
+    preheader: `${opts.memberName} ha escrito en el chat del portal.`,
+    eyebrow: "Mensaje nuevo",
+    title: `¡Hola, ${esc(opts.recipientFirstName)}!<br>${esc(opts.memberName)} te ha escrito.`,
+    bodyHtml:
+      p(`${strong(opts.memberName)} ha dejado un mensaje nuevo en el chat de su portal:`, true) +
+      p(`«${esc(opts.messagePreview)}»`),
+    rows: [
+      { label: "Socio", value: opts.memberName },
+      { label: "Canal", value: "Chat del portal" },
+    ],
+    ctaLabel: "Responder",
+    ctaUrl: opts.chatUrl,
+    noteHtml: "Responde desde la ficha del socio, en la pestaña Actividad.",
+    signOff: `Un saludo,<br>${strong(`El equipo de ${opts.orgName}`)}`,
+    senderName: opts.orgName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este email porque un socio de tu organización ha escrito en el chat de su portal.",
+    footerLinksHtml: PRIVACY(),
+  });
+}

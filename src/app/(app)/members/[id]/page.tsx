@@ -67,6 +67,8 @@ import { openRetentionAlertsByMember } from "@/lib/retention";
 import { isAiConfigured } from "@/lib/ai/anthropic";
 import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
+import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
+import { StaffChatThread } from "./staff-chat-thread";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -282,6 +284,15 @@ export default async function MemberDetailPage({
     canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
     openRetentionAlertsByMember([member.id]),
   ]);
+
+  // E12-02: el chat del socio se remonta en el lado del personal. El acceso ya
+  // lo decide canAccessMemberChat (dirección siempre, entrenador si lo ha
+  // entrenado, recepción solo mientras haya un mensaje del socio sin
+  // responder); aquí solo se decide si hay algo que pintar.
+  const canSeeChat = await canAccessMemberChat(session.user.orgId, member.id, session.user.id, session.user.role);
+  const chatMessages = canSeeChat
+    ? await listMessages((await getOrCreateConversation(session.user.orgId, member.id)).id)
+    : [];
 
   // Caída de frecuencia respecto a SU línea base (G.3). El motor
   // (`src/lib/retention.ts`) la recalcula en cada pasada del cron y la cierra
@@ -867,6 +878,22 @@ export default async function MemberDetailPage({
           <ActivityThread entries={threadEntries} />
 
           <ArchivedNotes notes={filedNotes.map(noteView)} />
+
+          {canSeeChat && (
+            <>
+              <SectionHead title="Chat" description="La conversación que el socio tiene abierta en su portal." />
+              <StaffChatThread
+                memberId={member.id}
+                messages={chatMessages.map((m) => ({
+                  id: m.id,
+                  senderKind: m.senderKind,
+                  senderName: m.sender?.name ?? null,
+                  body: m.body,
+                  createdAt: m.createdAt,
+                }))}
+              />
+            </>
+          )}
         </>
       ),
     },
