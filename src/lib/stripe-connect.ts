@@ -1,15 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
+import { publicOrigin } from "@/lib/site";
 
 /**
  * C.3: "Conectar con Stripe" — Connect Standard, OAuth de un botón.
  * RB-CONNECT-001: Apta guarda solo `acct_...`, nunca una clave secreta ni un
  * webhook secret del gimnasio.
  */
-function appBaseUrl() {
-  return (process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000").replace(/\/$/, "");
-}
-
 export function isStripeConnectConfigured() {
   return !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_CONNECT_CLIENT_ID;
 }
@@ -20,7 +17,7 @@ export function buildConnectOAuthUrl(orgId: string) {
     response_type: "code",
     client_id: process.env.STRIPE_CONNECT_CLIENT_ID ?? "",
     scope: "read_write",
-    redirect_uri: `${appBaseUrl()}/api/stripe/connect/callback`,
+    redirect_uri: `${publicOrigin()}/api/stripe/connect/callback`,
     state: orgId,
   });
   return `https://connect.stripe.com/oauth/authorize?${params.toString()}`;

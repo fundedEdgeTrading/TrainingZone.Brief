@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/session";
 import { prisma } from "@/lib/prisma";
-import { NAV_BY_ROLE, ROLE_LABEL, footerLabelForRole, filterNavByFeatures } from "@/lib/rbac";
+import { NAV_BY_ROLE, ROLE_LABEL, defaultRouteForRole, footerLabelForRole, filterNavByFeatures } from "@/lib/rbac";
 import { featuresForOrg, isPlatformOperational } from "@/lib/entitlements";
 import { listNotificationsForUser } from "@/lib/notifications";
 import { membershipsFor } from "@/lib/identity";
@@ -16,6 +16,7 @@ import Sidebar, { type MemberSidebarData } from "./sidebar";
 import Header from "./header";
 import { MobileNavProvider } from "./mobile-nav";
 import { AccountMenuProvider } from "./account-menu";
+import { HomeRouteProvider } from "./home-route";
 import { RouteProgress } from "@/components/ui/route-progress";
 
 const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
@@ -152,7 +153,9 @@ export default async function AppLayout({
             />
             <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
               <RouteProgress />
-              {children}
+              {/* El `error.tsx` de segmento se pinta aquí dentro, así que llega
+                  a la ruta de inicio del rol sin tener que resolver la sesión. */}
+              <HomeRouteProvider href={defaultRouteForRole(role)}>{children}</HomeRouteProvider>
             </main>
           </div>
         </div>

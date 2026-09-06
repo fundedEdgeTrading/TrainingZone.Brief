@@ -55,6 +55,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          # Explícito: por defecto la clave sale del glob `**/package-lock.json`,
+          # que desde E7-01 también casa con `apps/mobile/package-lock.json`, y
+          # entonces tocar la app invalidaba la caché de la web.
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
 
@@ -91,3 +95,48 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  # E7-02 · La app móvil se comprueba en cada cambio, en su propio job.
+  #
+  # Paralelo a `verify` y sin `needs:`, así que los dos corren a la vez y cada
+  # uno informa por separado: un fallo de la app no oculta el resultado de la
+  # web ni al revés. Y sin base de datos ni Playwright — la app no los usa: su
+  # frontera de red se dobla en el propio test (`src/test/server.ts`), así que
+  # no hay nada que levantar. El job entero baja de dos minutos.
+  mobile:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          # El lockfile de la app, no el de la raíz: son dos árboles de
+          # dependencias distintos y la app no está en un workspace de npm.
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests y cobertura
+        run: npm run test:ci
+
+      - name: Guardar informe de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-coverage
+          path: apps/mobile/coverage/
+          retention-days: 7
+          if-no-files-found: ignore

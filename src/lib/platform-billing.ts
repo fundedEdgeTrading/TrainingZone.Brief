@@ -7,12 +7,9 @@ import {
   isDemoModeActive,
   resolveStripePriceId,
 } from "@/lib/platform-plans";
+import { publicOrigin } from "@/lib/site";
 
 export type PlatformCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
-
-function appBaseUrl() {
-  return (process.env.NEXTAUTH_URL || process.env.AUTH_URL || "http://localhost:3000").replace(/\/$/, "");
-}
 
 /**
  * Checkout de la licencia SIN organización previa (alta pago-primero). No lleva
@@ -31,7 +28,7 @@ export async function createLicenseCheckoutSession(planCode: string): Promise<Pl
   // Sin Stripe configurado no hay pago real posible: se enseña una pantalla de
   // demo en vez de fingir un checkout que no puede completarse.
   if (isDemoModeActive()) {
-    return { ok: true, url: `${appBaseUrl()}/demo-checkout?plan=${encodeURIComponent(plan.code)}` };
+    return { ok: true, url: `${publicOrigin()}/demo-checkout?plan=${encodeURIComponent(plan.code)}` };
   }
 
   const priceId = resolveStripePriceId(plan);
@@ -53,8 +50,8 @@ export async function createLicenseCheckoutSession(planCode: string): Promise<Pl
     customer_creation: plan.interval === "lifetime" ? "always" : undefined,
     billing_address_collection: "required",
     tax_id_collection: { enabled: true },
-    success_url: `${appBaseUrl()}/activar?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${appBaseUrl()}/planes?checkout=cancelado`,
+    success_url: `${publicOrigin()}/activar?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${publicOrigin()}/planes?checkout=cancelado`,
     metadata: { planCode: plan.code },
   });
 
@@ -94,8 +91,8 @@ export async function createPlatformCheckoutSession(orgId: string, planCode: str
     mode: plan.interval === "lifetime" ? "payment" : "subscription",
     customer: customerId,
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appBaseUrl()}/activar?checkout=success`,
-    cancel_url: `${appBaseUrl()}/activar?checkout=cancelled`,
+    success_url: `${publicOrigin()}/activar?checkout=success`,
+    cancel_url: `${publicOrigin()}/activar?checkout=cancelled`,
     metadata: { orgId: org.id, planCode: plan.code },
   });
 
