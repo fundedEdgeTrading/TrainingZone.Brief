@@ -5,6 +5,7 @@ import { parseDateParam } from "@/lib/date-utils";
 import { checkSessionSchedule } from "@/lib/session-time";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRole } from "../../_lib/api-session";
+import { requireApiCenterScope } from "../../_lib/api-guards";
 import { apiOk, apiError } from "../../_lib/response";
 
 type CreateSessionBody = {
@@ -39,6 +40,15 @@ export async function POST(req: NextRequest) {
   // `endTime` entraban como string libre y "NaN:NaN" llegaba a la tabla.
   const schedule = checkSessionSchedule(body);
   if (!schedule.ok) return apiError(schedule.error, 400);
+
+  // E1-02 (RB-SEG-002): el `centerId` llega del cliente, así que es lo primero
+  // que hay que validar. Sin esto, una entrenadora imputada solo a La Jota creó
+  // una sesión en Puerta del Carmen con un 200. Es el mismo control que la web
+  // hace con `requireCenterRole` en `saveSessionAction`.
+  //
+  // 404 y no 403: la respuesta no puede confirmar que ese centro existe.
+  const scope = await requireApiCenterScope(claims, body.centerId);
+  if (!scope.ok) return apiError("No se ha encontrado ese centro.", 404);
 
   const input: SaveSessionInput = {
     centerId: body.centerId,

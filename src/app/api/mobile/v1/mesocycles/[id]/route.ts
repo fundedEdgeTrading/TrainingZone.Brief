@@ -3,7 +3,7 @@ import type { Role } from "@prisma/client";
 import { isMemberInScope } from "@/lib/center-scope";
 import { canManageMesocycles } from "@/lib/rbac";
 import { getMesocycleDetail } from "@/lib/mesocycle-queries";
-import { requireApiRole } from "../../_lib/api-session";
+import { requireApiRoute } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
 
 // Borrador/plan completo tal como lo pinta la app: cabecera, "No se puede
@@ -42,7 +42,7 @@ function asMilestones(value: unknown): { week: number; text: string }[] {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, MESOCYCLE_ROLES);
+  const auth = await requireApiRoute(req, MESOCYCLE_ROLES, "/mesocycles/[id]");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageMesocycles(claims.role)) return apiError("No tienes permiso para ver los mesociclos.", 403);

@@ -49,7 +49,7 @@ export default async function FeedbackDetailPage({ params }: { params: Promise<{
   await requireFeature("feedback_direccion");
   const { id } = await params;
 
-  const member = await getMemberFeedbackDetail(session.user.orgId, id);
+  const member = await getMemberFeedbackDetail(session.user, id);
   if (!member) notFound();
 
   const text = interpretation(member.cat, member.client != null, member.debrief != null, member.client?.sat);

@@ -4,14 +4,15 @@ import { canViewSessionDebrief } from "@/lib/rbac";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import type { DebriefFeeling } from "@prisma/client";
-import { requireApiRole } from "../../../../_lib/api-session";
+import { requireApiRoute } from "../../../../_lib/api-session";
+import { requireApiCenterScope } from "../../../../_lib/api-guards";
 import { apiOk, apiError } from "../../../../_lib/response";
 
 const FEELINGS: DebriefFeeling[] = ["GREEN", "AMBER", "RED"];
 
 // Espejo de src/app/(app)/brief/[id]/actions.ts (setDebrief).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief/[id]/debrief");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id: sessionId } = await params;
@@ -25,9 +26,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, sessionId, session: { orgId: claims.orgId } },
-    select: { status: true, session: { select: { trainerId: true, directedByUserId: true } } },
+    select: { status: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
   });
   if (!booking) return apiError("No se ha encontrado esa reserva.", 404);
+
+  // E1-01: mismo ámbito de centro que la lectura del brief de la que cuelga.
+  const scope = await requireApiCenterScope(claims, booking.session.centerId);
+  if (!scope.ok) return apiError("No se ha encontrado esa reserva.", 404);
+
   if (!canViewSessionDebrief(claims.role, claims.sub, booking.session)) {
     return apiError("No tienes permiso para registrar el debrief de esta sesión.", 403);
   }
