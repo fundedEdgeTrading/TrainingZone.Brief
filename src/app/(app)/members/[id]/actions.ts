@@ -14,6 +14,7 @@ import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { ensureSuppressedMemberBucket, getSuppressionPlan } from "@/lib/member-suppression";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -381,14 +382,32 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
   return { ok: true };
 }
 
+/**
+ * Vista previa de la supresión (E10-09). El diálogo la pide al abrirse y pinta
+ * lo que devuelve: así el texto que lee dirección no puede describir un
+ * tratamiento distinto del que va a ocurrir, porque sale de la misma función
+ * que ejecuta el borrado.
+ */
+export async function previewMemberSuppression(memberId: string) {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  if (!canDeleteMembers(session.user.role)) return null;
+  if (!(await memberIsInScope(session.user, memberId))) return null;
+  return getSuppressionPlan(memberId, session.user.orgId);
+}
+
 // Baja definitiva del socio (C4 — derecho de supresión del RGPD). Reglas:
 //  · solo dirección (canDeleteMembers);
 //  · nunca con una suscripción viva (ACTIVE o FROZEN, que es una activa en
 //    pausa): primero hay que cancelarla desde "Plan y pagos";
 //  · borra en cascada manual todo lo que cuelga del socio — el esquema no
 //    declara onDelete, así que el orden importa (hijos antes que padres);
+//  · E10-09: los Payment NO se borran. Se disocian —pasan a la ficha contable
+//    «Socios suprimidos»— porque borrarlos es destruir justificantes dentro
+//    del plazo de prescripción fiscal (art. 200 LGT). Los datos de salud van
+//    según la tabla de plazos (E10-08): vencidos se borran, dentro de plazo se
+//    desligan de la persona;
 //  · el AuditLog no tiene FK a Member: se conserva como registro append-only
-//    (ADR-008) y se le añade la entrada MEMBER_DELETED.
+//    (ADR-008) y se le añade la entrada MEMBER_DELETED con el alcance.
 export async function deleteMember(memberId: string): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
   if (!canDeleteMembers(session.user.role)) return { ok: false, error: "No tienes permiso para eliminar socios." };
@@ -401,6 +420,7 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       firstName: true,
       lastName: true,
       email: true,
+      primaryCenterId: true,
       subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN"] } }, select: { id: true } },
     },
   });
@@ -413,11 +433,38 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
     };
   }
 
+  // El plan se calcula ANTES de borrar nada: después las cuentas ya no existen,
+  // y es el mismo plan que el diálogo acaba de enseñar.
+  const plan = await getSuppressionPlan(memberId, session.user.orgId);
+  if (!plan) return { ok: false, error: "No se ha encontrado ese socio." };
+  const healthAction = plan.effects.find((e) => e.key === "healthRecords")?.action ?? "ANONYMIZE";
+
   try {
     await prisma.$transaction(async (tx) => {
+      // E10-09 · los cobros se disocian antes de tocar nada más: si la
+      // transacción se cae después, no se ha destruido ningún justificante.
+      const bucketId = await ensureSuppressedMemberBucket(tx, session.user.orgId, member.primaryCenterId);
+      await tx.payment.updateMany({
+        where: { memberId },
+        // `subscriptionId` se suelta porque la suscripción sí se borra: sin
+        // esto el cobro quedaría apuntando a una fila que va a desaparecer.
+        data: { memberId: bucketId, subscriptionId: null },
+      });
+
+      // E10-09 · salud según la tabla de plazos. Dentro de plazo el registro se
+      // desliga de la persona (`memberId: null`, sin lead detrás: deja de ser
+      // recuperable desde ninguna ficha); vencido el plazo, se borra.
+      if (healthAction === "DELETE") {
+        await tx.healthRecord.deleteMany({ where: { memberId } });
+      } else {
+        await tx.healthRecord.updateMany({
+          where: { memberId },
+          data: { memberId: null, reportedByUserId: null },
+        });
+      }
+
       await tx.sessionDebrief.deleteMany({ where: { booking: { memberId } } });
       await tx.booking.deleteMany({ where: { memberId } });
-      await tx.payment.deleteMany({ where: { memberId } });
       await tx.chatMessage.deleteMany({ where: { conversation: { memberId } } });
       await tx.conversation.deleteMany({ where: { memberId } });
       await tx.announcementView.deleteMany({ where: { memberId } });
@@ -425,7 +472,6 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       await tx.selfAssessment.deleteMany({ where: { memberId } });
       await tx.workoutProgram.deleteMany({ where: { memberId } });
       await tx.retentionAlert.deleteMany({ where: { memberId } });
-      await tx.healthRecord.deleteMany({ where: { memberId } });
       await tx.clientFeedback.deleteMany({ where: { memberId } });
       await tx.trainerDebrief.deleteMany({ where: { memberId } });
       await tx.clientGoal.deleteMany({ where: { memberId } });
@@ -481,7 +527,13 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
           entityType: "Member",
           entityId: memberId,
           memberId,
-          metadata: { name: `${member.firstName} ${member.lastName}`.trim(), email: member.email },
+          // El alcance entra en la traza: qué se disoció, qué se borró y qué se
+          // anonimizó. Sin esto, "queda registrado en Auditoría" no dice nada.
+          metadata: {
+            name: `${member.firstName} ${member.lastName}`.trim(),
+            email: member.email,
+            scope: plan.effects.map((e) => ({ key: e.key, action: e.action, count: e.count })),
+          },
         },
       });
     });
