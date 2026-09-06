@@ -2245,6 +2245,9 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
           ],
           approvedAt: addDays(TODAY, -21),
           approvedByUserId: director.id,
+          // E3-12 · sin fecha de inicio, "semana 3" no se puede situar en el
+          // calendario. Arrancó una semana antes de aprobarse, como en la sala.
+          startDate: addDays(TODAY, -28),
           phases: {
             create: [
               {
@@ -2252,7 +2255,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
                 name: "Adaptación",
                 weekFrom: 1,
                 weekTo: 4,
-                notes: "Técnica y tolerancia. Nada por encima de la cabeza.",
+                deload: false,
+                notes: "Técnica y tolerancia, nada por encima de la cabeza. Progresión: +1 serie del básico cada semana, RIR 4→2.",
                 days: {
                   create: [
                     {
@@ -2357,7 +2361,8 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
                 name: "Acumulación",
                 weekFrom: 5,
                 weekTo: 9,
-                notes: "Sube volumen manteniendo la restricción cervical.",
+                deload: false,
+                notes: "Sube volumen manteniendo la restricción cervical. Progresión: +2,5 kg semanales en empuje horizontal, RIR 3→1.",
                 days: {
                   create: [
                     {
@@ -2406,6 +2411,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
                 name: "Realización",
                 weekFrom: 10,
                 weekTo: 12,
+                deload: true,
                 notes: "Bajar volumen, mantener intensidad y medir marcas.",
                 days: {
                   create: [

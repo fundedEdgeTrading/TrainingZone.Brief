@@ -10,6 +10,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { EP_PROFILES, EP_PROFILE_LABEL, DEFAULT_PROFILE, type EpProfile } from "@/lib/ai/ep-profile";
 import { PSEUDONYMIZATION_NOTICE } from "@/lib/ai/pseudonymize";
+import { currentWeekLabel, currentWeekOf } from "@/lib/mesocycle-schedule";
 import { generateMesocycleAction } from "./actions";
 
 /**
@@ -39,6 +40,8 @@ export type MesocycleSummary = {
   profile: EpProfile;
   createdAt: Date;
   approvedAt: Date | null;
+  startDate: Date | null;
+  phases: { name: string; weekFrom: number; weekTo: number; deload: boolean; notes: string | null }[];
 };
 
 export function MesocyclePanel({
@@ -156,7 +159,11 @@ export function MesocyclePanel({
                 <span>
                   <span className="font-semibold">{m.title}</span>
                   <span className="text-xs text-brand-muted block">
-                    {EP_PROFILE_LABEL[m.profile]} · {m.createdAt.toLocaleDateString("es-ES")}
+                    {/* E3-12 · en qué semana del plan está el socio hoy. */}
+                    {EP_PROFILE_LABEL[m.profile]} ·{" "}
+                    {currentWeekOf(m, m.phases)
+                      ? currentWeekLabel(currentWeekOf(m, m.phases))
+                      : m.createdAt.toLocaleDateString("es-ES")}
                     {m.approvedAt && ` · aprobado el ${m.approvedAt.toLocaleDateString("es-ES")}`}
                   </span>
                 </span>

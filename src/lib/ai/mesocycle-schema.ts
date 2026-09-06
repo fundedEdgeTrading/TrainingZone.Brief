@@ -46,7 +46,20 @@ export const MesocyclePhaseSchema = z.object({
   name: z.string(),
   weekFrom: z.number().int(),
   weekTo: z.number().int(),
-  notes: z.string().nullable(),
+  deload: z
+    .boolean()
+    .describe(
+      "Fase de descarga: baja de volumen deliberada (E3-12). Es un atributo de la fase, no un " +
+        "nombre convenido, para que el brief pueda avisar de que toca descargar sin adivinarlo del título."
+    ),
+  notes: z
+    .string()
+    .nullable()
+    .describe(
+      "Cómo PROGRESA la fase semana a semana (series, RIR/RPE objetivo, carga). Obligatorio en toda " +
+        "fase de más de 3 semanas que no sea de descarga: sin esto, una fase de 4 semanas es cuatro " +
+        "veces la misma semana."
+    ),
   days: z.array(MesocycleDaySchema).min(1),
 });
 

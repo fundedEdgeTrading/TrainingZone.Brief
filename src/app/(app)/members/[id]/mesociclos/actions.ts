@@ -206,13 +206,26 @@ export async function refineMesocycleAction(
 
 export async function approveMesocycleAction(
   memberId: string,
-  mesocycleId: string
+  mesocycleId: string,
+  /** E3-12 · "YYYY-MM-DD": obligatoria al aprobar si el mesociclo no la tiene ya. */
+  startDate?: string | null
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
   const scopeError = await mesocycleScopeError(session.user, { mesocycleId });
   if (scopeError) return { ok: false, error: scopeError };
 
-  const result = await approveMesocycle(session.user.orgId, mesocycleId, session.user.id);
+  let start: Date | null = null;
+  if (startDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      return { ok: false, error: "La fecha de inicio no es válida." };
+    }
+    // Componentes locales, no `new Date("2026-09-07")`, que se interpreta en UTC
+    // y en España adelantaría el arranque un día.
+    const [y, m, d] = startDate.split("-").map(Number);
+    start = new Date(y, m - 1, d);
+  }
+
+  const result = await approveMesocycle(session.user.orgId, mesocycleId, session.user.id, start);
   if (!result.ok) return result;
   revalidateMesocycle(memberId, mesocycleId);
   return { ok: true };
