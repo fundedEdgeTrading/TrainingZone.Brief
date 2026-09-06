@@ -6,7 +6,7 @@
 
 import { postalCityLabel, POSTAL_CODE_CITIES } from "@/lib/postal-codes";
 
-export type BarrioMetric = "members" | "leads" | "conv" | "trend" | "dist" | "opp";
+export type BarrioMetric = "members" | "leads" | "conv" | "trend" | "dist" | "opp" | "churn";
 
 /** Lo que `getPostalCodeStats()` devuelve por barrio, ya con los derivados. */
 export type BarrioStat = {
@@ -34,6 +34,21 @@ export type BarrioStat = {
   opp: number;
   /** Nombre del centro más cercano; null si la organización no tiene ninguno situado. */
   nearestCenter: string | null;
+  /**
+   * E11-09 · Bajas del periodo en este barrio, contadas desde
+   * `Member.cancelledAt`.
+   *
+   * *"¿Qué barrios tienen fuga?"* no se podía responder, y sin embargo
+   * `cancelledAt` **ya está guardado**: es el dato con mejor relación
+   * valor/coste de todo el módulo. `trend` mide altas, no bajas, y un barrio
+   * puede estar creciendo en altas mientras se desangra por detrás.
+   *
+   * Opcional mientras la agregación no lo calcule (es de otra pista, ver
+   * `docs/hu/T7-peticion-dashboard-queries.md`). `undefined` no es cero: se lee
+   * como "sin dato" por el mismo camino que E11-03, así que la pastilla sale
+   * deshabilitada y la celda pone una raya en vez de inventar un cero.
+   */
+  churn?: number;
 };
 
 export type BarrioCenter = { id: string; name: string; lat: number; lng: number };
@@ -64,6 +79,8 @@ export const BARRIO_METRICS: BarrioMetricDef[] = [
   { key: "trend", label: "Tendencia", question: "¿Qué barrio crece y cuál se apaga?", note: "verde sube · terracota cae", suffix: "%" },
   { key: "dist", label: "Distancia", question: "¿A qué distancia queda el centro más cercano?", note: "terracota = más lejos", suffix: " km" },
   { key: "opp", label: "Oportunidad", question: "¿Dónde abrir el próximo centro?", note: "terracota = más margen", suffix: "" },
+  // E11-09 · La séptima, y la que dirección no podía preguntar.
+  { key: "churn", label: "Bajas", question: "¿En qué barrios se me va la gente?", note: "+ intenso, + bajas", suffix: "" },
 ];
 
 export function metricDef(metric: BarrioMetric): BarrioMetricDef {
@@ -241,11 +258,15 @@ export const NO_DATA_FILL = "#cfcabd";
  */
 export function metricValue(point: BarrioStat, metric: BarrioMetric): number | null {
   if ((metric === "dist" || metric === "opp") && point.nearestCenter === null) return null;
+  // E11-09 · `undefined` no es cero: mientras la agregación no cuente bajas, la
+  // métrica se lee como "sin dato" por el mismo camino que E11-03.
+  if (metric === "churn") return point.churn ?? null;
   return point[metric];
 }
 
 /** `true` si la métrica se puede calcular en esta ciudad. Es lo que deshabilita su pastilla. */
 export function metricAvailable(points: BarrioStat[], metric: BarrioMetric): boolean {
+  if (metric === "churn") return points.some((p) => p.churn !== undefined);
   if (metric !== "dist" && metric !== "opp") return true;
   return points.some((p) => p.nearestCenter !== null);
 }

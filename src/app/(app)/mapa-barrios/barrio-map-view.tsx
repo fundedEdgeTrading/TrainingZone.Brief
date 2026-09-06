@@ -370,17 +370,27 @@ export function BarrioMapView({
               </div>
             </div>
 
+            {/* E11-09 · Altas y bajas del mismo periodo, en la misma tarjeta y
+                sobre el mismo plano: un barrio puede estar creciendo en altas
+                mientras se desangra por detrás, y con `trend` sola eso no se
+                ve. */}
             <div className="grid grid-cols-2 gap-2 mt-4">
               <SpotlightCell label="Clientes" value={String(spotlight.members)} />
               <SpotlightCell label="Leads" value={String(spotlight.leads)} />
               <SpotlightCell label="Conversión" value={`${spotlight.conv}%`} />
               <SpotlightCell
-                label="90 días"
+                label="Altas 90 d"
                 value={formatMetricValue(spotlight.trend, "trend")}
                 className={
                   spotlight.trend > 0 ? "text-good" : spotlight.trend < 0 ? "text-critical" : "text-brand-text-2"
                 }
               />
+              <SpotlightCell
+                label="Bajas"
+                value={formatMetricValue(metricValue(spotlight, "churn"), "churn")}
+                className={(spotlight.churn ?? 0) > 0 ? "text-critical" : "text-brand-text-2"}
+              />
+              <SpotlightCell label="Distancia" value={formatMetricValue(metricValue(spotlight, "dist"), "dist")} />
             </div>
 
             <div className="flex items-center gap-2 mt-3 pt-3 border-t border-tz-sand">

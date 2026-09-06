@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  BARRIO_METRICS,
   CLASS_COUNT,
   DIVERGING_RAMP,
   NO_DATA_FILL,
@@ -16,6 +17,7 @@ import {
   hasMissingValues,
   legendSteps,
   metricAvailable,
+  metricDef,
   metricValue,
   readableMetricInk,
   sortByMetric,
@@ -293,4 +295,43 @@ test("E11-03 · con centros situados el comportamiento no cambia", () => {
   assert.equal(hasMissingValues(CON_CENTROS, "dist"), false);
   const c = classifyMetric(CON_CENTROS, "dist");
   assert.notEqual(colorForValueClassified(1.8, c), NO_DATA_FILL);
+});
+
+// ---------- E11-09 · métrica de fuga por barrio ----------
+
+test("E11-09 · existe una métrica de bajas, con su pregunta", () => {
+  const churn = BARRIO_METRICS.find((m) => m.key === "churn");
+  assert.ok(churn, "falta la métrica de bajas");
+  // `trend` mide ALTAS: un barrio puede estar creciendo en altas mientras se
+  // desangra por detrás, y con esa sola métrica eso no se ve.
+  assert.equal(churn.question, "¿En qué barrios se me va la gente?");
+  assert.notEqual(churn.key, metricDef("trend").key);
+});
+
+test("E11-09 · usa la clasificación de E11-02, como el resto de las sesgadas", () => {
+  assert.equal(classificationKind("churn"), "quantile");
+});
+
+test("E11-09 · mientras la agregación no la calcule se lee como «sin dato», no como cero", () => {
+  const sinDato = [barrio({ code: "a", members: 10 }), barrio({ code: "b", members: 4 })];
+  assert.equal(metricValue(sinDato[0], "churn"), null);
+  assert.equal(metricAvailable(sinDato, "churn"), false);
+  assert.equal(formatMetricValue(metricValue(sinDato[0], "churn"), "churn"), "—");
+  assert.equal(colorForValueClassified(metricValue(sinDato[0], "churn"), classifyMetric(sinDato, "churn")), NO_DATA_FILL);
+});
+
+test("E11-09 · con el dato puesto se comporta como cualquier otra métrica", () => {
+  const conDato = [
+    barrio({ code: "a", churn: 12 }),
+    barrio({ code: "b", churn: 3 }),
+    barrio({ code: "c", churn: 0 }),
+  ];
+  assert.equal(metricAvailable(conDato, "churn"), true);
+  assert.equal(metricValue(conDato[0], "churn"), 12);
+  // Cero bajas es un dato, y se pinta: es lo contrario de "no lo sé".
+  assert.equal(metricValue(conDato[2], "churn"), 0);
+  assert.deepEqual(
+    sortByMetric(conDato, "churn").map((p) => p.code),
+    ["a", "b", "c"]
+  );
 });
