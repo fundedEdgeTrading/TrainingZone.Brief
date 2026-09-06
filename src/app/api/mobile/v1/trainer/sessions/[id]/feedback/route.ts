@@ -7,7 +7,8 @@ import { canViewSessionDebrief } from "@/lib/rbac";
 import { formatDateParam } from "@/lib/date-utils";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { debriefAverage } from "../../../../_lib/calendar";
-import { requireApiRole } from "../../../../_lib/api-session";
+import { requireApiRoute } from "../../../../_lib/api-session";
+import { requireApiCenterScope } from "../../../../_lib/api-guards";
 import { apiOk, apiError } from "../../../../_lib/response";
 
 // C4 del handoff: feedback 1-10 por socio asistente, un socio por pantalla.
@@ -44,7 +45,7 @@ function feelingFor(scores: Record<Axis, number | null>): DebriefFeeling {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"], "/trainer/sessions/[id]/feedback");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id } = await params;
@@ -56,6 +57,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     sessionId: id,
     actorUserId: claims.sub,
     actorRole: claims.role,
+    actorCenterId: claims.centerId,
     d: req.nextUrl.searchParams.get("d"),
   });
   if (!brief) return apiError("No se ha encontrado esa sesión.", 404);
@@ -117,7 +119,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"], "/trainer/sessions/[id]/feedback");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id: sessionId } = await params;
@@ -128,9 +130,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, sessionId, session: { orgId: claims.orgId } },
-    select: { id: true, debrief: true, session: { select: { trainerId: true, directedByUserId: true } } },
+    select: {
+      id: true,
+      debrief: true,
+      session: { select: { centerId: true, trainerId: true, directedByUserId: true } },
+    },
   });
   if (!booking) return apiError("No se ha encontrado esa reserva.", 404);
+
+  // E1-01: la lectura del brief ya está acotada por centro; la escritura que
+  // cuelga de ella también. `canViewSessionDebrief` mira el rol y quién dirigió
+  // la sesión, nunca el centro.
+  const scope = await requireApiCenterScope(claims, booking.session.centerId);
+  if (!scope.ok) return apiError("No se ha encontrado esa reserva.", 404);
 
   if (!canViewSessionDebrief(claims.role, claims.sub, booking.session)) {
     return apiError("No tienes permiso para registrar el feedback de esta sesión.", 403);
