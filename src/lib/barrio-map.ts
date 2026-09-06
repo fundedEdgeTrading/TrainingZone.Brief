@@ -21,9 +21,16 @@ export type BarrioStat = {
   conv: number;
   /** % de variación de altas de los últimos 90 días frente a los 90 anteriores. */
   trend: number;
-  /** km en línea recta al centro más cercano de la organización (1 decimal). */
+  /**
+   * km en línea recta al centro más cercano de la organización (1 decimal).
+   *
+   * ⚠️ La agregación devuelve 0 cuando no hay ningún centro situado, que es un
+   * cero INVENTADO: no significa "está en la puerta", significa "no se puede
+   * calcular". No se lee este campo directamente — se lee con `metricValue`,
+   * que devuelve `null` en ese caso (E11-03).
+   */
   dist: number;
-  /** Índice de oportunidad: demanda que existe pero queda lejos de un centro. */
+  /** Índice de oportunidad. Mismo cero inventado que `dist`, y misma regla: leerlo con `metricValue`. */
   opp: number;
   /** Nombre del centro más cercano; null si la organización no tiene ninguno situado. */
   nearestCenter: string | null;
@@ -135,8 +142,42 @@ export function classificationKind(metric: BarrioMetric): ClassificationKind {
   return "quantile";
 }
 
-export function metricValue(point: BarrioStat, metric: BarrioMetric): number {
+/**
+ * Relleno de un barrio del que no se puede calcular la métrica (E11-03).
+ *
+ * Gris neutro y fuera de las dos rampas a propósito: tiene que ser
+ * inconfundible con cualquier escalón, porque significa otra cosa. Un barrio sin
+ * dato pintado del color del escalón 0 dice "aquí no pasa nada", y lo que pasa
+ * es que no lo sabemos.
+ */
+export const NO_DATA_FILL = "#cfcabd";
+
+/**
+ * Valor de la métrica, o `null` si no se puede calcular (E11-03).
+ *
+ * `dist` y `opp` dependen de que la organización tenga algún centro SITUADO
+ * (`Center.lat/lng` son opcionales). Cuando no lo hay, la agregación devuelve 0
+ * y el mapa pintaba la ciudad entera a 0,0 km: la tarjeta de foco lo advertía,
+ * pero el mapa, la leyenda y el ranking, no. **Una decisión de inversión tomada
+ * sobre un cero inventado es peor que no tener el mapa.**
+ *
+ * `nearestCenter === null` es la señal fiable: es lo que la agregación pone
+ * cuando no encuentra ningún centro contra el que medir.
+ */
+export function metricValue(point: BarrioStat, metric: BarrioMetric): number | null {
+  if ((metric === "dist" || metric === "opp") && point.nearestCenter === null) return null;
   return point[metric];
+}
+
+/** `true` si la métrica se puede calcular en esta ciudad. Es lo que deshabilita su pastilla. */
+export function metricAvailable(points: BarrioStat[], metric: BarrioMetric): boolean {
+  if (metric !== "dist" && metric !== "opp") return true;
+  return points.some((p) => p.nearestCenter !== null);
+}
+
+/** `true` si algún barrio se queda sin dato: entonces la leyenda necesita su entrada de gris. */
+export function hasMissingValues(points: BarrioStat[], metric: BarrioMetric): boolean {
+  return points.some((p) => metricValue(p, metric) === null);
 }
 
 /**
@@ -181,7 +222,11 @@ function equalBreaks(min: number, max: number, classes: number): number[] {
 /** La clasificación completa de una métrica sobre la ciudad activa. */
 export function classifyMetric(points: BarrioStat[], metric: BarrioMetric): BarrioClassification {
   const kind = classificationKind(metric);
-  const values = points.map((p) => metricValue(p, metric)).filter((v) => Number.isFinite(v));
+  // Los barrios sin dato no entran en el reparto: si contaran, un montón de
+  // ceros inventados desplazaría todos los cortes hacia abajo.
+  const values = points
+    .map((p) => metricValue(p, metric))
+    .filter((v): v is number => v !== null && Number.isFinite(v));
   const inverted = metric === "conv";
   const base = kind === "diverging" ? DIVERGING_RAMP : SEQUENTIAL_RAMP;
 
@@ -208,7 +253,8 @@ export function classIndex(value: number, classification: BarrioClassification):
   return Math.min(index, classification.ramp.length - 1);
 }
 
-export function colorForValueClassified(value: number, classification: BarrioClassification): string {
+export function colorForValueClassified(value: number | null, classification: BarrioClassification): string {
+  if (value === null) return NO_DATA_FILL;
   return classification.ramp[classIndex(value, classification)];
 }
 
@@ -249,7 +295,9 @@ export function colorsByCode(points: BarrioStat[], metric: BarrioMetric): Record
   );
 }
 
-export function formatMetricValue(value: number, metric: BarrioMetric): string {
+export function formatMetricValue(value: number | null, metric: BarrioMetric): string {
+  // Una raya, no un cero: el cero es un valor y esto es la ausencia de uno.
+  if (value === null) return "—";
   const def = metricDef(metric);
   const rounded = Math.round(value * 10) / 10;
   const sign = metric === "trend" && rounded > 0 ? "+" : "";
@@ -262,13 +310,22 @@ export function formatMetricValue(value: number, metric: BarrioMetric): string {
  */
 export function sortByMetric(points: BarrioStat[], metric: BarrioMetric): BarrioStat[] {
   const direction = metric === "conv" ? -1 : 1;
-  return [...points].sort((a, b) => direction * (metricValue(b, metric) - metricValue(a, metric)));
+  // Los barrios sin dato caen al final en cualquier orden: no son ni el mejor ni
+  // el peor, y colarlos entre los ceros sería volver a inventarles un valor.
+  return [...points].sort((a, b) => {
+    const va = metricValue(a, metric);
+    const vb = metricValue(b, metric);
+    if (va === null && vb === null) return 0;
+    if (va === null) return 1;
+    if (vb === null) return -1;
+    return direction * (vb - va);
+  });
 }
 
 /** Orden de colocación de etiquetas: primero el barrio con más peso en la métrica. */
 export function labelPriority(points: BarrioStat[], metric: BarrioMetric): string[] {
   return [...points]
-    .sort((a, b) => Math.abs(metricValue(b, metric)) - Math.abs(metricValue(a, metric)))
+    .sort((a, b) => Math.abs(metricValue(b, metric) ?? 0) - Math.abs(metricValue(a, metric) ?? 0))
     .map((p) => p.code);
 }
 

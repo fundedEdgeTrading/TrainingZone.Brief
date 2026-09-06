@@ -3,12 +3,15 @@
 import { useMemo, useState } from "react";
 import {
   BARRIO_METRICS,
+  NO_DATA_FILL,
   classifyMetric,
   colorForValueClassified,
   colorsByCode,
   formatMetricValue,
   labelPriority,
+  hasMissingValues,
   legendSteps,
+  metricAvailable,
   metricDef,
   metricValue,
   readableMetricInk,
@@ -69,9 +72,19 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
   const priority = useMemo(() => labelPriority(city.points, metric), [city, metric]);
   const rows = useMemo(() => sortByMetric(city.points, metric), [city, metric]);
   const maxAbs = useMemo(
-    () => Math.max(1, ...city.points.map((p) => Math.abs(metricValue(p, metric)))),
+    () => Math.max(1, ...city.points.map((p) => Math.abs(metricValue(p, metric) ?? 0))),
     [city, metric]
   );
+
+  // E11-03 · Qué se puede calcular en esta ciudad y qué no. `dist` y `opp`
+  // dependen de que la organización tenga algún centro SITUADO, y sin él la
+  // agregación devuelve ceros que no significan "está en la puerta" sino "no lo
+  // sé".
+  const available = useMemo(
+    () => Object.fromEntries(BARRIO_METRICS.map((m) => [m.key, metricAvailable(city.points, m.key)])),
+    [city]
+  ) as Record<BarrioMetric, boolean>;
+  const missing = useMemo(() => hasMissingValues(city.points, metric), [city, metric]);
 
   // El barrio de la tarjeta: el que se está señalando, si no el fijado, si no el
   // primero del ranking (que es el que la métrica pone por delante).
@@ -144,18 +157,30 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
             data-tz-overlay
             className={`flex flex-wrap gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
           >
-            {BARRIO_METRICS.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                onClick={() => setMetric(m.key)}
-                className={`px-[15px] py-[9px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] whitespace-nowrap transition-colors duration-150 ${
-                  m.key === metric ? "bg-tz-black text-tz-bone" : "text-brand-text-2 hover:bg-brand-bg"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
+            {BARRIO_METRICS.map((m) => {
+              const enabled = available[m.key];
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  disabled={!enabled}
+                  onClick={() => setMetric(m.key)}
+                  // E11-03 · Sin centros situados esta métrica no se puede
+                  // calcular. Se deshabilita CON explicación: un botón muerto y
+                  // sin motivo se lee como una avería.
+                  title={enabled ? m.question : "Ningún centro de tu organización tiene coordenadas: sin ellas no se puede calcular esta métrica."}
+                  className={`px-[15px] py-[9px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] whitespace-nowrap transition-colors duration-150 ${
+                    !enabled
+                      ? "text-brand-faint cursor-not-allowed line-through decoration-1"
+                      : m.key === metric
+                        ? "bg-tz-black text-tz-bone"
+                        : "text-brand-text-2 hover:bg-brand-bg"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
           </div>
           <div
             data-tz-overlay
@@ -163,6 +188,18 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
           >
             <span className="text-[13px] font-semibold text-tz-bone">{def.question}</span>
           </div>
+          {!available[metric] && (
+            <div
+              data-tz-overlay
+              className={`self-start max-w-[360px] ${GLASS} rounded-xl px-[15px] py-[9px]`}
+              role="status"
+            >
+              <span className="text-[12px] font-semibold text-brand-text-2">
+                No se puede calcular: ningún centro de tu organización tiene coordenadas. Añádelas en Organización →
+                Centros.
+              </span>
+            </div>
+          )}
         </div>
 
         <div
@@ -254,7 +291,7 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
                           className="h-full rounded-full origin-left"
                           style={{
                             background: colors[p.code],
-                            width: `${Math.round((Math.abs(metricValue(p, metric)) / maxAbs) * 100)}%`,
+                            width: `${Math.round((Math.abs(metricValue(p, metric) ?? 0) / maxAbs) * 100)}%`,
                             animation: "tzGrow .7s var(--ease-out-soft) both",
                           }}
                         />
@@ -306,6 +343,19 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
               </span>
             ))}
           </div>
+          {/* E11-03 · El gris no es un escalón más: significa "no se puede
+              calcular", y sin su entrada en la leyenda quien mira lo lee como
+              el valor más bajo. */}
+          {missing && (
+            <div className="flex items-center gap-[7px] mt-[11px] pt-2.5 border-t border-tz-sand">
+              <span
+                className="w-[13px] h-[13px] rounded-[3px] shrink-0 border border-brand-border"
+                style={{ background: NO_DATA_FILL }}
+              />
+              <span className="text-[11px] font-semibold text-brand-text-2">Sin dato (falta situar un centro)</span>
+            </div>
+          )}
+
           {/* Las dos claves solo se explican si hay algo que explicar: una ciudad
               sin centros situados no pinta ni cuadradito ni anillo. */}
           {city.centers.length > 0 && (

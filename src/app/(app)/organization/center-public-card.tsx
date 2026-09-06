@@ -136,6 +136,11 @@ export function CenterPublicCard({ center, orgSlug }: { center: CenterPublicData
             </Field>
           </div>
 
+          <label className="flex items-center gap-2 text-[12px] text-brand-muted">
+            <input type="checkbox" name="confirmFarCoordinates" className="h-4 w-4 shrink-0 accent-tz-black" />
+            Sé que este centro está lejos de los demás
+          </label>
+
           <label className="flex items-start gap-2.5 rounded-control border border-brand-border p-3 cursor-pointer">
             <input
               type="checkbox"

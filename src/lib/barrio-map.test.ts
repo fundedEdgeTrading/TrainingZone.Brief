@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   CLASS_COUNT,
   DIVERGING_RAMP,
+  NO_DATA_FILL,
   SEQUENTIAL_RAMP,
   classIndex,
   classificationKind,
@@ -12,7 +13,10 @@ import {
   colorsByCode,
   formatMetricValue,
   groupBarriosByCity,
+  hasMissingValues,
   legendSteps,
+  metricAvailable,
+  metricValue,
   readableMetricInk,
   sortByMetric,
   type BarrioStat,
@@ -222,4 +226,71 @@ test("groupBarriosByCity: una ciudad sin un solo cliente ni lead no se ofrece en
     cities.map((c) => c.label),
     ["Santander"]
   );
+});
+
+// ---------- E11-03 · El mapa es honesto cuando no hay centros situados ----------
+
+const SIN_CENTROS = [
+  barrio({ code: "50001", members: 10, leads: 5, total: 15, dist: 0, opp: 0, nearestCenter: null }),
+  barrio({ code: "50005", members: 30, leads: 20, total: 50, dist: 0, opp: 0, nearestCenter: null }),
+];
+
+const CON_CENTROS = [
+  barrio({ code: "50001", members: 10, dist: 0.4, opp: 1.1, nearestCenter: "La Jota" }),
+  barrio({ code: "50005", members: 30, dist: 1.8, opp: 5.2, nearestCenter: "La Jota" }),
+];
+
+test("E11-03 · sin centros situados, distancia y oportunidad son null, no 0", () => {
+  // `Center.lat/lng` son opcionales y la agregación devuelve 0: el mapa pintaba
+  // toda la ciudad a 0,0 km. Un cero inventado sobre el que se decide dónde
+  // abrir el próximo centro.
+  assert.equal(metricValue(SIN_CENTROS[0], "dist"), null);
+  assert.equal(metricValue(SIN_CENTROS[0], "opp"), null);
+  // Las que no dependen de un centro siguen valiendo.
+  assert.equal(metricValue(SIN_CENTROS[0], "members"), 10);
+});
+
+test("E11-03 · sus pastillas se deshabilitan, y solo esas", () => {
+  assert.equal(metricAvailable(SIN_CENTROS, "dist"), false);
+  assert.equal(metricAvailable(SIN_CENTROS, "opp"), false);
+  assert.equal(metricAvailable(SIN_CENTROS, "members"), true);
+  assert.equal(metricAvailable(SIN_CENTROS, "conv"), true);
+});
+
+test("E11-03 · el relleno es un gris de «sin dato», inconfundible con cualquier escalón", () => {
+  const c = classifyMetric(SIN_CENTROS, "dist");
+  assert.equal(colorForValueClassified(metricValue(SIN_CENTROS[0], "dist"), c), NO_DATA_FILL);
+  assert.ok(!SEQUENTIAL_RAMP.includes(NO_DATA_FILL));
+  assert.ok(!DIVERGING_RAMP.includes(NO_DATA_FILL));
+  // Y la leyenda sabe que tiene que explicarlo.
+  assert.equal(hasMissingValues(SIN_CENTROS, "dist"), true);
+  assert.equal(hasMissingValues(SIN_CENTROS, "members"), false);
+});
+
+test("E11-03 · un barrio sin dato no se escribe como cero, se escribe como raya", () => {
+  assert.equal(formatMetricValue(null, "dist"), "—");
+  assert.equal(formatMetricValue(0, "dist"), "0 km");
+});
+
+test("E11-03 · los barrios sin dato no desplazan los cortes ni encabezan el ranking", () => {
+  const mezcla = [
+    barrio({ code: "a", dist: 5, nearestCenter: "X" }),
+    barrio({ code: "b", dist: 0, nearestCenter: null }),
+    barrio({ code: "c", dist: 1, nearestCenter: "X" }),
+  ];
+  // Si el cero inventado contara, arrastraría el mínimo y todos los cortes.
+  const c = classifyMetric(mezcla, "dist");
+  assert.equal(c.min, 1);
+  assert.deepEqual(
+    sortByMetric(mezcla, "dist").map((p) => p.code),
+    ["a", "c", "b"]
+  );
+});
+
+test("E11-03 · con centros situados el comportamiento no cambia", () => {
+  assert.equal(metricAvailable(CON_CENTROS, "dist"), true);
+  assert.equal(metricValue(CON_CENTROS[1], "dist"), 1.8);
+  assert.equal(hasMissingValues(CON_CENTROS, "dist"), false);
+  const c = classifyMetric(CON_CENTROS, "dist");
+  assert.notEqual(colorForValueClassified(1.8, c), NO_DATA_FILL);
 });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { haversineKm, nearestOf, tessellate } from "./barrio-geometry";
+import { SUSPICIOUS_CENTER_KM, haversineKm, isFarFromAll, nearestOf, tessellate } from "./barrio-geometry";
 
 // La teselación es lo que sustituye al mapa de calor difuminado: si dos barrios
 // comparten superficie, o si el polígono de un barrio no contiene su propio
@@ -92,4 +92,34 @@ test("tessellate: casos degenerados (ninguno, uno, dos barrios) siguen dando geo
   assert.ok(contains(pair[0], 43.4623, -3.8099));
   assert.ok(contains(pair[1], 43.4742, -3.7809));
   assert.ok(!contains(pair[0], 43.4742, -3.7809));
+});
+
+// ---------- E11-03 · Coordenadas sospechosas en el alta ----------
+
+test("E11-03 · el primer centro de una organización nunca dispara el aviso", () => {
+  // No tiene con qué compararse: avisar aquí sería ruido en el 100 % de las
+  // altas.
+  assert.equal(isFarFromAll({ lat: 41.6685, lng: -0.8815 }, []), false);
+});
+
+test("E11-03 · abrir en la otra punta de España no es sospechoso", () => {
+  const zaragoza = { lat: 41.6685, lng: -0.8815 };
+  const santander = { lat: 43.4623, lng: -3.8099 };
+  const cadiz = { lat: 36.5271, lng: -6.2886 };
+  assert.equal(isFarFromAll(cadiz, [zaragoza, santander]), false);
+});
+
+test("E11-03 · un signo cambiado sí lo es: el centro se va de continente", () => {
+  const zaragoza = { lat: 41.6685, lng: -0.8815 };
+  // La misma latitud con el signo al revés cae en el Atlántico sur.
+  const dedoGordo = { lat: -41.6685, lng: -0.8815 };
+  assert.equal(isFarFromAll(dedoGordo, [zaragoza]), true);
+  assert.ok(haversineKm(zaragoza, dedoGordo) > SUSPICIOUS_CENTER_KM);
+});
+
+test("E11-03 · basta con estar cerca de UNO de los centros para no avisar", () => {
+  const zaragoza = { lat: 41.6685, lng: -0.8815 };
+  const tokio = { lat: 35.6762, lng: 139.6503 };
+  const cerca = { lat: 41.66, lng: -0.9 };
+  assert.equal(isFarFromAll(cerca, [tokio, zaragoza]), false);
 });

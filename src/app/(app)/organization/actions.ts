@@ -6,6 +6,7 @@ import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { parseOpeningHours } from "@/lib/opening-hours";
 import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
+import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
 import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
@@ -80,6 +81,11 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
     return { ok: false, error: "Indica latitud y longitud, o ninguna de las dos." };
   }
 
+  if (lat !== null && lng !== null) {
+    const far = await farCoordinatesError(session.user.orgId, { lat, lng }, formData);
+    if (far) return { ok: false, error: far };
+  }
+
   const existing = await prisma.center.findFirst({
     where: { orgId: session.user.orgId, slug },
     select: { id: true },
@@ -94,6 +100,39 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, lat, lng, logoUrl } });
   revalidatePath("/organization");
   return { ok: true };
+}
+
+
+/**
+ * E11-03 · Aviso de coordenadas sospechosas.
+ *
+ * Las coordenadas se teclean a mano y un signo cambiado mueve el centro de
+ * continente, en el mapa y para siempre. No se bloquea: hay organizaciones con
+ * centros de verdad muy separados. Se para UNA vez, se explica, y quien sabe lo
+ * que hace lo confirma con la casilla.
+ */
+async function farCoordinatesError(
+  orgId: string,
+  point: { lat: number; lng: number },
+  formData: FormData,
+  excludeCenterId?: string
+): Promise<string | null> {
+  if (formData.get("confirmFarCoordinates") === "on") return null;
+
+  const others = await prisma.center.findMany({
+    where: {
+      orgId,
+      lat: { not: null },
+      lng: { not: null },
+      ...(excludeCenterId ? { id: { not: excludeCenterId } } : {}),
+    },
+    select: { lat: true, lng: true },
+  });
+
+  const located = others.map((c) => ({ lat: c.lat as number, lng: c.lng as number }));
+  if (!isFarFromAll(point, located)) return null;
+
+  return `Esas coordenadas caen a más de ${SUSPICIOUS_CENTER_KM} km de todos tus demás centros. Suele ser un signo cambiado. Si es correcto, marca «Sé que este centro está lejos» y vuelve a guardar.`;
 }
 
 /** Coordenada opcional de un formulario: `null` si viene vacía, `"invalid"` si no es un número del rango. */
@@ -138,6 +177,11 @@ export async function updateCenterPublicProfile(formData: FormData): Promise<Org
   }
   if ((lat === null) !== (lng === null)) {
     return { ok: false, error: "Indica latitud y longitud, o ninguna de las dos." };
+  }
+
+  if (lat !== null && lng !== null) {
+    const far = await farCoordinatesError(session.user.orgId, { lat, lng }, formData, centerId);
+    if (far) return { ok: false, error: far };
   }
 
   const hours = parseOpeningHours(String(formData.get("openingHours") ?? ""));

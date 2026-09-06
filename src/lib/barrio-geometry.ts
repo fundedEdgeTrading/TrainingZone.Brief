@@ -29,6 +29,31 @@ export function haversineKm(a: GeoPoint, b: GeoPoint): number {
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/**
+ * E11-03 · A partir de aquí, unas coordenadas nuevas se tratan como sospechosas.
+ *
+ * Las coordenadas se teclean a mano en el alta y **un dedo gordo en un signo
+ * mueve el centro de continente** (`41.66` → `-41.66` son unos 9.000 km). El
+ * umbral es holgado a propósito: España entera cabe en ~1.100 km peninsulares,
+ * así que abrir un segundo centro en la otra punta no dispara el aviso, y en
+ * cambio un signo cambiado o dos dígitos transpuestos sí.
+ */
+export const SUSPICIOUS_CENTER_KM = 1000;
+
+/**
+ * `true` si el punto queda a más de `thresholdKm` de TODOS los demás. Con la
+ * lista vacía es `false`: el primer centro de una organización no tiene con qué
+ * compararse, y avisar ahí sería ruido en el 100 % de las altas.
+ */
+export function isFarFromAll(
+  point: GeoPoint,
+  others: GeoPoint[],
+  thresholdKm: number = SUSPICIOUS_CENTER_KM
+): boolean {
+  if (others.length === 0) return false;
+  return others.every((other) => haversineKm(point, other) > thresholdKm);
+}
+
 /** Centro más cercano de una lista, con su distancia en km (null si la lista está vacía). */
 export function nearestOf<T extends GeoPoint & { name: string }>(
   point: GeoPoint,
