@@ -7,6 +7,7 @@ import {
   DEFAULT_BARRIO_PARAMS,
   barrioMapHref,
   barrioMapQuery,
+  memberStatesFor,
   parseBarrioMapParams,
 } from "@/lib/barrio-map-params";
 
@@ -94,4 +95,20 @@ test("el centerId se lee pero NO se valida aquí: eso es un permiso, y va contra
   // consulta: un `?centerId=` a mano nunca amplía lo que se ve.
   const page = readFileSync("src/app/(app)/mapa-barrios/page.tsx", "utf8");
   assert.match(page, /isCenterInScope\(session\.user, params\.centerId\)/);
+});
+
+test("E11-01 · el filtro de la URL se traduce a estados de Member", () => {
+  // Un cancelado no es un socio y un prospecto todavía no lo es.
+  assert.deepEqual(memberStatesFor("activos"), ["TRIAL", "ACTIVE", "DELINQUENT", "FROZEN"]);
+  assert.deepEqual(memberStatesFor("todos"), ["TRIAL", "ACTIVE", "DELINQUENT", "FROZEN", "CANCELLED", "PROSPECT"]);
+  // Lo que necesita la métrica de fuga (E11-09).
+  assert.deepEqual(memberStatesFor("bajas"), ["CANCELLED"]);
+});
+
+test("E11-01 · la pantalla envía los estados a la agregación", () => {
+  const page = readFileSync("src/app/(app)/mapa-barrios/page.tsx", "utf8");
+  assert.match(page, /memberStates: memberStatesFor\(params\.estado\)/);
+  // Y el pie de cobertura cuenta con el MISMO filtro: si contase cancelados y
+  // prospectos, "se representan 412 de 468" hablaría de otra cartera.
+  assert.match(page, /getMapCoverage\([\s\S]*?memberStates: memberStatesFor\(params\.estado\)/);
 });

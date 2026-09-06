@@ -16,6 +16,8 @@
  */
 
 import { BARRIO_METRICS, type BarrioMetric } from "@/lib/barrio-map";
+import type { MemberState } from "@prisma/client";
+
 import { parseRange, type DashboardRange } from "@/lib/dashboard-range";
 
 /**
@@ -108,4 +110,20 @@ export function barrioMapQuery(params: BarrioMapParams): string {
 export function barrioMapHref(params: Partial<BarrioMapParams>): string {
   const query = barrioMapQuery({ ...DEFAULT_BARRIO_PARAMS, ...params });
   return query ? `/mapa-barrios?${query}` : "/mapa-barrios";
+}
+
+/**
+ * E11-01 · El filtro de la URL, traducido a estados de `Member`.
+ *
+ *  · `activos` — fuera `CANCELLED` y `PROSPECT`. Un cancelado no es un socio y
+ *    un prospecto todavía no lo es: contarlos hace que un barrio con fuga masiva
+ *    se siga pintando oscuro, que es justo al revés de lo que hay que ver.
+ *  · `todos` — el comportamiento histórico, para poder conciliar con un export.
+ *  · `bajas` — solo cancelados, que es lo que mide la métrica de fuga (E11-09).
+ */
+export function memberStatesFor(filter: BarrioStateFilter): MemberState[] {
+  const live: MemberState[] = ["TRIAL", "ACTIVE", "DELINQUENT", "FROZEN"];
+  if (filter === "todos") return [...live, "CANCELLED", "PROSPECT"];
+  if (filter === "bajas") return ["CANCELLED"];
+  return live;
 }

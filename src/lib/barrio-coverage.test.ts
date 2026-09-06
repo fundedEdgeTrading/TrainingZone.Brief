@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
 import { coverageSentence, geometryNote, hasGaps, type Coverage } from "@/lib/barrio-coverage";
 import { getMapCoverage } from "@/lib/barrio-coverage-queries";
+import { memberStatesFor } from "@/lib/barrio-map-params";
 
 /**
  * E11-05 · El `FROM "PostalCodeArea"` de la agregación descarta cualquier CP que
@@ -27,13 +28,14 @@ before(async () => {
   });
 
   // 50001 está sembrado (Zaragoza); 28001 no lo está (Madrid, fuera de
-  // cobertura); y uno sin código postal en la ficha.
+  // cobertura); y uno sin código postal en la ficha. `state` explícito porque
+  // el esquema pone PROSPECT por defecto, y un prospecto no cuenta como socio.
   await prisma.member.createMany({
     data: [
-      { orgId, primaryCenterId: center.id, firstName: "A", lastName: "Uno", email: `${PREFIX}-1@example.com`, postalCode: "50001" },
-      { orgId, primaryCenterId: center.id, firstName: "B", lastName: "Dos", email: `${PREFIX}-2@example.com`, postalCode: "50001" },
-      { orgId, primaryCenterId: center.id, firstName: "C", lastName: "Tres", email: `${PREFIX}-3@example.com`, postalCode: "28001" },
-      { orgId, primaryCenterId: center.id, firstName: "D", lastName: "Cuatro", email: `${PREFIX}-4@example.com`, postalCode: null },
+      { orgId, primaryCenterId: center.id, firstName: "A", lastName: "Uno", email: `${PREFIX}-1@example.com`, postalCode: "50001", state: "ACTIVE" },
+      { orgId, primaryCenterId: center.id, firstName: "B", lastName: "Dos", email: `${PREFIX}-2@example.com`, postalCode: "50001", state: "ACTIVE" },
+      { orgId, primaryCenterId: center.id, firstName: "C", lastName: "Tres", email: `${PREFIX}-3@example.com`, postalCode: "28001", state: "ACTIVE" },
+      { orgId, primaryCenterId: center.id, firstName: "D", lastName: "Cuatro", email: `${PREFIX}-4@example.com`, postalCode: null, state: "ACTIVE" },
     ],
   });
   // `Lead.postalCode` es obligatorio en el esquema, así que un lead nunca cae en
@@ -107,4 +109,52 @@ test("la nota declara las DOS aproximaciones encadenadas", () => {
   const real = geometryNote(true);
   assert.match(real, /barrios reales/);
   assert.ok(!real.includes("teselación"));
+});
+
+// ---------- E11-01 · el pie cuenta lo mismo que el mapa ----------
+
+test("E11-01 · por defecto no se cuentan cancelados ni prospectos", async () => {
+  const center = await prisma.center.findFirstOrThrow({ where: { slug: `${PREFIX}-centro` } });
+  await prisma.member.createMany({
+    data: [
+      { orgId, primaryCenterId: center.id, firstName: "E", lastName: "Baja", email: `${PREFIX}-5@example.com`, postalCode: "50001", state: "CANCELLED" },
+      { orgId, primaryCenterId: center.id, firstName: "F", lastName: "Prospecto", email: `${PREFIX}-6@example.com`, postalCode: "50001", state: "PROSPECT" },
+    ],
+  });
+
+  // Un cancelado no es un socio y un prospecto todavía no lo es: contarlos hace
+  // que un barrio con fuga masiva se siga pintando oscuro.
+  const vivos = await getMapCoverage(orgId, { memberStates: memberStatesFor("activos") });
+  assert.equal(vivos.members.total, 4);
+
+  const todos = await getMapCoverage(orgId, { memberStates: memberStatesFor("todos") });
+  assert.equal(todos.members.total, 6);
+
+  const bajas = await getMapCoverage(orgId, { memberStates: memberStatesFor("bajas") });
+  assert.equal(bajas.members.total, 1);
+});
+
+test("E11-01 · un lead ya convertido no se cuenta dos veces", async () => {
+  const center = await prisma.center.findFirstOrThrow({ where: { slug: `${PREFIX}-centro` } });
+  const socio = await prisma.member.findFirstOrThrow({ where: { email: `${PREFIX}-1@example.com` } });
+  await prisma.lead.create({
+    data: {
+      orgId,
+      centerId: center.id,
+      firstName: "L",
+      lastName: "Convertido",
+      phone: "600000003",
+      postalCode: "50001",
+      occupation: "—",
+      goals: "—",
+      hasTrainedBefore: false,
+      channel: "Test",
+      // La misma persona: si contara como lead Y como socio, la etiqueta "leads
+      // sin convertir" sería falsa y la conversión del barrio, imposible.
+      convertedMemberId: socio.id,
+    },
+  });
+
+  const coverage = await getMapCoverage(orgId);
+  assert.equal(coverage.leads.total, 2);
 });

@@ -3,7 +3,7 @@ import { centerScopeFor, isCenterInScope } from "@/lib/center-scope";
 import { getPostalCodeMapData } from "@/lib/dashboard-queries";
 import { getMapCoverage } from "@/lib/barrio-coverage-queries";
 import { groupBarriosByCity } from "@/lib/barrio-map";
-import { parseBarrioMapParams } from "@/lib/barrio-map-params";
+import { memberStatesFor, parseBarrioMapParams } from "@/lib/barrio-map-params";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { EmptyState } from "@/components/ui/empty-state";
 import { BarrioMapView } from "./barrio-map-view";
@@ -43,11 +43,14 @@ export default async function MapaBarriosPage({
       // `docs/hu/T7-peticion-dashboard-queries.md`: hoy `getPostalCodeMapData`
       // lo recibe y no lo aplica, y ese fichero es de otra pista.
       range: params.range,
+      // E11-01 · Y con él los estados de socio que hay que contar. Misma
+      // situación: la pantalla ya los envía, la agregación todavía no los mira.
+      memberStates: memberStatesFor(params.estado),
     }),
     // E11-05 · Con el MISMO ámbito de centro que la agregación: un pie que
     // contara la organización entera mientras el plano cuenta un solo centro
     // mentiría diciendo que falta gente que no debería salir.
-    getMapCoverage(session.user.orgId, { centerIds }),
+    getMapCoverage(session.user.orgId, { centerIds, memberStates: memberStatesFor(params.estado) }),
   ]);
   const cities = groupBarriosByCity(points, centers);
 

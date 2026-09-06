@@ -1,3 +1,5 @@
+import type { MemberState } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { emptyCoverage, type Coverage, type MapCoverage } from "@/lib/barrio-coverage";
 
@@ -12,18 +14,37 @@ import { emptyCoverage, type Coverage, type MapCoverage } from "@/lib/barrio-cov
  * que la agregación del mapa. Si el pie contara la organización entera mientras
  * el plano cuenta un solo centro, la frase mentiría en la dirección más
  * peligrosa: diría que falta gente que en realidad no debería salir.
+ *
+ * E11-01 · `memberStates` es el mismo filtro que el mapa: si el pie contase
+ * cancelados y prospectos, "se representan 412 de 468" hablaría de una cartera
+ * distinta de la que el plano pinta. Los leads no llevan filtro equivalente
+ * aquí: excluir los convertidos exige mirar `convertedMemberId`, y eso se hace
+ * en la agregación (ver `docs/hu/T7-peticion-dashboard-queries.md`).
  */
-export async function getMapCoverage(orgId: string, opts: { centerIds?: string[] } = {}): Promise<MapCoverage> {
+export async function getMapCoverage(
+  orgId: string,
+  opts: { centerIds?: string[]; memberStates?: MemberState[] } = {}
+): Promise<MapCoverage> {
   const [areas, memberGroups, leadGroups] = await Promise.all([
     prisma.postalCodeArea.findMany({ select: { code: true } }),
     prisma.member.groupBy({
       by: ["postalCode"],
-      where: { orgId, ...(opts.centerIds ? { primaryCenterId: { in: opts.centerIds } } : {}) },
+      where: {
+        orgId,
+        ...(opts.centerIds ? { primaryCenterId: { in: opts.centerIds } } : {}),
+        ...(opts.memberStates ? { state: { in: opts.memberStates } } : {}),
+      },
       _count: { _all: true },
     }),
     prisma.lead.groupBy({
       by: ["postalCode"],
-      where: { orgId, ...(opts.centerIds ? { centerId: { in: opts.centerIds } } : {}) },
+      where: {
+        orgId,
+        ...(opts.centerIds ? { centerId: { in: opts.centerIds } } : {}),
+        // Los ya convertidos no son leads: contarlos aquí repetiría a la misma
+        // persona en las dos frases del pie.
+        convertedMemberId: null,
+      },
       _count: { _all: true },
     }),
   ]);
