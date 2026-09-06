@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
+import { platformCheckoutKey, platformCustomerKey } from "@/lib/stripe-idempotency";
 import { getStripeClient, isPlatformStripeConfigured } from "@/lib/stripe";
 import {
   fundadorEnabled,
@@ -45,6 +46,11 @@ export async function createLicenseCheckoutSession(planCode: string): Promise<Pl
     }
   }
 
+  // HU-ST-04: única creación deliberadamente SIN clave de idempotencia. El
+  // comprador es anónimo (no hay org ni socio todavía), así que la única clave
+  // posible sería plan + ventana temporal, y con ella dos personas comprando el
+  // mismo plan a la vez recibirían la MISMA sesión de checkout. El motivo
+  // completo está en `lib/stripe-idempotency.ts`.
   const stripe = getStripeClient()!;
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: plan.interval === "lifetime" ? "payment" : "subscription",
@@ -80,23 +86,29 @@ export async function createPlatformCheckoutSession(orgId: string, planCode: str
 
   let customerId = org.platformStripeCustomerId;
   if (!customerId) {
-    const customer = await stripe.customers.create({
-      name: org.name,
-      email: org.billingEmail ?? undefined,
-      metadata: { orgId: org.id },
-    });
+    const customer = await stripe.customers.create(
+      {
+        name: org.name,
+        email: org.billingEmail ?? undefined,
+        metadata: { orgId: org.id },
+      },
+      { idempotencyKey: platformCustomerKey(org.id) }
+    );
     customerId = customer.id;
     await prisma.organization.update({ where: { id: org.id }, data: { platformStripeCustomerId: customerId } });
   }
 
-  const checkoutSession = await stripe.checkout.sessions.create({
-    mode: plan.interval === "lifetime" ? "payment" : "subscription",
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${publicOrigin()}/activar?checkout=success`,
-    cancel_url: `${publicOrigin()}/activar?checkout=cancelled`,
-    metadata: { orgId: org.id, planCode: plan.code },
-  });
+  const checkoutSession = await stripe.checkout.sessions.create(
+    {
+      mode: plan.interval === "lifetime" ? "payment" : "subscription",
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${publicOrigin()}/activar?checkout=success`,
+      cancel_url: `${publicOrigin()}/activar?checkout=cancelled`,
+      metadata: { orgId: org.id, planCode: plan.code },
+    },
+    { idempotencyKey: platformCheckoutKey(org.id, plan.code) }
+  );
 
   if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
   return { ok: true, url: checkoutSession.url };

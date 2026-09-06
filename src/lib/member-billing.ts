@@ -14,6 +14,15 @@ import { absoluteUrl, publicOrigin } from "@/lib/site";
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
 // shape legado.
 import { resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
+// HU-ST-04/RB-PAGO-022: ninguna creación contra Stripe sale sin clave de
+// idempotencia. El patrón y el registro de claves están en el módulo.
+import {
+  customerKey,
+  memberCheckoutKey,
+  priceKey,
+  productKey,
+  prospectCheckoutKey,
+} from "@/lib/stripe-idempotency";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -51,19 +60,31 @@ export async function ensureStripePrice(orgId: string, planId: string): Promise<
   }
 
   const accountMatches = plan.stripeAccountId === accountId;
+  const recurringPlan = isRecurring(plan.type);
   const productId =
     accountMatches && plan.stripeProductId
       ? plan.stripeProductId
-      : (await stripe.products.create({ name: plan.name }, { stripeAccount: accountId })).id;
+      : (
+          await stripe.products.create(
+            { name: plan.name },
+            { stripeAccount: accountId, idempotencyKey: productKey(orgId, plan.id) }
+          )
+        ).id;
 
+  // Dos ejecuciones en paralelo para el mismo plan (recepción y portal vendiendo
+  // a la vez) creaban dos Product y dos Price. Con la clave, la segunda recibe
+  // de Stripe exactamente los mismos objetos que la primera.
   const price = await stripe.prices.create(
     {
       product: productId,
       currency: "eur",
       unit_amount: plan.priceCents,
-      ...(isRecurring(plan.type) ? { recurring: { interval: "month" as const } } : {}),
+      ...(recurringPlan ? { recurring: { interval: "month" as const } } : {}),
     },
-    { stripeAccount: accountId }
+    {
+      stripeAccount: accountId,
+      idempotencyKey: priceKey(orgId, plan.id, plan.priceCents, recurringPlan),
+    }
   );
 
   await prisma.membershipPlan.update({
@@ -123,7 +144,7 @@ export async function createMemberCheckout(params: {
   if (!stripeCustomerId || member.stripeAccountId !== accountId) {
     const customer = await stripe.customers.create(
       { email: member.email, name: `${member.firstName} ${member.lastName}` },
-      { stripeAccount: accountId }
+      { stripeAccount: accountId, idempotencyKey: customerKey(orgId, member.id) }
     );
     stripeCustomerId = customer.id;
     await prisma.member.update({ where: { id: member.id }, data: { stripeCustomerId, stripeAccountId: accountId } });
@@ -152,7 +173,7 @@ export async function createMemberCheckout(params: {
       // `customer.subscription.created` para reconstruir el contexto sin adivinar.
       ...(recurring ? { subscription_data: { metadata: { orgId, memberId, planId, centerId } } } : {}),
     },
-    { stripeAccount: accountId }
+    { stripeAccount: accountId, idempotencyKey: memberCheckoutKey(orgId, memberId, planId) }
   );
 
   if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
@@ -162,22 +183,52 @@ export async function createMemberCheckout(params: {
   // se crea nada aquí — lo crea el webhook al recibir `invoice.paid`, para no
   // dejar un Payment fantasma si el socio nunca llega a completar el pago.
   if (!recurring) {
-    await prisma.payment.create({
-      data: {
-        orgId,
-        memberId,
-        amountCents: plan.priceCents,
-        method: "STRIPE",
-        status: "PENDING",
-        date: new Date(),
-        stripeCheckoutSessionId: checkoutSession.id,
-        soldByUserId: soldByUserId ?? null,
-        notes: `Checkout Stripe — ${plan.name}`,
-      },
+    await recordPendingCheckoutPayment({
+      orgId,
+      memberId,
+      amountCents: plan.priceCents,
+      checkoutSessionId: checkoutSession.id,
+      soldByUserId: soldByUserId ?? null,
+      planName: plan.name,
     });
   }
 
   return { ok: true, url: checkoutSession.url };
+}
+
+/**
+ * HU-ST-04 · El `Payment` PENDING del bono puntual, sin duplicar.
+ *
+ * La clave de idempotencia hace que un segundo intento dentro de la ventana de
+ * 10 minutos reciba de Stripe LA MISMA sesión de checkout; esta función cierra
+ * el lado local: `stripeCheckoutSessionId` es único en el schema, así que el
+ * `upsert` deja el reintento en no-op en vez de reventar con una violación de
+ * unicidad que el call site traduciría a "no se pudo cobrar" — con el cobro ya
+ * abierto en Stripe.
+ */
+export async function recordPendingCheckoutPayment(params: {
+  orgId: string;
+  memberId: string;
+  amountCents: number;
+  checkoutSessionId: string;
+  soldByUserId: string | null;
+  planName: string;
+}): Promise<void> {
+  await prisma.payment.upsert({
+    where: { stripeCheckoutSessionId: params.checkoutSessionId },
+    update: {},
+    create: {
+      orgId: params.orgId,
+      memberId: params.memberId,
+      amountCents: params.amountCents,
+      method: "STRIPE",
+      status: "PENDING",
+      date: new Date(),
+      stripeCheckoutSessionId: params.checkoutSessionId,
+      soldByUserId: params.soldByUserId,
+      notes: `Checkout Stripe — ${params.planName}`,
+    },
+  });
 }
 
 /**
@@ -241,7 +292,7 @@ export async function createProspectMemberCheckout(params: {
       // `stripeSubscriptionId` a mano (ver `provisionMemberFromLandingCheckout`).
       ...(recurring ? { subscription_data: { metadata: { orgId, centerId, planId, prospectEmail: email } } } : {}),
     },
-    { stripeAccount: accountId }
+    { stripeAccount: accountId, idempotencyKey: prospectCheckoutKey(orgId, email, planId) }
   );
 
   if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
