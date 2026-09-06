@@ -3,7 +3,7 @@ import { ActivityIndicator, Animated, Text, View, StyleSheet } from "react-nativ
 import { Redirect, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
-import { hasTaskInbox, isAppSupportedRole, isTrainerRole, needsMembershipGate, tabsFor, type TabName } from "@/auth/routes";
+import { hasTaskInbox, isAppSupportedRole, isTrainerRole, tabsFor, type TabName } from "@/auth/routes";
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
 import { useTheme, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
@@ -11,6 +11,7 @@ import { easeOutSoft, tabFade, tabIconPop, useReducedMotion } from "@/theme/moti
 import { Icon, type IconName } from "@/components/Icon";
 import { PortalGate } from "@/components/PortalGate";
 import { UnsupportedRoleScreen } from "@/components/UnsupportedRoleScreen";
+import { MembershipBanner } from "@/components/MembershipBanner";
 import type { Role } from "@/api/types";
 
 /**
@@ -108,8 +109,6 @@ export default function TabsLayout() {
   // siquiera se pregunta por ellas si el rol no es de los que la app
   // conserva — así no queda ni una pestaña ni una rejilla vacía para el resto.
   if (!isAppSupportedRole(state.user.role)) return <UnsupportedRoleScreen role={state.user.role} />;
-  // Gate de compra (A2): sin bono vivo, el socio no entra al portal.
-  if (needsMembershipGate(state.user)) return <Redirect href="/onboarding/planes" />;
 
   // `tabsFor` deja al menos «Más» a un rol sin pestañas declaradas: sin eso la
   // barra saldría vacía y el usuario se quedaría dentro de la app sin ninguna
@@ -122,6 +121,7 @@ export default function TabsLayout() {
   return (
     <>
       <PortalGate isMember={state.user.role === "MEMBER"} />
+      <MembershipBanner />
       <Tabs
         // `backBehavior` por defecto es `firstRoute`, y eso rompía TODAS las
         // flechas de «volver» de las pantallas que son pestaña oculta (Aforo,

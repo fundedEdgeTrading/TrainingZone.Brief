@@ -107,16 +107,20 @@ export function homeTabFor(role: Role): Href {
 }
 
 /**
- * Destino tras el login, espejo de `defaultRouteForRole` (src/lib/rbac.ts) más
- * el gate de compra del handoff: el socio sin ningún bono vivo entra al
- * catálogo del centro (A2) en lugar de a las tabs.
+ * Destino tras el login, espejo de `defaultRouteForRole` (src/lib/rbac.ts).
+ *
+ * E5-14 (D-M3): el muro de compra se retira. Antes, un socio sin bono vivo
+ * aterrizaba SIEMPRE en el catálogo (`needsMembershipGate`), sin tabs, sin
+ * historial, sin nada más que comprar o cerrar sesión. Ahora entra
+ * directamente a sus tabs, en modo lectura; `MembershipBanner` es quien
+ * ofrece renovar, sin ocupar la pantalla entera.
  */
 export function homeRouteFor(user: MeResponse): Href {
-  if (needsMembershipGate(user)) return "/onboarding/planes";
   return homeTabFor(user.role);
 }
 
-export function needsMembershipGate(user: MeResponse): boolean {
+/** Sin bono vivo (D-M3): reservar está bloqueado, el resto de la app no. */
+export function needsMembership(user: MeResponse): boolean {
   return user.role === "MEMBER" && Boolean(user.member) && !user.member?.hasActiveMembership;
 }
 

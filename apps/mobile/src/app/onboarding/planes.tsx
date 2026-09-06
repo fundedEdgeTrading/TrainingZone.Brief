@@ -25,7 +25,7 @@ import type { ProductItem } from "@/api/types";
 // haya bono vivo, esta pantalla sustituye a las tabs (ver (tabs)/_layout.tsx).
 export default function PlansScreen() {
   const theme = useTheme();
-  const { state, logout } = useAuth();
+  const { state } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useProducts();
 
   const firstName = state.status === "signedIn" ? state.user.member?.firstName ?? state.user.name.split(" ")[0] : "";
@@ -54,18 +54,18 @@ export default function PlansScreen() {
         <ScreenHeader
           kicker={centerName ? centerName.toUpperCase() : "TU CENTRO"}
           title={upgrading ? "Ampliar tu bono" : firstName ? `Elige tu plan, ${firstName}` : "Elige tu plan"}
-          tight={upgrading}
+          tight
           right={
-            upgrading ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Volver"
-                onPress={() => goBack("/mas")}
-                style={[styles.backButton, { borderColor: theme.border }]}
-              >
-                <Icon name="chevron-left" size={17} color={theme.text} />
-              </Pressable>
-            ) : undefined
+            // E5-14 (D-M3): con el muro retirado, esta pantalla ya no es la
+            // única puerta de entrada a la app — siempre hay que poder volver.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Volver"
+              onPress={() => goBack("/mas")}
+              style={[styles.backButton, { borderColor: theme.border }]}
+            >
+              <Icon name="chevron-left" size={17} color={theme.text} />
+            </Pressable>
           }
         />
         <Text style={[typo.rowMeta, { color: theme.textMuted, marginTop: 8 }]}>
@@ -107,13 +107,6 @@ export default function PlansScreen() {
         </>
       )}
 
-      {/* Salir solo tiene sentido en el gate: quien viene de «Ampliar» ya está
-          dentro de la app y solo quiere volver. */}
-      {!upgrading ? (
-        <Pressable accessibilityRole="button" onPress={logout} style={styles.logout}>
-          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>Cerrar sesión</Text>
-        </Pressable>
-      ) : null}
     </ScreenContainer>
   );
 }
@@ -216,6 +209,5 @@ const styles = StyleSheet.create({
   priceBlock: { flexDirection: "row", alignItems: "baseline", gap: 4 },
   price: { fontFamily: fonts.bold, fontSize: 27, ...tabular },
   priceSmall: { fontFamily: fonts.bold, fontSize: 22, ...tabular },
-  logout: { alignSelf: "center", paddingVertical: 10 },
   backButton: { width: 40, height: 40, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 });
