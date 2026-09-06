@@ -54,7 +54,7 @@ export default async function BillingPage({
   return (
     <div className="tz-page space-y-6">
       <PageHeader
-        description="Cero dudas sobre quién está al corriente (F3). Facturación certificada (VERI*FACTU) y pasarela de pago online quedan fuera de esta entrega — aquí solo se registra el cobro."
+        description="Cero dudas sobre quién está al corriente (F3). El cobro online con Stripe está aquí mismo, debajo; la facturación certificada (VERI*FACTU) queda fuera de esta entrega."
         actions={
           canExport ? (
             <a
