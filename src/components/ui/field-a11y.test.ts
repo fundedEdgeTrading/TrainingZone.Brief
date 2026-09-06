@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { fieldA11y, mergeDescribedBy } from "./field-a11y";
+import { fieldA11y, mergeIds } from "./field-a11y";
 
 // E8-02 · escenario "asociación": Field deriva un id del `useId()` y lo usa
 // tanto en el htmlFor de la etiqueta como en el control.
@@ -42,12 +42,12 @@ test("fieldA11y no genera ids de mensajes cuando no hay ni error ni hint", () =>
   assert.equal(a11y.invalid, undefined);
 });
 
-test("mergeDescribedBy conserva los ids del call-site y añade los del campo", () => {
-  assert.equal(mergeDescribedBy("propio", "f-error", undefined), "propio f-error");
+test("mergeIds conserva los ids del call-site y añade los del campo", () => {
+  assert.equal(mergeIds("propio", "f-error", undefined), "propio f-error");
 });
 
-test("mergeDescribedBy no repite ids ni deja atributo vacío", () => {
-  assert.equal(mergeDescribedBy("f-error otro", "f-error"), "f-error otro");
-  assert.equal(mergeDescribedBy(undefined, undefined), undefined);
-  assert.equal(mergeDescribedBy("   "), undefined);
+test("mergeIds no repite ids ni deja atributo vacío", () => {
+  assert.equal(mergeIds("f-error otro", "f-error"), "f-error otro");
+  assert.equal(mergeIds(undefined, undefined), undefined);
+  assert.equal(mergeIds("   "), undefined);
 });

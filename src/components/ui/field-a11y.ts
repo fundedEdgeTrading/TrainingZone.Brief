@@ -44,11 +44,12 @@ export function fieldA11y(baseId: string, opts: { error?: string; hint?: string 
 }
 
 /**
- * Encadena ids en un `aria-describedby` sin perder los que el call-site ya
- * había puesto a mano y sin repetirlos. Devuelve `undefined` cuando no queda
- * ninguno, para no emitir un atributo vacío.
+ * Encadena ids para un atributo que acepta una lista (`aria-describedby`,
+ * `aria-labelledby`) sin perder los que el call-site ya había puesto a mano y
+ * sin repetirlos. Devuelve `undefined` cuando no queda ninguno, para no emitir
+ * un atributo vacío.
  */
-export function mergeDescribedBy(...parts: (string | undefined | null | false)[]): string | undefined {
+export function mergeIds(...parts: (string | undefined | null | false)[]): string | undefined {
   const ids: string[] = [];
   for (const part of parts) {
     if (!part) continue;

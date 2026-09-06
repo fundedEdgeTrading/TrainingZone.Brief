@@ -16,7 +16,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
-import { fieldA11y, mergeDescribedBy } from "@/components/ui/field-a11y";
+import { fieldA11y, mergeIds } from "@/components/ui/field-a11y";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { usePopoverPosition, POPOVER_MAX_HEIGHT } from "@/lib/use-popover-position";
 
@@ -75,17 +75,31 @@ export function Field({
   const ownId = typeof childProps.id === "string" ? childProps.id : undefined;
   const targetId = ownId ?? controlId;
 
-  const described = mergeDescribedBy(
+  const described = mergeIds(
     typeof childProps["aria-describedby"] === "string" ? childProps["aria-describedby"] : undefined,
     errorId,
     hintId,
   );
+
+  // `Select` no es un `<select>`: su disparador es un `<button>`, y a un
+  // `<button>` asociado con `htmlFor` el navegador le da el texto de la
+  // etiqueta como nombre accesible y DESCARTA su contenido — que es justo el
+  // valor elegido. Así que la primera versión de este cambio dejó al lector de
+  // pantalla oyendo "Centro, botón", sin decir qué centro. Se le pasa la
+  // etiqueta por `aria-labelledby` y el propio `Select` la compone con su
+  // valor, para que se anuncie "Centro, La Jota" igual que un `<select>` nativo
+  // (y el `htmlFor` se queda, que es lo que enfoca al hacer clic en el rótulo).
+  const labelledBy = label && injectable?.type === Select ? labelId : undefined;
 
   const control = injectable
     ? cloneElement(injectable as React.ReactElement<Record<string, unknown>>, {
         id: targetId,
         "aria-invalid": invalid ?? childProps["aria-invalid"],
         "aria-describedby": described,
+        "aria-labelledby": mergeIds(
+          typeof childProps["aria-labelledby"] === "string" ? childProps["aria-labelledby"] : undefined,
+          labelledBy,
+        ),
       })
     : children;
 
@@ -248,6 +262,10 @@ export function Select({
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; placeholder?: string }) {
   const options = useMemo(() => optionsFromChildren(children), [children]);
   const invalid = ariaInvalid === true || ariaInvalid === "true";
+  // Id del nodo que pinta el valor elegido: entra en el `aria-labelledby` junto
+  // a la etiqueta del campo, para que el nombre accesible del disparador sea
+  // "<etiqueta> <valor>" y no solo la etiqueta.
+  const valueId = `${useId()}-value`;
   const isControlled = value !== undefined;
   const [internalValue, setInternalValue] = useState(() => {
     if (defaultValue != null) return String(defaultValue);
@@ -476,7 +494,10 @@ export function Select({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-describedby={ariaDescribedBy}
-        aria-labelledby={ariaLabelledBy}
+        // Sin etiqueta que componer se deja tal cual: el nombre sale del
+        // contenido, que es el comportamiento que este disparador tenía y que
+        // los `<label>` envolventes (p. ej. el diálogo de falta) siguen usando.
+        aria-labelledby={ariaLabelledBy ? mergeIds(ariaLabelledBy, valueId) : undefined}
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={toggle}
@@ -503,7 +524,10 @@ export function Select({
           ) : selected?.tone ? (
             <span className={clsx("mt-[5px] h-2 w-2 shrink-0 rounded-[3px]", TONE_DOT[selected.tone])} />
           ) : null}
-          <span className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}>
+          <span
+            id={valueId}
+            className={clsx("line-clamp-2 leading-[1.35] font-medium", selected ? "text-brand-text" : "text-faint")}
+          >
             {selected ? selected.label : placeholderText}
           </span>
         </span>
