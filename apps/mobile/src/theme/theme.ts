@@ -89,7 +89,7 @@ const onInk = {
   critical: "#E08267",
 };
 
-const light: Theme = {
+export const light: Theme = {
   mode: "light",
   background: palette.bone,
   surface: palette.white,
@@ -120,7 +120,7 @@ const light: Theme = {
   onInk,
 };
 
-const dark: Theme = {
+export const dark: Theme = {
   mode: "dark",
   background: palette.black,
   surface: palette.inkSoft,

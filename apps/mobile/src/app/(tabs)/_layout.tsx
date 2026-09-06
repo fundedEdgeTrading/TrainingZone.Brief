@@ -148,8 +148,11 @@ export default function TabsLayout() {
           // Se toma el valor de ENTRADA, que es el que se mira.
           animation: "fade",
           transitionSpec: { animation: "timing", config: { duration: tabFade.in, easing: easeOutSoft } },
-          tabBarActiveTintColor: theme.gold,
-          tabBarInactiveTintColor: theme.textFaint,
+          // E8-04: theme.gold sobre blanco da 2,20:1 y theme.textFaint 2,54:1
+          // — ni el 3:1 de componente ni el 4,5:1 de texto. La navegación
+          // principal era ilegible al sol. goldText/textMuted sí cumplen.
+          tabBarActiveTintColor: theme.goldText,
+          tabBarInactiveTintColor: theme.textMuted,
           // La barra va FIJADA al borde inferior, a todo el ancho y sin margen
           // por debajo: antes flotaba con 12 px a los lados y un hueco variable
           // abajo (`insets.bottom - 4`), que en los móviles sin barra de gestos
@@ -174,7 +177,7 @@ export default function TabsLayout() {
             elevation: 0,
             shadowOpacity: 0,
           },
-          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 9.5, letterSpacing: 0.3 },
+          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.3 },
           // Con el teclado abierto la barra taparía el campo que se está
           // escribiendo (buscadores de socios, notas del feedback).
           tabBarHideOnKeyboard: true,
