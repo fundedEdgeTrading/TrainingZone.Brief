@@ -10,6 +10,7 @@ import {
   createCenter,
   updateCenterLogo,
   assignUserToCenter,
+  updateAgePolicy,
 } from "./actions";
 import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
@@ -25,6 +26,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { buildConnectOAuthUrl, isStripeConnectConfigured } from "@/lib/stripe-connect";
 import { prisma } from "@/lib/prisma";
 import { ProductsSection } from "./products-section";
+import { ADULT_AGE, LOPDGDD_CONSENT_AGE, agePolicyLabel } from "@/lib/minors";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
@@ -139,6 +141,47 @@ export default async function OrganizationPage({
                 <Input name="logoUrl" defaultValue={org.logoUrl ?? ""} placeholder="/brand/mi-logo.svg o https://..." />
               </Field>
               <Button type="submit">Guardar marca</Button>
+            </ActionForm>
+          </div>
+        </section>
+      )}
+
+      {/* ---------- E10-12 · Menores y tutores (decisión D-P8) ---------- */}
+      {canOrg && org && (
+        <section className="space-y-3">
+          <h2 className={SECTION_TITLE}>Menores</h2>
+          <div className={CARD}>
+            <p className="text-sm text-brand-muted max-w-3xl">
+              En España el umbral del art. 7 LOPDGDD son <b>{LOPDGDD_CONSENT_AGE} años</b>: por debajo, el
+              consentimiento que preste el propio menor —y en particular el de sus datos de salud— es nulo. Activar
+              menores obliga a recoger en cada alta el consentimiento del tutor legal, con identificación y
+              justificante. Política actual: <b>{agePolicyLabel(org)}</b>.
+            </p>
+            <ActionForm
+              action={updateAgePolicy}
+              successMessage="Política de edad actualizada."
+              resetOnSuccess={false}
+              className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end mt-4"
+            >
+              <Field label="¿Admite socios menores de edad?">
+                <Select name="allowsMinors" defaultValue={org.allowsMinors ? "yes" : "no"}>
+                  <option value="no">No · solo mayores de {ADULT_AGE}</option>
+                  <option value="yes">Sí, con consentimiento del tutor</option>
+                </Select>
+              </Field>
+              <Field
+                label="Edad mínima"
+                hint={`Entre ${LOPDGDD_CONSENT_AGE} y ${ADULT_AGE}. Solo se aplica si admites menores.`}
+              >
+                <Input
+                  name="minimumAgeYears"
+                  type="number"
+                  min={LOPDGDD_CONSENT_AGE}
+                  max={ADULT_AGE}
+                  defaultValue={org.minimumAgeYears}
+                />
+              </Field>
+              <Button type="submit">Guardar política</Button>
             </ActionForm>
           </div>
         </section>

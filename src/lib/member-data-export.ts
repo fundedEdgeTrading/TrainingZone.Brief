@@ -60,6 +60,20 @@ export async function getMemberDataExport(memberId: string, orgId: string) {
       usoImagenes: { aceptado: member.consentImages, fecha: member.consentImagesAt },
       marketing: { aceptado: member.consentMarketing, fecha: member.consentMarketingAt },
     },
+    // E10-12: cuando el socio es menor, quien consintió —y quien ejerce sus
+    // derechos— es el tutor legal. Sale en la copia porque forma parte del
+    // tratamiento: omitirlo dejaría un consentimiento sin dueño.
+    tutorLegal: member.guardianConsentAt
+      ? {
+          nombre: member.guardianName,
+          email: member.guardianEmail,
+          telefono: member.guardianPhone,
+          documento: member.guardianIdDocument,
+          consintioEl: member.guardianConsentAt,
+          justificante: member.guardianEvidence,
+          nota: "Siendo el socio menor de edad, los derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad los ejerce su tutor legal (art. 7 LOPDGDD).",
+        }
+      : null,
     suscripciones: member.subscriptions.map((s) => ({
       plan: s.plan.name,
       tipo: s.plan.type,

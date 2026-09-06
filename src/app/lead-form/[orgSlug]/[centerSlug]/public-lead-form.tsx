@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { ActionForm } from "@/components/ui/action-form";
+import { ADULT_AGE, ageOn } from "@/lib/minors";
 import {
   buildLeadPrivacyNotice,
   LEAD_HEALTH_CONSENT_LABEL,
@@ -30,6 +31,11 @@ export function PublicLeadForm({
   // solo aparece cuando hay algo que consentir. Ninguna de las dos casillas
   // nace marcada.
   const [hasCondition, setHasCondition] = useState(false);
+  // E10-12: sin fecha de nacimiento no hay forma de saber que quien deja aquí
+  // un dato de salud es menor. De un menor no se capta: no hay tutor delante.
+  const [birthDate, setBirthDate] = useState("");
+  const age = birthDate ? ageOn(new Date(`${birthDate}T00:00:00.000Z`), new Date()) : null;
+  const isMinor = age != null && Number.isFinite(age) && age >= 0 && age < ADULT_AGE;
   const notice = buildLeadPrivacyNotice(orgName);
 
   if (sent) {
@@ -95,13 +101,22 @@ export function PublicLeadForm({
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-3">
+        <Field label="Fecha de nacimiento">
+          <Input
+            name="birthDate"
+            type="date"
+            required
+            value={birthDate}
+            onChange={(e) => setBirthDate(e.target.value)}
+          />
+        </Field>
         <Field label="Código postal">
           <Input name="postalCode" required pattern="\d{5}" maxLength={5} placeholder="28001" />
         </Field>
-        <Field label="¿A qué te dedicas?">
-          <Input name="occupation" required placeholder="Tu ocupación" />
-        </Field>
       </div>
+      <Field label="¿A qué te dedicas?">
+        <Input name="occupation" required placeholder="Tu ocupación" />
+      </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="¿Tienes hijos? (opcional)">
           <Select name="hasChildren" defaultValue="">
@@ -147,6 +162,7 @@ export function PublicLeadForm({
           <Input name="hasTrainedNote" placeholder="Qué tipo de entrenamiento, cuánto tiempo..." />
         </Field>
       )}
+      {!isMinor && (
       <Field label={LEAD_HEALTH_QUESTION} hint="Con un sí/no basta. El detalle lo vemos en la valoración, con tu entrenador delante.">
         <Select
           name="hasHealthCondition"
@@ -157,7 +173,14 @@ export function PublicLeadForm({
           <option value="yes">Sí</option>
         </Select>
       </Field>
-      {hasCondition && (
+      )}
+      {isMinor && (
+        <p className="text-[12.5px] leading-snug text-brand-text-2 rounded-xl border border-brand-border bg-tz-bone px-4 py-3.5">
+          Como eres menor de {ADULT_AGE} años, por aquí no recogemos nada sobre tu salud: eso se ve en el centro, con
+          tu madre, padre o tutor delante. Puedes enviar el resto de la solicitud sin problema.
+        </p>
+      )}
+      {hasCondition && !isMinor && (
         <label className="flex gap-3 items-start rounded-xl border border-brand-border bg-white px-4 py-3.5 cursor-pointer">
           <input
             type="checkbox"

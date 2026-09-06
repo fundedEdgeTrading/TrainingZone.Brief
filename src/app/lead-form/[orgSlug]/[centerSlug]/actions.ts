@@ -26,6 +26,9 @@ export async function submitPublicLead(
     hasTrainedBefore: formData.get("hasTrainedBefore") === "yes",
     hasTrainedNote: String(formData.get("hasTrainedNote") ?? "") || null,
     channel: String(formData.get("channel") ?? ""),
+    // E10-12: obligatoria en el formulario público. Sin ella no se sabe si
+    // quien lo rellena es menor, y `createLead` bloquea la captura de salud.
+    birthDate: formData.get("birthDate") ? new Date(String(formData.get("birthDate"))) : null,
     // E10-01: sí/no en vez de texto libre, y la casilla decide si el dato de
     // salud llega a guardarse. El formulario público no manda `healthNote`.
     hasHealthCondition: formData.get("hasHealthCondition") === "yes",

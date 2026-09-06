@@ -9,6 +9,7 @@ import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { evaluateAgeAdmission } from "@/lib/minors";
 import {
   assignClientGoal,
   markClientGoalAchieved,
@@ -63,6 +64,32 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
 
   const birthDate = birthRaw ? new Date(birthRaw) : null;
 
+  // E10-12 · control de edad. El servidor no se fía del `required` del
+  // formulario, que viaja por la red: si falta la fecha, si el centro no admite
+  // menores o si falta el consentimiento acreditable del tutor, el alta no se
+  // completa y se dice por qué.
+  const guardian = {
+    name: String(formData.get("guardianName") ?? "").trim() || null,
+    email: String(formData.get("guardianEmail") ?? "").trim().toLowerCase() || null,
+    phone: String(formData.get("guardianPhone") ?? "").trim() || null,
+    idDocument: String(formData.get("guardianIdDocument") ?? "").trim() || null,
+    evidence: String(formData.get("guardianEvidence") ?? "").trim() || null,
+  };
+  const org = await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { name: true, logoUrl: true, allowsMinors: true, minimumAgeYears: true },
+  });
+  if (!org) return { ok: false, error: "No se ha encontrado la organización." };
+
+  const admission = evaluateAgeAdmission({
+    birthDate,
+    policy: { allowsMinors: org.allowsMinors, minimumAgeYears: org.minimumAgeYears },
+    // El consentimiento del tutor se fecha ahora: es el momento en que quien
+    // atiende declara haberlo recogido, con su justificante delante.
+    guardian: { ...guardian, consentAt: guardian.evidence ? new Date() : null },
+  });
+  if (!admission.ok) return { ok: false, error: admission.message };
+
   const { member, invitation } = await prisma.$transaction((tx) =>
     createMemberWithInvitation(tx, {
       orgId: session.user.orgId,
@@ -76,11 +103,38 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
     })
   );
 
+  // Los datos del tutor se guardan aparte del alta compartida
+  // (`createMemberWithInvitation` la usan también otros caminos) y solo cuando
+  // hacen falta: guardar un tutor a un socio adulto es dato de más.
+  if (admission.guardianRequired) {
+    await prisma.member.update({
+      where: { id: member.id },
+      data: {
+        guardianName: guardian.name,
+        guardianEmail: guardian.email,
+        guardianPhone: guardian.phone,
+        guardianIdDocument: guardian.idDocument,
+        guardianEvidence: guardian.evidence,
+        guardianConsentAt: new Date(),
+      },
+    });
+    await prisma.auditLog.create({
+      data: {
+        orgId: session.user.orgId,
+        actorUserId: session.user.id,
+        action: "GUARDIAN_CONSENT_RECORDED",
+        entityType: "Member",
+        entityId: member.id,
+        memberId: member.id,
+        metadata: { age: admission.age, idDocument: guardian.idDocument, evidence: guardian.evidence },
+      },
+    });
+  }
+
   if (photoUrl) {
     await prisma.member.update({ where: { id: member.id }, data: { photoUrl } });
   }
 
-  const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
   const footer = memberEmailFooterLinks(member.id);
   // Email de bienvenida no bloqueante: el socio ya está guardado, un SMTP lento no debe colgar el alta.
   void sendMail({

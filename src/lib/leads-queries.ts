@@ -4,6 +4,7 @@ import { createMemberWithInvitation } from "@/lib/invitations";
 import { createNotificationOnce } from "@/lib/notifications";
 import { createHealthRecordForLead } from "@/lib/health-access";
 import { LEAD_CONSENT_VERSION, resolveLeadHealthCapture } from "@/lib/consent";
+import { canCaptureLeadHealthData } from "@/lib/minors";
 import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 
 /**
@@ -102,6 +103,11 @@ export type CreateLeadInput = {
   hasTrainedBefore: boolean;
   hasTrainedNote?: string | null;
   channel: string;
+  /**
+   * E10-12: sin fecha de nacimiento no hay forma de saber que quien deja sus
+   * datos de salud en el formulario público es menor.
+   */
+  birthDate?: Date | null;
   ownerUserId?: string | null; // RB-LEAD-003: presencial → se autoasigna al actor; web → null
   /**
    * E10-01: el formulario PÚBLICO ya no manda texto libre, manda el sí/no de
@@ -153,6 +159,7 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
       goals: input.goals.trim(),
       hasTrainedBefore: input.hasTrainedBefore,
       hasTrainedNote: input.hasTrainedNote?.trim() || null,
+      birthDate: input.birthDate ?? null,
       channel: input.channel.trim(),
       ownerUserId: input.ownerUserId || null,
     },
@@ -166,7 +173,13 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
     hasCondition: input.hasHealthCondition ?? (input.healthNote?.trim() ? true : null),
     healthConsent: input.healthConsent ?? false,
   });
-  if (capture.capture) {
+  // E10-12 · del formulario PÚBLICO no se capta dato de salud de un menor: no
+  // hay tutor delante ni forma de acreditar su consentimiento, y el del propio
+  // menor de 14 sería nulo (art. 7 LOPDGDD). El lead se crea igual y el
+  // circuito de tutores se hace en el centro. En recepción (con actor) el
+  // control de edad lo hace el alta de socio, no esta captura.
+  const minorBlocksHealth = !input.actor && !canCaptureLeadHealthData({ birthDate: input.birthDate });
+  if (capture.capture && !minorBlocksHealth) {
     await createHealthRecordForLead({
       leadId: lead.id,
       orgId: input.orgId,
