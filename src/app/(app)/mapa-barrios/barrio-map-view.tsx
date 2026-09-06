@@ -23,10 +23,15 @@ import {
 import { HeaderActions, useHeaderSubtitle } from "../header-slot";
 import BarrioMap from "./barrio-map-loader";
 import { BarrioTable } from "./barrio-table";
+import { coverageSentence, geometryNote, hasGaps, type MapCoverage } from "@/lib/barrio-coverage";
 
-/** Nota que desaparece el día que entren las geometrías reales de barrio. */
-const GEOMETRY_NOTE =
-  "Geometría aproximada por teselación desde el centroide de cada CP. Sustituible por vuestro GeoJSON de barrios sin tocar el resto de la vista.";
+/**
+ * E11-05 · La nota se condiciona a la geometría que se esté usando de verdad
+ * (E11-08 la conmuta), y declara las DOS aproximaciones encadenadas: la anterior
+ * solo advertía de la teselación y se callaba que la correspondencia CP→barrio
+ * es también un "mejor esfuerzo" reconocido.
+ */
+const GEOMETRY_NOTE = geometryNote(false);
 
 /** Parámetros del mapa. Fijos hoy; el sitio natural de convertirlos en preferencia del centro. */
 const WALK_MINUTES = 15;
@@ -44,7 +49,15 @@ const GLASS = "bg-brand-card/95 backdrop-blur-md border border-brand-border";
  * nombre y su cifra, y la misma geometría se recolorea con seis métricas: una
  * por cada pregunta que dirección marcó como necesaria.
  */
-export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; roleLabel: string }) {
+export function BarrioMapView({
+  cities,
+  roleLabel,
+  coverage,
+}: {
+  cities: BarrioCity[];
+  roleLabel: string;
+  coverage: MapCoverage;
+}) {
   const [cityKey, setCityKey] = useState(cities[0].key);
   const [metric, setMetric] = useState<BarrioMetric>("members");
   const [focus, setFocus] = useState<string | null>(null);
@@ -56,6 +69,7 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
   // ancho: es la única vía al dato para quien no usa ratón, y bajo 1024 px es la
   // única vía a secas. Se puede plegar para mirar el plano entero.
   const [panelOpen, setPanelOpen] = useState(true);
+  const gaps = hasGaps(coverage);
 
   const city = cities.find((c) => c.key === cityKey) ?? cities[0];
   const def = metricDef(metric);
@@ -356,8 +370,22 @@ export function BarrioMapView({ cities, roleLabel }: { cities: BarrioCity[]; rol
             </div>
           )}
         </div>
-        <div data-tz-overlay className="text-[10.5px] font-medium text-brand-muted leading-[1.45] px-1">
-          {GEOMETRY_NOTE}
+        {/* E11-05 · Cuánta gente NO está en el plano. El `FROM PostalCodeArea`
+            descarta cualquier CP que no esté sembrado —un socio de Madrid con
+            CP 28001 no sale en ningún sitio— y hasta ahora el mapa no lo decía:
+            dirección miraba un plano sin saber si valía por el 90 % de su
+            cartera o por el 40 %. */}
+        <div
+          data-tz-overlay
+          className={`text-[10.5px] font-medium leading-[1.45] px-1 ${
+            gaps ? "text-brand-text-2" : "text-brand-muted"
+          }`}
+        >
+          <p>
+            {coverageSentence(coverage.members, "socio", "socios")}{" "}
+            {coverageSentence(coverage.leads, "lead", "leads")}
+          </p>
+          <p className="mt-1 text-brand-muted">{GEOMETRY_NOTE}</p>
         </div>
       </div>
 

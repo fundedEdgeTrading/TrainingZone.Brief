@@ -1,6 +1,7 @@
 import { requireRole } from "@/lib/guard";
 import { centerScopeFor } from "@/lib/center-scope";
 import { getPostalCodeMapData } from "@/lib/dashboard-queries";
+import { getMapCoverage } from "@/lib/barrio-coverage-queries";
 import { groupBarriosByCity } from "@/lib/barrio-map";
 import { ROLE_LABEL } from "@/lib/rbac";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -16,7 +17,13 @@ export default async function MapaBarriosPage() {
   // Ámbito de centro (center-scope.ts): antes se pasaba siempre la
   // organización entera, para cualquier rol.
   const scope = await centerScopeFor(session.user);
-  const { points, centers } = await getPostalCodeMapData(session.user.orgId, { centerIds: scope ?? undefined });
+  const [{ points, centers }, coverage] = await Promise.all([
+    getPostalCodeMapData(session.user.orgId, { centerIds: scope ?? undefined }),
+    // E11-05 · Con el MISMO ámbito de centro que la agregación: un pie que
+    // contara la organización entera mientras el plano cuenta un solo centro
+    // mentiría diciendo que falta gente que no debería salir.
+    getMapCoverage(session.user.orgId, { centerIds: scope ?? undefined }),
+  ]);
   const cities = groupBarriosByCity(points, centers);
 
   if (cities.length === 0) {
@@ -30,5 +37,5 @@ export default async function MapaBarriosPage() {
     );
   }
 
-  return <BarrioMapView cities={cities} roleLabel={ROLE_LABEL[session.user.role]} />;
+  return <BarrioMapView cities={cities} roleLabel={ROLE_LABEL[session.user.role]} coverage={coverage} />;
 }
