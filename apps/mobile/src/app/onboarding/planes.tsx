@@ -33,7 +33,10 @@ export default function PlansScreen() {
   // «Ampliar» desde Más. Con bono vivo hay que poder volver, y el copy cambia:
   // no se está eligiendo plan por primera vez, se está cambiando el que hay.
   const upgrading = state.status === "signedIn" && Boolean(state.user.member?.hasActiveMembership);
-  const products = (data?.products ?? []).filter((p) => p.visible);
+  // HU-ST-10/D-S3: el plan ONLINE no se enlaza a su compra desde la app (el
+  // servidor ya no se lo manda al socio; esto cubre a quien entre aquí con rol
+  // de dirección, que sí lo recibe para poder gestionarlo).
+  const products = (data?.products ?? []).filter((p) => p.visible && p.sellableInApp);
   const featured = products.find((p) => p.featured) ?? products[0];
   const rest = products.filter((p) => p.id !== featured?.id);
 

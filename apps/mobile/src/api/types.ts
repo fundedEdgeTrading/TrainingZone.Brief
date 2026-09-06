@@ -427,6 +427,14 @@ export type ProductItem = {
   planType: string;
   serviceKind: ServiceKind;
   visible: boolean;
+  /**
+   * HU-ST-10/D-S3: si este plan se puede comprar DESDE LA APP. El plan `ONLINE`
+   * es contenido digital consumido dentro de la app y cae bajo la compra dentro
+   * de la aplicación obligatoria de las tiendas, así que no se enlaza a su
+   * compra aquí — se vende en la web. Al socio no le llegan estos planes en el
+   * catálogo; dirección sí los ve, para poder gestionarlos.
+   */
+  sellableInApp: boolean;
   /** null para el socio: solo dirección ve cuánta gente tiene contratado el bono. */
   subscribersCount: number | null;
   featured: boolean;

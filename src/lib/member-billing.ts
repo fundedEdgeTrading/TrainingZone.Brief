@@ -59,6 +59,32 @@ export function resolveCheckoutMode(planType: PlanType): CheckoutModeDecision {
   return { mode: recurring ? "subscription" : "payment", bizumAvailable: !recurring };
 }
 
+/** HU-ST-10: mismo mensaje en las tres puertas de venta de la app. */
+export const PLAN_NOT_SELLABLE_IN_APP_ERROR =
+  "Este plan solo se contrata desde la web del centro.";
+
+/**
+ * HU-ST-10 / decisión D-S3 · ¿Se puede vender este plan DESDE LA APP NATIVA?
+ *
+ * `ONLINE` es contenido digital que se consume dentro de la propia app, así que
+ * cae potencialmente bajo la compra dentro de la aplicación obligatoria de App
+ * Store y Google Play: venderlo por Stripe Checkout es motivo de rechazo. Los
+ * planes presenciales —cuotas de sala, bonos de sesiones, entrenamiento
+ * personal— quedan exentos: son bienes y servicios del mundo físico, y las dos
+ * tiendas los permiten cobrar por fuera.
+ *
+ * La decisión de negocio ya está tomada: **el plan `ONLINE` no se vende desde
+ * la app**. Sigue existiendo y vendiéndose en la web, que no está sujeta a las
+ * reglas de las tiendas.
+ *
+ * Es una regla de SUPERFICIE, no de producto: `createMemberCheckout` no la
+ * aplica, porque la misma compra por web es perfectamente legítima. La aplican
+ * los endpoints de la app.
+ */
+export function isSellableInApp(planType: PlanType): boolean {
+  return planType !== "ONLINE";
+}
+
 /**
  * Crea o recupera el producto/precio espejo del plan en la cuenta CONECTADA
  * del gimnasio (RB-VENTA-002). Perezoso e idempotente: si ya hay
