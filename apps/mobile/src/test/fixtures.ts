@@ -20,6 +20,7 @@ import type {
   LoginOrganization,
   LoginResponse,
   MeResponse,
+  MembershipItem,
   NotificationItem,
   NotificationsResponse,
   PendingFeedback,
@@ -182,6 +183,26 @@ export function notificationItem(overrides: Partial<NotificationItem> = {}): Not
 
 export function notificationsResponse(overrides: Partial<NotificationsResponse> = {}): NotificationsResponse {
   return { notifications: [notificationItem()], ...overrides };
+}
+
+export function membershipItem(overrides: Partial<MembershipItem> = {}): MembershipItem {
+  return {
+    id: "membership-1",
+    planName: "Bono 8 sesiones",
+    serviceKind: "GROUP",
+    status: "ACTIVE",
+    unlimited: false,
+    remaining: 5,
+    total: 8,
+    used: 3,
+    priceCents: 8000,
+    centerName: "TRAINING ZONE La Jota",
+    renewsAt: "2026-04-16",
+    cancelAt: null,
+    pauseUntil: null,
+    isRecurring: false,
+    ...overrides,
+  };
 }
 
 export function productItem(overrides: Partial<ProductItem> = {}): ProductItem {
