@@ -70,6 +70,70 @@ export async function getHealthRecordsForMember({
 }
 
 /**
+ * Fotos de progreso y composición corporal (E10-02 · CN-02). El esquema ya lo
+ * decía —*"Dato Art. 9 RGPD: mismo tratamiento que HealthRecord"*— y el código
+ * lo incumplía: `members-queries.ts` cargaba `progressEntries` dentro del
+ * `include` de la ficha, así que recepción veía `bodyFatPct`, `visceralFatRating`,
+ * `bmi`, `metabolicAge`, la gráfica de evolución y las fotos frontal, de perfil
+ * y de espalda de cualquier socio de su ámbito, sin dejar rastro.
+ *
+ * A partir de aquí toda lectura de STAFF pasa por aquí: misma matriz de
+ * permisos que `HealthRecord` (recepción recibe `null`, nunca un error que
+ * revele si el socio existe), mismo aislamiento por organización y el mismo
+ * rastro append-only en `AuditLog`.
+ */
+export async function getProgressEntriesForMember({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+}) {
+  if (!canViewHealthData(actorRole)) return null;
+
+  const entries = await prisma.memberProgressEntry.findMany({
+    where: { memberId, member: { orgId } },
+    orderBy: { date: "desc" },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "MEMBER_PROGRESS_READ",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: { entryCount: entries.length },
+    },
+  });
+
+  return entries;
+}
+
+/**
+ * El propio socio leyendo SU evolución (portal y app). Entra por el mismo punto
+ * único —para que no quede ninguna lectura suelta de `MemberProgressEntry`—
+ * pero sin la matriz de roles, que aquí no aplica: el titular del dato no
+ * necesita autorización para ver lo suyo.
+ *
+ * Y sin entrada de auditoría, a propósito: `AuditLog` responde a "quién ha
+ * mirado los datos de este socio" (ADR-008), y anotar cada vez que el titular
+ * abre su propia pantalla llenaría de ruido justo el registro que tiene que
+ * poder leerse cuando se pregunte por un acceso ajeno.
+ */
+export async function getOwnProgressEntries({ memberId, orgId }: { memberId: string; orgId: string }) {
+  return prisma.memberProgressEntry.findMany({
+    where: { memberId, member: { orgId } },
+    orderBy: { date: "desc" },
+  });
+}
+
+/**
  * Salud del LEAD (F8/§2.1.b): mismo punto único, mismo tratamiento Art. 9. Al
  * convertir el lead (RB-LEAD-007) el registro solo cambia de FK — nunca se
  * recaptura — así que este único modelo (HealthRecord.leadId) cubre ambos casos.

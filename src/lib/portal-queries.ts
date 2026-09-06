@@ -14,28 +14,27 @@ import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDatePar
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { getOwnProgressEntries } from "@/lib/health-access";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
 // de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
 // mismos consentimientos (Art. 9 RGPD) que ya firmó en su onboarding.
 export async function getMemberEvolution(memberId: string, orgId: string) {
-  const member = await prisma.member.findUnique({
-    where: { id: memberId },
-    select: {
-      birthDate: true,
-      sex: true,
-      consentHealth: true,
-      consentImages: true,
-      progressEntries: { orderBy: { date: "desc" } },
-    },
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { birthDate: true, sex: true, consentHealth: true, consentImages: true },
   });
   if (!member) return null;
 
-  const view = await buildCompositionView(orgId, member.birthDate, member.progressEntries, member.sex);
+  // E10-02: también aquí la lectura pasa por health-access.ts, aunque el que
+  // mira sea el titular del dato. El punto único lo es o no lo es.
+  const progressEntries = await getOwnProgressEntries({ memberId, orgId });
+
+  const view = await buildCompositionView(orgId, member.birthDate, progressEntries, member.sex);
   return {
     consentHealth: member.consentHealth,
     consentImages: member.consentImages,
-    progressEntries: member.progressEntries,
+    progressEntries,
     ...view,
   };
 }

@@ -17,7 +17,7 @@ import { getCentersForUser } from "@/lib/agenda-queries";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { activeNotes, archivedNotes, highlightedNotes } from "@/lib/member-notes";
-import { getHealthRecordsForMember } from "@/lib/health-access";
+import { getHealthRecordsForMember, getProgressEntriesForMember } from "@/lib/health-access";
 import {
   HEALTH_STATUS_LABEL,
   HEALTH_STATUS_TONE,
@@ -265,6 +265,10 @@ export default async function MemberDetailPage({
   const [
     stats,
     healthRecords,
+    // E10-02: fotos de progreso y composición corporal son dato del Art. 9 y se
+    // leen por el punto único. `null` = este rol no las ve (recepción), y
+    // entonces el apartado "Evolución" no se renderiza siquiera.
+    progressEntries,
     notes,
     goalTemplates,
     centers,
@@ -276,6 +280,12 @@ export default async function MemberDetailPage({
   ] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
+      memberId: member.id,
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+    }),
+    getProgressEntriesForMember({
       memberId: member.id,
       orgId: session.user.orgId,
       actorUserId: session.user.id,
@@ -353,10 +363,12 @@ export default async function MemberDetailPage({
   // CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
   // serie para la gráfica de evolución, con el rango de referencia filtrado por sexo cuando
   // el centro lo tiene configurado.
+  const canSeeProgress = progressEntries !== null;
+  const progress = progressEntries ?? [];
   const { compositionTiles, compositionChartPoints, bodyFatChartPoints, measuredAt } = await buildCompositionView(
     session.user.orgId,
     member.birthDate,
-    member.progressEntries,
+    progress,
     member.sex
   );
 
@@ -504,7 +516,7 @@ export default async function MemberDetailPage({
   // se abra la ficha por donde se abra.
   const chronicRecords = healthRecords?.filter(isChronicPhase) ?? [];
   const pendingAssessments = assessments.filter((a) => !a.completedAt).length;
-  const lastEntry = member.progressEntries[0];
+  const lastEntry = progress[0];
 
   const planMeta =
     manageableSubscriptions.length === 0
@@ -1056,11 +1068,11 @@ export default async function MemberDetailPage({
             <SingleMetricChart points={bodyFatChartPoints} unit="%" />
           </div>
 
-          {member.progressEntries.length === 0 ? (
+          {progress.length === 0 ? (
             <p className="text-sm text-brand-muted">Sin registros de evolución todavía.</p>
           ) : (
             <>
-              {member.progressEntries.map((entry) => (
+              {progress.map((entry) => (
                 <div key={entry.id} className="border border-brand-border rounded-[14px] p-[18px_20px]">
                   <div className="flex items-center justify-between gap-3 flex-wrap mb-3.5">
                     <div className="font-bold text-[15px] text-brand-text tz-nums flex items-center gap-2">
@@ -1132,7 +1144,7 @@ export default async function MemberDetailPage({
                   </div>
                 </div>
               ))}
-              <ProgressComparator entries={member.progressEntries} />
+              <ProgressComparator entries={progress} />
             </>
           )}
         </>
@@ -1248,13 +1260,17 @@ export default async function MemberDetailPage({
     </div>
   );
 
-  const initial = sections.some((s) => s.key === initialSection)
+  // E10-02: recepción no ve la sección. No es un "acceso restringido" que
+  // enseñar — es que no se renderiza, y sus datos no han llegado siquiera.
+  const visibleSections = sections.filter((s) => s.key !== "evolucion" || canSeeProgress);
+
+  const initial = visibleSections.some((s) => s.key === initialSection)
     ? (initialSection as SectionKey)
     : undefined;
 
   return (
     <div className="tz-page flex flex-col gap-4">
-      <SectionRail sections={sections} initial={initial} header={header} />
+      <SectionRail sections={visibleSections} initial={initial} header={header} />
     </div>
   );
 }
