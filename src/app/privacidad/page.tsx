@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CONSENT_TEXT, CONSENT_VERSION } from "@/lib/consent";
+import { DECLARED_DATA_REGION, resolveDataRegion, THIRD_PARTY_PROCESSORS } from "@/lib/data-region";
 
 export const metadata = {
   title: "Privacidad",
@@ -13,6 +14,8 @@ export const metadata = {
  * firmada y esta página estaría mintiendo.
  */
 export default function PrivacyPage() {
+  const region = resolveDataRegion(DECLARED_DATA_REGION);
+
   return (
     <div className="min-h-dvh bg-tz-bone px-4 py-12">
       <div className="mx-auto w-full max-w-[680px] bg-white border border-tz-linen rounded-card shadow-pop p-8 sm:p-10 space-y-6">
@@ -64,6 +67,50 @@ export default function PrivacyPage() {
             >
               Darme de baja
             </Link>
+          </div>
+        </section>
+
+        {/* E10-07 · la región y la tabla de proveedores salen de
+            `lib/data-region.ts`, que es lo mismo que verifica el arranque.
+            Cambiar la región del despliegue sin tocar ese fichero para el
+            servidor; tocarlo cambia también este texto. */}
+        <section className="border-t border-tz-linen pt-6 space-y-3">
+          <h2 className="font-display font-extrabold text-lg uppercase tracking-[-.01em] text-tz-black">
+            Dónde están tus datos
+          </h2>
+          <p className="text-sm leading-relaxed text-brand-text-2">
+            La base de datos que guarda tu ficha, tus reservas y tus datos de salud está alojada en{" "}
+            <b>
+              {region ? `${region.label} (${region.country})` : DECLARED_DATA_REGION}
+            </b>
+            , dentro de la Unión Europea. El servidor comprueba esta región cada vez que arranca y se detiene si no
+            coincide, para que un cambio de infraestructura no pueda mover tus datos fuera de la UE en silencio.
+          </p>
+          <p className="text-sm leading-relaxed text-brand-text-2">
+            Para prestarte el servicio trabajamos con los siguientes proveedores, que tratan datos por cuenta de tu
+            centro y bajo contrato (art. 28 RGPD):
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px] text-left border-collapse">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-[0.08em] text-brand-muted">
+                  <th className="py-2 pr-3 font-bold">Proveedor</th>
+                  <th className="py-2 pr-3 font-bold">Para qué</th>
+                  <th className="py-2 pr-3 font-bold">Dónde</th>
+                  <th className="py-2 font-bold">Garantía de la transferencia</th>
+                </tr>
+              </thead>
+              <tbody className="text-brand-text-2">
+                {THIRD_PARTY_PROCESSORS.map((p) => (
+                  <tr key={p.name} className="border-t border-tz-linen align-top">
+                    <td className="py-2 pr-3 font-semibold text-tz-black">{p.name}</td>
+                    <td className="py-2 pr-3">{p.purpose}</td>
+                    <td className="py-2 pr-3">{p.location}</td>
+                    <td className="py-2">{p.transferMechanism}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
 
