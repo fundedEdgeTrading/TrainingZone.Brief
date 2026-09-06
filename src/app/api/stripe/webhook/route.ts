@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
 import { reconcilePlatformInvoicePaid, reconcilePlatformInvoicePaymentFailed } from "@/lib/platform-billing";
+import { claimStripeEvent, markStripeEventFailed, markStripeEventProcessed } from "@/lib/stripe-webhook-events";
 
 /**
  * F12/RB-PAGO-002 + Parte A.4/C.4. Un único endpoint para los dos planos de
@@ -45,27 +46,32 @@ export async function POST(req: NextRequest) {
   }
   const { event } = verified;
 
-  if (verified.source === "connect") {
-    const result = await handleConnectEvent(event);
-    if (!result.ok) {
-      // 500 a propósito, igual que en `handlePlatformEvent`: Stripe reintenta
-      // con backoff. El caso real es el `invoice.paid` de una suscripción
-      // recién creada llegando antes que el `customer.subscription.created`
-      // que la crea localmente (Stripe no garantiza el orden) — antes esto se
-      // tragaba con 200 y el evento se daba por consumido para siempre.
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
-    }
-  } else {
-    const result = await handlePlatformEvent(event);
-    if (!result.ok) {
-      // 500 a propósito: Stripe reintenta con backoff. Devolver 200 aquí daba
-      // el evento por consumido, así que un alta que no llegara a completarse
-      // dejaba a un cliente que YA ha pagado sin organización y sin que nadie
-      // lo volviera a intentar.
-      return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
-    }
+  // HU-ST-05/RB-PAGO-023: Stripe entrega AL MENOS una vez. La marca por
+  // `event.id` es la única idempotencia transversal; sin ella cada
+  // reconciliador tenía que defenderse solo, y los que no lo hacían duplicaban.
+  const claim = await claimStripeEvent(event);
+  if (!claim.claimed) {
+    // 200: para Stripe está consumido. Repetirlo no aporta nada y reprocesarlo
+    // sí puede escribir dinero dos veces.
+    return NextResponse.json({ ok: true, deduplicated: claim.reason });
   }
 
+  const result =
+    verified.source === "connect" ? await handleConnectEvent(event) : await handlePlatformEvent(event);
+
+  if (!result.ok) {
+    // 500 a propósito: Stripe reintenta con backoff, y el evento NO queda
+    // marcado como procesado. El caso real en Connect es el `invoice.paid` de
+    // una suscripción recién creada llegando antes que el
+    // `customer.subscription.created` que la crea localmente (Stripe no
+    // garantiza el orden); en plataforma, un alta que no llega a completarse y
+    // dejaba a un cliente que YA ha pagado sin organización. Antes ambos se
+    // tragaban con 200 y el evento se daba por consumido para siempre.
+    await markStripeEventFailed(event.id, result.error);
+    return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
+  }
+
+  await markStripeEventProcessed(event.id);
   return NextResponse.json({ ok: true });
 }
 
