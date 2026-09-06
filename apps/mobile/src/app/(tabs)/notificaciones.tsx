@@ -19,6 +19,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { formatShortDate } from "@/utils/format";
 import type { NotificationItem } from "@/api/types";
+import { notificationRoute } from "@/notification-routes";
 
 /**
  * Avisos, rediseñados alrededor de una idea: cada aviso lleva LA ACCIÓN QUE LO
@@ -39,25 +40,34 @@ type Resolution = { label: string; icon: IconName; accent: "gold" | "warning" | 
  * un aviso sobre una reserva se resuelve yendo a la reserva, venga de la regla
  * que venga.
  */
+const RESOLUTION_META: Record<string, { label: string; icon: IconName; accent: Resolution["accent"] }> = {
+  Booking: { label: "Ver sesión", icon: "clock", accent: "gold" },
+  ClassSession: { label: "Ver sesión", icon: "clock", accent: "gold" },
+  Subscription: { label: "Ver mi bono", icon: "wallet", accent: "warning" },
+  Payment: { label: "Ver mi bono", icon: "wallet", accent: "warning" },
+  Lead: { label: "Abrir lead", icon: "users", accent: "gold" },
+  Member: { label: "Ver socio", icon: "user", accent: "gold" },
+  MemberNoShowStreak: { label: "Ver socio", icon: "user", accent: "gold" },
+};
+
+/** E12-09: el destino sale de la tabla única (notification-routes.ts); aquí solo se decide cómo se rotula el botón. */
 function resolutionFor(notification: NotificationItem, isMember: boolean): Resolution | null {
   const entity = notification.entityType;
+  const route = notificationRoute(entity, notification.entityId, isMember);
 
-  if (entity === "Booking" || entity === "ClassSession") {
-    return isMember
-      ? { label: "Ver sesión", icon: "clock", accent: "gold", go: () => router.push("/sesiones") }
-      : { label: "Abrir brief", icon: "clipboard", accent: "gold", go: () => router.push("/panel") };
+  if (route) {
+    // Al entrenador que dirige el brief se le rotula distinto que "ver
+    // sesión" del socio, aunque el destino de staff (Booking/ClassSession →
+    // /panel) sea el mismo para cualquier rol de staff.
+    const meta =
+      !isMember && (entity === "Booking" || entity === "ClassSession")
+        ? { label: "Abrir brief", icon: "clipboard" as IconName, accent: "gold" as const }
+        : entity
+          ? RESOLUTION_META[entity]
+          : undefined;
+    if (meta) return { ...meta, go: () => router.push({ pathname: route.path, params: route.params }) };
   }
-  if (entity === "Subscription" || entity === "Payment") {
-    return isMember
-      ? { label: "Ver mi bono", icon: "wallet", accent: "warning", go: () => router.push("/consumo") }
-      : null;
-  }
-  if (entity === "Lead") {
-    return { label: "Abrir lead", icon: "users", accent: "gold", go: () => router.push("/leads") };
-  }
-  if (entity === "Member") {
-    return isMember ? null : { label: "Ver socio", icon: "user", accent: "gold", go: () => router.push("/mis-socios") };
-  }
+
   if (notification.kind === "TASK") {
     return { label: "Ver tarea", icon: "clipboard", accent: "warning", go: () => router.push("/tareas") };
   }

@@ -92,7 +92,7 @@ export default function Header({
             siempre lo mismo y no se podía cambiar. El panel de control tiene
             ahora su propio selector de centro en la barra de contexto, y ese
             sí filtra de verdad. */}
-        <NotificationBell notifications={notifications} />
+        <NotificationBell notifications={notifications} isMember={isMember} />
         {isMember ? (
           <AccountMenuTrigger id="header-account" placement="down">
             {() => (

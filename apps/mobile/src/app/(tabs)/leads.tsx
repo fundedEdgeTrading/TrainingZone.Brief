@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Linking, Pressable, RefreshControl, Text, View, StyleSheet } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { goBack } from "@/utils/navigation";
 import { useLeads, useUpdateLead } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
@@ -50,6 +50,10 @@ export default function LeadsScreen() {
   const [stage, setStage] = useState<LeadStage | null>(null);
   const { data, isLoading, isError, refetch, isRefetching } = useLeads(stage);
   const updateLead = useUpdateLead();
+  // E12-09: el aviso de un lead concreto llega con su id (`?openId=`) en vez
+  // de descartarlo — sin pantalla de detalle propia, resaltar su tarjeta es
+  // lo más cerca que se puede llegar de "abrir ese lead".
+  const { openId } = useLocalSearchParams<{ openId?: string }>();
 
   async function call(lead: LeadItem) {
     // Registrar el contacto va unido a llamar: si fueran dos gestos, el segundo
@@ -143,7 +147,7 @@ export default function LeadsScreen() {
       ) : (
         data.leads.map((lead, index) => (
           <FadeInUp key={lead.id} delay={stagger(index)}>
-            <Card style={{ gap: 12 }}>
+            <Card style={{ gap: 12 }} tone={lead.id === openId ? "accent" : "default"}>
               <View style={styles.leadHeader}>
                 <Avatar name={lead.name} size={36} />
                 <View style={{ flex: 1, gap: 2 }}>
