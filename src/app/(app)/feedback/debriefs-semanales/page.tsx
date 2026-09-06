@@ -7,6 +7,7 @@ import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card } from "@/components/kpi-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { requireFeature } from "@/lib/entitlements";
 
 const FEELING_ICON = { green: "🟢", yellow: "🟡", red: "🔴" } as const;
 
@@ -16,6 +17,9 @@ export default async function DebriefsSemanalesPage({
   searchParams: Promise<{ trainerId?: string; week?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // E6-02: la ruta hija hereda el gate de su padre. `/feedback` redirigía a
+  // `/planes` con plan Esencial y esta respondía 200 escribiendo la URL.
+  await requireFeature("feedback_direccion");
   const orgId = session.user.orgId;
   const params = await searchParams;
 

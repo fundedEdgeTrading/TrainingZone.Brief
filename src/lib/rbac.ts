@@ -88,10 +88,28 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   "/audit": "exportaciones",
 };
 
+/**
+ * Funcionalidad que cubre una ruta, CON HERENCIA a las rutas hijas (E6-02).
+ *
+ * El mapa declaraba `/brief` y `/feedback`, pero `brief/[id]` y `feedback/[id]`
+ * no llamaban a la guarda: con plan Esencial, `/brief` redirigía a `/planes` y
+ * `/brief/<sessionId>` —el enlace que pinta la propia agenda— respondía 200 con
+ * el semáforo completo. Heredar por prefijo es lo que hace que añadir una hija
+ * nueva no vuelva a abrir el agujero.
+ */
+export function featureForRoute(pathname: string): PlatformFeature | undefined {
+  let best: { key: string; feature: PlatformFeature } | undefined;
+  for (const [key, feature] of Object.entries(FEATURE_BY_ROUTE)) {
+    if (pathname !== key && !pathname.startsWith(`${key}/`)) continue;
+    if (!best || key.length > best.key.length) best = { key, feature };
+  }
+  return best?.feature;
+}
+
 /** Aplica el mapa anterior a una navegación ya resuelta por rol. */
 export function withFeatureFlags(items: NavItem[]): NavItem[] {
   return items.map((item) => {
-    const feature = FEATURE_BY_ROUTE[item.href];
+    const feature = featureForRoute(item.href);
     return feature ? { ...item, feature } : item;
   });
 }
@@ -375,7 +393,7 @@ export function defaultRouteForRole(role: Role): string {
   // evita redirigir a una ruta sin permiso (y su bucle) y también aterrizar a
   // un cliente de tier bajo en un módulo que no ha comprado.
   const items = NAV_BY_ROLE[role];
-  const alwaysAvailable = items.find((item) => !FEATURE_BY_ROUTE[item.href]);
+  const alwaysAvailable = items.find((item) => !featureForRoute(item.href));
   return alwaysAvailable?.href ?? items[0]?.href ?? "/login";
 }
 
