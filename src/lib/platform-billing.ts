@@ -1,4 +1,6 @@
+import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import { resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
 import { getStripeClient, isPlatformStripeConfigured } from "@/lib/stripe";
 import {
   fundadorEnabled,
@@ -100,3 +102,55 @@ export async function createPlatformCheckoutSession(orgId: string, planCode: str
   return { ok: true, url: checkoutSession.url };
 }
 
+
+// ---------- Webhook de PLATAFORMA: conciliación de la licencia (HU-ST-02) ----------
+// Lo llama exclusivamente `handlePlatformEvent` del webhook. Vivía en línea
+// dentro de la ruta y leía `invoice.subscription`, un campo que la API vigente
+// ya no entrega: el plano 1 llevaba desde la actualización del SDK sin renovar
+// ni marcar impagos. Aquí abajo se puede probar sin levantar el endpoint.
+
+/**
+ * `invoice.paid` de plataforma: la organización queda ACTIVE y su
+ * `currentPeriodEnd` se mueve al fin de periodo de la factura.
+ *
+ * Idempotente por construcción: escribe un estado final, no un incremento, así
+ * que una reentrega del mismo evento deja exactamente lo mismo.
+ */
+export async function reconcilePlatformInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
+  const subscriptionId = resolveInvoiceSubscriptionId(invoice);
+  if (!subscriptionId) return;
+
+  const org = await prisma.organization.findUnique({
+    where: { platformStripeSubscriptionId: subscriptionId },
+    select: { id: true },
+  });
+  if (!org) return;
+
+  const periodEnd = resolveInvoicePeriodEnd(invoice);
+  await prisma.organization.update({
+    where: { id: org.id },
+    data: {
+      platformStatus: "ACTIVE",
+      platformStatusSince: new Date(),
+      ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
+    },
+  });
+}
+
+/** `invoice.payment_failed` de plataforma: la licencia pasa a PAST_DUE. */
+export async function reconcilePlatformInvoicePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
+  const subscriptionId = resolveInvoiceSubscriptionId(invoice);
+  if (!subscriptionId) return;
+
+  const org = await prisma.organization.findUnique({
+    where: { platformStripeSubscriptionId: subscriptionId },
+    select: { id: true, platformStatus: true },
+  });
+  if (!org) return;
+  if (org.platformStatus === "PAST_DUE") return; // reentrega: ya está marcada
+
+  await prisma.organization.update({
+    where: { id: org.id },
+    data: { platformStatus: "PAST_DUE", platformStatusSince: new Date() },
+  });
+}

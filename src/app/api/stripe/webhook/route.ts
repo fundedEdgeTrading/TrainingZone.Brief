@@ -13,6 +13,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { refreshStripeAccountStatus } from "@/lib/stripe-connect";
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
+import { reconcilePlatformInvoicePaid, reconcilePlatformInvoicePaymentFailed } from "@/lib/platform-billing";
 
 /**
  * F12/RB-PAGO-002 + Parte A.4/C.4. Un único endpoint para los dos planos de
@@ -160,38 +161,14 @@ async function handlePlatformEvent(event: Stripe.Event): Promise<PlatformEventRe
       break;
     }
     case "invoice.paid": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId =
-        typeof (invoice as { subscription?: string | Stripe.Subscription | null }).subscription === "string"
-          ? (invoice as { subscription?: string }).subscription
-          : (invoice as { subscription?: Stripe.Subscription | null }).subscription?.id ?? null;
-      if (!subscriptionId) break;
-
-      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscriptionId } });
-      if (!org) break;
-
-      const periodEnd = invoice.lines?.data?.[0]?.period?.end;
-      await prisma.organization.update({
-        where: { id: org.id },
-        data: {
-          platformStatus: "ACTIVE",
-          currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : undefined,
-        },
-      });
+      // HU-ST-02: `Invoice.subscription` ya no existe en la API vigente. La
+      // resolución de los dos shapes vive en `lib/stripe-invoice.ts`, compartida
+      // con el plano 2.
+      await reconcilePlatformInvoicePaid(event.data.object as Stripe.Invoice);
       break;
     }
     case "invoice.payment_failed": {
-      const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId =
-        typeof (invoice as { subscription?: string | Stripe.Subscription | null }).subscription === "string"
-          ? (invoice as { subscription?: string }).subscription
-          : (invoice as { subscription?: Stripe.Subscription | null }).subscription?.id ?? null;
-      if (!subscriptionId) break;
-
-      const org = await prisma.organization.findUnique({ where: { platformStripeSubscriptionId: subscriptionId } });
-      if (!org) break;
-
-      await prisma.organization.update({ where: { id: org.id }, data: { platformStatus: "PAST_DUE" } });
+      await reconcilePlatformInvoicePaymentFailed(event.data.object as Stripe.Invoice);
       break;
     }
     case "customer.subscription.deleted": {

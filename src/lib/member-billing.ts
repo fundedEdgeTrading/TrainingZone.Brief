@@ -10,6 +10,10 @@ import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import type { PlanType, SubscriptionStatus } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 import { absoluteUrl, publicOrigin } from "@/lib/site";
+// HU-ST-02: la resolución del id de suscripción de una factura es la misma para
+// los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
+// shape legado.
+import { resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -305,26 +309,6 @@ function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): Subscr
   }
 }
 
-/**
- * `Stripe.Invoice.subscription` ya no existe como campo de primer nivel en la
- * versión de API que tipa este SDK (se movió a
- * `invoice.parent.subscription_details.subscription`), pero el webhook de
- * plataforma (`handlePlatformEvent`, sin tocar en esta fase) sigue asumiendo
- * el shape legado por si la cuenta de Stripe está pinneada a una versión
- * anterior. Se comprueban ambos shapes por robustez.
- */
-function resolveInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
-  const legacy = (invoice as unknown as { subscription?: string | Stripe.Subscription | null }).subscription;
-  if (typeof legacy === "string") return legacy;
-  if (legacy && typeof legacy === "object") return legacy.id;
-
-  const viaParent = invoice.parent?.subscription_details?.subscription;
-  if (typeof viaParent === "string") return viaParent;
-  if (viaParent && typeof viaParent === "object") return viaParent.id;
-
-  return null;
-}
-
 /** `customer.subscription.created` / `.updated`. */
 export async function reconcileMemberSubscriptionUpserted(orgId: string, subscription: Stripe.Subscription) {
   const status = mapStripeSubscriptionStatus(subscription.status);
@@ -420,7 +404,7 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
   }
   if (subscription.member.orgId !== orgId) return { ok: true }; // aislamiento: no es de esta org, no es un fallo
 
-  const periodEnd = invoice.lines?.data?.[0]?.period?.end;
+  const periodEnd = resolveInvoicePeriodEnd(invoice);
 
   if (already) {
     // El recibo ya existe del intento fallido: se actualiza en vez de crear un
@@ -450,7 +434,7 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
 
   await prisma.subscription.update({
     where: { id: subscription.id },
-    data: { status: "ACTIVE", ...(periodEnd ? { endDate: new Date(periodEnd * 1000) } : {}) },
+    data: { status: "ACTIVE", ...(periodEnd ? { endDate: periodEnd } : {}) },
   });
 
   if (subscription.member.state === "DELINQUENT") {
