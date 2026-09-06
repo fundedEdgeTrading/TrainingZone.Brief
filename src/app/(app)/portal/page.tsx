@@ -19,6 +19,8 @@ import { AnnouncementsBanner } from "./announcements-banner";
 import { PendingFeedbackBanner } from "./pending-feedback-banner";
 import { BonoAndNextSession } from "./bono-and-next-session";
 import { pickNextLiveBooking } from "./next-session";
+import { SecondaryProfileBanner } from "./secondary-profile-banner";
+import { SECONDARY_PROFILE_FIELDS, missingSecondaryProfileFields } from "@/lib/member-first-session";
 
 const LIGHT_COLOR: Record<string, string> = { RED: "var(--color-critical)", AMBER: "var(--color-warning)", GREEN: "var(--color-good)" };
 
@@ -57,10 +59,13 @@ export default async function PortalHomePage() {
     }))
   );
   const nextBooking = pickNextLiveBooking(upcomingBookings);
+  const missingSecondary = missingSecondaryProfileFields(member);
+  const missingSecondaryLabels = SECONDARY_PROFILE_FIELDS.filter((f) => missingSecondary.includes(f.key)).map((f) => f.label);
 
   return (
     <div className="max-w-[1120px] mx-auto flex flex-col gap-[18px]">
       <PendingFeedbackBanner hasPending={!!pendingFeedback} />
+      <SecondaryProfileBanner memberId={member.id} missing={missingSecondary} labels={missingSecondaryLabels} />
 
       <div
         className={`grid gap-4 tz-fade-up ${

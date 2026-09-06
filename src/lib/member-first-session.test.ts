@@ -3,26 +3,24 @@ import assert from "node:assert/strict";
 import {
   ESSENTIAL_PROFILE_FIELDS,
   missingEssentialProfileFields,
+  missingSecondaryProfileFields,
+  needsHealthDeclaration,
   type EssentialProfileSource,
+  type SecondaryProfileSource,
 } from "./member-first-session";
 import { memberInitialPartSchema, initialAssessmentSchema } from "./assessments/schemas";
 
 /**
  * El muro de la primera sesión decide si un socio entra o se queda en la
  * puerta, así que lo que se prueba aquí es que no se pase de largo (dejar
- * entrar a alguien sin CP rompe el mapa de barrios en silencio) ni se pase de
- * frenada (bloquear a un socio que ya lo tiene todo es un bug muy caro: el
- * socio no puede hacer nada al respecto salvo llamar al centro).
+ * entrar a alguien sin edad ni contacto de emergencia) ni se pase de frenada
+ * (E5-08: bloquear por el CP o el domicilio, que no hacen falta para
+ * entrenar, era el bug — ahora eso se pide después, sin bloquear).
  */
 
 /** Socio con todo relleno; cada test rompe solo lo que quiere probar. */
 const COMPLETO: EssentialProfileSource = {
   birthDate: new Date("1989-02-06"),
-  phone: "+34655580450",
-  postalCode: "50007",
-  address: "Calle Mayor 1",
-  city: "Zaragoza",
-  province: "Zaragoza",
   emergencyContact: "Ana — 600111222",
 };
 
@@ -43,30 +41,36 @@ test("detecta cada campo esencial que falte", () => {
 
 test("una cadena en blanco no cuenta como dato", () => {
   // La importación escribe "" en el email cuando el CSV no lo trae, y el mismo
-  // patrón puede llegar a cualquier columna de texto: un espacio no es un CP.
-  assert.deepEqual(missingEssentialProfileFields({ ...COMPLETO, postalCode: "" }), ["postalCode"]);
-  assert.deepEqual(missingEssentialProfileFields({ ...COMPLETO, city: "   " }), ["city"]);
+  // patrón puede llegar a cualquier columna de texto: un espacio no es un dato.
+  assert.deepEqual(missingEssentialProfileFields({ ...COMPLETO, emergencyContact: "" }), ["emergencyContact"]);
+  assert.deepEqual(missingEssentialProfileFields({ ...COMPLETO, emergencyContact: "   " }), ["emergencyContact"]);
 });
 
-test("un socio recién importado del CSV de referencia debe los datos de domicilio", () => {
+test("el CP, el domicilio y el teléfono ya NO bloquean el muro (E5-08)", () => {
   // Retrato de una fila real del export de MyWellness: trae nombre, email,
-  // móvil y fecha de nacimiento, y deja en blanco todo el domicilio.
+  // móvil y fecha de nacimiento, y deja en blanco todo el domicilio — antes
+  // eso bloqueaba la reserva; ahora entra igual.
   const importado: EssentialProfileSource = {
     birthDate: new Date("1987-10-30"),
+    emergencyContact: "Padre — 600111222",
+  };
+  assert.deepEqual(missingEssentialProfileFields(importado), []);
+});
+
+test("el teléfono ya dado en el checkout no se vuelve a pedir como pendiente", () => {
+  const conTelefonoDelCheckout: SecondaryProfileSource = {
     phone: "+34610024105",
     postalCode: null,
     address: null,
     city: null,
     province: null,
-    emergencyContact: null,
   };
-  assert.deepEqual(missingEssentialProfileFields(importado), [
-    "postalCode",
-    "address",
-    "city",
-    "province",
-    "emergencyContact",
-  ]);
+  assert.deepEqual(missingSecondaryProfileFields(conTelefonoDelCheckout), ["postalCode", "address", "city", "province"]);
+});
+
+test("sin declaración de salud, el muro sigue pidiéndola", () => {
+  assert.equal(needsHealthDeclaration({ consentHealth: false }), true);
+  assert.equal(needsHealthDeclaration({ consentHealth: true }), false);
 });
 
 /**
