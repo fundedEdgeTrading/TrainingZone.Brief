@@ -223,22 +223,6 @@ export default async function PortalMembresiaPage({
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/[.06] border border-white/[.16] rounded-2xl px-4 py-3.5">
-              <div className="text-[10px] font-bold tracking-[.1em] uppercase text-brand-muted">Adherencia</div>
-              <div className="font-display font-extrabold text-2xl text-white mt-1.5 tabular-nums">
-                {adherence.pct ?? "—"}
-                {adherence.pct != null && <span className="text-sm text-brand-muted-2">%</span>}
-              </div>
-            </div>
-            <div className="bg-white/[.06] border border-white/[.16] rounded-2xl px-4 py-3.5">
-              <div className="text-[10px] font-bold tracking-[.1em] uppercase text-brand-muted">Racha</div>
-              <div className="font-display font-extrabold text-2xl text-white mt-1.5 tabular-nums">
-                {adherence.streakWeeks}
-                <span className="text-sm text-brand-muted-2"> sem</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
