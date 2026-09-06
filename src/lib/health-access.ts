@@ -564,6 +564,83 @@ export async function getScreeningDraftForMember({
   };
 }
 
+/**
+ * Traza de la apertura de un mesociclo con criterios clínicos (E3-18 · RB-IA-005).
+ *
+ * `Mesocycle.safetyCriteria` y `Mesocycle.aiConversation` —que contiene el
+ * briefing íntegro con la sección "Screening clínico"— se leían sin pasar por
+ * aquí y sin escribir en `AuditLog`. El control por rol SÍ coincidía; lo que se
+ * perdía era la traza, que es justo lo que el resto del sistema sí tiene.
+ *
+ * Esta historia añade TRAZA, NO ACCESO: los permisos no cambian, y por eso no
+ * hay aquí ninguna decisión de autorización que la pantalla no tomara ya.
+ */
+export async function auditMesocycleOpened({
+  mesocycleId,
+  memberId,
+  orgId,
+  actorUserId,
+  clinicalCriteria,
+  hasAiConversation,
+}: {
+  mesocycleId: string;
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  clinicalCriteria: number;
+  hasAiConversation: boolean;
+}): Promise<void> {
+  // Un mesociclo sin un solo criterio clínico ni conversación guardada no lleva
+  // dato del Art. 9: anotarlo llenaría el registro de ruido y taparía lo que sí
+  // importa.
+  if (clinicalCriteria === 0 && !hasAiConversation) return;
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "MESOCYCLE_CLINICAL_OPENED",
+      entityType: "Mesocycle",
+      entityId: mesocycleId,
+      memberId,
+      metadata: { clinicalCriteria, hasAiConversation },
+    },
+  });
+}
+
+/**
+ * Lectura de `SessionDebrief.pain` fuera del entrenador de la sesión (E3-18).
+ * El dolor declarado es dato de salud y hasta ahora salía en la media del
+ * debrief (`feedbackAvg`) sin dejar rastro de quién lo miraba.
+ */
+export async function auditSessionPainRead({
+  memberId,
+  orgId,
+  actorUserId,
+  source,
+  debriefCount,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  source: string;
+  debriefCount: number;
+}): Promise<void> {
+  if (debriefCount === 0) return;
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "SESSION_DEBRIEF_PAIN_READ",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: { source, debriefCount },
+    },
+  });
+}
+
 export type ScreeningReconciliation = {
   /** Lesiones declaradas HOY, tal y como salen del bloque de zonas de dolor. */
   injuries: { zoneCode: InjuryZone; side: Laterality | null; description: string; severity: HealthSeverity }[];

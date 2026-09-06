@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { canManageMembers } from "@/lib/rbac";
 import { isMemberInScope } from "@/lib/center-scope";
 import { getMemberCalendar } from "../../../_lib/calendar";
+import { auditSessionPainRead } from "@/lib/health-access";
 import { requireApiRole } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
 
@@ -28,5 +29,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!inScope) return apiError("No se ha encontrado el socio.", 404);
 
   const calendar = await getMemberCalendar(member.id, req.nextUrl.searchParams.get("month"), true);
+
+  // E3-18 · `feedbackAvg` incluye `SessionDebrief.pain`, que es dato de salud.
+  // Quien lo mira aquí no es el entrenador de la sesión sino dirección o
+  // recepción sobre la ficha de un socio: deja traza, igual que el resto.
+  await auditSessionPainRead({
+    memberId: member.id,
+    orgId: claims.orgId,
+    actorUserId: claims.sub,
+    source: "MEMBER_CALENDAR",
+    debriefCount: calendar.entries.filter((e) => e.feedbackAvg != null).length,
+  });
+
   return apiOk(calendar);
 }

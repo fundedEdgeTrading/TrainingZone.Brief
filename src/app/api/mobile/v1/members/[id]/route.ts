@@ -12,6 +12,7 @@ import { canManageMembers } from "@/lib/rbac";
 import { isMemberInScope } from "@/lib/center-scope";
 import { formatDateParam } from "@/lib/date-utils";
 import { debriefAverage } from "../../_lib/calendar";
+import { auditSessionPainRead } from "@/lib/health-access";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
 
@@ -51,6 +52,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     feedbackAvg: debriefAverage(b.debrief),
     startsAtMs: b.occurrenceDate.getTime(),
   }));
+
+  // E3-18 · misma razón que en el calendario: `feedbackAvg` lleva dentro el
+  // dolor declarado, y esta ficha la abre dirección o recepción, no el
+  // entrenador de la sesión.
+  await auditSessionPainRead({
+    memberId: member.id,
+    orgId: claims.orgId,
+    actorUserId: claims.sub,
+    source: "MEMBER_DETAIL",
+    debriefCount: bookings.filter((b) => b.feedbackAvg != null).length,
+  });
 
   const booked = member.bookings.filter((b) => b.status === "BOOKED" || b.status === "WAITLISTED").length;
   const totalSessions = stats.attended + stats.noShow;

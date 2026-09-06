@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { MesocyclePlan } from "@/lib/ai/mesocycle-schema";
 import type { MesocycleConversation } from "@/lib/ai/mesocycle-generator";
 import { approvalBlocker } from "@/lib/mesocycle-schedule";
@@ -197,7 +197,18 @@ export async function approveMesocycle(
 
   const { count } = await prisma.mesocycle.updateMany({
     where: { id: mesocycleId, orgId, status: "DRAFT" },
-    data: { status: "APPROVED", approvedAt: new Date(), approvedByUserId, startDate: effectiveStart },
+    data: {
+      status: "APPROVED",
+      approvedAt: new Date(),
+      approvedByUserId,
+      startDate: effectiveStart,
+      // E3-18 · RB-IA-005: al aprobar se purga `aiConversation`. Contiene el
+      // briefing íntegro con la sección "Screening clínico" — una copia del dato
+      // del Art. 9 fuera del punto único de lectura. Lo que se conserva es lo
+      // que hace falta: el plan aprobado (el árbol de fases) y la marca de
+      // revisión humana (`approvedAt` + `approvedByUserId`).
+      aiConversation: Prisma.DbNull,
+    },
   });
   return count === 0 ? { ok: false, error: "El mesociclo ya no está en borrador." } : { ok: true };
 }
