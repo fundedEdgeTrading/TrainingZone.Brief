@@ -11,6 +11,7 @@ import {
   type DemoMemberCheckoutIntent,
 } from "@/lib/demo-member-checkout";
 import { createMemberCheckout } from "@/lib/member-billing";
+import { ledgerBalance, ledgerReconciles } from "@/lib/session-ledger";
 
 /**
  * HU-ST-11 / RB-PAGO-024 · `/demo-checkout` sustituía el checkout de LICENCIA
@@ -62,6 +63,7 @@ async function cleanup() {
   const orgs = await prisma.organization.findMany({ where: { slug: { startsWith: SLUG } }, select: { id: true } });
   for (const org of orgs) {
     await prisma.payment.deleteMany({ where: { orgId: org.id } });
+    await prisma.sessionLedger.deleteMany({ where: { orgId: org.id } });
     await prisma.subscription.deleteMany({ where: { member: { orgId: org.id } } });
     await prisma.member.deleteMany({ where: { orgId: org.id } });
     await prisma.membershipPlan.deleteMany({ where: { orgId: org.id } });
@@ -108,6 +110,28 @@ test("confirmar deja lo mismo que dejaría el webhook: bono con su saldo y recib
   assert.equal(payments.length, 1);
   assert.equal(payments[0].status, "PAID");
   assert.match(payments[0].notes ?? "", /DEMOSTRACIÓN/, "el recibo tiene que decir que no hubo cobro");
+});
+
+test("la compra de demostración deja el libro mayor cuadrado (E2-15)", async () => {
+  // Invariante del trimestre: ninguna operación mueve `sessionsRemaining` sin
+  // escribir en SessionLedger. El alta por esta vía no es una excepción.
+  const fx = await fixture("libro");
+  await confirmDemoMemberCheckout(generateDemoMemberCheckoutToken(intentFor(fx)));
+
+  const subscription = await prisma.subscription.findFirstOrThrow({ where: { memberId: fx.memberId } });
+  const rows = await prisma.sessionLedger.findMany({
+    where: { subscriptionId: subscription.id },
+    select: { delta: true, reason: true },
+  });
+
+  assert.equal(rows.length, 1, "el alta es el primer movimiento del bono");
+  assert.equal(rows[0].reason, "PURCHASE");
+  assert.equal(ledgerBalance(rows), 10);
+  assert.equal(
+    ledgerReconciles(rows, subscription.sessionsRemaining),
+    true,
+    "la suma de deltas tiene que dar el saldo del bono"
+  );
 });
 
 test("recargar la confirmación no regala un segundo bono", async () => {

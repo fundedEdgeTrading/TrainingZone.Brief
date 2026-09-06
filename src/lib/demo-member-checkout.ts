@@ -182,6 +182,10 @@ export async function confirmDemoMemberCheckout(token: string): Promise<ConfirmD
     memberId: member.id,
     centerId: center.id,
     plan,
+    // E2-15: quien vendió firma el asiento de apertura del libro mayor. En una
+    // compra desde el portal no hay nadie del centro detrás y queda sin firma,
+    // igual que en el cobro real por webhook.
+    actorUserId: intent.soldByUserId ?? null,
   });
 
   await createPaymentWithReceipt({
