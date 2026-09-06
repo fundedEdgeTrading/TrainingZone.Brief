@@ -29,7 +29,7 @@ export type ApiRoleResult =
  * la web. `PLATFORM_ADMIN` queda exento (soporte de Apta), igual que en web.
  * Sin esto, suspender a un gimnasio por impago no le cortaba la app.
  */
-async function assertPlatformOperational(orgId: string, role: Role): Promise<NextResponse | null> {
+export async function assertPlatformOperational(orgId: string, role: Role): Promise<NextResponse | null> {
   if (role === "PLATFORM_ADMIN") return null;
   const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { platformStatus: true } });
   if (org && !isPlatformOperational(org.platformStatus)) {
@@ -42,6 +42,22 @@ export async function requireApiRole(req: Request, allowed: Role[]): Promise<Api
   const claims = await requireApiSession(req);
   if (!claims) return { ok: false, response: apiError("No autenticado.", 401) };
   if (!allowed.includes(claims.role)) return { ok: false, response: apiError("No autorizado.", 403) };
+  const platformBlock = await assertPlatformOperational(claims.orgId, claims.role);
+  if (platformBlock) return { ok: false, response: platformBlock };
+  return { ok: true, claims };
+}
+
+/**
+ * E12-08: mismo gate que `requireApiRole`, pero sin restringir por rol —
+ * para las rutas que valen para cualquier rol autenticado (`/me`,
+ * `/notifications*`) y que hasta ahora llamaban a `requireApiSession` a
+ * secas, sin pasar por `assertPlatformOperational`. Una organización
+ * suspendida por impago seguía sirviendo esas dos rutas desde la app,
+ * aunque el resto del muro de plataforma ya la bloqueara.
+ */
+export async function requireApiActiveSession(req: Request): Promise<ApiRoleResult> {
+  const claims = await requireApiSession(req);
+  if (!claims) return { ok: false, response: apiError("No autenticado.", 401) };
   const platformBlock = await assertPlatformOperational(claims.orgId, claims.role);
   if (platformBlock) return { ok: false, response: platformBlock };
   return { ok: true, claims };
