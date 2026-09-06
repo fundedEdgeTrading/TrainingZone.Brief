@@ -2,9 +2,36 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import AptaLogo from "@/components/apta-logo";
 import { getPublicLeadFormContext } from "@/lib/public-lead-queries";
+import { GENERIC_CENTER_METADATA, centerLeadFormMetadata } from "@/lib/public-center-seo";
 import { PublicLeadForm } from "./public-lead-form";
 
-export const metadata: Metadata = { title: "Únete · Training Zone" };
+/**
+ * E9-04 · `/lead-form` y `/hazte-socio` compiten por la misma intención.
+ *
+ * Sin canónica, Google elige probablemente esta —es la que el gimnasio embebe
+ * en su web, y por tanto la que recibe los enlaces— y el visitante aterriza en
+ * un formulario en vez de en la página con precios. `index:false, follow:true`:
+ * fuera del índice, pero sin cortar el flujo de enlaces hacia la que sí va.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ orgSlug: string; centerSlug: string }>;
+}): Promise<Metadata> {
+  const { orgSlug, centerSlug } = await params;
+  const ctx = await getPublicLeadFormContext(orgSlug, centerSlug);
+  if (!ctx) return { ...GENERIC_CENTER_METADATA, robots: { index: false, follow: true } };
+
+  return centerLeadFormMetadata({
+    orgName: ctx.organization.name,
+    orgSlug,
+    centerName: ctx.center.name,
+    centerSlug,
+    city: ctx.center.city,
+    neighborhood: ctx.center.neighborhood,
+    description: ctx.center.description,
+  });
+}
 
 export default async function PublicLeadFormPage({
   params,

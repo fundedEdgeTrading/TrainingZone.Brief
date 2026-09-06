@@ -5,12 +5,43 @@ import AptaLogo from "@/components/apta-logo";
 import { Field, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { getPublicMembershipContext } from "@/lib/public-membership-queries";
+import { GENERIC_CENTER_METADATA, centerMembershipMetadata } from "@/lib/public-center-seo";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
 import MemberBillingLinkForm from "./member-billing-link-form";
 import { SERVICE_LABEL } from "@/lib/service-labels";
 
-export const metadata: Metadata = { title: "Hazte socio · Training Zone" };
+/**
+ * E9-04 · Título, descripción, OpenGraph y canónica PROPIOS de este centro.
+ *
+ * El `metadata` estático anterior daba a cien centros cien URLs con el mismo
+ * título y el mismo cuerpo salvo el `<h1>`: Google las agrupa y elige una sola
+ * canónica; las demás desaparecen.
+ *
+ * El contexto va cacheado por petición (`cache()` en la query), así que esto no
+ * duplica ninguna consulta con las del render.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ orgSlug: string; centerSlug: string }>;
+}): Promise<Metadata> {
+  const { orgSlug, centerSlug } = await params;
+  const ctx = await getPublicMembershipContext(orgSlug, centerSlug);
+  // Centro sin datos: se degrada al título genérico en vez de romper. La página
+  // devolverá su 404 por su cuenta.
+  if (!ctx) return GENERIC_CENTER_METADATA;
+
+  return centerMembershipMetadata({
+    orgName: ctx.organization.name,
+    orgSlug,
+    centerName: ctx.center.name,
+    centerSlug,
+    city: ctx.center.city,
+    neighborhood: ctx.center.neighborhood,
+    description: ctx.center.description,
+  });
+}
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
