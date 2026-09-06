@@ -71,6 +71,25 @@ export async function getRevenueSeries(orgId: string, opts: DashboardOpts = {}) 
   return { rows, average, meta: DASHBOARD_RANGES.find((r) => r.id === range)?.meta ?? "" };
 }
 
+/**
+ * Importe pendiente de los morosos: SOLO los recibos fallidos/pendientes de
+ * quien ya está en `state = 'DELINQUENT'`, la misma definición de moroso que
+ * el resto del panel. E12-05: la app móvil contaba `Payment` en
+ * PENDING/FAILED sin pasar por el estado del socio ni por ninguna ventana
+ * temporal, y le salía un número de morosos distinto al de la web.
+ */
+export async function getDelinquencyAmount(orgId: string, opts: DashboardOpts = {}): Promise<number> {
+  const unpaid = await prisma.payment.findMany({
+    where: {
+      ...paymentScope(orgId, opts.centerId),
+      status: { in: ["PENDING", "FAILED"] },
+      member: { state: "DELINQUENT" },
+    },
+    select: { amountCents: true },
+  });
+  return unpaid.reduce((sum, p) => sum + p.amountCents, 0);
+}
+
 export async function getMemberStateBreakdown(orgId: string, opts: DashboardOpts = {}) {
   const rows = await prisma.member.groupBy({
     by: ["state"],
@@ -130,7 +149,16 @@ export async function getNoShowRate(orgId: string, opts: DashboardOpts = {}) {
   const previous = rate(prevNoShow, prevAttended);
   // El chip de la card oscura cuenta la variación en puntos, no en porcentaje:
   // "del 8% al 6,6%" es −1,4 pts, no −17,5%.
-  return { rate: current, deltaPts: previousSince && prevAttended + prevNoShow > 0 ? current - previous : null };
+  return {
+    rate: current,
+    deltaPts: previousSince && prevAttended + prevNoShow > 0 ? current - previous : null,
+    // E12-05: la app móvil necesita el recuento crudo (sesionesHeld) además
+    // de la tasa — se añade aquí para que no tenga que reimplementar esta
+    // misma consulta con otro nombre y otro criterio.
+    attended,
+    noShow,
+    held: attended + noShow,
+  };
 }
 
 export async function getOccupancyByWeekday(orgId: string, opts: DashboardOpts = {}) {
@@ -774,6 +802,11 @@ export type KpiTile = {
   format: "eur" | "int" | "pct" | "signed";
   /** Chip de comparativa. `null` cuando el dato no tiene histórico del que salir. */
   delta: { text: string; tone: KpiTone } | null;
+  /**
+   * El mismo dato de `delta`, sin formatear (para quien lo necesite en bruto,
+   * como la app móvil: E12-05). `null` en los mismos casos que `delta`.
+   */
+  deltaValue: number | null;
   hint: string;
   accent: KpiAccent;
   /** Siete puntos, los siete últimos tramos de la métrica. */
@@ -877,6 +910,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
         revenueChange === null
           ? null
           : signedDelta(Math.round(revenueChange * 10) / 10, "%", "up"),
+      deltaValue: revenueChange === null ? null : Math.round(revenueChange * 10) / 10,
       hint: win.deltaHint,
       accent: "gold",
       spark: buckets.map((b) => revenueCents(b.from, b.to) / 100),
@@ -888,6 +922,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: String(activeMembers),
       format: "int",
       delta: signedDelta(activeAt(now) - activeAt(win.prevTo), "", "up"),
+      deltaValue: activeAt(now) - activeAt(win.prevTo),
       hint: "altas menos bajas",
       accent: "ink",
       spark: buckets.map((b) => activeAt(b.to)),
@@ -899,6 +934,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: `${occupancy}%`,
       format: "pct",
       delta: signedDelta(occupancy - occupancyPrev, Math.abs(occupancy - occupancyPrev) === 1 ? " pt" : " pts", "up"),
+      deltaValue: occupancy - occupancyPrev,
       hint: `objetivo ${OCCUPANCY_TARGET_PCT}%`,
       accent: "ink",
       spark: buckets.map((b) => occupancyOf(sessionsIn(b.from, b.to))),
@@ -910,6 +946,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: String(sessionCount),
       format: "int",
       delta: signedDelta(sessionCount - sessionCountPrev, "", "up"),
+      deltaValue: sessionCount - sessionCountPrev,
       hint: "ritmo de agenda",
       accent: "ink",
       spark: buckets.map((b) => sessionsIn(b.from, b.to).length),
@@ -921,6 +958,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: String(openAlerts),
       format: "int",
       delta: signedDelta(openAlerts - alertsAt(win.prevTo), "", "down"),
+      deltaValue: openAlerts - alertsAt(win.prevTo),
       hint: "marcados en Socios",
       accent: "critical",
       spark: buckets.map((b) => alertsAt(b.to)),
@@ -932,6 +970,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: String(delinquent),
       format: "int",
       delta: null,
+      deltaValue: null,
       hint: "recibos fallidos",
       accent: "critical",
       spark: flat(delinquent),
@@ -943,6 +982,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: String(frozen),
       format: "int",
       delta: null,
+      deltaValue: null,
       hint: "sin cambios",
       accent: "muted",
       spark: flat(frozen),
@@ -954,6 +994,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       value: `${net > 0 ? "+" : ""}${net}`,
       format: "signed",
       delta: signedDelta(net - netPrev, "", "up"),
+      deltaValue: net - netPrev,
       hint: bestOfQuarter ? "mejor tramo del trimestre" : win.deltaHint,
       accent: "gold",
       spark: buckets.map((b) => netJoinsIn(b.from, b.to)),
