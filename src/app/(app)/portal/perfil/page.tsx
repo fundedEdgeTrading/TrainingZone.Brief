@@ -10,7 +10,9 @@ import { ImageDropzone } from "@/components/ui/dropzone";
 import { ActionForm } from "@/components/ui/action-form";
 import { ConsentToggle } from "./consent-toggle";
 import { EmailPreferenceToggle } from "./email-preference-toggle";
+import { SessionReminderToggle } from "./session-reminder-toggle";
 import { updateMyProfileAction } from "./actions";
+import { memberWantsSessionReminders } from "@/lib/session-reminders";
 
 export default async function PortalProfilePage() {
   const session = await requireRole(["MEMBER"]);
@@ -19,6 +21,7 @@ export default async function PortalProfilePage() {
     prisma.user.findUnique({ where: { id: session.user.id }, select: { theme: true } }),
   ]);
   if (!member || !user) redirect("/login");
+  const wantsSessionReminders = await memberWantsSessionReminders(member.id);
 
   return (
     <div className="max-w-[720px] mx-auto flex flex-col gap-4">
@@ -110,6 +113,7 @@ export default async function PortalProfilePage() {
           Los correos de tu cuenta y de tu cuota —acceso, contraseña y cobros— no se pueden desactivar: son parte del
           servicio. Estos otros los eliges tú, aquí o desde el pie de cualquiera de nuestros correos.
         </p>
+        <SessionReminderToggle enabled={wantsSessionReminders} />
         <EmailPreferenceToggle
           kind="vacancy"
           label="Avisos de plaza liberada"

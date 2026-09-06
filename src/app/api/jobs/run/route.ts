@@ -11,6 +11,7 @@ import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 import { runAssessmentDueRule } from "@/lib/assessment-jobs";
 import { runBirthdayRule } from "@/lib/birthday-jobs";
+import { runSessionReminderRule } from "@/lib/session-reminders";
 import { runRetentionAlertRule } from "@/lib/retention";
 import { reportJobFailures } from "@/lib/job-failure-report";
 
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
     feedbackCyclePrompts: 0,
     assessmentsDue: 0,
     birthdayGreetings: 0,
+    sessionReminders: 0,
   };
 
 
@@ -84,6 +86,7 @@ export async function GET(req: NextRequest) {
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
     summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
     summary.birthdayGreetings += await run(org.id, "birthdayGreetings", () => runBirthdayRule(org.id));
+    summary.sessionReminders += await run(org.id, "sessionReminders", () => runSessionReminderRule(org.id));
   }
 
   // El array de fallos no puede quedarse solo en la respuesta del cron: se
