@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { injuryZoneLabel } from "@/lib/injury-zones";
+import { countMembersAffectedByRules, type RuleImpact } from "@/lib/aptitude-rules-queries";
 import DeleteButton from "./delete-button";
 import CreateRuleForm from "./create-rule-form";
 
@@ -24,11 +25,16 @@ export default async function AptitudeRulesPage() {
   // se saltaría el filtro del menú.
   await requireFeature("salud_aptitud");
 
-  const rules = await prisma.aptitudeRule.findMany({
-    where: { orgId: session.user.orgId },
-    include: { editedBy: { select: { name: true } } },
-    orderBy: [{ zoneCode: "asc" }, { injuryZone: "asc" }, { light: "desc" }],
-  });
+  const [rules, impact] = await Promise.all([
+    prisma.aptitudeRule.findMany({
+      where: { orgId: session.user.orgId },
+      include: { editedBy: { select: { name: true } } },
+      orderBy: [{ zoneCode: "asc" }, { injuryZone: "asc" }, { light: "desc" }],
+    }),
+    // E3-04: a cuánta gente afecta cada regla HOY. Agregado, no una consulta por
+    // regla, y acotado al ámbito de centro de quien mira.
+    countMembersAffectedByRules(session.user),
+  ]);
 
   return (
     <div className="tz-page space-y-4">
@@ -38,7 +44,7 @@ export default async function AptitudeRulesPage() {
 
       <DataTable
         columns={canEdit ? ruleColumns : ruleColumns.filter((c) => c.key !== "actions")}
-        rows={rules.map((r) => ruleToRow(r, canEdit, timeZone))}
+        rows={rules.map((r) => ruleToRow(r, canEdit, timeZone, impact.get(r.id)))}
         emptyTitle="Sin reglas"
       />
     </div>
@@ -52,6 +58,7 @@ const ruleColumns: DataTableColumn[] = [
   { key: "blockArea", header: "Bloque", sortable: true },
   { key: "light", header: "Semáforo", sortable: true },
   { key: "adaptation", header: "Adaptación", sortable: true, className: "text-muted" },
+  { key: "affected", header: "Socios afectados", sortable: true, className: "tz-nums" },
   { key: "editedBy", header: "Editado por", sortable: true, className: "text-faint text-xs" },
   { key: "actions", header: "" },
 ];
@@ -61,14 +68,19 @@ function zoneText(r: Rule): string {
   return r.zoneCode ? injuryZoneLabel(r.zoneCode, r.side) : r.injuryZone;
 }
 
-function ruleToRow(r: Rule, canEdit: boolean, timeZone: string): DataTableRow {
+function ruleToRow(r: Rule, canEdit: boolean, timeZone: string, impact?: RuleImpact): DataTableRow {
+  const affected = impact?.affectedMembers ?? 0;
   return {
     key: r.id,
+    // Una regla huérfana —0 socios PERO lesiones registradas en su zona— está
+    // mal escrita, y hasta ahora eso no se veía de ninguna manera.
+    className: impact?.orphan ? "bg-warning-bg" : undefined,
     sortValues: {
       injuryZone: zoneText(r),
       blockArea: r.blockArea,
       light: r.light,
       adaptation: r.adaptation ?? "",
+      affected,
       editedBy: r.updatedAt.getTime(),
     },
     cells: {
@@ -89,6 +101,13 @@ function ruleToRow(r: Rule, canEdit: boolean, timeZone: string): DataTableRow {
         </span>
       ),
       adaptation: r.adaptation ?? "—",
+      affected: impact?.orphan ? (
+        <span className="text-warning-text font-semibold" title="Hay lesiones registradas en esta zona y la regla no llega a ninguna: revisa la zona o el lado.">
+          0 · revisar
+        </span>
+      ) : (
+        affected
+      ),
       editedBy: (
         <>
           {r.editedBy?.name} · {formatInstantDate(r.updatedAt, timeZone)}
