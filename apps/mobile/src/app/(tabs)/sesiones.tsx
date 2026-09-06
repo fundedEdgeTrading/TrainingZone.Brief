@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   heroActions: { flexDirection: "row", gap: 8, marginTop: 16 },
   laterCard: { flexDirection: "row", alignItems: "center", gap: 11 },
   dateBlock: { width: 44, height: 46, borderRadius: radii.chip, alignItems: "center", justifyContent: "center" },
-  dateWeekday: { fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.8 },
+  dateWeekday: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.8 },
   dateNumber: { fontFamily: fonts.bold, fontSize: 16, ...tabular },
   remaining: { fontFamily: fonts.bold, fontSize: 13, ...tabular },
   footerCard: { alignItems: "center", paddingVertical: 14 },

@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   sessionCard: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
   sessionTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   dateBlock: { width: 42, height: 46, borderRadius: radii.chip, alignItems: "center", justifyContent: "center" },
-  dateWeekday: { fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.8 },
+  dateWeekday: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.8 },
   dateNumber: { fontFamily: fonts.bold, fontSize: 16, ...tabular },
   scoreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 4 },
   scoreCell: { flexBasis: "45%", flexGrow: 1 },

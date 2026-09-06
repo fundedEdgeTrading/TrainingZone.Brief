@@ -117,9 +117,13 @@ export function Button({
                 él, un título largo en un botón estrecho («Añadir al
                 calendario» o «Agendar prueba» a media anchura) se salía por
                 los lados en vez de recortarse. */}
+            {/* E8-10: la altura del botón es fija (HEIGHT.sm/md/lg); sin tope,
+                el 200 % de WCAG 1.4.4 desborda el propio botón en vez de
+                limitarse a crecer el texto dentro de él. */}
             <Text
               style={[size === "sm" ? typo.buttonSmall : typo.button, styles.label, { color: fg }]}
               numberOfLines={1}
+              maxFontSizeMultiplier={1.6}
             >
               {title}
             </Text>

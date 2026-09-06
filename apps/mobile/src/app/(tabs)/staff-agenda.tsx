@@ -1167,7 +1167,7 @@ const styles = StyleSheet.create({
   timelineCard: { overflow: "hidden" },
   hoursColumn: { width: 38 },
   hourCell: { height: HOUR_HEIGHT, alignItems: "center", paddingTop: 4 },
-  hourLabel: { fontFamily: fonts.semibold, fontSize: 10.5, ...tabular },
+  hourLabel: { fontFamily: fonts.semibold, fontSize: 11, ...tabular },
   hourSlot: { height: HOUR_HEIGHT, borderTopWidth: 1, padding: 4 },
   freeSlot: { flex: 1, borderRadius: radii.chip, borderWidth: 1, borderStyle: "dashed", alignItems: "center", justifyContent: "center" },
   eventColumn: { position: "absolute", paddingLeft: 4, paddingRight: 4 },
@@ -1179,7 +1179,7 @@ const styles = StyleSheet.create({
   eventMeta: { fontFamily: fonts.regular, fontSize: 10.5 },
   nowLine: { position: "absolute", left: 0, right: 0, height: 2, justifyContent: "center" },
   nowChip: { position: "absolute", right: 4, top: -9, borderRadius: radii.pill, paddingHorizontal: 7, paddingVertical: 2 },
-  nowChipText: { fontFamily: fonts.bold, fontSize: 9, color: "#1D1D1C", fontVariant: ["tabular-nums"] },
+  nowChipText: { fontFamily: fonts.bold, fontSize: 11, color: "#1D1D1C", fontVariant: ["tabular-nums"] },
   // La barra de pestañas ya no se superpone a la pantalla (va fijada al borde y
   // el navegador le resta su alto), así que el FAB se ancla al pie de la propia
   // pantalla en vez de a un alto de barra que aquí ya no existe.

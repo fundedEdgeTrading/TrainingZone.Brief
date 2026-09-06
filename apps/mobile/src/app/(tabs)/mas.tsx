@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
   },
   tileTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   tileCount: { minWidth: 20, height: 20, borderRadius: 999, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  tileCountText: { fontFamily: fonts.bold, fontSize: 10.5, ...tabular },
+  tileCountText: { fontFamily: fonts.bold, fontSize: 11, ...tabular },
   listInset: { paddingHorizontal: 14 },
   bonoCard: { gap: 14 },
   bonoTop: { flexDirection: "row", alignItems: "center", gap: 16 },

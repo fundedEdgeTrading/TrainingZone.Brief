@@ -201,7 +201,7 @@ const styles = StyleSheet.create({
   counterValue: { fontFamily: fonts.bold, fontSize: 19, ...tabular },
   movementCard: { flexDirection: "row", alignItems: "center", gap: 11 },
   dateBlock: { width: 40, height: 44, borderRadius: radii.chip, alignItems: "center", justifyContent: "center" },
-  dateWeekday: { fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.8 },
+  dateWeekday: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.8 },
   dateNumber: { fontFamily: fonts.bold, fontSize: 15, ...tabular },
   delta: { fontFamily: fonts.bold, fontSize: 16, ...tabular },
 });

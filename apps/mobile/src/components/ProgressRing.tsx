@@ -93,7 +93,13 @@ export function ProgressRing({
         </Svg>
         <View style={StyleSheet.absoluteFill}>
           <View style={styles.center}>
-            {children ?? <Text style={[styles.percent, { color: textColor }]}>{Math.round(progressPct)}%</Text>}
+            {children ?? (
+              // E8-10: el anillo es de tamaño fijo (`size`); sin tope, el
+              // porcentaje crece por encima del propio círculo al 200 %.
+              <Text style={[styles.percent, { color: textColor }]} maxFontSizeMultiplier={1.4}>
+                {Math.round(progressPct)}%
+              </Text>
+            )}
           </View>
         </View>
       </View>
@@ -105,5 +111,5 @@ export function ProgressRing({
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 1 },
   percent: { fontFamily: fonts.bold, fontSize: 15, ...tabular },
-  label: { fontFamily: fonts.semibold, fontSize: 10, letterSpacing: 0.4 },
+  label: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.4 },
 });

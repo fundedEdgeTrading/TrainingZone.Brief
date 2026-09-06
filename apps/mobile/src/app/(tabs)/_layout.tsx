@@ -255,7 +255,9 @@ function TabBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <View style={[styles.badge, { backgroundColor: theme.gold }]}>
-      <Text style={[styles.badgeText, { color: theme.inkText }]} numberOfLines={1}>
+      {/* E8-10: el círculo del contador es de altura fija (15 px) — sin tope,
+          el 200 % de WCAG 1.4.4 lo desborda en vez de quedarse dentro. */}
+      <Text style={[styles.badgeText, { color: theme.inkText }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {count > 9 ? "9+" : count}
       </Text>
     </View>
@@ -276,5 +278,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: { fontFamily: fonts.bold, fontSize: 9, lineHeight: 12 },
+  badgeText: { fontFamily: fonts.bold, fontSize: 11, lineHeight: 13 },
 });
