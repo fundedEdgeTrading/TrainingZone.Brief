@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { OPERATIONAL_PLATFORM_STATUSES } from "@/lib/entitlements";
+import { citySlug } from "@/lib/landing-pages";
 
 /** Un centro publicable, con lo justo para construir su URL y su fecha. */
 export type SitemapCenter = {
@@ -53,4 +54,84 @@ export async function listSitemapCenters(): Promise<SitemapCenter[]> {
 
 function maxDate(a: Date, b: Date): Date {
   return a > b ? a : b;
+}
+
+/** Un centro tal y como lo pinta el índice público. */
+export type DirectoryCenter = {
+  orgSlug: string;
+  centerSlug: string;
+  name: string;
+  city: string;
+  citySlug: string;
+  neighborhood: string | null;
+  address: string | null;
+  description: string | null;
+};
+
+export type DirectoryCity = {
+  slug: string;
+  label: string;
+  centers: DirectoryCenter[];
+};
+
+/**
+ * E9-11 · El índice de centros, agrupado por ciudad.
+ *
+ * Es la mitad humana de lo que el sitemap resuelve para el rastreador: **no
+ * existía ningún índice interno que enlazara a las páginas de centro**, así que
+ * un visitante solo llegaba a una si el gimnasio publicaba la URL en su propia
+ * web. Una página que solo se alcanza escribiendo su dirección exacta no es una
+ * página pública, es un enlace privado.
+ *
+ * Mismos filtros que el sitemap —organización operativa, `publicPage`, y ficha
+ * con dirección y descripción— más uno propio: sin `city` no hay ciudad bajo la
+ * que colocarlo, y meterlo en un cajón de "otros" sería inventar una categoría.
+ */
+export async function listDirectoryCities(): Promise<DirectoryCity[]> {
+  const centers = await prisma.center.findMany({
+    where: {
+      publicPage: true,
+      address: { not: null },
+      description: { not: null },
+      city: { not: null },
+      organization: { platformStatus: { in: [...OPERATIONAL_PLATFORM_STATUSES] } },
+    },
+    select: {
+      name: true,
+      slug: true,
+      city: true,
+      neighborhood: true,
+      address: true,
+      description: true,
+      organization: { select: { slug: true } },
+    },
+    orderBy: [{ city: "asc" }, { name: "asc" }],
+  });
+
+  const byCity = new Map<string, DirectoryCity>();
+  for (const center of centers) {
+    const city = center.city as string;
+    const slug = citySlug(city);
+    // Dos centros que escriben "Zaragoza" y "zaragoza" son la misma ciudad: se
+    // agrupan por slug y se rotula con la primera forma que aparezca.
+    const bucket = byCity.get(slug) ?? { slug, label: city, centers: [] };
+    bucket.centers.push({
+      orgSlug: center.organization.slug,
+      centerSlug: center.slug,
+      name: center.name,
+      city,
+      citySlug: slug,
+      neighborhood: center.neighborhood,
+      address: center.address,
+      description: center.description,
+    });
+    byCity.set(slug, bucket);
+  }
+
+  return [...byCity.values()].sort((a, b) => a.label.localeCompare(b.label, "es"));
+}
+
+export async function directoryCity(slug: string): Promise<DirectoryCity | null> {
+  const cities = await listDirectoryCities();
+  return cities.find((c) => c.slug === slug) ?? null;
 }

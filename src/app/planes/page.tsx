@@ -10,6 +10,7 @@ import Faq, { FAQS } from "./faq";
 import FinalCta from "./final-cta";
 import { PricingBlock, PricingSkeleton } from "./pricing";
 import { JsonLd } from "@/components/json-ld";
+import { FEATURE_PAGES, VERTICAL_PAGES, featurePath, verticalPath } from "@/lib/landing-pages";
 import { faqPageJsonLd, platformOffersJsonLd } from "@/lib/json-ld";
 
 /**
@@ -97,6 +98,46 @@ export default async function PlanesPage({
           <Faq />
 
           <FinalCta />
+
+          {/* E9-11 · El enlazado interno hacia las páginas de captación y el
+              índice de centros. Sin él estarían en el sitemap y en ningún otro
+              sitio, que para Google es "página secundaria" — y para un
+              visitante, inexistente. */}
+          <nav aria-label="Más sobre Apta" className="mt-14 border-t border-tz-linen pt-8">
+            <h2 className="font-display font-extrabold text-lg uppercase tracking-[-.01em] text-tz-black mb-3">
+              Míralo por partes
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {FEATURE_PAGES.map((page) => (
+                <li key={page.slug}>
+                  <Link
+                    href={featurePath(page.slug)}
+                    className="inline-block rounded-pill border border-tz-linen bg-white px-3.5 py-2 text-[12.5px] font-semibold text-brand-text-2 no-underline transition-colors duration-150 hover:border-brand-border-hover"
+                  >
+                    {page.title}
+                  </Link>
+                </li>
+              ))}
+              {VERTICAL_PAGES.map((page) => (
+                <li key={page.slug}>
+                  <Link
+                    href={verticalPath(page.slug)}
+                    className="inline-block rounded-pill border border-tz-linen bg-white px-3.5 py-2 text-[12.5px] font-semibold text-brand-text-2 no-underline transition-colors duration-150 hover:border-brand-border-hover"
+                  >
+                    {page.title}
+                  </Link>
+                </li>
+              ))}
+              <li>
+                <Link
+                  href="/centros"
+                  className="inline-block rounded-pill border border-tz-black bg-tz-black px-3.5 py-2 text-[12.5px] font-semibold text-tz-bone no-underline"
+                >
+                  Centros que usan Apta
+                </Link>
+              </li>
+            </ul>
+          </nav>
 
           <p className="text-center text-xs text-faint mt-10 max-w-2xl mx-auto">
             Los precios no incluyen IVA. El cobro a tus socios lo gestionas con tu propia cuenta de Stripe: Apta no cobra

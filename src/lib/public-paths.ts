@@ -25,6 +25,12 @@ export const PUBLIC_PATHS = [
   "/preferencias",
   "/baja",
   "/privacidad",
+  // E9-11 · Páginas de captación e índice de centros. Son la respuesta a que el
+  // inventario indexable fueran cuatro URLs contra competidores con blogs de
+  // cientos de artículos.
+  "/funcionalidades",
+  "/para",
+  "/centros",
   "/api/email",
   "/servicio-no-disponible",
   "/api/jobs",

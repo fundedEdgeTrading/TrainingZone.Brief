@@ -25,7 +25,15 @@ import { PUBLIC_PATHS } from "@/lib/public-paths";
  * `/demo-checkout` o `/servicio-no-disponible` son públicas y no pintan nada en
  * una SERP; las seis con token, además, no deben ni visitarse.
  */
-export const INDEXABLE_PATHS: readonly string[] = ["/planes", "/privacidad", "/hazte-socio"];
+export const INDEXABLE_PATHS: readonly string[] = [
+  "/planes",
+  "/privacidad",
+  "/hazte-socio",
+  // E9-11
+  "/funcionalidades",
+  "/para",
+  "/centros",
+];
 
 /**
  * Rutas públicas que NO se indexan, listadas una a una en `Disallow`.
