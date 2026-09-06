@@ -18,11 +18,22 @@ Revisión encargada sobre las dos superficies del producto, realizada por once a
 
 **Todas las comprobaciones automáticas pasan**: `tsc --noEmit` sin errores, ESLint sin avisos, 219/219 unitarios, `expo lint` y `tsc` de la app móvil limpios, y el subconjunto ejecutado de Playwright 7/7. **Los 32 fallos de QA de este informe son cosas que las pruebas actuales no cubren**, y eso es la conclusión más importante del capítulo 8.
 
+## Decisiones de negocio ya tomadas
+
+Dos preguntas que este informe dejaba abiertas están **cerradas por dirección**. El resto del documento ya está escrito con ellas dentro; se recogen aquí para que nadie las reabra en la sesión de historias de usuario.
+
+| Decisión | Qué significa | Dónde afecta |
+|---|---|---|
+| **El consentimiento de datos de salud sigue siendo obligatorio en el onboarding** | El socio no completa el alta sin declarar su salud. No se degrada el servicio ni se ofrece una vía sin datos clínicos | §7 CN-03, reescrito como decisión tomada con la vía de cumplimiento que la sostiene |
+| **La app móvil nativa no recibe funcionalidad nueva** | Alcance congelado. Sí entran: corrección de fallos, pruebas nuevas para cazar más fallos, cobertura de código y las recomendaciones de este informe que no añaden funcionalidad | §9 (alcance y plan de pruebas), §10 (plan), §11 (lo que queda pendiente de decidir) |
+
 ## Cómo leer este informe
 
 Cada capítulo responde a uno de los puntos del encargo y va **separado por app** donde tiene sentido. Los capítulos 5 (Stripe), 6 (mapa) y 7 (cumplimiento) son transversales por naturaleza, pero también distinguen web y móvil dentro. El capítulo 9 reordena todo en un único plan priorizado: si solo se va a leer una cosa, que sea esa.
 
 Dos hallazgos aparecieron **por duplicado y de forma independiente** —el auditor de seguridad y el de QA llegaron a los mismos dos agujeros de aislamiento por caminos distintos—, lo que sube bastante la confianza en ellos.
+
+Los capítulos 11 y 12 son los que alimentan el siguiente paso: primero se cierran las dudas de negocio, y con ellas cerradas el capítulo 12 se convierte casi mecánicamente en el lote de historias de usuario para Notion.
 
 ## Índice
 
@@ -34,7 +45,10 @@ Dos hallazgos aparecieron **por duplicado y de forma independiente** —el audit
 6. [Mejora del mapa de Leaflet](#6-mejora-del-mapa-de-leaflet)
 7. [Revisión de cumplimiento normativo](#7-revisión-de-cumplimiento-normativo-clientes-y-trabajadores)
 8. [QA: regresión, permisos y cobertura de pruebas](#8-qa-regresión-permisos-y-cobertura-de-pruebas)
-9. [Plan priorizado](#9-plan-priorizado)
+9. [App móvil: alcance congelado, plan de pruebas y cobertura](#9-app-móvil-alcance-congelado-plan-de-pruebas-y-cobertura)
+10. [Plan priorizado](#10-plan-priorizado)
+11. [Dudas de negocio a cerrar antes de escribir las historias](#11-dudas-de-negocio-a-cerrar-antes-de-escribir-las-historias)
+12. [Índice de candidatas a historia de usuario](#12-índice-de-candidatas-a-historia-de-usuario)
 
 ## Los ocho hallazgos que hay que mirar hoy
 
@@ -452,7 +466,7 @@ Catálogo actual (`src/lib/platform-plans.ts`): Esencial 79 €, Avanzado 149 �
 - *Coste hundido — pagado, no se toca más, no aparece en `/planes`*: tareas, anuncios, chat, biblioteca online, fichajes, mapa de barrios, app nativa para ocho roles. **Cada línea de más en la tabla comparativa diluye el mensaje.**
 
 **Papel de la app nativa: hoy es un lastre.** 53 endpoints paralelos, permisos duplicados, sin push, sin `eas.json`, con la marca de un cliente y con riesgo de rechazo en tienda. Sin push no aporta nada sobre una PWA. Pero la respuesta honesta no es "PWA y ya": en iOS la PWA sigue sin push fiable ni instalación digna, y en EEUU la app propia es requisito de venta. **Decisión en dos tiempos:**
-- *Ahora (España, piloto y primeros 10 clientes)*: **PWA**. El portal ya es responsive y es lo mejor construido del producto; manifest + service worker + install prompt son días. **Congelar la app nativa: ni una pantalla más.**
+- *Ahora (España, piloto y primeros 10 clientes)*: **PWA**. El portal ya es responsive y es lo mejor construido del producto; manifest + service worker + install prompt son días. **Congelar la app nativa: ni una pantalla más.** → *La parte de congelar está decidida (§9). Si la PWA sustituye o acompaña a la app depende de D-M2.*
 - *Cuando haya 10 clientes de pago o el primer cliente de EEUU*: **una única app Apta multi-tenant**, dos roles (socio y entrenador), con push, `eas.json` y cuentas de tienda **de Apta**, no del cliente. Marca blanca por cliente solo como upsell de Élite, con precio de alta y contrato de mantenimiento.
 - *Si te niegas a congelar*: entonces recorta a dos roles y mete push. Una app de entrenador con el brief y el debrief en el bolsillo sí tiene tesis. Una app de RRHH no la tiene ninguna.
 
@@ -1382,9 +1396,18 @@ Precisión efectiva: **todas las personas de un CP colapsan al mismo punto**, y 
 La matriz excluye a recepción de los datos de salud (`rbac.ts:220-224`), y `members/[id]/page.tsx` gatea la sección "Salud" (`:606-618`) y las valoraciones (`:930`) — pero **la sección `evolucion` (`:984-1126`) no lleva ningún gate**, y `members-queries.ts:137` carga `progressEntries` dentro del `include`, **sin pasar por `health-access.ts` y sin escribir en `AuditLog`**. Resultado: recepción ve `bodyFatPct`, `visceralFatRating`, `bmi`, `metabolicAge`, `muscleMassKg`, la evolución gráfica y **las fotos frontal/perfil/espalda** de cualquier socio de su ámbito, **sin dejar rastro**. Contradice literalmente el comentario de `prisma/schema.prisma:458`: *"Dato Art. 9 RGPD (RB-PERFIL-004): mismo tratamiento que HealthRecord"*.
 **Es la brecha de datos de salud más probable del sistema, y la que peor se defiende: el propio repositorio documenta la regla que incumple.**
 
-**CN-03 · ALTO — El consentimiento de datos de salud se impone como obligatorio: no es libre.**
-`onboarding/[token]/onboarding-form.tsx:36-40` etiqueta el bloque como `"Obligatorio ✱"` y `:87` bloquea el alta (`consents.health && consents.contract`). **El socio no puede terminar el onboarding sin ceder sus datos de salud**, mientras `/privacidad` le promete que puede oponerse. Arts. 4.11, 7.4 y 9.2.a. Riesgo: **invalidez retroactiva del consentimiento del art. 9 para toda la base de socios.**
-*Dos vías legítimas*: (1) desbloquear el alta sin `consentHealth` y degradar el servicio de forma proporcionada — el código **ya soporta este camino** (`createHealthRecord` devuelve `no_consent`, existe `canUseClinicalDataForAI`); (2) cambiar de base jurídica al art. 9.2.h, lo que exige profesional sanitario o supervisión — improbable en un centro de EP. **La vía 1 es la coherente con el resto del diseño.**
+**CN-03 · DECISIÓN TOMADA — El consentimiento de datos de salud sigue siendo obligatorio en el onboarding.**
+Dirección ha decidido que el alta no se completa sin declaración de salud: `onboarding-form.tsx:36-40` mantiene el bloque como `"Obligatorio ✱"` y `:87` sigue bloqueando (`consents.health && consents.contract`). **No se implementa la vía degradada.** El motivo de negocio es sólido: sin datos clínicos, el semáforo de aptitud y las adaptaciones de sesión no funcionan, y el centro asume el riesgo de programar a ciegas.
+
+Lo que hay que hacer **es distinto, no menos**: si el dato es obligatorio, entonces la base jurídica correcta **ya no puede ser el consentimiento**. El art. 7.4 presume no libre un consentimiento que condiciona la prestación del servicio, así que llamarlo "consentimiento" es precisamente lo que lo vuelve atacable. La vía que sostiene la decisión es apoyarlo en el **art. 9.2.f** (tratamiento necesario para la formulación, ejercicio o defensa de reclamaciones — que es exactamente el escenario de una lesión en sala) junto al **art. 6.1.b/6.1.f** para los datos base, y reservar el **consentimiento de verdad** solo para lo que sí es accesorio.
+
+Acciones concretas bajo esta decisión:
+1. **Renombrar en la interfaz.** El bloque obligatorio deja de llamarse "consentimiento" y pasa a ser **"Declaración de salud"**, con el texto explicando que es condición del servicio y por qué (seguridad en sala, adaptación del entrenamiento, defensa ante reclamaciones). El campo `consentHealth` puede quedarse como está en el modelo; lo que cambia es cómo se presenta y cómo se documenta.
+2. **Los otros tres consentimientos siguen siendo libres y revocables**: IA, imágenes y marketing. Hoy ya lo son (`consentMarketing` por defecto `false`, `canUseClinicalDataForAI` exige los dos) y **no deben contaminarse** con el obligatorio: si el socio no puede decir que no a alguno de esos tres, el argumento entero se cae.
+3. **Documentar la base jurídica por escrito** en el registro de actividades y en la política de privacidad (CN-06), y recoger el análisis en la EIPD (CN-32). Es el documento que se enseña si alguien lo discute.
+4. **Mantener viva la revocación** de los tres accesorios (ya funciona, `portal/perfil` + `updateMyConsentAction`).
+
+*Riesgo residual, dicho una vez y sin más vueltas*: si la asesoría jurídica externa concluye que el 9.2.f no cubre todo el alcance del dato que se recoge, la palanca de ajuste no es volver a hacer opcional el alta, sino **recortar qué se pide como obligatorio** — el mínimo defendible es el PAR-Q y las lesiones activas, no la medicación ni el historial quirúrgico completo. Es una decisión de producto que se puede tomar más adelante sin tocar el flujo.
 
 **CN-04 · ALTO — No existe política de conservación ni ningún mecanismo de supresión automática.** `api/jobs/run/route.ts:70-87` ejecuta once reglas y **ninguna de retención**. No se purga: `Invitation` caducadas (el índice `@@index([expiresAt])` existe **y nadie lo usa**), `MobileRefreshToken` revocados, `AuditLog` (crece indefinidamente con `memberId` y metadatos con nombre y email), datos de ex-socios (`Member.cancelledAt` no dispara nada: **un socio de baja en 2019 conserva íntegras lesiones, fotos y bioimpedancia**), y organizaciones en `PENDING_PAYMENT` (el esquema **anuncia el TTL** en `:20,37` y no está implementado). *Nota: `src/lib/retention.ts` es el motor de retención de **socios** (churn), no de datos.*
 *Acción*: tabla de plazos (propuesta de partida: contractual y de cobro 6 años art. 30 CCom / 4 años art. 66 LGT; salud, relación + 5 años art. 1964 CC; fotos, borrado a la baja; `AuditLog` 2-3 años; leads no convertidos 12 meses; fichajes 4 años art. 34.9 ET) + `runDataRetentionRule(orgId)` + anonimización de ex-socios.
@@ -1521,7 +1544,7 @@ Todo lo siguiente son **borradores pendientes**, en la misma línea que ya marca
 | CN-06 | Política de privacidad completa | Documental | 2 sem. (jurídico) |
 | CN-07 | Información precontractual, condiciones, aviso legal y pie legal | Documental + producto | 2-3 sem. |
 
-**Fase 1 — Primer trimestre**: CN-32 (registro de actividades, procedimiento de brechas, EIPD, análisis DPD) · CN-04 (plazos + `runDataRetentionRule` + anonimización) · CN-05 (disociar `Payment`; corregir el texto del diálogo) · CN-03 (desbloquear el onboarding — **decisión de dirección primero**) · CN-08 (filtro de identificadores o ajuste del texto) · CN-19 (cláusula laboral firmada) · CN-25/26/27 (borrado de cuenta, enlaces legales y consentimientos en la app; `app.json` y privacy manifest).
+**Fase 1 — Primer trimestre**: CN-32 (registro de actividades, procedimiento de brechas, EIPD, análisis DPD) · CN-04 (plazos + `runDataRetentionRule` + anonimización) · CN-05 (disociar `Payment`; corregir el texto del diálogo) · CN-03 (**decisión tomada**: renombrar a "Declaración de salud", documentar el art. 9.2.f y blindar que los otros tres consentimientos siguen siendo libres) · CN-08 (filtro de identificadores o ajuste del texto) · CN-19 (cláusula laboral firmada) · CN-25/26/27 (borrado de cuenta, enlaces legales y consentimientos en la app; `app.json` y privacy manifest) — **los tres condicionados a D-M2**: solo son exigibles si se decide publicar la app en las tiendas.
 
 **Fase 2 — Segundo trimestre**: CN-09 (sacar `/audit` del muro de pago) · CN-11 (completar el export, separar art. 15 de art. 20) · CN-12 (edad y tutores) · CN-13 (preaviso SEPA) · CN-20 (acceso del entrenador a sus valoraciones) · CN-23 (`REVOKE UPDATE, DELETE` + huecos de traza) · CN-33 (clasificación AI Act, marca de contenido generado, formación) · CN-28/29 (HTTPS forzado; `keychainAccessible`).
 
@@ -1700,7 +1723,178 @@ DELETE /agenda/sessions/cmtpjpwcb…              → {"ok":true,"data":{"delete
 - **Mesociclos**: no se exponen al socio en **ningún** endpoint; límite 4-12 semanas idéntico en acción web, formulario y endpoint móvil.
 - **Descarte de asistente móvil**: ámbito de centro correcto, permiso de override decidido por el token y **nunca** por el cuerpo, y todo el efecto en `AuditLog`.
 
-## 9. Plan priorizado
+## 9. App móvil: alcance congelado, plan de pruebas y cobertura
+
+**Decisión de dirección: la app nativa no recibe funcionalidad nueva.** Este capítulo traduce esa decisión a una lista de trabajo cerrada y añade lo que hasta ahora no existía en absoluto: una forma de probarla.
+
+Punto de partida, medido: **86 ficheros, ~14.900 líneas, 0 tests, 0 % de cobertura**, y **ningún paso de la app móvil en el workflow de CI** (`.github/workflows/e2e.yml` solo construye y prueba la web). `typecheck` y `expo lint` pasan limpios, pero se ejecutan a mano. Los 22 fallos de la app de este informe **se encontraron leyendo código y con `curl`**, no con pruebas — porque no hay ninguna.
+
+### 9.1 Qué entra y qué no
+
+| Entra | No entra (congelado) |
+|---|---|
+| Corregir los fallos del §9.2 | Notificaciones push (`expo-notifications`) |
+| Escribir la batería de pruebas del §9.4-9.5 | Chat del entrenador y del socio en la app |
+| Medir y publicar cobertura (§9.6) | Pantalla de cuenta: gestionar suscripción, baja, congelar |
+| Job de CI propio para la app (§9.7) | Caché offline, biometría, cámara/QR, mapa |
+| Recomendaciones sin funcionalidad nueva: accesibilidad, contraste, virtualización de listas, textos que hoy mienten, consistencia de rótulos (§9.3) | Selector de tema en la app (leer `User.theme` exige control nuevo) |
+| Configuración de publicación: `app.json`, `eas.json`, privacy manifest — **si** se decide publicar (§11) | Recorte de 8 roles a 2 (§11: es decisión de producto, no de alcance técnico) |
+
+Tres cosas caen justo en la frontera y **no las decido yo**: el no-show desde el móvil, el borrado de cuenta y los enlaces legales que exigen las tiendas. Van al capítulo 11 con su contexto, porque las tres se pueden defender como "corregir algo roto" y como "funcionalidad nueva", y la respuesta cambia el alcance.
+
+### 9.2 Los fallos de la app, en orden de arreglo
+
+Consolidados de los capítulos 1, 2 y 8. **Ninguno añade funcionalidad**: todos corrigen algo que ya existe y hace lo que no debe.
+
+**Bloqueantes**
+
+| # | Fallo | Dónde |
+|---|---|---|
+| A1 | Crear, editar y borrar sesiones de **cualquier centro** de la organización. Demostrado end-to-end: renombrado, creación y borrado en un centro ajeno, los tres con 200 | `agenda/sessions/route.ts:27-60`, `[id]/route.ts:34-85` |
+| A2 | El brief **no pinta las condiciones sin regla**: el servidor manda `conditions`, `BriefRosterEntry` las tipa y la pantalla solo recorre `matchedRules`. Un hipertenso o una embarazada salen en "Sin restricciones" | `(tabs)/brief/[id].tsx:220-227` |
+
+**Altos**
+
+| # | Fallo | Dónde |
+|---|---|---|
+| A3 | El debrief y el feedback marcan "Asistió" sobre reservas **canceladas o en lista de espera** | `trainer/brief/[id]/debrief/route.ts:40-43`, `trainer/sessions/[id]/feedback/route.ts:147-155` |
+| A4 | **Desmarcar una asistencia no manda nada al servidor** (`if (!next) return;`): la pantalla dice "no asistió" y la base de datos dice que sí. El socio pierde la sesión | `(tabs)/brief/[id].tsx:184-199`, `:246-254` |
+| A5 | La API **no comprueba el plan contratado en ninguna ruta**: brief, semáforo, feedback y mesociclos abiertos a cualquier plan | `_lib/api-session.ts:32-48` |
+| A6 | `GET /staff` devuelve la plantilla completa de la organización a dirección de centro (28 personas, incluidas las 8 de otro centro) | `staff/route.ts:25-50` |
+| A7 | Recepción recibe `feedbackAvg`, que promedia **dolor y movilidad** | `members/[id]/calendar/route.ts:11,30`, `members/[id]/route.ts:24,51` |
+| A8 | Cambiar el precio de un producto **no invalida `stripePriceId`**: se sigue cobrando el importe anterior. Y el `DELETE` borra en vez de archivar | `products/[id]/route.ts:37-50,74` |
+| A9 | "Cancelación gratuita hasta **12 h**" cuando el servidor aplica 24 | `agenda.tsx:371-372`, `sesiones.tsx:61`, `index.tsx:74` |
+
+**Medios**
+
+| # | Fallo | Dónde |
+|---|---|---|
+| A10 | El historial de consumo **no cuadra consigo mismo**: la tarjeta dice "5 gastadas", el resumen "0 gastadas" y el listado no tiene ni una línea de consumo | `portal/consumption/route.ts:75,126,129-131` |
+| A11 | "Siguiente cobro" calculado como `hoy + 1 mes` **en el móvil**, para cualquier producto, incluido un bono que no se renueva; y `/mes` fijo en el código | `onboarding/pago.tsx:40-41,94`, `onboarding/planes.tsx:163` |
+| A12 | "Sin contrato de permanencia · cancela cuando quieras" escrito a fuego para todos los planes de todos los centros | `onboarding/planes.tsx:96` |
+| A13 | `renewsAt` se pinta siempre como "Renueva el X" aunque sea una caducidad; `cancelAt` y `pauseUntil` **llegan y no se pintan nunca** | `(tabs)/bonos.tsx:105` |
+| A14 | Badge **"Más elegido"** asignado automáticamente al primer producto (`featured ?? products[0]`) | `onboarding/planes.tsx:37` |
+| A15 | El índice de brief enseña a `TRAINER_ADMIN` toda la organización; el detalle da 404 → lista de tarjetas muertas | `trainer/brief/route.ts:24` |
+| A16 | Dos endpoints para el mismo gesto con **efectos opuestos sobre el bono** (devolver vs. consumir) | `bookings/[bookingId]/route.ts` vs `.../discard/route.ts` |
+| A17 | La hoja de reserva anuncia "quedarán N−1" también cuando va a **lista de espera**, que no descuenta | `(tabs)/agenda.tsx:317,355-363` |
+| A18 | `PATCH /capacity` usa tope fijo de 30 e **ignora el aforo por defecto del centro**; y acepta sesiones que no son de grupo | `capacity/route.ts:109-136` |
+| A19 | El panel de dirección da cifras distintas a la web: ámbito por `claims.centerId` en vez de `centerScopeFor`, y **8 vs. 9 morosos** medidos sobre la misma organización | `_lib/dashboard.ts:26,59-71` |
+| A20 | Fallback de API en **HTTP claro** si falta `EXPO_PUBLIC_API_URL` en un build de producción | `api/client.ts:22-34` |
+
+**Bajos**
+
+| # | Fallo | Dónde |
+|---|---|---|
+| A21 | `/me`, `/notifications` y `/notifications/[id]/read` se saltan la comprobación de plataforma activa | `me/route.ts:8`, `notifications/route.ts:7` |
+| A22 | `WAITLISTED` se muestra como "Reservada"; en el calendario de la ficha, sin distintivo alguno | `(tabs)/sesiones.tsx:177`, `socios/[id].tsx:64,73` |
+| A23 | `POST /agenda/sessions` no valida hora ni fecha; el endpoint de EP hermano sí | `agenda/sessions/route.ts:34-55` |
+| A24 | Notificación de `Lead` lleva a la lista **descartando el id**; la de `Member` lleva a una pantalla de entrenador | `(tabs)/notificaciones.tsx:44-64` |
+| A25 | El botón "Rellenar" abre `pendingDebriefs[0]` mientras el texto de al lado habla de "la más antigua", que es `[length-1]` | `(tabs)/panel.tsx:100,108` |
+| A26 | `ROLE_LABEL` duplicado y divergente respecto a `src/lib/rbac.ts:382-391` | `(tabs)/perfil.tsx:27-35` |
+| A27 | Dos endpoints de checkout, uno **sin ningún consumidor**; y `/portal/billing/portal` tampoco lo tiene | `portal/billing/**` |
+| A28 | `SecureStore.setItemAsync` sin `keychainAccessible` | `api/client.ts:97-103` |
+
+> **Nota de ámbito**: A1, A5, A6, A7, A8, A18, A19, A20, A21 y A23 viven en `src/app/api/mobile/v1/**`, que es **código de la web** aunque solo lo consuma la app. Arreglarlos no toca el bundle nativo y no cuenta como funcionalidad nueva en la app.
+
+### 9.3 Recomendaciones que no añaden funcionalidad
+
+Todas del capítulo 4, y todas son cambios sobre pantallas que ya existen.
+
+| # | Recomendación | Coste |
+|---|---|---|
+| R1 | **Contraste de la barra de pestañas**: activo `theme.gold` da 2,20:1 sobre blanco e inactivo `textFaint` 2,54:1 — ni el 3:1 de componente. El token correcto (`theme.goldText`) **ya existe en el tema**; y subir la etiqueta de 9,5 px a 11 | 1 línea + tamaño |
+| R2 | **`accessibilityLabel` en `Field`**: 24 usos, incluido el login, hoy sin nombre accesible | 1 fichero |
+| R3 | **`accessibilityRole="header"`** en `ScreenHeader` y `SectionTitle`: **dos líneas, efecto en las 33 pantallas** | 2 líneas |
+| R4 | **Toast anunciado** (`accessibilityLiveRegion` + `announceForAccessibility`) y sin auto-ocultar en la variante crítica. Es el único acuse de recibo de reservar, cancelar y guardar un debrief | 1 fichero |
+| R5 | **`FlatList` en las cuatro listas largas** (`socios`, `mis-socios`, `leads`, `consumo`): hoy 0 `FlatList` en toda la app y un scroll infinito dentro de un `ScrollView` deja 500 tarjetas vivas | 1-2 d |
+| R6 | **Suelo tipográfico de 11 px** y `maxFontSizeMultiplier` donde hay alturas fijas: hoy hay textos de 9 px y **0 apariciones de `allowFontScaling`** conviviendo con `HEIGHT.sm = 36` y `tabBarHeight: 58` | 0,5 d |
+| R7 | **`hitSlop` en el botón `sm`**: 36 px de objetivo táctil existiendo `layout.touchMin = 44` declarado y sin usar. 71 pulsables, 16 con `hitSlop` | 0,5 d |
+| R8 | **Estados de carga en "Más" y "Perfil"**: hoy los contadores se pintan a 0 y saltan al valor real. Un "0 tareas" que medio segundo después dice "7" es peor que un esqueleto — el usuario ya se ha ido | 0,5 d |
+| R9 | **`accessibilityViewIsModal` en `Sheet`**: en iOS, VoiceOver alcanza el contenido de detrás | 1 línea |
+| R10 | **Rótulos y permisos desde una fuente única**: `ROLE_LABEL` y los cinco predicados de `auth/routes.ts:133-167` son copias a mano de `src/lib/rbac.ts`. Extraer a un módulo compartido, o como mínimo un test que compare las dos tablas (§9.5, T12) | 1 d |
+
+### 9.4 Infraestructura de pruebas
+
+Hoy no hay ninguna. Lo que hay que montar, y por qué en ese orden:
+
+**1. Runner.** `jest-expo` es el preset que Expo mantiene y el que sabe transformar los módulos de `expo-*` y de React Native; `@testing-library/react-native` para render y consultas por rol accesible; `expo-router/testing-library` (`renderRouter`) para las pantallas, que están atadas al router por `useLocalSearchParams` y `router.push`.
+> Las versiones exactas hay que resolverlas contra el SDK instalado (**Expo 57**, RN 0.86, React 19.2) con `npx expo install --dev jest-expo jest @testing-library/react-native`. No fijo números aquí: `expo install` es lo que garantiza la pareja correcta, y una versión inventada cuesta media jornada de depuración.
+
+**2. Envoltorio común.** Casi todas las pantallas consumen TanStack Query, así que hace falta un `renderWithProviders` con un `QueryClient` de test (`retry: false`, `gcTime: 0`) más el `AuthProvider`. Sin eso, cada test arrastra reintentos y caché entre casos y el resultado depende del orden.
+
+**3. Frontera de red.** La app habla con el servidor por un único punto (`api/client.ts`), así que **no hace falta MSW**: basta con doblar `fetch` global y servir respuestas tipadas con `api/types.ts`. Esto tiene un efecto de segundo orden que interesa: obliga a que los fixtures se escriban **contra el tipo**, así que un cambio en el contrato del servidor rompe los tests de la app — que es justo lo que hoy no pasa y por lo que `LeadStage` pudo divergir de `LeadStatus`.
+
+**4. Datos de prueba.** Un `apps/mobile/src/test/fixtures.ts` con un constructor por respuesta (`aMeResponse`, `anAgendaResponse`, `aBriefRoster`…) y sobrescritura parcial. Nada de JSON pegado a mano en cada test.
+
+**5. Qué NO montar ahora**: Detox o Maestro (end-to-end sobre dispositivo). Son caros de mantener, lentos en CI y no cazan ninguno de los 22 fallos de la lista — todos son de lógica, de contrato o de presentación.
+
+### 9.5 Qué probar primero
+
+Priorizado por "¿habría cazado un fallo real de este informe?". Los ocho primeros sí lo habrían hecho.
+
+| # | Prueba | Caza |
+|---|---|---|
+| T1 | `brief/[id]`: un roster con `conditions` y **sin `matchedRules`** pinta la condición y **no** cae en "Sin restricciones" | A2 |
+| T2 | `brief/[id]`: tocar dos veces el check emite `DELETE`/desmarcado al servidor; el estado no se queda solo en local | A4 |
+| T3 | `agenda.tsx`: con `canCancelFreely` y `cancelWindowHours: 24`, el texto dice **24**, no un literal | A9 |
+| T4 | `agenda.tsx`: en una sesión llena, la hoja **no** anuncia descuento de bono | A17 |
+| T5 | `onboarding/pago.tsx` y `planes.tsx`: un producto con `planType` no recurrente **no** muestra "/mes" ni "siguiente cobro" | A11 |
+| T6 | `onboarding/planes.tsx`: sin `featured`, **ningún** producto lleva "Más elegido" | A14 |
+| T7 | `bonos.tsx`: un bono no recurrente dice "Caduca el"; con `cancelAt` presente, no dice "Renovación automática" | A13 |
+| T8 | `sesiones.tsx` y `socios/[id]`: `WAITLISTED` se distingue de `BOOKED` | A22 |
+| T9 | `api/client.ts`: 401 dispara refresh una sola vez y reintenta; un segundo 401 cierra sesión; el timeout de 12 s traduce a mensaje en castellano | regresión del núcleo |
+| T10 | `api/client.ts`: fuera de `__DEV__`, una `API_URL` sin `https://` falla en vez de caer al fallback | A20 |
+| T11 | `routes.ts`: `tabsFor`/`homeRouteFor` para los ocho roles, y `needsMembershipGate` | regresión de navegación |
+| T12 | **Paridad de permisos**: los cinco predicados de `auth/routes.ts` dan el mismo resultado que `src/lib/rbac.ts` para los 8 roles. Es el test que evita que la app enseñe un botón que el servidor rechaza con 403 | R10 |
+| T13 | `utils/format.ts`: fechas, euros y helpers de ISO, incluidos cambio de hora y fin de mes | regresión |
+| T14 | `Field`, `Button`, `Toast`, `EmptyState`: nombre accesible, `hitSlop`, anuncio del toast | R1-R4, R7 |
+
+Y en el lado del servidor —que es donde viven diez de los fallos—, los **ocho specs de API** ya especificados en §8.3 (E1-E8), que se ejecutan con Playwright `request.newContext()` sin navegador. Empezar por `mobile-agenda-scope.spec.ts` (A1) y `mobile-staff-scope.spec.ts` (A6): son los dos bloqueantes y no necesitan interfaz.
+
+### 9.6 Cobertura
+
+**Objetivo realista y por fases**, no un número redondo de golpe:
+
+| Fase | Umbral | Dónde se exige |
+|---|---|---|
+| Al arrancar | Se **mide y se publica**, sin umbral que rompa CI | todo `apps/mobile/src` |
+| Tras T1-T14 | **60 %** de líneas y ramas | `src/api/`, `src/auth/`, `src/utils/`, `src/components/` |
+| Estable | **80 %** en `src/api/` y `src/auth/`, 60 % en el resto | igual |
+
+`src/api/` y `src/auth/` primero, y con el listón más alto, porque son los dos módulos donde un fallo afecta a **todas** las pantallas: el cliente HTTP con su rotación de token, y la tabla de navegación y permisos.
+
+Configurar `collectCoverageFrom` excluyendo `src/theme/` (constantes) y los `_layout.tsx` (declarativos), publicar el resumen en el job de CI, y **no** poner umbral que rompa hasta que la batería base esté escrita: un umbral que falla el primer día se acaba bajando, y entonces ya no es un umbral.
+
+Aparte: la web tampoco mide cobertura hoy (`npm run test:unit` es `tsx --test` sin flags). Node 20 trae cobertura experimental para `node:test`; **hay que comprobar si funciona con el cargador de `tsx`** antes de prometerlo, porque el mapeo de fuentes con transpilación en vuelo es justo donde esto suele romperse. Si no funciona, la alternativa es `c8`.
+
+### 9.7 CI
+
+`.github/workflows/e2e.yml` **no ejecuta nada de la app móvil**. Añadir un job paralelo al de `verify` — sin base de datos, sin Playwright, así que corre en menos de dos minutos:
+
+```yaml
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --coverage
+```
+
+Dos detalles que importan: `cache-dependency-path` apuntando al lockfile de la app (si no, la caché es la de la raíz y no sirve de nada), y el job **separado** del de la web, para que un fallo de la app no oculte el resultado de la otra ni al revés.
+
+## 10. Plan priorizado
+
+> Ajustado a las dos decisiones tomadas: el consentimiento obligatorio se da por cerrado (§7 CN-03) y la app móvil solo recibe corrección de fallos, pruebas, cobertura y recomendaciones sin funcionalidad nueva (§9). Lo que cae fuera de ese alcance está marcado **→ §11** y espera decisión.
 
 Los once informes coinciden en más de lo que discrepan. Ordenados por lo que rompe primero.
 
@@ -1746,20 +1940,20 @@ Los once informes coinciden en más de lo que discrepan. Ordenados por lo que ro
 
 | # | Acción |
 |---|---|
-| 2.1 | **Gestionar suscripción y darse de baja desde dentro** del portal y de la app (el endpoint ya existe y ninguna pantalla lo llama) |
+| 2.1 | **Gestionar suscripción y darse de baja desde dentro del portal web** (el endpoint ya existe y ninguna pantalla lo llama). En la app, **→ §11** |
 | 2.2 | **Precio de la cuota, próximo cobro y recibos** en "Mi membresía" |
-| 2.3 | **Recordatorios de sesión** (24 h y 2 h antes). Sin push, al menos por email: hoy **no existe plantilla de recordatorio en ningún canal**, y la regla penaliza no avisar |
+| 2.3 | **Recordatorios de sesión por email** (24 h y 2 h antes): hoy **no existe plantilla de recordatorio en ningún canal**, y la regla penaliza no avisar. El push queda congelado por §9.1, así que el email deja de ser el plan B y pasa a ser el canal |
 | 2.4 | **Saldo del bono y próxima sesión en la primera pantalla** de la web (hoy viven en un cajón detrás de la hamburguesa en móvil) |
 | 2.5 | **Política de cancelación en la tarjeta de la clase**, antes de reservar |
 | 2.6 | **Congelar el bono** desde el portal (existe en el modelo, solo lo toca el staff) |
 | 2.7 | Adelgazar el **muro de alta de 7 campos** justo después de pagar |
-| 2.8 | Dejar entrar a la app **sin bono vivo**, en modo lectura |
+| 2.8 | Dejar entrar a la app **sin bono vivo**, en modo lectura — **→ §11** (retirar el muro no añade pantallas, pero cambia qué ve un socio sin membresía) |
 
 ### Bloque 3 — Lo que el entrenador necesita para trabajar
 
 | # | Acción |
 |---|---|
-| 3.1 | **No-show en el móvil** (motivo + decisión de devolución), y que **desmarcar desmarque de verdad** (hoy el estado local se pone a `null` y no se manda nada al servidor: el socio pierde la sesión) |
+| 3.1 | Que **desmarcar desmarque de verdad** (hoy el estado local se pone a `null` y no se manda nada al servidor: el socio pierde la sesión). El **no-show desde el móvil**, **→ §11** |
 | 3.2 | **Un único canal de debrief**: verde/ámbar/rojo con el color puesto por el dedo, no promediado. Los ocho ejes salen del flujo de sala y pasan a valoración periódica desde la ficha |
 | 3.3 | **Matar el feedback mensual de nueve deslizadores** (270 deslizadores al mes con 30 socios) |
 | 3.4 | **Rangos de composición neutros por sexo y edad, o ninguno**: hoy el defecto son los de un hombre de 28 años y marcan `critical` a una mujer de 52 con un 29 % de grasa, **en su propio portal** |
@@ -1776,7 +1970,7 @@ Los once informes coinciden en más de lo que discrepan. Ordenados por lo que ro
 | 4.2 | **Poner "cero comisión sobre tus cobros" en grande en `/planes`**: es la frase más vendedora del producto y está escondida en un documento interno |
 | 4.3 | **Menú a 5 secciones** (Hoy / Socios / Dinero / Crecer / Ajustes). Hoy el OWNER tiene 15 entradas, cinco de ellas configuración disfrazada de módulo |
 | 4.4 | **WhatsApp `wa.me`** con mensaje pre-escrito desde retención, impago y lead. Días, no semanas, y cero infraestructura |
-| 4.5 | **Decidir sobre la app nativa**: congelarla y hacer PWA del portal, o recortarla a dos roles (socio y entrenador) y meter push. **Una app de RRHH no tiene tesis** |
+| 4.5 | **App nativa congelada** (decisión tomada). Queda por decidir si se publica y si se recorta de 8 roles a 2 — **→ §11**. Si no se publica, la PWA del portal vuelve a la mesa |
 | 4.6 | **Exportación CSV de socios y cobros**: se cobra en el plan Avanzado y no existe |
 | 4.7 | **Enseñar las URLs públicas del centro** en la puesta en marcha: hoy el embudo comercial completo solo es alcanzable escribiendo la URL a mano |
 | 4.8 | **Ventana mínima de cancelación + QR de check-in**: el foso (semáforo, brief, retención) vale lo que valgan los datos de asistencia, y hoy los mete el staff a mano |
@@ -1816,4 +2010,307 @@ Y una regla estructural: **cero tests de la API móvil hoy**. Mientras no exista
 ### Lo que explícitamente NO hay que hacer ahora
 
 Reescribir la agenda · vista por sala · VERI\*FACTU (aplazado a enero de 2027) · Stripe Terminal · reactivar fichajes · más BI · más pantallas móviles · más dimensiones de feedback · basemap propio · isócronas reales.
+
+## 11. Dudas de negocio a cerrar antes de escribir las historias
+
+Cada una bloquea al menos una historia de usuario: sin respuesta, la historia no se puede escribir sin inventarse el criterio de aceptación. Agrupadas por quién decide.
+
+### 11.1 Alcance de la app móvil (dirección de producto)
+
+Las tres primeras están en la frontera de la decisión de congelar: **se pueden defender como corrección de algo roto y como funcionalidad nueva**, y la respuesta cambia el alcance del trimestre.
+
+| # | Duda | Por qué importa | Si la respuesta es "sí" | Si es "no" |
+|---|---|---|---|---|
+| D-M1 | **¿Entra el no-show desde el móvil?** | Hoy no existe en la app: un entrenador que solo use el móvil deja en `BOOKED` a quien no apareció, **nunca dispara la alerta de tres faltas** y falsea la tasa de no-show del panel. Pero exige endpoint nuevo + interfaz nueva | Endpoint `POST .../bookings/[id]/no-show` con motivo y decisión de devolución, reutilizando `markBookingNoShow` | Se documenta que el no-show es operación de escritorio, y se asume el sesgo en los KPIs. Conviene decirlo en la app, no dejarlo implícito |
+| D-M2 | **¿Se publica la app en las tiendas?** | Si se publica, tres cosas dejan de ser opcionales: **borrado de cuenta desde la app** (Guideline 5.1.1(v) y política de Play), **enlace a política de privacidad y gestión de consentimientos**, y `bundleIdentifier`/`package`/privacy manifest. Las tres son funcionalidad nueva, y las tres son requisito, no mejora | Se descongelan esas tres y solo esas, como deuda de publicación | La app se queda como herramienta interna del piloto, y entonces conviene decirlo por escrito: hoy `app.json` dice "Training Zone" y la deja como app de un cliente, no como producto de Apta |
+| D-M3 | **¿Se retira el muro de compra?** | Sin bono vivo, la app redirige al catálogo y no deja ver historial, medidas ni escribir al centro. Retirar el muro no añade pantallas —las de socio ya existen— pero cambia qué ve alguien sin membresía | Modo lectura + banda de compra | Se mantiene, y se acepta que un socio de cuatro años que deja caducar el bono en agosto se encuentra un portazo |
+| D-M4 | **¿Se recorta de 8 roles a 2?** | La app declara pestañas para los ocho, incluidos soporte de plataforma y RRHH, con 53 endpoints detrás. Recortar **reduce** superficie, no la añade, pero es decisión de producto | Se retiran `PLATFORM_ADMIN` y `HR_MANAGER` y se recorta dirección a panel + socios en lectura | Se mantienen los ocho y se asume el coste de probarlos y mantenerlos |
+| D-M5 | **¿El selector de tema entra?** | `User.theme` manda en la web y la app lo ignora: la misma persona pone "claro" en el portátil y el móvil le sale oscuro. Exige un control nuevo en Perfil | Se añade el `Segmented` de tres opciones | Queda documentado como divergencia conocida entre superficies |
+
+### 11.2 Cobro y Stripe (dirección + responsable de cobros)
+
+Todas vienen del §5.4 y **bloquean la fase 2 de las HU de Stripe**.
+
+| # | Duda | Recomendación del informe |
+|---|---|---|
+| D-S1 | **Standard vs Express** para las cuentas de los centros | Mantener **Standard** (ya construido y coherente con "Apta no toca el dinero"), asumiendo que cada gimnasio activa sus propios métodos de pago |
+| D-S2 | **¿Bizum en bonos puntuales?** Hoy prohibido por una regla que solo se justifica en recurrente | Permitirlo **solo** en `mode:"payment"`, con la restricción en `isRecurring()` |
+| D-S3 | **Plan `ONLINE` e IAP de Apple**: es contenido digital consumido dentro de la app | No venderlo desde la app hasta cerrarlo. Y si la biblioteca no se construye (§2.3), la duda desaparece sola |
+| D-S4 | **Política de prorrateo** al cambiar de plan | Subida: prorrateo inmediato. Bajada: al próximo ciclo |
+| D-S5 | **Periodo de gracia de morosidad**: ¿cuántos días sigue reservando quien tiene un recibo devuelto? | 7 días, configurable por organización. **Sin esta respuesta la HU de dunning no se puede escribir** |
+| D-S6 | **Al agotar reintentos: `cancel` o `unpaid`** | `cancel`. Hay que configurarlo en el Dashboard **y** en el código a la vez |
+| D-S7 | **¿Quién atiende al socio en un reembolso o una disputa?** | Desde Apta, que es el objetivo de producto — y eso exige construir HU-ST-20 y HU-ST-21 |
+| D-S8 | **VERI\*FACTU: ¿Apta factura o no?** | Apta **no** factura; el gimnasio factura con su software certificado y Apta entrega el recibo de Stripe. **Bloqueante para producción**, hay que ponerlo en el contrato |
+| D-S9 | **Ventana mínima de cancelación de reserva** (hoy no existe: se puede cancelar un minuto antes y recuperar la sesión) | Decisión de dirección. Lo detectan la primera semana |
+| D-S10 | **La ventana de descarte del entrenador (24 h) vs. la del socio (configurable)** | Hoy son dos reglas distintas para el mismo gesto según la superficie. Elegir una y documentarla como `RB-AGENDA-009` |
+
+### 11.3 Producto y modelo de negocio (dirección)
+
+| # | Duda | Nota |
+|---|---|---|
+| D-P1 | **¿Training Zone paga la licencia?** | Si no la paga, no es un cliente: es un laboratorio, y todo lo que pida es un favor, no producto |
+| D-P2 | **¿Objetivo a 12 meses: 5, 20 o 100 clientes?** | Cada número exige un producto distinto: 5 → servicio a medida; 100 → back-office y self-service obligatorios |
+| D-P3 | **¿España o EEUU?** | Lo construido es 100 % España (SEPA, Bizum, CP españoles, RGPD, VERI\*FACTU). Entrar en EEUU no es traducir |
+| D-P4 | **¿De quién es la metodología de `src/lib/ai/methodology/`?** | Si es de Training Zone, ¿con qué derecho se vende al centro de al lado? Por escrito, antes de vender |
+| D-P5 | **¿Se reempaqueta el catálogo?** (matar o subir Esencial, IA con cupo en Avanzado, Élite hasta 10 centros, Fundador con cupo y fecha) | Coste cero, mueve ingresos el mismo día. Es la duda con mejor relación decisión/impacto de toda la lista |
+| D-P6 | **¿Qué se apaga?** | Rutina de IA falsa, biblioteca online, chat, tareas, anuncios, fichajes. Si la respuesta es "nada", el trimestre se va en mantener |
+| D-P7 | **¿Se construye el libro mayor del bono (`SessionLedger`)?** | Hoy el historial de consumo promete una contabilidad que el modelo no puede sostener. O se construye la tabla, o se retira la pantalla |
+| D-P8 | **¿Se admiten menores en los centros?** | Si sí, hace falta control de edad y consentimiento de tutores (§7 CN-12). Si no, hay que poder demostrarlo |
+
+### 11.4 Cumplimiento (dirección + asesoría externa)
+
+| # | Duda | Bloquea |
+|---|---|---|
+| D-C1 | **¿Dónde está desplegada la base de datos?** Si `HealthRecord` está fuera de la UE, es transferencia internacional de datos de salud | Es la acción de mayor rendimiento de todo el capítulo 7: moverla a Frankfurt elimina el problema de raíz |
+| D-C2 | **Validación jurídica del art. 9.2.f** como base del dato de salud obligatorio | La redacción de la "Declaración de salud" (§7 CN-03) y la política de privacidad |
+| D-C3 | **Tabla de plazos de conservación** | `runDataRetentionRule`: sin plazos no hay motor que escribir |
+| D-C4 | **¿Se designa DPD? ¿La EIPD es obligatoria?** | Hay que dejar el análisis por escrito **aunque la conclusión sea "no procede"** |
+| D-C5 | **¿Está firmado el DPA con Anthropic?** | Si no, la IA no toca datos de un socio real, ni en piloto |
+| D-C6 | **¿Apta o Training Zone son microempresa** a efectos de la Ley 11/2023? | Si Apta no lo es, la accesibilidad deja de ser recomendación y pasa a obligación |
+| D-C7 | **¿Se saca `/audit` del muro de pago?** | Un cliente que no puede ver quién accedió a los datos de salud de sus socios no puede acreditar el art. 32. Es decisión comercial, no técnica |
+
+### 11.5 Cómo usar esta lista
+
+Sugerencia de orden para la sesión: **11.1 primero** (define el alcance del trimestre), **11.2 después** (define si el piloto puede cobrar), y 11.3-11.4 en paralelo, porque son las que dependen de terceros y tienen plazo de respuesta largo.
+
+De las 30, **cinco bloquean por sí solas** el arranque: D-M2, D-S5, D-S8, D-C1 y D-C5. Las demás se pueden responder con el trabajo ya en marcha.
+
+## 12. Índice de candidatas a historia de usuario
+
+Cada fila es una historia por escribir, no una escrita. Están agrupadas por épica, con su origen en este documento, la prioridad y si depende de una duda del §11. **Las 28 HU de Stripe ya están redactadas con sus criterios de aceptación en el §5.2** y no se repiten aquí: la épica E4 solo las referencia.
+
+Convención de prioridad: **P0** = bloquea el piloto o hay dinero o datos de salud en juego · **P1** = el cliente lo nota esta semana · **P2** = deuda que crece · **P3** = mejora.
+
+### E1 · Aislamiento multi-tenant y control de acceso
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E1-01 | El Session Brief solo abre sesiones del ámbito de centro de quien lo pide | §2.4 SEC-01, §8 W-01 | P0 | |
+| E1-02 | Los endpoints de agenda móvil rechazan sesiones fuera del ámbito de centro | §2.4 SEC-05, §8 M-01, §9.2 A1 | P0 | |
+| E1-03 | `/feedback`, `/feedback/[id]` y `debriefs-semanales` respetan el ámbito de centro | §8 W-04 | P0 | |
+| E1-04 | `GET /api/mobile/v1/staff` devuelve solo la plantilla del ámbito | §8 M-04, §9.2 A6 | P0 | |
+| E1-05 | El selector de socio de la agenda ofrece solo socios del ámbito, y la escritura lo valida | §8 W-07 | P0 | |
+| E1-06 | Recepción deja de recibir `feedbackAvg` (promedia dolor y movilidad) | §8 M-02, §9.2 A7 | P0 | |
+| E1-07 | La alerta de tres faltas llega solo a la dirección del centro del socio | §8 W-12 | P1 | |
+| E1-08 | `getHealthRecordsForMember` acota por `orgId` (defensa en profundidad) | §8 W-18 | P2 | |
+| E1-09 | Cabeceras de seguridad HTTP (CSP, HSTS, X-Frame-Options, Referrer-Policy) | §2.4 SEC-03 | P1 | |
+| E1-10 | Rate limiting y protección de fuerza bruta en el login web y móvil | §2.4 SEC-04 | P1 | |
+| E1-11 | `confirmDemoCheckoutAction` comprueba `isDemoModeActive()` | §2.4 SEC-02 | P1 | |
+
+### E2 · Integridad de reservas y bonos
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E2-01 | Borrar una sesión devuelve el bono a cada socio apuntado y lo audita | §8 W-02 | P0 | |
+| E2-02 | Una reserva `CANCELLED` o `WAITLISTED` no puede pasar a `ATTENDED` (cuatro puntos de escritura) | §8 W-03, M-06, §9.2 A3 | P0 | |
+| E2-03 | Desmarcar una asistencia en el móvil se propaga al servidor | §2.2, §9.2 A4 | P0 | |
+| E2-04 | Un único criterio para sacar a un socio de una sesión (devolver vs. consumir), documentado como regla | §1.2 M-02, §8 M-08, §9.2 A16 | P1 | D-S10 |
+| E2-05 | Ventana mínima de cancelación de reserva | §2.3 | P1 | D-S9 |
+| E2-06 | La ventana de cancelación viaja del servidor a la app; se eliminan los literales de 12 h | §1.2 M-07, §8 M-05, §9.2 A9 | P1 | |
+| E2-07 | La decisión de "cancelable sin penalización" usa la zona horaria del centro, no la cookie | §8 W-09 | P1 | |
+| E2-08 | Las posiciones de la lista de espera se renumeran, o se deja de mostrar el número | §2.1, §8 W-14 | P2 | |
+| E2-09 | No se envía "se ha liberado una plaza" al limpiar el roster de una sesión pasada | §8 W-15 | P2 | |
+| E2-10 | `WAITLISTED` se distingue de `BOOKED` en la app y en el calendario de la ficha | §8 M-13, §9.2 A22 | P2 | |
+| E2-11 | La hoja de reserva no anuncia descuento de bono cuando va a lista de espera | §8 M-09, §9.2 A17 | P2 | |
+| E2-12 | `moveSessionAction`, `POST /agenda/sessions` y `PATCH` validan hora y fecha como lo hace `saveSessionAction` | §8 W-13, M-14, §9.2 A23 | P2 | |
+| E2-13 | El aforo por defecto del centro respeta `MAX_GROUP_CAPACITY` en las dos superficies, y `PATCH /capacity` solo acepta sesiones de grupo | §8 W-11, M-10, §9.2 A18 | P2 | |
+| E2-14 | El no-show desde el móvil | §1.2 M-03, §9.1 | P1 | **D-M1** |
+| E2-15 | Libro mayor del bono (`SessionLedger`): una fila por movimiento, con signo y motivo | §1.2 M-06, §9.2 A10 | P1 | **D-P7** |
+
+### E3 · Salud, semáforo de aptitud y metodología
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E3-01 | La app pinta las condiciones sin regla asignada, en ámbar, nunca en "Sin restricciones" | §2.2, §9.2 A2 | P0 | |
+| E3-02 | Las zonas de lesión son un enum cerrado con lateralidad como campo aparte | §2.2 | P0 | |
+| E3-03 | Reglas de aptitud **por condición** (hipertensión, embarazo, diabetes, postoperatorio), con ámbar por defecto ante condición sin regla | §2.2 | P0 | |
+| E3-04 | La pantalla de reglas muestra "esta regla afecta hoy a N socios" | §2.2 | P1 | |
+| E3-05 | El brief muestra la adaptación, no la descripción clínica cruda | §2.2 | P1 | |
+| E3-06 | La revisión de valoración vuelve a preguntar por lesiones | §2.2 | P1 | |
+| E3-07 | Un único canal de debrief: 🟢🟡🔴 puesto por el entrenador, no promediado | §2.2, §1.1 W-06 | P1 | |
+| E3-08 | Se retira el feedback mensual de nueve deslizadores | §2.2, §2.3 | P1 | |
+| E3-09 | Rangos de composición corporal por sexo y edad, o sin semáforo | §2.2 | P1 | |
+| E3-10 | "Edad metabólica" deja de pintarse en la ficha y en el portal del socio | §2.2 | P2 | |
+| E3-11 | La valoración incorpora patrones de movimiento, movilidad y cargas de referencia | §2.2 | P1 | |
+| E3-12 | El mesociclo gana `startDate`, semana en curso y descarga declarada | §2.2 | P1 | |
+| E3-13 | Registro de la carga del ejercicio principal en el debrief de EP | §2.2 | P2 | |
+| E3-14 | Derivación a fisio como registro de primera clase, con bloqueo del perfil Rehabilitación sin alta | §2.2 | P1 | |
+| E3-15 | Filtro de identificadores sobre el texto libre que va a la IA (o ajuste del texto y subida de `CONSENT_VERSION`) | §2.2, §7 CN-08 | P0 | |
+| E3-16 | El generador de mesociclos recibe el material disponible por centro y sala | §2.2 | P2 | |
+| E3-17 | Plantillas de sesión reutilizables para grupo reducido, con regresión y progresión | §2.2 | P2 | |
+| E3-18 | Auditar la apertura de un mesociclo y purgar `aiConversation` al aprobar | §7 CN-10 | P2 | |
+
+### E4 · Cobros con Stripe
+
+Las 28 historias están redactadas en el **§5.2** con criterios de aceptación en Gherkin, dependencias y estimación. Fases: **0 saneamiento** (HU-ST-01 a 06, bloqueante) · **1 MVP de cobro** (07-11) · **2 recurrencia y ciclo de vida** (12-17) · **3 morosidad** (18-22) · **4 contabilidad** (23-28). Las dudas que las bloquean son D-S1 a D-S8 del §11.2.
+
+Fuera de esa numeración, dos que salen de otros capítulos:
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E4-29 | `saveMembershipPlan()` compartido: cambiar el precio desde la app invalida `stripePriceId` y archivar no borra | §1.2 M-05, §9.2 A8 | P0 | |
+| E4-30 | `createSubscriptionFromPlan()` único: hoy cinco copias, una deja el bono ilimitado | §1.1 W-05 | P1 | |
+
+### E5 · Autoservicio del socio
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E5-01 | Gestionar suscripción y darse de baja desde el portal web | §2.1 | P0 | |
+| E5-02 | "Mi membresía" muestra precio de la cuota, próximo cobro y recibos | §2.1 | P0 | |
+| E5-03 | Recordatorios de sesión por email a 24 h y 2 h | §2.1 | P0 | |
+| E5-04 | Saldo del bono y próxima sesión en la primera pantalla del portal | §2.1 | P1 | |
+| E5-05 | Política de cancelación visible en la tarjeta de la clase, antes de reservar | §2.1 | P1 | |
+| E5-06 | Congelar el bono desde el portal | §2.1 | P1 | |
+| E5-07 | Filtro por día y modalidad en `/portal/agenda` | §2.1 | P2 | |
+| E5-08 | El muro de alta pide solo lo que bloquea; el resto se completa después | §2.1 | P1 | |
+| E5-09 | Historial de asistencia y de movimientos del bono en la web | §2.1 | P2 | E2-15 |
+| E5-10 | La valoración post-sesión se pide en un solo sitio, no en tres | §2.1, §1.1 | P2 | |
+| E5-11 | Se retiran los KPI de retención del hero de "Mi membresía" | §2.1 | P3 | |
+| E5-12 | Textos honestos en el checkout móvil: sin "/mes" en bonos, sin "siguiente cobro" inventado, sin "sin permanencia" fijo, sin "Más elegido" automático | §1.2 M-08, §9.2 A11-A14 | P1 | |
+| E5-13 | "Caduca el" vs "Renueva el", y se pintan `cancelAt` y `pauseUntil` | §2.1, §9.2 A13 | P1 | |
+| E5-14 | Modo lectura sin bono vivo en la app | §2.1 | P2 | **D-M3** |
+| E5-15 | Borrado de cuenta desde la app y desde el portal | §7 CN-25 | P1 | **D-M2** |
+
+### E6 · Gateo comercial y planes
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E6-01 | La API móvil comprueba el plan contratado (`requireApiFeature`) | §1.2 M-01, §8 M-03, §9.2 A5 | P0 | |
+| E6-02 | Las rutas hijas de los módulos premium pasan por `requireFeature` | §8 W-05 | P0 | |
+| E6-03 | `ia_programacion` se gatea antes de llamar a la API de Claude | §8 W-06 | P0 | |
+| E6-04 | Reempaquetado del catálogo de planes | §2.3 | P1 | **D-P5** |
+| E6-05 | "Cero comisión sobre tus cobros" en la landing | §2.3 | P2 | |
+| E6-06 | Exportación CSV de socios y de cobros (se cobra y no existe) | §2.3 | P1 | |
+| E6-07 | `/audit` sale del muro de pago; la exportación se queda dentro | §7 CN-09 | P1 | **D-C7** |
+| E6-08 | Back-office `/apta` mínimo: listar organizaciones, reenviar activación, alta asistida | §2.3 | P2 | **D-P2** |
+
+### E7 · Calidad: pruebas y cobertura
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E7-01 | Infraestructura de pruebas de la app móvil (`jest-expo`, testing-library, envoltorio de providers, doble de `fetch`, fixtures tipadas) | §9.4 | P0 | |
+| E7-02 | Job de CI propio para la app móvil con lint, typecheck, test y cobertura | §9.7 | P0 | |
+| E7-03 | Batería base de la app: T1-T14 del §9.5 | §9.5 | P0 | |
+| E7-04 | Cobertura medida y publicada; umbral 60 % tras la batería base, 80 % en `api/` y `auth/` | §9.6 | P1 | |
+| E7-05 | Cobertura de la web (`node:test` con cobertura, o `c8` si el cargador de `tsx` no la soporta) | §9.6 | P2 | |
+| E7-06 | Ocho specs de API móvil con Playwright `request` (E1-E8 del §8.3), empezando por ámbito de agenda y de plantilla | §8.3 | P0 | |
+| E7-07 | Diez pruebas unitarias de la web: `agenda-delete`, máquina de estados de `Booking`, ventana de cancelación, ámbito de brief y feedback, ocupación con series, lista de espera, `entitlements`, alertas de no-show | §8.3 | P0 | |
+| E7-08 | `planes-gateo.spec.ts` con el camino negativo (hoy solo prueba el positivo) | §8.3 | P0 | |
+| E7-09 | Test de paridad de permisos app ↔ `src/lib/rbac.ts` para los ocho roles | §9.5 T12 | P1 | |
+
+### E8 · Accesibilidad y usabilidad
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E8-01 | `error.tsx` en `(app)/` y en las cuatro rutas con más consultas | §4 | P0 | |
+| E8-02 | `Field` con `htmlFor`, `aria-invalid` y `aria-describedby` (web: 221 usos) | §4 | P0 | |
+| E8-03 | `accessibilityLabel` en `Field` de la app (24 usos, login incluido) | §4, §9.3 R2 | P0 | |
+| E8-04 | Contraste de los tokens gris/oro en las dos superficies y tint de la barra de pestañas | §4, §9.3 R1 | P0 | |
+| E8-05 | `inert` y trampa de foco en `Drawer` y `Sidebar` | §4 | P1 | |
+| E8-06 | `<h1>` real en el header y enlace de salto al contenido | §4 | P1 | |
+| E8-07 | Toasts anunciados a lectores de pantalla, en web y en app | §4, §9.3 R4 | P1 | |
+| E8-08 | `accessibilityRole="header"` en la app (dos líneas, 33 pantallas) | §9.3 R3 | P1 | |
+| E8-09 | `FlatList` en las cuatro listas largas de la app | §4, §9.3 R5 | P1 | |
+| E8-10 | Suelo tipográfico de 11 px y `maxFontSizeMultiplier` donde hay alturas fijas | §9.3 R6 | P1 | |
+| E8-11 | `hitSlop` en el botón `sm` y auditoría de objetivos táctiles | §9.3 R7 | P2 | |
+| E8-12 | Estados de carga en "Más" y "Perfil" | §9.3 R8 | P2 | |
+| E8-13 | Tablas con `scope`, `aria-sort` y paginación en servidor en `/members` y `/billing` | §4 | P2 | |
+| E8-14 | El `Select` con `required` valida de verdad | §4 | P2 | |
+| E8-15 | Captura de lead en dos pasos (hoy 11 campos obligatorios de pie en recepción) | §4 | P1 | |
+| E8-16 | El panel de acceso demo y los botones de SSO muertos salen del login de producción | §4 | P1 | |
+| E8-17 | Menú a cinco secciones (Hoy / Socios / Dinero / Crecer / Ajustes) | §2.3 | P1 | **D-P6** |
+| E8-18 | Diccionario único de rótulos y matriz única de permisos entre superficies | §4, §9.3 R10 | P2 | |
+
+### E9 · SEO y captación
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E9-01 | El proxy deja pasar `robots.txt`, `sitemap.xml` y `/.well-known/*` | §3 A.1, B.2 | P0 | |
+| E9-02 | `robots.ts` con `noindex` de lo privado, y `noindex` en las seis rutas con token firmado | §3 A.2, A.3 | P0 | |
+| E9-03 | `metadataBase`, OG por defecto y `src/lib/site.ts` con la marca en un solo sitio | §3 A.8 | P1 | |
+| E9-04 | `generateMetadata` por centro en `hazte-socio` y `lead-form`, con canonical | §3 A.4, A.9 | P1 | |
+| E9-05 | NAP en el modelo `Center` (`phone`, `city`, `postalCode`, `description`, `openingHours`, `publicPage`) y en las queries públicas | §3 A.5 | P1 | |
+| E9-06 | `sitemap.ts` filtrado por `platformStatus` y `publicPage` | §3 A.7 | P1 | |
+| E9-07 | JSON-LD: `SportsActivityLocation` por centro, `FAQPage` desde el array existente, `Organization` | §3 A.6 | P2 | |
+| E9-08 | Carga diferida del tour de `/planes` (~108 KB de JS antes de poder pulsar "Ver planes") | §3 A.10 | P1 | |
+| E9-09 | Analítica sin cookies, Search Console y eventos de conversión | §3 A.11 | P1 | |
+| E9-10 | Un solo H1 en `/planes`, con la consulta principal | §3 A.12 | P2 | |
+| E9-11 | Páginas de captación por funcionalidad y por vertical, e índice de centros | §3 A.13 | P2 | |
+| E9-12 | `next/image` en las páginas públicas y `remotePatterns` para los logos de organización | §3 A.14 | P2 | |
+| E9-13 | Testimonios: retirar o desatribuir por completo | §3 A.15 | P1 | |
+| E9-14 | Las páginas de centro se cachean con `revalidate` + `revalidateTag` | §3 A.16 | P2 | |
+| E9-15 | Enseñar las URLs públicas del centro en la puesta en marcha | §1.1 W-03 | P1 | |
+| E9-16 | Ficha de tienda: identificadores, capturas, copy y App Links | §3 B.1-B.5 | P2 | **D-M2** |
+
+### E10 · Cumplimiento normativo
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E10-01 | Capa informativa y minimización del campo de salud en el formulario público de leads | §7 CN-01 | P0 | |
+| E10-02 | `MemberProgressEntry` pasa por `health-access.ts`; la sección "evolución" se gatea para recepción | §7 CN-02 | P0 | |
+| E10-03 | "Declaración de salud" en el onboarding, con la base jurídica documentada y los otros tres consentimientos blindados como libres | §7 CN-03 | P0 | D-C2 |
+| E10-04 | Contrato de encargado del tratamiento Apta ↔ centro, aceptado y registrado en el checkout | §7 CN-30 | P0 | |
+| E10-05 | Política de privacidad completa conforme al art. 13 | §7 CN-06 | P0 | |
+| E10-06 | Información precontractual, condiciones, desistimiento y confirmación en soporte duradero | §7 CN-07 | P0 | |
+| E10-07 | Región de despliegue de la base de datos en la UE | §7 CN-31 | P0 | **D-C1** |
+| E10-08 | Motor de retención de datos y anonimización de ex-socios | §7 CN-04 | P1 | **D-C3** |
+| E10-09 | La supresión de socio disocia los cobros en vez de borrarlos, y el diálogo dice la verdad | §7 CN-05 | P1 | |
+| E10-10 | Registro de actividades, procedimiento de brechas, EIPD y análisis de DPD | §7 CN-32 | P1 | **D-C4** |
+| E10-11 | Exportación de datos del socio completa, separando art. 15 de art. 20, y auditada | §7 CN-11 | P1 | |
+| E10-12 | Control de edad y consentimiento de tutores | §7 CN-12 | P1 | **D-P8** |
+| E10-13 | Preaviso de cargo SEPA a 14 días | §7 CN-13 | P1 | |
+| E10-14 | `AuditLog` append-only por construcción (`REVOKE UPDATE, DELETE`) | §7 CN-23 | P1 | |
+| E10-15 | Cláusula informativa laboral: registro de jornada, verificación cruzada, valoraciones y ranking | §7 CN-19, CN-21 | P1 | |
+| E10-16 | Procedimiento de acceso del entrenador a sus propias valoraciones | §7 CN-20 | P2 | |
+| E10-17 | Clasificación AI Act, marca de contenido generado y formación del art. 4 | §7 CN-33 | P1 | |
+| E10-18 | HTTPS forzado en producción en la app y `keychainAccessible` en SecureStore | §7 CN-28, CN-29, §9.2 A20, A28 | P1 | |
+| E10-19 | Enlaces legales y gestión de consentimientos dentro de la app | §7 CN-26 | P1 | **D-M2** |
+| E10-20 | Fotos de composición corporal fuera de la base de datos y cifrado por columna (ADR-005) | §7 CN-16 | P2 | |
+| E10-21 | Se dice por escrito que Apta no presta registro de jornada, o se reactiva el módulo cumpliendo | §7 CN-18 | P1 | |
+| E10-22 | Página `/cookies` con el inventario actual y regla en `AGENTS.md` para futuras analíticas | §7 CN-15 | P3 | |
+
+### E11 · Mapa y datos de captación
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E11-01 | El mapa filtra estado de socio y de lead (hoy un socio de baja cuenta como cliente) | §6 M1 | P1 | |
+| E11-02 | Clasificación por cuantiles y leyenda con los siete cortes | §6 M2 | P1 | |
+| E11-03 | El mapa es honesto cuando no hay centros situados; validación de coordenadas y edición posterior | §6 M3 | P1 | |
+| E11-04 | Vista tabla accesible sincronizada con el mapa | §6 M4 | P1 | |
+| E11-05 | Pie de cobertura: cuántos socios no se están representando y por qué | §6 M7 | P2 | |
+| E11-06 | Contraste, daltonismo y modo oscuro del mapa | §6 M8 | P2 | |
+| E11-07 | Filtros de periodo y estado, con el estado en la URL | §6 M6 | P2 | |
+| E11-08 | Geometría real de barrios (TopoJSON) con respaldo a la teselación actual | §6 M5 | P2 | |
+| E11-09 | Métrica de fuga por barrio desde `cancelledAt` (el dato ya está guardado) | §6 §4 | P2 | |
+| E11-10 | `prefers-reduced-motion` en los vuelos y objetivos táctiles de 44 px | §6 M9 | P2 | |
+
+### E12 · Higiene técnica y deuda
+
+| ID | Historia | Origen | Pri | Duda |
+|---|---|---|---|---|
+| E12-01 | Apagar la rutina de IA falsa del portal | §1.1 W-01, §2.3 | P0 | **D-P6** |
+| E12-02 | Quitar "responde al instante" del chat, o remontar el lado del personal con notificación | §1.1 W-02 | P1 | **D-P6** |
+| E12-03 | Retirar el plan y la biblioteca ONLINE del catálogo vendible | §2.3 | P1 | **D-P6** |
+| E12-04 | `SERVICE_LABEL` único (hoy ocho definiciones con cuatro nombres) | §1.1 W-08 | P2 | |
+| E12-05 | Un solo `dashboard-queries`: borrar `_lib/dashboard.ts` (hoy 8 vs. 9 morosos) | §1.2 M-04, §8 M-11, §9.2 A19 | P1 | |
+| E12-06 | Ocupación y no-show del panel calculados por ocurrencia, no por fecha base | §8 W-08 | P1 | |
+| E12-07 | Borrar `api/mobile/v1/portal/billing/` (sin consumidor) y el wrapper `createCheckoutSession` | §1.2 M-09, §1.1 W-09 | P3 | |
+| E12-08 | `/me` y notificaciones comprueban plataforma activa | §8 M-12, §9.2 A21 | P2 | |
+| E12-09 | Resolución única de destino de notificación entre web y app | §1.2 M-12, §9.2 A24 | P2 | |
+| E12-10 | Paginación real en `/members` (hoy `take: 300` fijo: un centro con 320 socios pierde 20 filas en silencio) | §2.3 | P1 | |
+| E12-11 | `/trainer` accesible para dirección (hoy el director no ve el panel de su propio equipo) | §2.3 | P2 | |
+| E12-12 | Consentimientos revocables desde el panel de staff | §2.3 | P2 | |
+| E12-13 | Alinear documentación y código: `RB-RES-008`, `RB-PAGO-008`, `RB-AGENDA-009` y el estado de `REGLAS_NEGOCIO_ESTADO_IMPLEMENTACION.md` | §8 W-10, W-16, M-08, §2.3 | P2 | |
+| E12-14 | `OUR_ERROR` deja de sumar a la racha de faltas del socio | §8 W-17 | P2 | |
+| E12-15 | `override` para `mysql2` y limpieza de `react-leaflet` y los SVG de plantilla de Next | §2.4, §6 M18 | P3 | |
+| E12-16 | Corregir el texto de `/billing` que dice que la pasarela "queda fuera de esta entrega" con el checkout ya en la página | §2.3 | P3 | |
+| E12-17 | WhatsApp `wa.me` con mensaje pre-escrito desde retención, impago y lead | §2.3 | P1 | **D-P3** |
+
+### Resumen
+
+**161 candidatas listadas aquí**, más las **28 de Stripe** ya redactadas en el §5.2: **189 en total**. Por prioridad: **40 P0**, 71 P1, 45 P2 y 5 P3.
+
+De las 40 P0, más de la mitad se agrupan en tres frentes que conviene atacar **como un solo lote**, porque comparten ficheros y guardas: **aislamiento de centro** (E1), **integridad de reservas y bonos** (E2) y **gateo por plan** (E6-01 a E6-03).
+
+**21 de estas 161 dependen de una duda del §11**, más toda la fase 2 de Stripe. Ese es el orden natural de la sesión de negocio: **cerrar primero D-M2** (¿se publica la app?), que por sí sola desbloquea tres historias y define si el alcance congelado tiene tres excepciones o ninguna; y **D-P6** (¿qué se apaga?), que desbloquea otras tres y evita construir sobre módulos que van a morir.
 
