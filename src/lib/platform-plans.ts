@@ -189,6 +189,22 @@ export function getPlatformPlan(code: string | null | undefined): PlatformPlan |
   return PLATFORM_PLANS.find((p) => p.code === code) ?? null;
 }
 
+/**
+ * E6-08: precio mensualizado en céntimos, derivado de `priceLabel` para el
+ * MRR agregado de `/apta`. Es una aproximación de back-office (redondea el
+ * importe mostrado, que ya es solo presentación) — el cobro real lo manda
+ * Stripe. `null` para Fundador: es pago único, no ingreso recurrente.
+ */
+export function monthlyPriceCents(plan: PlatformPlan): number | null {
+  if (plan.interval === "lifetime") return null;
+  const match = plan.priceLabel.match(/([\d.,]+)\s*€/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/\./g, "").replace(",", "."));
+  if (!Number.isFinite(amount)) return null;
+  const monthly = plan.interval === "year" ? amount / 12 : amount;
+  return Math.round(monthly * 100);
+}
+
 /** El `price_…` de Stripe, resuelto del entorno. `null` = plan no vendible aquí y ahora. */
 export function resolveStripePriceId(plan: PlatformPlan): string | null {
   return process.env[plan.priceEnvVar] || null;

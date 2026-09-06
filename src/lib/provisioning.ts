@@ -41,6 +41,21 @@ function ownerInvitationExpiry() {
   return new Date(Date.now() + OWNER_INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
 }
 
+async function sendOwnerActivationEmail(opts: { email: string; orgName: string; planName: string; activationUrl: string }) {
+  await sendMail({
+    to: opts.email,
+    // RB-MARCA-001: email de plataforma — firma como Training Zone.
+    fromName: "Training Zone",
+    subject: `Tu plataforma está lista — ${opts.orgName}`,
+    html: renderOwnerActivationEmail({
+      orgName: opts.orgName,
+      planName: opts.planName,
+      aptaLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
+      activationUrl: opts.activationUrl,
+    }),
+  });
+}
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -272,17 +287,154 @@ export async function resendOwnerActivation(
   });
 
   const plan = getPlatformPlan(org.platformPlan);
-  await sendMail({
-    to: refreshed.email,
-    fromName: "Training Zone",
-    subject: `Tu plataforma está lista — ${org.name}`,
-    html: renderOwnerActivationEmail({
-      orgName: org.name,
-      planName: plan?.name ?? "Training Zone",
-      aptaLogoUrl: absoluteUrl("/brand/tz-logo-white.png"),
-      activationUrl: onboardingUrlFor(refreshed.token),
-    }),
+  await sendOwnerActivationEmail({
+    email: refreshed.email,
+    orgName: org.name,
+    planName: plan?.name ?? "Training Zone",
+    activationUrl: onboardingUrlFor(refreshed.token),
   });
 
   return { ok: true, email: refreshed.email };
+}
+
+/**
+ * E6-08 · reenvío desde `/apta` (back-office de soporte): a diferencia de
+ * `resendOwnerActivation`, que solo conoce la sesión de Stripe (flujo
+ * público de `/activar`), aquí soporte ya tiene el `orgId` a la vista en el
+ * listado. Deja traza en `AuditLog` de quién reenvió y a qué organización.
+ */
+export async function resendOwnerActivationByOrgId(
+  orgId: string,
+  actorUserId: string
+): Promise<{ ok: true; email: string } | { ok: false; error: string }> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true, platformPlan: true },
+  });
+  if (!org) return { ok: false, error: "Organización no encontrada." };
+
+  const invitation = await prisma.invitation.findFirst({
+    where: { orgId: org.id, type: "OWNER", usedAt: null },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!invitation) return { ok: false, error: "Esta organización ya está activada." };
+
+  const refreshed = await prisma.invitation.update({
+    where: { id: invitation.id },
+    data: { expiresAt: ownerInvitationExpiry() },
+  });
+
+  const plan = getPlatformPlan(org.platformPlan);
+  await sendOwnerActivationEmail({
+    email: refreshed.email,
+    orgName: org.name,
+    planName: plan?.name ?? "Training Zone",
+    activationUrl: onboardingUrlFor(refreshed.token),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId: org.id,
+      actorUserId,
+      action: "PLATFORM_ACTIVATION_RESENT",
+      entityType: "Organization",
+      entityId: org.id,
+      metadata: { email: refreshed.email },
+    },
+  });
+
+  return { ok: true, email: refreshed.email };
+}
+
+/**
+ * E6-08 · alta asistida: soporte da de alta una organización con cobro FUERA
+ * de Stripe (transferencia, factura, efectivo — la mitad de la venta B2B
+ * pequeña en España se cierra así). Mismo esqueleto que
+ * `provisionOrganization` (org + identidad + OWNER + invitación), pero sin
+ * datos de Stripe y con el justificante y quién la creó registrados en
+ * `AuditLog` — no hay columna para eso en `Organization` (`prisma/schema.prisma`
+ * está congelado este trimestre) y un log de auditoría es, además, el sitio
+ * correcto para una decisión de negocio de una sola vez.
+ */
+export async function createAssistedOrganization(input: {
+  name: string;
+  email: string;
+  planCode: string;
+  paymentMethod: "TRANSFERENCIA" | "FACTURA" | "OTRO";
+  justification: string;
+  actorUserId: string;
+}): Promise<{ ok: true; orgId: string; activationUrl: string } | { ok: false; error: string }> {
+  const plan = getPlatformPlan(input.planCode);
+  if (!plan) return { ok: false, error: `Plan no reconocido: ${input.planCode}` };
+
+  const email = input.email.trim().toLowerCase();
+  if (!email) return { ok: false, error: "Falta el email del director." };
+
+  const existingOwner = await prisma.user.findFirst({ where: { email, role: "OWNER" }, select: { id: true } });
+  if (existingOwner) return { ok: false, error: "Ya hay una organización dada de alta con ese email de director." };
+
+  const orgName = input.name.trim() || email.split("@")[0];
+
+  const { orgId, token } = await prisma.$transaction(async (tx) => {
+    const org = await tx.organization.create({
+      data: {
+        name: orgName,
+        slug: await uniqueOrgSlug(orgName),
+        billingEmail: email,
+        billingName: orgName,
+        platformStatus: "ACTIVE",
+        platformStatusSince: new Date(),
+        platformPlan: plan.code,
+      },
+    });
+
+    const identity = await ensureIdentity(tx, { email });
+    const owner = await tx.user.create({
+      data: {
+        identityId: identity.id,
+        orgId: org.id,
+        centerId: null,
+        name: orgName,
+        email: identity.email,
+        role: "OWNER",
+      },
+    });
+
+    const invitation = await tx.invitation.create({
+      data: {
+        orgId: org.id,
+        type: "OWNER",
+        token: generateInvitationToken(),
+        email: identity.email,
+        userId: owner.id,
+        expiresAt: ownerInvitationExpiry(),
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        orgId: org.id,
+        actorUserId: input.actorUserId,
+        action: "PLATFORM_ORG_ASSISTED_SIGNUP",
+        entityType: "Organization",
+        entityId: org.id,
+        metadata: { planCode: plan.code, paymentMethod: input.paymentMethod, justification: input.justification },
+      },
+    });
+
+    return { orgId: org.id, token: invitation.token };
+  });
+
+  const activationUrl = onboardingUrlFor(token);
+
+  // Best-effort, igual que el alta por checkout: un fallo de SMTP no revierte
+  // un alta ya decidida por soporte. El botón "Reenviar activación" del propio
+  // listado es la vía de recuperación.
+  try {
+    await sendOwnerActivationEmail({ email, orgName, planName: plan.name, activationUrl });
+  } catch (error) {
+    console.error("[provisioning] error enviando el email de activación (alta asistida):", error);
+  }
+
+  return { ok: true, orgId, activationUrl };
 }
