@@ -20,9 +20,9 @@ export default async function PuestaEnMarchaPage() {
         <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-1">
           Configuración inicial
         </div>
-        <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
+        <h2 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
           {complete ? "Todo listo" : "Pon en marcha tu centro"}
-        </h1>
+        </h2>
         <p className="text-sm text-muted mt-2">
           {complete
             ? "Has completado la configuración. Esta página se queda aquí por si añades otro centro o cambias de tarifas."

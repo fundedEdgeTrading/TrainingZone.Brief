@@ -1217,9 +1217,9 @@ export default async function MemberDetailPage({
               initials={initials(member.firstName, member.lastName)}
             />
             <div className="min-w-0">
-              <h1 className="font-display font-extrabold text-[27px] uppercase tracking-[-.015em] text-brand-text leading-none">
+              <h2 className="font-display font-extrabold text-[27px] uppercase tracking-[-.015em] text-brand-text leading-none">
                 {member.firstName} {member.lastName}
-              </h1>
+              </h2>
               <p className="text-[13px] text-brand-muted mt-2">
                 {member.email} · {member.primaryCenter.name} · Alta {fmtDay(member.joinedAt)}
               </p>

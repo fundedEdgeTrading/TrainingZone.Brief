@@ -45,9 +45,9 @@ export default async function PortalEvolutionPage() {
   return (
     <div className="max-w-[1100px] mx-auto flex flex-col gap-5">
       <div>
-        <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text leading-none">
+        <h2 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text leading-none">
           Mi evolución
-        </h1>
+        </h2>
         <p className="text-sm text-brand-muted mt-1.5">Tu seguimiento de fotos y composición corporal, tal y como lo ve tu entrenador.</p>
       </div>
 

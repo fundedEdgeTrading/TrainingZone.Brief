@@ -77,7 +77,7 @@ export default async function SessionDetailPage({
       <div className="bg-brand-card border border-brand-border rounded-card p-5 shadow-card">
         <div className="flex items-start justify-between flex-wrap gap-2">
           <div>
-            <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">{cls.name}</h1>
+            <h2 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">{cls.name}</h2>
             <p className="text-sm text-muted mt-1">
               {occurrenceDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
               {cls.startTime}–{cls.endTime} · {cls.center.name} {cls.room ? `· ${cls.room}` : ""}

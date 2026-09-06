@@ -129,7 +129,7 @@ export default async function TrainerPanelPage({
           <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-2 tz-fade-up" style={{ animationDelay: ".05s" }}>
             {kicker}
           </div>
-          <h1 className="font-display font-extrabold text-[30px] sm:text-[38px] leading-[1.05] tracking-[-.025em] text-brand-text">
+          <h2 className="font-display font-extrabold text-[30px] sm:text-[38px] leading-[1.05] tracking-[-.025em] text-brand-text">
             <span className="inline-block" style={{ animation: "tzRollUp .5s both", animationDelay: ".06s" }}>
               {isDirection ? "Panel de" : `${greetingForHour(now.getHours())},`}
             </span>{" "}
@@ -148,7 +148,7 @@ export default async function TrainerPanelPage({
                 {firstName}.
               </span>
             </span>
-          </h1>
+          </h2>
           <p className="text-[15px] text-brand-text-2 mt-2 max-w-[560px]" style={{ textWrap: "pretty" }}>
             {sessionCount} sesión{sessionCount === 1 ? "" : "es"} hoy ·{" "}
             {data.currentSession ? (

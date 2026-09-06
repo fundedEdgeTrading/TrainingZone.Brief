@@ -37,9 +37,9 @@ export default async function MemberAssessmentsPage({ params }: { params: Promis
         <Link href={`/members/${member.id}`} className="text-sm text-tz-black hover:underline">
           ← Volver a la ficha
         </Link>
-        <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
+        <h2 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
           Valoraciones · {member.firstName} {member.lastName}
-        </h1>
+        </h2>
       </div>
 
       <div className="bg-brand-card border border-brand-border rounded-card p-5 shadow-card">

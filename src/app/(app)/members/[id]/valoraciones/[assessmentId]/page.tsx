@@ -73,9 +73,9 @@ export default async function AssessmentDetailPage({
         <Link href={`/members/${id}/valoraciones`} className="text-sm text-tz-black hover:underline">
           ← Volver a las valoraciones
         </Link>
-        <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
+        <h2 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
           {milestoneLabelOf(assessment, config.milestones)} · {assessment.member.firstName} {assessment.member.lastName}
-        </h1>
+        </h2>
         <p className="text-sm text-brand-muted">
           {assessment.completedAt
             ? `Completada el ${formatInstantDate(assessment.completedAt, timeZone)}${

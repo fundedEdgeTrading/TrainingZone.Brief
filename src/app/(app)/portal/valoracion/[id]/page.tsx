@@ -34,9 +34,9 @@ export default async function PortalAssessmentPage({ params }: { params: Promise
         <div className="text-[11px] font-bold tracking-[.12em] uppercase text-brand-muted">
           {milestoneLabelOf(assessment, milestones)}
         </div>
-        <h1 className="font-display font-extrabold text-[24px] text-brand-text mt-1.5 tracking-[-.01em]">
+        <h2 className="font-display font-extrabold text-[24px] text-brand-text mt-1.5 tracking-[-.01em]">
           {assessment.completedAt ? "Valoración ya entregada" : "Tienes una valoración pendiente"}
-        </h1>
+        </h2>
         <p className="text-[14.5px] text-brand-text-2 leading-[1.6] mt-3">
           {assessment.completedAt
             ? "Ya la tenemos. Queda en tu ficha junto al resto de tu evolución."

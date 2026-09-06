@@ -517,9 +517,9 @@ function HeaderCard({
             </div>
           ) : (
             <div className="mt-3.5">
-              <h1 className="text-[31px] font-extrabold leading-[1.14] tracking-[-0.02em] max-w-[22ch] text-pretty">
+              <h2 className="text-[31px] font-extrabold leading-[1.14] tracking-[-0.02em] max-w-[22ch] text-pretty">
                 {mesocycle.title}
-              </h1>
+              </h2>
               <p className="mt-3 text-[15.5px] leading-[1.55] text-tz-bone/75 max-w-[62ch] text-pretty">
                 {mesocycle.objective}
               </p>

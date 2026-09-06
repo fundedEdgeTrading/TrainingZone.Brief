@@ -92,7 +92,7 @@ function Shell({
 
         <div className="bg-white border border-tz-linen rounded-card shadow-pop p-9">
           <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted">{eyebrow}</div>
-          <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] mt-1.5">{title}</h1>
+          <h2 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] mt-1.5">{title}</h2>
           <p className="text-sm text-muted mt-2 mb-5">{intro}</p>
           {children}
         </div>

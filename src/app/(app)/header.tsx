@@ -76,13 +76,13 @@ export default function Header({
         <div className="min-w-0">
           {/* `key` por ruta: cada aterrizaje remonta el título y retriggerea
               `tzRollUp`, en el mismo compás que la píldora del sidebar. */}
-          <div
+          <h1
             key={pathname}
             className="font-display font-extrabold text-lg sm:text-[22px] leading-none tracking-[-.01em] uppercase text-brand-text truncate"
             style={{ animation: "tzRollUp .42s var(--ease-out-soft) both" }}
           >
             {title}
-          </div>
+          </h1>
           <div className="text-xs sm:text-[13px] text-brand-muted mt-[3px] truncate">{subtitleOverride ?? subtitle}</div>
         </div>
       </div>
