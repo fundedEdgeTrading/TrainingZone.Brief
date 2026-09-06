@@ -40,6 +40,32 @@ listo para volver a montarse.
 **Para reactivarlo.** Volver a montar `TimeClockWidget` y la tarjeta de
 verificación cruzada en `/rrhh` con los datos que ya devuelven esas queries.
 
+> ### 06-09-2026 · YA NO ESTÁ APARCADO: ESTÁ APAGADO (E10-21)
+>
+> Un módulo aparcado indefinidamente paga peaje en cada migración y en cada
+> auditoría de permisos. Y si se reactivase tal cual **no cumpliría**:
+> `TimeClockEntry` admite una sola entrada y una sola salida por día, lo que no
+> permite pausas ni jornadas partidas —habituales con turno de mañana y tarde—
+> y no distingue horas ordinarias de extraordinarias. El control horario en
+> España es obligación legal: o se hace bien y se vende, o se apaga. A medias
+> es lo peor de los dos mundos. **Decisión tomada: se apaga.**
+>
+> Retirado en código: `TimeClockWidget`, `lib/timeclock-queries.ts`
+> (`clockIn` / `clockOut` / `signEntry` / `crossCheckHours`), las acciones de
+> `rrhh/actions.ts` y el bloque de siembra de `prisma/seed.ts`.
+>
+> **Antes de retirar el modelo del esquema**, exportar y archivar los fichajes
+> existentes con `npm run export:fichajes`: el plazo de cuatro años del art.
+> 34.9 ET (RDL 8/2019) sigue corriendo aunque la funcionalidad desaparezca.
+> `prisma/schema.prisma` está congelado este trimestre, así que la retirada de
+> `TimeClockEntry` queda pendiente de la ventana de esquema — el código ya no
+> lo toca.
+>
+> La declaración de que **Apta no presta registro de jornada** vive en
+> `src/lib/service-terms.ts` y se pinta en `/rrhh`, donde estaba el widget:
+> quien venga a buscar el fichaje encuentra la respuesta, no un hueco. Ahí está
+> también lo que un diseño futuro tendría que contemplar.
+
 ## IA y chat en la ficha del socio (23-08-2026, rediseño de la ficha)
 
 **Por qué.** El rediseño de `/members/[id]` unifica once pestañas en cinco

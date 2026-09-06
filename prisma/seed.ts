@@ -2422,28 +2422,10 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   }
 
   // ---------- F13: RRHH — fichaje ----------
-  const timeClockRows: { id: string; orgId: string; userId: string; centerId: string; workDate: Date; clockIn: string; clockOut: string | null; signedAt: Date | null }[] = [];
-  for (const u of staffUsers) {
-    if (!u.centerId) continue;
-    for (let d = 1; d <= 10; d++) {
-      const workDate = addDays(TODAY, -d);
-      if (workDate.getDay() === 0 || workDate.getDay() === 6) continue;
-      const signed = Math.random() < 0.7;
-      timeClockRows.push({
-        id: id(),
-        orgId,
-        userId: u.id,
-        centerId: u.centerId,
-        workDate,
-        clockIn: fmtTime(9, randInt(0, 15)),
-        clockOut: fmtTime(17, randInt(0, 30)),
-        signedAt: signed ? workDate : null,
-      });
-    }
-  }
-  for (let i = 0; i < timeClockRows.length; i += CHUNK) {
-    await prisma.timeClockEntry.createMany({ data: timeClockRows.slice(i, i + CHUNK) });
-  }
+  // E10-21: el módulo de fichajes se apagó (decisión tomada). La demo dejó de
+  // sembrar `TimeClockEntry`: seguir generando fichajes de una funcionalidad
+  // que ya no existe da a entender que la aplicación cubre el registro de
+  // jornada del art. 34.9 ET, que es justo lo que se ha declarado que no hace.
 
   // ---------- F14: Valoración de entrenadores ----------
   const trainerUsers = staffUsers.filter((u) => u.role === "TRAINER");
