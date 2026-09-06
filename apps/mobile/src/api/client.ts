@@ -33,6 +33,13 @@ const API_URL =
   (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ??
   devApiUrlFallback();
 
+/**
+ * Origen de la web, derivado del mismo `API_URL` (quitando `/api/mobile/v1`):
+ * un solo valor que configurar, no dos. La usa E13-01 para enlazar a la web
+ * desde la pantalla de rol no soportado en la app.
+ */
+export const WEB_APP_URL = API_URL.replace(/\/api\/mobile\/v1\/?$/, "");
+
 // Sin esto, un servidor inalcanzable (p.ej. el caso de "localhost" de arriba)
 // deja el fetch colgado decenas de segundos con el spinner de "Entrar" antes
 // de fallar: el timeout lo hace fallar rápido y con un mensaje claro.

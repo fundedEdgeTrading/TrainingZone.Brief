@@ -3,13 +3,14 @@ import { ActivityIndicator, Animated, Text, View, StyleSheet } from "react-nativ
 import { Redirect, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
-import { hasTaskInbox, isTrainerRole, needsMembershipGate, tabsFor, type TabName } from "@/auth/routes";
+import { hasTaskInbox, isAppSupportedRole, isTrainerRole, needsMembershipGate, tabsFor, type TabName } from "@/auth/routes";
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
 import { useTheme, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
 import { easeOutSoft, tabFade, tabIconPop, useReducedMotion } from "@/theme/motion";
 import { Icon, type IconName } from "@/components/Icon";
 import { PortalGate } from "@/components/PortalGate";
+import { UnsupportedRoleScreen } from "@/components/UnsupportedRoleScreen";
 import type { Role } from "@/api/types";
 
 /**
@@ -103,6 +104,10 @@ export default function TabsLayout() {
     );
   }
   if (state.status === "signedOut") return <Redirect href="/login" />;
+  // Recorte a dos roles (D-M4, E13-01): antes de repartir pestañas, ni
+  // siquiera se pregunta por ellas si el rol no es de los que la app
+  // conserva — así no queda ni una pestaña ni una rejilla vacía para el resto.
+  if (!isAppSupportedRole(state.user.role)) return <UnsupportedRoleScreen role={state.user.role} />;
   // Gate de compra (A2): sin bono vivo, el socio no entra al portal.
   if (needsMembershipGate(state.user)) return <Redirect href="/onboarding/planes" />;
 
