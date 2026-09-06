@@ -4,7 +4,6 @@ import { requireRole } from "@/lib/guard";
 import {
   getMemberForUser,
   getBookableSessions,
-  getPendingSessionFeedback,
   getMemberUpcomingBookings,
   BOOKING_WINDOW_DAYS,
   CANCEL_WINDOW_HOURS,
@@ -15,7 +14,6 @@ import { getOnlineWorkouts } from "@/lib/online-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import SessionCard from "./session-card";
 import UpcomingBookings from "./upcoming-bookings";
-import { PostSessionFeedbackPrompts } from "./post-session-feedback";
 import { OnlineWorkoutLibrary } from "./online-library";
 import { sessionServiceKind } from "@/lib/members-queries";
 import { AgendaFilterBar } from "./agenda-filter-bar";
@@ -46,9 +44,8 @@ export default async function PortalAgendaPage({
   // cuentas atrás y la ventana de cancelación se miden con esa zona.
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
-  const [sessions, pendingFeedback, onlineWorkouts, upcomingBookings] = await Promise.all([
+  const [sessions, onlineWorkouts, upcomingBookings] = await Promise.all([
     getBookableSessions(session.user.orgId, member.id, activeBookingSubscriptions(member.subscriptions), timezone),
-    getPendingSessionFeedback(member.id, timezone),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
     getMemberUpcomingBookings(member.id, timezone),
   ]);
@@ -170,18 +167,6 @@ export default async function PortalAgendaPage({
       )}
 
       {hasOnline && <OnlineWorkoutLibrary workouts={onlineWorkouts} />}
-
-      {pendingFeedback.length > 0 && (
-        <PostSessionFeedbackPrompts
-          items={pendingFeedback.map((p) => ({
-            bookingId: p.bookingId,
-            sessionName: p.sessionName,
-            startTime: p.time,
-            trainerName: p.trainerName,
-            sessionDate: p.sessionDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
-          }))}
-        />
-      )}
 
       {Array.from(byDay.entries()).map(([day, daySessions], dayIdx) => (
         <div key={day} className="tz-fade-up" style={{ animationDelay: `${0.1 + dayIdx * 0.08}s` }}>
