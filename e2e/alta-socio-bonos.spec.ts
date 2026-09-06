@@ -24,6 +24,11 @@ async function chooseInField(page: Page, fieldScope: Locator, optionText: string
   await page.locator(".tz-select-pop").getByRole("button", { name: optionText, exact: true }).click();
 }
 
+/**
+ * El `<label>` de `Field` es hijo directo del contenedor del campo (E8-02 le
+ * añadió `htmlFor`, pero no movió el nodo, precisamente por este selector):
+ * subir un nivel desde la etiqueta da el ámbito del campo completo.
+ */
 function fieldByLabel(scope: Locator, label: string, nth = 0) {
   return scope.locator(`label:text-is("${label}")`).nth(nth).locator("xpath=..");
 }
