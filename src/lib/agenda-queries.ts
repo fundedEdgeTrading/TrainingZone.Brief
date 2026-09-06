@@ -15,6 +15,7 @@ import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
 import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
+import { statusesEndingAt } from "@/lib/booking-transitions";
 import { zonedTimeToInstant } from "@/lib/date-utils";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import {
@@ -615,7 +616,10 @@ export async function markBookingNoShow(
       id: bookingId,
       sessionId: opts.sessionId,
       session: { orgId },
-      status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] },
+      // RB-RES-010: la lista de estados sale de la máquina compartida
+      // (`booking-transitions.ts`), no de un literal que hay que acordarse de
+      // mantener al día — WAITLISTED y CANCELLED quedan fuera solos.
+      status: { in: statusesEndingAt("NO_SHOW") },
     },
     select: { id: true, memberId: true, subscriptionId: true, noShowRefunded: true },
   });
@@ -623,7 +627,7 @@ export async function markBookingNoShow(
 
   const refunded = await prisma.$transaction(async (tx) => {
     const applied = await tx.booking.updateMany({
-      where: { id: booking.id, status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+      where: { id: booking.id, status: { in: statusesEndingAt("NO_SHOW") } },
       data: { status: "NO_SHOW", checkedInAt: null, noShowReason: opts.reason },
     });
     if (applied.count === 0) return null;
@@ -657,7 +661,10 @@ export async function markBookingNoShow(
  */
 export async function clearBookingNoShow(orgId: string, bookingId: string, nextStatus: "BOOKED" | "ATTENDED") {
   const booking = await prisma.booking.findFirst({
-    where: { id: bookingId, session: { orgId } },
+    // RB-RES-010: deshacer una falta parte de una falta. Sin acotar el estado,
+    // este mismo `bookingId` servía para llevar a ATTENDED una reserva
+    // CANCELLED o WAITLISTED — la misma vía que se cerró en las otras cuatro.
+    where: { id: bookingId, session: { orgId }, status: "NO_SHOW" },
     select: { id: true, subscriptionId: true, noShowRefunded: true },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
