@@ -14,6 +14,7 @@ import { canUseClinicalDataForAI } from "@/lib/consent";
 import type { EpProfile } from "@/lib/ai/ep-profile";
 import { parseAnswers } from "@/lib/assessments/queries";
 import { injuryZoneLabel } from "@/lib/injury-zones";
+import { scrubAll, scrubIdentifiers } from "@/lib/ai/pseudonymize";
 import {
   ASSESSMENT_KIND_LABEL,
   DAYS_PER_WEEK_LABEL,
@@ -424,7 +425,9 @@ export async function getMesocycleBriefingForMember({
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId },
-    select: { birthDate: true, sex: true, consentAI: true, consentHealth: true },
+    // El nombre NO viaja: se lee para poder BORRARLO del texto libre. Es el
+    // identificador que más veces aparece escrito en las notas del propio socio.
+    select: { birthDate: true, sex: true, consentAI: true, consentHealth: true, firstName: true, lastName: true },
   });
   if (!member) return null;
 
@@ -457,26 +460,37 @@ export async function getMesocycleBriefingForMember({
 
   const context = assessment ? assessmentContext(assessment.kind, assessment.answers) : null;
 
+  // E3-15 · RB-IA-004: filtro de identificadores sobre TODO el texto libre que
+  // sale del centro. Cubre los siete campos que hasta ahora viajaban sin tocar
+  // (`HealthRecord.description`, `cierre.notasEntrenador`, `screening.lesionesActuales`,
+  // `screening.medicacion`, `screening.cirugias`, `perfil.motivacionReal` y
+  // `ClientGoal.label`), porque todos desembocan aquí. Se aplica en este punto y
+  // no en cada origen: así un campo nuevo no puede escaparse por olvido.
+  const scrub = { knownNames: [member.firstName, member.lastName].filter(Boolean) as string[] };
+
   const briefing: MesocycleBriefing = {
     profile,
     age: ageFrom(member.birthDate) ?? context?.age ?? null,
     sex: (member.sex ? SEX_LABEL[member.sex] : null) ?? context?.sex ?? null,
-    level: level.trim() || context?.level || "no registrado",
+    level: scrubIdentifiers(level.trim(), scrub) || context?.level || "no registrado",
     weeks,
-    goals: [...goals.map((g) => g.label), ...(context?.goals ?? [])],
+    goals: scrubAll([...goals.map((g) => g.label), ...(context?.goals ?? [])], scrub),
     availability,
     metrics: [...latestByKey(metrics).map((m) => `${m.key}: ${m.value} ${m.unit}`), ...(context?.metrics ?? [])],
     clinical: clinicalAllowed
-      ? [
-          ...healthRecords.map(
-            (r) =>
-              [r.type, r.zone, r.description].filter(Boolean).join(" · ") +
-              ` (severidad ${r.severity}, fase ${r.status})`
-          ),
-          ...(context?.clinical ?? []),
-        ]
+      ? scrubAll(
+          [
+            ...healthRecords.map(
+              (r) =>
+                [r.type, r.zone, r.description].filter(Boolean).join(" · ") +
+                ` (severidad ${r.severity}, fase ${r.status})`
+            ),
+            ...(context?.clinical ?? []),
+          ],
+          scrub
+        )
       : null,
-    assessmentNotes: context?.notes ?? [],
+    assessmentNotes: scrubAll(context?.notes ?? [], scrub),
   };
 
   await prisma.auditLog.create({
@@ -491,6 +505,8 @@ export async function getMesocycleBriefingForMember({
         consentAI: member.consentAI,
         consentHealth: member.consentHealth,
         clinicalItems: briefing.clinical?.length ?? 0,
+        // Queda constancia de que lo que salió pasó por el filtro (RB-IA-004).
+        identifierFilter: "RB-IA-004",
         profile,
         weeks,
       },

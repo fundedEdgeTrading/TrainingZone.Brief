@@ -65,6 +65,8 @@ import { MemberSessionsCalendar } from "./member-calendar";
 import { listMesocyclesForMember } from "@/lib/mesocycle-queries";
 import { openRetentionAlertsByMember } from "@/lib/retention";
 import { isAiConfigured } from "@/lib/ai/anthropic";
+import { aiGenerationGate } from "@/lib/ai/dpa";
+import { prisma } from "@/lib/prisma";
 import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
 
@@ -252,6 +254,13 @@ export default async function MemberDetailPage({
   if (!(await memberIsInScope(session.user, member.id))) notFound();
 
   const canSeeMesocycles = canManageMesocycles(session.user.role);
+  // E3-15/D-C5: mientras el DPA con el proveedor de IA no conste firmado, la
+  // generación solo opera sobre datos de demostración, y la pantalla dice por qué.
+  const org = await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { slug: true },
+  });
+  const mesocycleDpaGate = aiGenerationGate({ slug: org?.slug ?? null });
 
   const [
     stats,
@@ -923,7 +932,12 @@ export default async function MemberDetailPage({
               ) : (
                 <p className="text-sm text-brand-muted mb-4">Este socio no tiene todavía ningún mesociclo.</p>
               )}
-              <MesocyclePanel memberId={member.id} mesocycles={mesocycles} aiConfigured={isAiConfigured()} />
+              <MesocyclePanel
+                memberId={member.id}
+                mesocycles={mesocycles}
+                aiConfigured={isAiConfigured()}
+                dpaBlockedReason={mesocycleDpaGate.allowed ? null : mesocycleDpaGate.reason}
+              />
             </div>
           )}
 

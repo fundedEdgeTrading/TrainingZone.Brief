@@ -15,6 +15,7 @@ import {
 import { buildMethodologySystem } from "@/lib/ai/methodology";
 import type { EpProfile } from "@/lib/ai/ep-profile";
 import type { MesocycleBriefing } from "@/lib/health-access";
+import { scrubIdentifiers } from "@/lib/ai/pseudonymize";
 
 /**
  * Sistema por perfil (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2-3),
@@ -117,7 +118,11 @@ export async function refineMesocyclePlan({
   const client = getAnthropicClient();
   if (!client) return { ok: false, error: "El refinado con IA no está configurado (falta ANTHROPIC_API_KEY)." };
 
-  const userMessage = buildRefineRequest(plan, request);
+  // E3-15 · cobertura: la petición en crudo del entrenador también pasa por el
+  // filtro. Es el único texto que llega a la API sin haber pasado por
+  // `getMesocycleBriefingForMember`, y es donde más natural resulta escribir un
+  // nombre ("a María le molesta el hombro en el press").
+  const userMessage = buildRefineRequest(plan, scrubIdentifiers(request));
   const messages: MesocycleConversation = [...conversation, { role: "user", content: userMessage }];
 
   try {

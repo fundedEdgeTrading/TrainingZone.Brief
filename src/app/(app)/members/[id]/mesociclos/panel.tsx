@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { EP_PROFILES, EP_PROFILE_LABEL, DEFAULT_PROFILE, type EpProfile } from "@/lib/ai/ep-profile";
+import { PSEUDONYMIZATION_NOTICE } from "@/lib/ai/pseudonymize";
 import { generateMesocycleAction } from "./actions";
 
 /**
@@ -44,10 +45,13 @@ export function MesocyclePanel({
   memberId,
   mesocycles,
   aiConfigured,
+  dpaBlockedReason,
 }: {
   memberId: string;
   mesocycles: MesocycleSummary[];
   aiConfigured: boolean;
+  /** E3-15/D-C5: motivo por el que la IA no puede tocar a este socio, si lo hay. */
+  dpaBlockedReason?: string | null;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -96,6 +100,9 @@ export function MesocyclePanel({
             criterios clínicos del screening. Nunca nombre, DNI, teléfono ni email. El plan nace en borrador y
             no vale hasta que lo apruebes.
           </p>
+          {/* E3-15: la pantalla prometía la seudonimización y no había filtro. Ahora lo hay, y se
+              dice cómo funciona y hasta dónde llega — sin prometer más de lo que hace. */}
+          <p className="text-xs text-brand-muted mt-1">{PSEUDONYMIZATION_NOTICE}</p>
         </div>
 
         <Field label="Grupo Training Zone" hint="Decide la metodología con la que programa la IA.">
@@ -127,7 +134,9 @@ export function MesocyclePanel({
           </p>
         )}
 
-        <Button disabled={pending || loader.loading || !aiConfigured} onClick={generate}>
+        {dpaBlockedReason && <p className="text-xs text-critical">{dpaBlockedReason}</p>}
+
+        <Button disabled={pending || loader.loading || !aiConfigured || !!dpaBlockedReason} onClick={generate}>
           {pending || loader.loading ? "Generando..." : "Generar borrador"}
         </Button>
       </section>
