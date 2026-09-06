@@ -365,14 +365,17 @@ tarjeta o domiciliación gestionada por Stripe).
 **`RB-PAGO-002`** — El cierre de un Lead (`RB-LEAD-005`) depende de la confirmación de pago de
 Stripe, no de una acción manual del entrenador.
 
-**`RB-RES-008`** — El centro **no opera en domingo**: el portal del socio no
-ofrece sesiones de domingo y `bookSessionForMember` las rechaza (también por la
-API móvil). La regla existía solo como un descarte de pintado en la rejilla de la
-agenda (lunes a sábado), y esa asimetría permitía que el socio reservara una
-sesión que su entrenador no podía abrir ni editar. Las reservas de domingo
-**anteriores** siguen visibles y cancelables, para no dejar a nadie atrapado con
-una reserva que no puede soltar. El predicado único es `isOperatingDay`
-(`agenda-utils.ts`), que comparten rejilla y motor de reservas.
+**`RB-RES-008`** (revisada, E12-13) — El centro **opera los siete días de la
+semana**. Esta regla decía literalmente "el centro no opera en domingo", pero
+`isOperatingDay` (`agenda-utils.ts`) devuelve siempre `true` — la exclusión de
+domingo se quitó del predicado sin actualizar este párrafo. Se mantiene el
+predicado único (`isOperatingDay`, compartido por rejilla y motor de
+reservas: `portal-queries.ts`, `agenda-utils.ts`) porque sigue siendo el punto
+por el que un centro que cierre un día concreto volvería a entrar — pero hoy
+no excluye ningún día. El filtro de respaldo que conservaba las reservas
+existentes de domingo (`|| s.myBookingId` en `getBookableSessions`,
+`portal-queries.ts`) se ha retirado por ser inalcanzable: con
+`isOperatingDay` siempre `true`, esa rama nunca se ejecutaba.
 
 **`RB-RES-009`** — Marcar una reserva como **"No asistió"** exige registrar el
 **motivo** (`Booking.noShowReason`: no avisó / avisó tarde / causa justificada /
@@ -392,13 +395,29 @@ tiempo no) abren una tarea para **dirección** del centro, con el motor de
 automáticas. Se comprueba al marcar la falta y, como red de seguridad, en la
 pasada de `/api/jobs/run`.
 
+**`RB-AGENDA-009`** (documentada por primera vez, E12-13) — La ventana mínima
+de cancelación de una reserva es **una sola**, la misma para todo el mundo:
+`canCancelWithoutPenalty` (`src/lib/portal-queries.ts`) la aplica por igual
+al socio, al entrenador y a recepción cuando cancelan la misma reserva — no
+hay una ventana de 24 h para el staff y otra distinta para el socio. Hoy es
+`CANCEL_WINDOW_HOURS`, un único valor de entorno
+(`CANCELLATION_WINDOW_HOURS`, 24 h por defecto) para toda la plataforma; D-S9
+decide que pase a ser configurable **por centro**, con este mismo valor como
+default (ver E2-05). Antes de esta regla, la decisión de "una sola ventana"
+no estaba documentada en ningún sitio y solo se podía deducir leyendo el
+código.
+
 **`RB-PAGO-008`** — El saldo de sesiones de un bono (`Subscription.sessionsRemaining`) se puede
 **ajustar a mano** desde la pestaña "Bonos y calendario" de la ficha del socio. Es una corrección
 de contador, no un cobro: no genera `Payment` ni viaja a Stripe. Lo pueden hacer dirección de
-organización, dirección de centro, **entrenador** y recepción — el entrenador entra aquí y no en
-el resto de la gestión de bonos (`canManageBilling`) porque es quien detecta en pista que falta o
-sobra una sesión: sesión regalada, sesión dada fuera de la agenda, o hueco de EP agendado a mano,
-que crea la reserva sin bono asociado y por tanto no descuenta saldo.
+organización, dirección de centro, **Entrenador Admin** y recepción (`canAdjustSessionBalance`,
+`src/lib/rbac.ts`) — un cambio deliberado y probado (`e2e/`) respecto a una versión anterior de
+esta regla que se lo daba también al entrenador raso: el ajuste de saldo es corrección
+administrativa de contador, no trabajo de pista, y quien detecta en sala que falta o sobra una
+sesión (sesión regalada, sesión dada fuera de la agenda, hueco de EP agendado a mano sin bono
+asociado) lo traslada a quien sí tiene ese permiso. El código y el documento habían quedado
+desincronizados (E12-13): el código nunca se lo dio al entrenador raso, solo este párrafo lo
+decía.
 
 Condiciones: solo sobre bonos `ACTIVE` o `FROZEN` (recargar uno cancelado daría un saldo que el
 motor de reservas seguiría ignorando); nunca sobre un bono ilimitado (`sessionsRemaining` null);

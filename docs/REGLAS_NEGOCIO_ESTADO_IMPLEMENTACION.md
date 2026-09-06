@@ -262,7 +262,10 @@ convenía refrescar el análisis antes de planificar nada:
 | `PLAN_IMPLEMENTACION_APTA_COMERCIAL.md` §6 | F5 y F6 siguen como "⏳ Pendiente" pese a commits posteriores que las completan (`4b177ae`, `fbc6115`) |
 | `apps/mobile/README.md` | F3 marcada como pendiente sin reflejar los commits que ya cubren buena parte |
 | `MVP_PILOTO_GIMNASIO_ANALISIS.md` | Su "P0-1: solo pago puntual" es anterior a F5/F6/D1 |
-| `src/app/(app)/billing/page.tsx:40` (texto en la propia UI, no un doc, pero mismo problema) | Sigue diciendo que la pasarela de pago online "queda fuera de esta entrega" con el checkout de Stripe ya en producción en esa página |
+| ~~`src/app/(app)/billing/page.tsx:40`~~ | ✅ Corregido (E12-16): ya no dice que la pasarela de pago online "queda fuera de esta entrega" |
+| ~~`CRM_REGLAS_NEGOCIO.md` — `RB-RES-008`~~ | ✅ Corregido (E12-13): decía "el centro no opera en domingo"; `isOperatingDay` devuelve siempre `true` desde antes. El párrafo ahora documenta el comportamiento real, y el filtro de respaldo inalcanzable en `portal-queries.ts` (`\|\| s.myBookingId`) se ha retirado |
+| ~~`CRM_REGLAS_NEGOCIO.md` — `RB-PAGO-008`~~ | ✅ Corregido (E12-13): decía que el ajuste de saldo lo puede hacer "el entrenador"; `canAdjustSessionBalance` (`src/lib/rbac.ts`) nunca se lo dio al entrenador raso, solo a Entrenador Admin — cambio deliberado y probado en `e2e/`, pero el documento nunca se actualizó |
+| `RB-AGENDA-009` | ✅ Documentada por primera vez (E12-13): la ventana de descarte del staff no tenía regla propia en ningún sitio — es la misma ventana única del centro que la del socio (`canCancelWithoutPenalty`) |
 
 **Recomendación:** cuando se cierre cada fase de las que quedan pendientes en este documento, actualizar la fila
 correspondiente aquí mismo en el mismo commit — es la única forma de que no vuelva a pasar.
