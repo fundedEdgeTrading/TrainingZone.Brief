@@ -44,7 +44,12 @@ export async function getHealthRecordsForMember({
   }
 
   const records = await prisma.healthRecord.findMany({
-    where: { memberId },
+    // E1-08 · defensa en profundidad: el filtro de organización se aplica
+    // también en la última barrera. Hoy los dos llamantes validan la
+    // pertenencia, y por eso esto no es explotable — pero es exactamente por eso
+    // que hay que arreglarlo antes de que aparezca un tercero. Un `memberId` de
+    // otra organización devuelve lista vacía, nunca registros.
+    where: { memberId, member: { orgId } },
     orderBy: { reportedAt: "desc" },
     include: { reportedBy: { select: { name: true } } },
   });
@@ -83,7 +88,10 @@ export async function getHealthRecordsForLead({
   if (!canViewHealthData(actorRole)) return null;
 
   const records = await prisma.healthRecord.findMany({
-    where: { leadId },
+    // Misma defensa en profundidad que en el punto de lectura del socio (E1-08):
+    // el lead también cuelga de una organización, y dejar aquí la puerta que se
+    // acaba de cerrar al lado no tendría sentido.
+    where: { leadId, lead: { orgId } },
     orderBy: { reportedAt: "desc" },
   });
 
