@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
+import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import type { DebriefFeeling } from "@prisma/client";
 import { requireApiRoute } from "../../../../_lib/api-session";
 import { requireApiCenterScope } from "../../../../_lib/api-guards";
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, sessionId, session: { orgId: claims.orgId } },
-    select: { session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
+    select: { status: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
   });
   if (!booking) return apiError("No se ha encontrado esa reserva.", 404);
 
@@ -37,16 +38,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return apiError("No tienes permiso para registrar el debrief de esta sesión.", 403);
   }
 
-  await prisma.sessionDebrief.upsert({
-    where: { bookingId },
-    create: { bookingId, feeling: feeling as DebriefFeeling },
-    update: { feeling: feeling as DebriefFeeling },
-  });
+  // RB-RES-010, misma costura que la web (`brief/[id]/actions.ts`). Este es el
+  // endpoint con el que se verificó el fallo: `POST …/debrief` sobre una
+  // reserva cancelada respondía `{"saved":true}` y la dejaba en ATTENDED.
+  // 409 y no 400: la petición es correcta, lo que no encaja es el estado.
+  const transition = checkBookingTransition(booking.status, "ATTENDED");
+  if (!transition.ok) return apiError(transition.error, 409);
 
-  await prisma.booking.update({
-    where: { id: bookingId },
-    data: { status: "ATTENDED", checkedInAt: new Date() },
+  const applied = await prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: statusesEndingAt("ATTENDED") } },
+      data: { status: "ATTENDED", checkedInAt: new Date() },
+    });
+    if (updated.count === 0) return false;
+    await tx.sessionDebrief.upsert({
+      where: { bookingId },
+      create: { bookingId, feeling: feeling as DebriefFeeling },
+      update: { feeling: feeling as DebriefFeeling },
+    });
+    return true;
   });
+  if (!applied) return apiError(bookingTransitionMessage(booking.status, "ATTENDED"), 409);
 
   revalidateSessionViews(sessionId);
   return apiOk({ saved: true });

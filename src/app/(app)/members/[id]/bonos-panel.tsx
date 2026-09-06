@@ -191,6 +191,8 @@ function BonoCard({
 }) {
   const server = bono.sessionsRemaining;
   const [draft, setDraft] = useState<number>(server ?? 0);
+  // E2-15: el motivo del ajuste manual, obligatorio, que acaba en el asiento.
+  const [adjustNote, setAdjustNote] = useState("");
   const [pending, startTransition] = useTransition();
   const toast = useToast();
 
@@ -282,6 +284,16 @@ function BonoCard({
                   </Button>
                 </div>
 
+                <input
+                  type="text"
+                  value={adjustNote}
+                  onChange={(e) => setAdjustNote(e.target.value)}
+                  placeholder="Motivo del ajuste (obligatorio)"
+                  maxLength={500}
+                  aria-label="Motivo del ajuste"
+                  className="basis-full border border-brand-border rounded-control px-[11px] py-[9px] text-sm text-brand-text outline-none focus:border-tz-black"
+                />
+
                 {bono.isRecurring && (
                   <p className="text-[11px] text-brand-muted basis-full">
                     Bono recurrente de Stripe: el ajuste es un contador local y no se envía a Stripe.
@@ -298,10 +310,18 @@ function BonoCard({
 
   function save() {
     if (delta === 0) return;
+    // E2-15: el motivo es obligatorio y viaja al libro mayor del bono. El
+    // servidor lo exige igual; pedirlo aquí evita el viaje de ida y vuelta.
+    if (!adjustNote.trim()) {
+      toast.error("Escribe el motivo del ajuste: queda en el libro mayor del bono.");
+      return;
+    }
     startTransition(async () => {
-      const result = await adjustSubscriptionSessions(bono.id, delta);
-      if (result.ok) toast.success("Saldo actualizado.");
-      else {
+      const result = await adjustSubscriptionSessions(bono.id, delta, adjustNote.trim());
+      if (result.ok) {
+        toast.success("Saldo actualizado.");
+        setAdjustNote("");
+      } else {
         toast.error(result.error);
         setDraft(server ?? 0);
       }

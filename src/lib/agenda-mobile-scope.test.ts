@@ -223,6 +223,8 @@ test("E1-02 · dentro del ámbito, las tres operaciones funcionan igual que hoy"
   assert.equal(renamed.ok, true);
   assert.equal((await prisma.classSession.findUniqueOrThrow({ where: { id } })).name, "EP renombrada");
 
-  assert.equal((await deleteSession(fx.orgId, id)).ok, true);
+  // E2-01: borrar firma cada devolución de bono en `AuditLog`, así que la
+  // operación necesita saber quién la pide.
+  assert.equal((await deleteSession(fx.orgId, id, { actorUserId: fx.trainerId })).ok, true);
   assert.equal(await prisma.classSession.findUnique({ where: { id } }), null);
 });

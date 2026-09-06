@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { saveSession, deleteSession, getSessionCenterId, type SaveSessionInput } from "@/lib/agenda-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { parseDateParam } from "@/lib/date-utils";
+import { checkSessionSchedule } from "@/lib/session-time";
 import { parseEditScope } from "@/lib/session-series";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRole } from "../../../_lib/api-session";
@@ -43,6 +44,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!body?.centerId || !body.trainerId || !body.title || !body.type || !body.date || !body.startTime || !body.endTime) {
     return apiError("Faltan campos obligatorios.", 400);
   }
+  // E2-12: la tercera vía de escritura de agenda, con el mismo validador.
+  const schedule = checkSessionSchedule(body);
+  if (!schedule.ok) return apiError(schedule.error, 400);
 
   // E1-02 (RB-SEG-002): al editar hay DOS centros que comprobar, igual que en
   // `saveSessionAction` (web).
@@ -103,8 +107,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const scope = await requireApiCenterScope(claims, centerId);
   if (!scope.ok) return apiError("No se ha encontrado esa sesión.", 404);
 
-  const result = await deleteSession(claims.orgId, id);
-  if (!result.ok) return apiError(result.error, 404);
+  // RB-AGENDA-010 (E2-01): mismo criterio que la web. Con asistencias ya
+  // registradas el borrado no se ejecuta a la primera: 409 con el texto a
+  // confirmar, y la app repite con `?confirmSettled=1`. 409 y no 404 porque la
+  // sesión existe y está en ámbito: lo que falta es la decisión de quien borra.
+  const confirmSettled = req.nextUrl.searchParams.get("confirmSettled") === "1";
+  const result = await deleteSession(claims.orgId, id, { actorUserId: claims.sub, confirmSettled });
+  if (!result.ok) {
+    return result.needsConfirmation ? apiError(result.error, 409) : apiError(result.error, 404);
+  }
   revalidateSessionViews(id);
-  return apiOk({ deleted: true });
+  return apiOk({ deleted: true, refunded: result.refunded });
 }

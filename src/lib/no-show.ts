@@ -34,12 +34,32 @@ export function parseNoShowReason(value: unknown): NoShowReason | null {
 }
 
 /**
- * Faltas que cuentan como "sin aviso" para la alerta a dirección: todas menos
- * las dos en las que el cliente sí dio señales (avisó tarde) o tenía motivo
- * (causa justificada). Este array es el único sitio donde se decide qué cuenta:
- * mover un motivo de un lado a otro cambia la regla entera.
+ * Faltas que cuentan como "sin aviso" para la alerta a dirección. Este array es
+ * el único sitio donde se decide qué cuenta: mover un motivo de un lado a otro
+ * cambia la regla entera.
+ *
+ * Queda solo `FORGOT`, la falta del socio. Los otros tres no son suyas:
+ *
+ * - `LATE_NOTICE`: avisó, aunque tarde. Dio señales.
+ * - `JUSTIFIED`: tenía motivo (enfermedad, imprevisto).
+ * - `OUR_ERROR`: la provocó el CENTRO —sesión mal agendada, aviso no
+ *   registrado—. E12-14: sumarla a la racha abría una tarea comercial contra
+ *   el cliente por algo que no hizo; dirección recibía "Fulano: 3 faltas
+ *   seguidas sin avisar" cuando las tres las había provocado el centro.
+ *
+ * La racha se deriva del histórico en cada lectura
+ * (`consecutiveNoShowsWithoutNotice`), así que sacar `OUR_ERROR` de aquí
+ * recalcula también las rachas ya formadas: las faltas antiguas por error del
+ * centro dejan de contar y, además, dejan de partir la racha —una falta que no
+ * es del socio no debería ni sumar ni cortar—.
  */
-export const NO_SHOW_REASONS_WITHOUT_NOTICE: readonly NoShowReason[] = ["FORGOT", "OUR_ERROR"];
+export const NO_SHOW_REASONS_WITHOUT_NOTICE: readonly NoShowReason[] = ["FORGOT"];
+
+/**
+ * Faltas que ni suman a la racha ni la cortan, porque no dicen nada del socio:
+ * la sesión no llegó a existir como compromiso suyo.
+ */
+export const NO_SHOW_REASONS_NOT_THE_MEMBERS: readonly NoShowReason[] = ["OUR_ERROR"];
 
 export function isNoShowWithoutNotice(reason: NoShowReason | null | undefined): boolean {
   return reason != null && NO_SHOW_REASONS_WITHOUT_NOTICE.includes(reason);
@@ -65,6 +85,15 @@ export function consecutiveNoShowsWithoutNotice(history: AttendanceEntry[]): num
   let streak = 0;
   for (const entry of history) {
     if (entry.status !== "ATTENDED" && entry.status !== "NO_SHOW") continue;
+    // E12-14: un error del centro no es un hueco del socio. Ni suma ni corta:
+    // se salta, igual que una cancelación a tiempo.
+    if (
+      entry.status === "NO_SHOW" &&
+      entry.noShowReason != null &&
+      NO_SHOW_REASONS_NOT_THE_MEMBERS.includes(entry.noShowReason)
+    ) {
+      continue;
+    }
     if (entry.status === "NO_SHOW" && isNoShowWithoutNotice(entry.noShowReason)) {
       streak++;
       continue;

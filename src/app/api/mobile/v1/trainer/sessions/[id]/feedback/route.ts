@@ -6,6 +6,7 @@ import { getSessionBrief } from "@/lib/brief-queries";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { formatDateParam } from "@/lib/date-utils";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
+import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import { debriefAverage } from "../../../../_lib/calendar";
 import { requireApiRoute } from "../../../../_lib/api-session";
 import { requireApiCenterScope } from "../../../../_lib/api-guards";
@@ -132,6 +133,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     where: { id: bookingId, sessionId, session: { orgId: claims.orgId } },
     select: {
       id: true,
+      status: true,
       debrief: true,
       session: { select: { centerId: true, trainerId: true, directedByUserId: true } },
     },
@@ -148,6 +150,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return apiError("No tienes permiso para registrar el feedback de esta sesión.", 403);
   }
 
+  // RB-RES-010: puntuar ejes marca asistencia igual que el debrief 🟢🟡🔴, así
+  // que pasa por la misma máquina de estados. 409 para esa reserva; el resto de
+  // la sesión se sigue puntuando con normalidad.
+  const transition = checkBookingTransition(booking.status, "ATTENDED");
+  if (!transition.ok) return apiError(transition.error, 409);
+
   // Guardado optimista por eje: cada POST fusiona lo recibido con lo ya
   // guardado, de modo que salir a mitad no pierde lo puntuado.
   const merged = Object.fromEntries(
@@ -156,15 +164,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const feeling = feelingFor(merged);
   const mergedNote = note !== undefined ? note : booking.debrief?.note ?? null;
 
-  await prisma.$transaction([
-    prisma.sessionDebrief.upsert({
+  // La condición de estado viaja dentro del UPDATE, no solo en la lectura de
+  // arriba: si la reserva se cancela entre una y otra, no se escribe nada —ni
+  // el debrief, que se deshace con la transacción—.
+  const applied = await prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: statusesEndingAt("ATTENDED") } },
+      data: { status: "ATTENDED", checkedInAt: new Date() },
+    });
+    if (updated.count === 0) return false;
+    await tx.sessionDebrief.upsert({
       where: { bookingId },
       create: { bookingId, feeling, note: mergedNote, ...merged },
       update: { feeling, note: mergedNote, ...merged },
-    }),
-    // Igual que el debrief 🟢🟡🔴: puntuar a un socio marca su asistencia.
-    prisma.booking.update({ where: { id: bookingId }, data: { status: "ATTENDED", checkedInAt: new Date() } }),
-  ]);
+    });
+    return true;
+  });
+  if (!applied) return apiError(bookingTransitionMessage(booking.status, "ATTENDED"), 409);
 
   revalidateSessionViews(sessionId);
   return apiOk({ saved: true, feeling, average: debriefAverage({ ...merged }) });
