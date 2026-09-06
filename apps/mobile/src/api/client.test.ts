@@ -5,6 +5,7 @@
  * Prueba de paso lo que sostiene toda la app: `apiRequest` inyecta el Bearer,
  * refresca una sola vez ante un 401 y traduce todo fallo de red a castellano.
  */
+import * as SecureStore from "expo-secure-store";
 import { apiRequest, ApiError, getStoredTokens, storeTokens } from "@/api/client";
 import { meResponse, refreshResponse } from "@/test/fixtures";
 import { lastRequest, reply, replyError, replyNetworkError, requests } from "@/test/server";
@@ -38,6 +39,16 @@ describe("frontera de red de la app", () => {
     await apiRequest<MeResponse>("/me");
 
     expect(lastRequest("GET /me")?.authorization).toBe("Bearer access-token-1");
+  });
+
+  it("guarda los tokens con keychainAccessible WHEN_UNLOCKED_THIS_DEVICE_ONLY (E10-18)", async () => {
+    await storeTokens({ accessToken: "access-token-1", refreshToken: "refresh-token-1" });
+
+    expect(SecureStore.setItemAsync).toHaveBeenCalledWith(
+      "tz_access_token",
+      "access-token-1",
+      expect.objectContaining({ keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY }),
+    );
   });
 
   it("no manda Bearer cuando la petición es de las que no lo llevan", async () => {
