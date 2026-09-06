@@ -1,5 +1,7 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireSession } from "@/lib/session";
+import { NOINDEX } from "@/lib/seo";
 import { prisma } from "@/lib/prisma";
 import { NAV_BY_ROLE, ROLE_LABEL, defaultRouteForRole, footerLabelForRole, filterNavByFeatures } from "@/lib/rbac";
 import { featuresForOrg, isPlatformOperational } from "@/lib/entitlements";
@@ -32,6 +34,16 @@ function shortDayTimeLabel(startsAt: Date, startTime: string, timezone: string) 
   const weekday = startsAt.toLocaleDateString("es-ES", { weekday: "short", timeZone: timezone });
   return `${weekday.replace(".", "").toUpperCase()} ${startTime}`;
 }
+
+/**
+ * E9-02 · Toda la aplicación autenticada, fuera del índice de una sola vez.
+ *
+ * El proxy ya rebota a `/login` a quien no tenga sesión, pero eso solo evita
+ * SERVIR el contenido: Google puede descubrir la URL desde cualquier enlace
+ * externo e indexarla vacía. Declararlo en el layout —y no ruta a ruta— es lo
+ * que hace que una pantalla nueva nazca ya excluida.
+ */
+export const metadata: Metadata = { robots: NOINDEX };
 
 export default async function AppLayout({
   children,

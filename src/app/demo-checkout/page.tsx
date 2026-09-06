@@ -3,9 +3,12 @@ import type { Metadata } from "next";
 import AptaLogo from "@/components/apta-logo";
 import { prisma } from "@/lib/prisma";
 import { fundadorEnabled, fundadorMaxSeats, getPlatformPlan, isDemoModeActive } from "@/lib/platform-plans";
+import { NOINDEX } from "@/lib/seo";
 import DemoCheckoutForm from "./demo-checkout-form";
 
-export const metadata: Metadata = { title: "Pago de demo · Apta" };
+// E9-02 · Pantalla de andamiaje mientras Stripe no está configurado: pública
+// para poder probarla sin sesión, pero no tiene nada que hacer en una SERP.
+export const metadata: Metadata = { title: "Pago de demo", robots: NOINDEX };
 export const dynamic = "force-dynamic";
 
 export default async function DemoCheckoutPage({

@@ -1,11 +1,21 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { verifyMemberBillingOrDunningToken } from "@/lib/email-verification";
 import { createMemberBillingPortalSession } from "@/lib/member-billing";
+import { tokenPageMetadata } from "@/lib/seo";
 
 // El token expira y es de un solo enlace: la página no puede quedar cacheada
 // con la primera respuesta que reciba (mismo motivo que /recuperar-clave/[token]).
 export const dynamic = "force-dynamic";
+
+/**
+ * E9-02 · El token viaja en la URL: `noindex`, `nofollow`, `nocache` y
+ * `referrer: no-referrer` — sin esto, un enlace de este correo indexado es
+ * acceso sin contraseña, y la cabecera `Referer` filtra el token a cualquier
+ * tercero que la página cargue.
+ */
+export const metadata: Metadata = tokenPageMetadata("Gestionar suscripción");
 
 function InfoScreen({ title, body }: { title: string; body: string }) {
   return (

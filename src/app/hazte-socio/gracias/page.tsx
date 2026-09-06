@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import AptaLogo from "@/components/apta-logo";
+import { NOINDEX } from "@/lib/seo";
 
-export const metadata: Metadata = { title: "Gracias · Training Zone" };
+// E9-02 · Página de confirmación: es el final de un embudo, no una entrada. Si
+// se indexa, alguien aterriza en "¡Pago recibido!" sin haber pagado nada.
+export const metadata: Metadata = { title: "Gracias", robots: NOINDEX };
 
 /**
  * Confirmación pública genérica tras el checkout anónimo de `/hazte-socio` (D1). Igual que
