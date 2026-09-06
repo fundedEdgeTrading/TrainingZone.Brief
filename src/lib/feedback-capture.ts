@@ -89,30 +89,22 @@ export async function submitClientFeedback(
   return { ok: true };
 }
 
-/** El entrenador/staff que rellena el debrief sobre un cliente concreto. */
-export async function submitTrainerDebrief(
-  orgId: string,
-  actorUserId: string,
-  memberId: string,
-  input: FeedbackDimsInput & { note: string }
-): Promise<FeedbackCaptureResult> {
-  const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { id: true } });
-  if (!member) return { ok: false, error: "Socio no encontrado." };
-  const note = input.note.trim();
-  if (!note) return { ok: false, error: "Añade una nota breve sobre este periodo antes de enviar." };
-
-  const dims = clampDims(input);
-  await prisma.$transaction([
-    prisma.trainerDebrief.create({
-      data: { orgId, memberId, trainerId: actorUserId, periodKey: currentPeriodKey(), ...dims, note },
-    }),
-    prisma.notification.updateMany({
-      where: { orgId, recipientUserId: actorUserId, entityType: TRAINER_DEBRIEF_ENTITY, entityId: memberId, resolvedAt: null },
-      data: { resolvedAt: new Date() },
-    }),
-  ]);
-  return { ok: true };
-}
+/**
+ * E3-08 · `submitTrainerDebrief` RETIRADO. Con 30 socios de EP eran 270
+ * deslizadores y 30 textos al mes, con nota obligatoria: el primer martes que
+ * se intentara usar, el entrenador los dejaba todos en 7, escribía "va bien" y
+ * enviaba. A las dos semanas dirección estaría decidiendo sobre "Nutrición: 7"
+ * que nadie ha medido. Además dos de esas dimensiones —"Bienestar físico:
+ * ¿libre de dolores?" y "Nutrición"— son juicios sobre salud y alimentación que
+ * al entrenador no le corresponde puntuar.
+ *
+ * Lo que dirección necesita se calcula del debrief de sesión (E3-07), la
+ * asistencia y el consumo de bono. La divergencia entrenador ↔ socio se sigue
+ * pudiendo contrastar con `getWeeklyClientFeedback`, que ya existe.
+ *
+ * Los `TrainerDebrief` ya escritos se conservan y siguen consultándose desde
+ * /feedback en modo lectura: lo que desaparece es la captura, no el dato.
+ */
 
 /** Tarea pendiente del socio, si la hay (banner obligatorio en /portal). */
 export async function getPendingClientFeedback(orgId: string, memberUserId: string) {
@@ -122,7 +114,10 @@ export async function getPendingClientFeedback(orgId: string, memberUserId: stri
   });
 }
 
-/** Debriefs pendientes de un entrenador (pestaña "Feedback" del panel). */
+/**
+ * E3-08 · RETIRADA. Se conserva únicamente para poder CERRAR los avisos que el
+ * ciclo dejó abiertos antes de retirarse; ya no alimenta ninguna pantalla.
+ */
 export async function listPendingTrainerDebriefs(orgId: string, trainerUserId: string) {
   const pending = await prisma.notification.findMany({
     where: { orgId, recipientUserId: trainerUserId, entityType: TRAINER_DEBRIEF_ENTITY, resolvedAt: null },
@@ -165,10 +160,11 @@ export async function runFeedbackCycleRule(orgId: string): Promise<number> {
     const trainerId = await getEpTrainerForMember(member.id);
     if (!trainerId) continue; // sin sesión de EP asistida todavía: no hay ciclo que abrir
 
-    const [lastClientFeedback, lastDebrief] = await Promise.all([
-      prisma.clientFeedback.findFirst({ where: { memberId: member.id }, orderBy: { submittedAt: "desc" }, select: { submittedAt: true } }),
-      prisma.trainerDebrief.findFirst({ where: { memberId: member.id }, orderBy: { debriefAt: "desc" }, select: { debriefAt: true } }),
-    ]);
+    const lastClientFeedback = await prisma.clientFeedback.findFirst({
+      where: { memberId: member.id },
+      orderBy: { submittedAt: "desc" },
+      select: { submittedAt: true },
+    });
 
     if (!lastClientFeedback || Date.now() - lastClientFeedback.submittedAt.getTime() > cutoff) {
       await createNotificationOnce({
@@ -184,19 +180,9 @@ export async function runFeedbackCycleRule(orgId: string): Promise<number> {
       created++;
     }
 
-    if (!lastDebrief || Date.now() - lastDebrief.debriefAt.getTime() > cutoff) {
-      await createNotificationOnce({
-        orgId,
-        recipientUserId: trainerId,
-        kind: "TASK",
-        title: "Feedback pendiente de un cliente",
-        body: "Valora su progreso, adherencia y motivación de este último mes.",
-        entityType: TRAINER_DEBRIEF_ENTITY,
-        entityId: member.id,
-        dueDate,
-      });
-      created++;
-    }
+    // E3-08: el ciclo ya NO le pide al entrenador nueve deslizadores. Se sigue
+    // preguntando al socio —eso sí lo contesta quien lo vive— y el lado del
+    // entrenador se cubre con el debrief de sesión, que cuesta un toque.
   }
   return created;
 }
@@ -219,19 +205,8 @@ export async function requestFeedbackNow(orgId: string, memberId: string): Promi
     dueDate,
   });
 
-  const trainerId = await getEpTrainerForMember(member.id);
-  if (trainerId) {
-    await createNotificationOnce({
-      orgId,
-      recipientUserId: trainerId,
-      kind: "TASK",
-      title: "Dirección ha solicitado tu feedback",
-      body: "Valora a este cliente antes de la fecha indicada.",
-      entityType: TRAINER_DEBRIEF_ENTITY,
-      entityId: member.id,
-      dueDate,
-    });
-  }
+  // E3-08: solo se le pide al socio. Al entrenador no se le reclama un
+  // cuestionario que ya no existe.
   return { ok: true };
 }
 
