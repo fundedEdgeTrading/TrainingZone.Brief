@@ -10,6 +10,7 @@ import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
 import { Icon } from "@/components/Icon";
 import { EmptyState } from "@/components/EmptyState";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { goBack } from "@/utils/navigation";
@@ -24,7 +25,7 @@ import { pluralize } from "@/utils/format";
  */
 export default function BriefListScreen() {
   const theme = useTheme();
-  const { data, isLoading, isError, refetch, isRefetching } = useBriefList();
+  const { data, isLoading, isError, error, refetch, isRefetching } = useBriefList();
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
@@ -53,7 +54,7 @@ export default function BriefListScreen() {
       {isLoading ? (
         <SkeletonList rows={4} shape="row" note="Cargando tus sesiones…" />
       ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudo cargar el Session Brief" description="Desliza hacia abajo para reintentar." />
+        <QueryErrorState error={error} title="No se pudo cargar el Session Brief" description="Desliza hacia abajo para reintentar." />
       ) : data.sessions.length === 0 ? (
         <EmptyState icon="calendar" title="Sin sesiones próximas" description="No hay sesiones asignadas en los próximos días." />
       ) : (

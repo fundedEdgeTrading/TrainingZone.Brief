@@ -16,7 +16,15 @@ import { feelingOrigin, setSessionDebrief } from "@/lib/session-debrief";
 
 const SLUG = "e2e-session-debrief-test";
 
-type Fixture = { orgId: string; trainerId: string; otherTrainerId: string; sessionId: string; bookingId: string };
+type Fixture = {
+  orgId: string;
+  centerId: string;
+  memberId: string;
+  trainerId: string;
+  otherTrainerId: string;
+  sessionId: string;
+  bookingId: string;
+};
 let fx: Fixture;
 
 before(async () => {
@@ -62,6 +70,8 @@ before(async () => {
 
   fx = {
     orgId: org.id,
+    centerId: center.id,
+    memberId: member.id,
     trainerId: trainer.id,
     otherTrainerId: otherTrainer.id,
     sessionId: session.id,
@@ -71,7 +81,7 @@ before(async () => {
 
 after(async () => {
   if (!fx) return;
-  await prisma.sessionDebrief.deleteMany({ where: { bookingId: fx.bookingId } });
+  await prisma.sessionDebrief.deleteMany({ where: { booking: { sessionId: fx.sessionId } } });
   await prisma.booking.deleteMany({ where: { sessionId: fx.sessionId } });
   await prisma.classSession.deleteMany({ where: { orgId: fx.orgId } });
   await prisma.auditLog.deleteMany({ where: { orgId: fx.orgId } });
@@ -90,6 +100,7 @@ test("E3-07 · un toque guarda color y frase, y marca la asistencia", async () =
     orgId: fx.orgId,
     actorUserId: fx.trainerId,
     actorRole: "TRAINER",
+    actorCenterId: fx.centerId,
     feeling: "RED",
     note: "  Se ha quejado del hombro al empujar  ",
   });
@@ -112,6 +123,7 @@ test("E3-07 · repetir el gesto cambia el color sin borrar la frase", async () =
     orgId: fx.orgId,
     actorUserId: fx.trainerId,
     actorRole: "TRAINER",
+    actorCenterId: fx.centerId,
     feeling: "AMBER",
   });
 
@@ -127,11 +139,44 @@ test("E3-07 · otro entrenador no escribe el debrief de una sesión que no dirig
     orgId: fx.orgId,
     actorUserId: fx.otherTrainerId,
     actorRole: "TRAINER",
+    actorCenterId: fx.centerId,
     feeling: "GREEN",
   });
 
   assert.equal(result.ok, false);
   assert.equal(result.ok === false && result.status, 403);
+});
+
+test("E3-07/E2-02 · el canal único lleva dentro la máquina de estados de la reserva", async () => {
+  // Al fundir los tres escritores en uno, RB-RES-010 tiene que viajar DENTRO:
+  // si viviera en cada llamante, la app volvería a poder saltárselo. El fallo se
+  // verificó justo así — `POST …/debrief` sobre una reserva cancelada respondía
+  // `{"saved":true}` y la dejaba en ATTENDED.
+  const cancelada = await prisma.booking.create({
+    data: {
+      sessionId: fx.sessionId,
+      memberId: fx.memberId,
+      occurrenceDate: new Date(),
+      status: "CANCELLED",
+    },
+  });
+
+  const result = await setSessionDebrief({
+    bookingId: cancelada.id,
+    sessionId: fx.sessionId,
+    orgId: fx.orgId,
+    actorUserId: fx.trainerId,
+    actorRole: "TRAINER",
+    actorCenterId: fx.centerId,
+    feeling: "GREEN",
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.status, 409, "la petición es correcta; lo que no encaja es el estado");
+
+  const sinTocar = await prisma.booking.findUniqueOrThrow({ where: { id: cancelada.id } });
+  assert.equal(sinTocar.status, "CANCELLED", "no se escribe nada: ni el estado ni el debrief");
+  assert.equal(await prisma.sessionDebrief.count({ where: { bookingId: cancelada.id } }), 0);
 });
 
 test("E3-07 · feelingFor deja de existir: nadie deriva el color de una media", () => {

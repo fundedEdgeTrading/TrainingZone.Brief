@@ -31,9 +31,11 @@ export default async function DebriefsSemanalesPage({
   const nextWeek = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const [weeklyReport, ratingSummary, clientFeedback] = await Promise.all([
-    getWeeklyDebriefReport(orgId, weekStart),
+    // E1-03: el informe agrega solo las sesiones del ámbito de centro de quien
+    // lo abre, para que el total coincida con el de su agenda de esa semana.
+    getWeeklyDebriefReport(session.user, weekStart),
     getTrainerRatingSummary(orgId, session.user.role),
-    getWeeklyClientFeedback(orgId, weekStart),
+    getWeeklyClientFeedback(session.user, weekStart),
   ]);
 
   const trainers = (ratingSummary ?? []).map((r) => ({ trainerId: r.trainerUserId, trainerName: r.name }));

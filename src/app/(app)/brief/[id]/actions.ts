@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { canViewSessionDebrief } from "@/lib/rbac";
+import { centerIsInScope } from "@/lib/guard";
 import { setSessionDebrief } from "@/lib/session-debrief";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { getClinicalDetailForMember } from "@/lib/health-access";
@@ -23,12 +24,17 @@ export async function setDebrief(
 ): Promise<DebriefActionResult> {
   const session = await requireSession();
 
+  // El ámbito de centro (E1-01) y la máquina de estados de la reserva (E2-02)
+  // los aplica `setSessionDebrief`, que es el único canal de escritura: si
+  // vivieran aquí, la app móvil tendría que repetirlos y volveríamos a tener
+  // dos criterios.
   const result = await setSessionDebrief({
     bookingId,
     sessionId,
     orgId: session.user.orgId,
     actorUserId: session.user.id,
     actorRole: session.user.role,
+    actorCenterId: session.user.centerId,
     feeling,
     note,
   });
@@ -60,9 +66,15 @@ export async function loadClinicalDetail(
   // `memberId` que mande el cliente.
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, sessionId, session: { orgId: session.user.orgId } },
-    select: { memberId: true, session: { select: { trainerId: true, directedByUserId: true } } },
+    select: { memberId: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
   });
   if (!booking) return { ok: false, error: "No hay detalle disponible." };
+  // E1-01: el detalle clínico cuelga del brief, así que hereda su frontera de
+  // centro. Va ANTES de leer nada de salud: una sesión ajena no puede dejar
+  // rastro de "lectura legítima" de un dato que nunca se debió leer.
+  if (!(await centerIsInScope(session.user, booking.session.centerId))) {
+    return { ok: false, error: "No hay detalle disponible." };
+  }
   if (!canViewSessionDebrief(session.user.role, session.user.id, booking.session)) {
     return { ok: false, error: "No hay detalle disponible." };
   }

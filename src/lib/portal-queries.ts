@@ -12,6 +12,8 @@ import {
 } from "@/lib/session-booking";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
+import { resequenceWaitlist } from "@/lib/waitlist";
+import { refundSession } from "@/lib/session-ledger";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { getOwnProgressEntries } from "@/lib/health-access";
@@ -304,6 +306,25 @@ export function sessionStartsAt(date: Date, startTime: string, timeZone: string)
 }
 
 /**
+ * RB-RES-012: instante de referencia para toda DECISIÓN sobre una reserva
+ * —"¿puedo reservar?", "¿cancelo sin penalización?", "¿ya ha empezado?"—.
+ *
+ * Siempre la zona del centro que imparte la clase. Nunca la del cliente: la
+ * cookie `tz` que prioriza `resolveTimezone` es la hora que el socio tiene
+ * delante (correcta para PINTAR la agenda) y desplaza el instante hasta ~26 h
+ * respecto del real. Con ese desfase, la escritura —que ya usaba
+ * `center.timezone`— y el distintivo "cancelable sin penalización" que el
+ * socio leía en pantalla decían cosas distintas sobre la misma reserva: el
+ * distintivo prometía devolución y al pulsar se perdía la sesión.
+ *
+ * La corrección de horario de verano la sigue haciendo `zonedTimeToInstant`,
+ * así que una clase en la madrugada del cambio de hora sale bien.
+ */
+export function enforcementStartsAt(date: Date, startTime: string, centerTimezone: string | null | undefined) {
+  return sessionStartsAt(date, startTime, centerTimezone || DEFAULT_TIMEZONE);
+}
+
+/**
  * RB-AGENDA-001: visibilidad segmentada. El socio de grupos ve las clases de
  * grupo (siempre reservables por el cliente, con aforo). El socio de EP ve
  * CUALQUIER franja de EP marcada como autorreservable (`selfBookable`,
@@ -357,7 +378,10 @@ export async function getBookableSessions(
       AND: [sessionsInRangeWhere(fromDay, toDay), { OR: orFilters }],
     },
     include: {
-      center: { select: { name: true } },
+      // RB-RES-012: la zona del centro viaja con la sesión porque es la que
+      // decide, no la del socio ni la de su centro principal — una lista de
+      // reserva puede mezclar centros (RB-AGENDA-003).
+      center: { select: { name: true, timezone: true } },
       // `visibleInApp` (D7): si el entrenador no está publicado en la app del
       // socio, su nombre y su foto no acompañan a la sesión.
       trainer: { select: { name: true, image: true, visibleInApp: true } },
@@ -368,7 +392,11 @@ export async function getBookableSessions(
 
   return expandOccurrences(sessions, fromDay, toDay)
     .map(({ session: s, date }) => {
-      const startsAt = sessionStartsAt(date, s.startTime, timeZone);
+      // Con la zona del centro, no con la de `timeZone` (que puede venir de la
+      // cookie del navegador): es el mismo instante que aplica la escritura en
+      // `bookSessionForMember`, así que el distintivo y el resultado de pulsar
+      // coinciden siempre.
+      const startsAt = enforcementStartsAt(date, s.startTime, s.center.timezone);
       const dayBookings = s.bookings.filter((b) => sameDay(b.occurrenceDate, date));
       const activeBookings = dayBookings.filter(
         (b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW"
@@ -416,9 +444,13 @@ function sameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-/** `startsAt` es un instante real (ver `sessionStartsAt`), así que basta con `Date.now()`. */
-export function canCancelWithoutPenalty(startsAt: Date) {
-  return startsAt.getTime() - Date.now() >= CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
+/**
+ * `startsAt` es un instante real (ver `enforcementStartsAt`), así que basta con
+ * `Date.now()`. `now` entra como argumento solo para poder probar el límite de
+ * la ventana sin depender del reloj del runner.
+ */
+export function canCancelWithoutPenalty(startsAt: Date, now: Date = new Date()) {
+  return startsAt.getTime() - now.getTime() >= CANCEL_WINDOW_HOURS * 60 * 60 * 1000;
 }
 
 export type UpcomingBooking = {
@@ -495,7 +527,8 @@ export async function getMemberUpcomingBookings(
           status: true,
           capacity: true,
           room: true,
-          center: { select: { name: true } },
+          // RB-RES-012: la zona que decide es la del centro de ESA sesión.
+          center: { select: { name: true, timezone: true } },
           trainer: { select: { name: true, image: true, visibleInApp: true } },
           // Necesario para saber si sigue lleno: sin esto no hay forma de
           // decidir si una reserva WAITLISTED ya puede reclamar hueco.
@@ -518,7 +551,7 @@ export async function getMemberUpcomingBookings(
         occurrenceDate: formatDateParam(b.occurrenceDate),
         sessionName: b.session.name,
         classType: b.session.classType,
-        startsAt: sessionStartsAt(b.occurrenceDate, b.session.startTime, timeZone),
+        startsAt: enforcementStartsAt(b.occurrenceDate, b.session.startTime, b.session.center.timezone),
         dayLabel: formatDayLabel(b.occurrenceDate),
         startTime: b.session.startTime,
         endTime: b.session.endTime,
@@ -611,14 +644,10 @@ export async function bookSessionForMember(
     }
 
     const now = new Date();
-    // La zona horaria de referencia es SIEMPRE la del centro que imparte la
-    // clase, nunca la que llegue del cliente: `resolveTimezone` prioriza la
-    // cookie `tz` del navegador (correcto para pintar horas, no para decidir),
-    // y con ella el socio desplazaba `startsAt` hasta ~26 h — lo justo para
-    // colarse dentro del corte de antelación mínima o para cancelar dentro de
-    // la ventana de penalización recuperando igualmente el bono.
-    const enforcementTimeZone = cls.center.timezone || DEFAULT_TIMEZONE;
-    const startsAt = sessionStartsAt(occurrenceDate, cls.startTime, enforcementTimeZone);
+    // RB-RES-012: misma puerta que la lectura del portal (`getBookableSessions`),
+    // y por el mismo motivo — la zona de referencia es SIEMPRE la del centro que
+    // imparte la clase, nunca la que llegue del cliente.
+    const startsAt = enforcementStartsAt(occurrenceDate, cls.startTime, cls.center.timezone);
     // RB-RES-001: antelación mínima. RB-RES-002: ventana de 7 días vista.
     if (startsAt.getTime() - now.getTime() < MIN_LEAD_MINUTES * 60 * 1000) {
       return { ok: false as const, error: `Esta clase empieza en menos de ${MIN_LEAD_MINUTES} minutos: ya no admite reservas.` };
@@ -694,7 +723,10 @@ export async function bookSessionForMember(
     const chargeSubscriptionId = choice.subscriptionId;
 
     // Va ANTES de escribir la reserva para poder abortar sin dejar nada a medias.
-    if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+    if (
+      chargeSubscriptionId &&
+      !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId: cls.orgId, reason: "BOOKING" }))
+    ) {
       return { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
     }
 
@@ -704,10 +736,20 @@ export async function bookSessionForMember(
       // condición dentro del UPDATE, dos personas avisadas del mismo hueco se
       // lo quedaban las dos y la clase acababa sobrevendida.
       const claimed = await claimWaitlistedBooking(tx, existing!.id, chargeSubscriptionId);
+      if (claimed) await resequenceWaitlist(tx, sessionId, occurrenceDate);
       if (!claimed) {
         // Otra persona de la lista se ha adelantado: se deshace el descuento
         // para no cobrarle una sesión que no ha llegado a reservar.
-        if (chargeSubscriptionId) await refundSessionToSubscription(tx, chargeSubscriptionId);
+        // No es una cancelación: es deshacer un cobro que no llegó a comprar
+        // nada, así que el asiento va como corrección.
+        if (chargeSubscriptionId) {
+          await refundSessionToSubscription(tx, chargeSubscriptionId, {
+            orgId: cls.orgId,
+            bookingId: existing!.id,
+            reason: "CORRECTION",
+            note: "La plaza reclamada se la quedó otra persona.",
+          });
+        }
         return { ok: false as const, error: "Esa plaza ya la ha reclamado otra persona: sigues en la lista de espera." };
       }
       return { ok: true as const, waitlisted: false };
@@ -716,7 +758,13 @@ export async function bookSessionForMember(
     // La posición en lista de espera se numera sobre los que ya esperan, no
     // sobre el aforo: `activeCount` no crece al añadir gente a la lista, así que
     // contarlo con `activeCount - capacity + 1` daba la posición 1 a todos.
-    const waitlistedCount = dayBookings.filter((b) => b.status === "WAITLISTED").length;
+    //
+    // E2-08: se cuenta DENTRO de la transacción y no sobre la foto de
+    // `cls.bookings`, que se leyó antes; con la cola ya compactada por las
+    // salidas, `count + 1` es la posición correcta y no una repetida.
+    const waitlistedCount = await tx.booking.count({
+      where: { sessionId, occurrenceDate, status: "WAITLISTED" },
+    });
 
     await tx.booking.create({
       data: {
@@ -756,14 +804,11 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
     return { ok: false, error: "Esta reserva ya no está activa." };
   }
-  // Zona horaria del centro, nunca la del cliente (ver `bookSessionForMember`):
-  // de ella dependen tanto "la clase ya ha empezado" como la ventana de
-  // penalización que decide si se devuelve el bono.
-  const startsAt = sessionStartsAt(
-    booking.occurrenceDate,
-    booking.session.startTime,
-    booking.session.center.timezone || DEFAULT_TIMEZONE
-  );
+  // RB-RES-012: zona del centro, nunca la del cliente. De ella dependen tanto
+  // "la clase ya ha empezado" como la ventana de penalización que decide si se
+  // devuelve el bono — y es la misma que usó la lectura para pintar el
+  // distintivo "cancelable sin penalización".
+  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
   if (startsAt.getTime() <= Date.now()) {
     return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar." };
   }
@@ -802,16 +847,24 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
     if (applied.count === 0) return false;
 
     if (refundSubscriptionId) {
-      await tx.subscription.update({
-        where: { id: refundSubscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
+      await refundSession(tx, {
+        orgId: booking.session.orgId,
+        subscriptionId: refundSubscriptionId,
+        bookingId: booking.id,
+        reason: "CANCELLATION",
       });
     }
+    // E2-08: quien sale de la cola deja un hueco en la numeración. Se compacta
+    // dentro de la misma transacción para que nadie vea la lista con huecos ni
+    // con dos personas en la misma posición.
+    await resequenceWaitlist(tx, booking.sessionId, booking.occurrenceDate);
     return true;
   });
   if (!cancelled) return { ok: false, error: "Esta reserva ya no está activa." };
 
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+  // Aquí el pasado ya está bloqueado más arriba ("esta clase ya ha empezado"),
+  // pero el criterio viaja igualmente: la decisión de avisar es una sola.
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
     void notifySessionVacancy({
       orgId: booking.session.orgId,
       sessionId: booking.sessionId,

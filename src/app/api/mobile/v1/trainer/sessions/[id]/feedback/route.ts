@@ -15,6 +15,11 @@ import { apiError } from "../../../../_lib/response";
  *  · la puntuación por ejes → al bloque "Ejes" de la valoración periódica,
  *    desde la ficha del socio.
  *
+ * Qué pasa con el ámbito de centro (E1-01) y la máquina de estados (E2-02 ·
+ * RB-RES-010) que este endpoint había ganado: no se pierden. Vivían aquí porque
+ * aquí se escribía el debrief; ahora se escribe en `setSessionDebrief`, que los
+ * lleva dentro para las dos superficies. Este camino desaparece entero.
+ *
  * Se responde 410 en vez de borrar la ruta: una versión antigua de la app que
  * siga llamando recibe el motivo, no un 404 que parezca una caída.
  */

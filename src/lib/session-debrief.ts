@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { canViewSessionDebrief } from "@/lib/rbac";
+import { isCenterInScope } from "@/lib/center-scope";
+import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import type { DebriefFeeling, Role } from "@prisma/client";
 
 /**
@@ -16,6 +18,11 @@ import type { DebriefFeeling, Role } from "@prisma/client";
  * Promediar movilidad con actitud no significa nada: es un número que parece
  * riguroso y no lo es. Así que el color lo pone el dedo del entrenador, aquí,
  * en un solo sitio, con el mismo contrato para la web y para la app.
+ *
+ * Y por eso las garantías del trimestre viven AQUÍ, no repetidas en cada
+ * llamante: el ámbito de centro (E1-01) y la máquina de estados de la reserva
+ * (E2-02, RB-RES-010). Un canal único que no las llevara dentro sería un canal
+ * único con dos criterios otra vez.
  */
 
 export const DEBRIEF_FEELINGS: DebriefFeeling[] = ["GREEN", "AMBER", "RED"];
@@ -24,7 +31,7 @@ export function isDebriefFeeling(value: unknown): value is DebriefFeeling {
   return typeof value === "string" && DEBRIEF_FEELINGS.includes(value as DebriefFeeling);
 }
 
-export type SetDebriefResult = { ok: true } | { ok: false; error: string; status: 400 | 403 | 404 };
+export type SetDebriefResult = { ok: true } | { ok: false; error: string; status: 400 | 403 | 404 | 409 };
 
 /** La frase que acompaña al color. Opcional: el flujo de sala no se bloquea por ella. */
 const MAX_NOTE = 600;
@@ -35,6 +42,7 @@ export async function setSessionDebrief({
   orgId,
   actorUserId,
   actorRole,
+  actorCenterId,
   feeling,
   note,
 }: {
@@ -43,6 +51,8 @@ export async function setSessionDebrief({
   orgId: string;
   actorUserId: string;
   actorRole: Role;
+  /** Centro base de quien escribe; con `CenterMembership` forma su ámbito (E1-01). */
+  actorCenterId: string | null;
   feeling: DebriefFeeling;
   /** `undefined` = no se toca la que hubiera; `null` o "" = se borra. */
   note?: string | null;
@@ -59,26 +69,53 @@ export async function setSessionDebrief({
   // marcar el debrief de cualquier reserva conociendo su id.
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, sessionId, session: { orgId } },
-    select: { session: { select: { trainerId: true, directedByUserId: true } } },
+    // `status` para la máquina de estados (E2-02) y `centerId` para el ámbito
+    // de centro (E1-01): las dos comprobaciones cuelgan de la misma lectura.
+    select: { status: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
   });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva.", status: 404 };
+
+  // E1-01: si el brief de esa sesión no se puede abrir por ámbito de centro,
+  // tampoco se puede escribir su debrief. `canViewSessionDebrief` mira el rol y
+  // quién dirigió la sesión, nunca el centro.
+  const inScope = await isCenterInScope(
+    { id: actorUserId, role: actorRole, orgId, centerId: actorCenterId },
+    booking.session.centerId
+  );
+  if (!inScope) return { ok: false, error: "No se ha encontrado esa reserva.", status: 404 };
+
   if (!canViewSessionDebrief(actorRole, actorUserId, booking.session)) {
     return { ok: false, error: "No tienes permiso para registrar el debrief de esta sesión.", status: 403 };
   }
 
+  // RB-RES-010: un debrief marca asistencia, así que primero hay que poder
+  // asistir. Sobre una reserva CANCELLED o WAITLISTED esto guardaba el debrief
+  // y ponía `status = ATTENDED` sin preguntar: una asistencia inexistente que
+  // ocupaba aforo y falseaba adherencia, retención y KPIs.
+  const transition = checkBookingTransition(booking.status, "ATTENDED");
+  if (!transition.ok) return { ok: false, error: transition.error, status: 409 };
+
   const trimmed = note === undefined ? undefined : (note?.trim() || null);
 
-  await prisma.sessionDebrief.upsert({
-    where: { bookingId },
-    create: { bookingId, feeling, note: trimmed ?? null },
-    update: { feeling, ...(trimmed === undefined ? {} : { note: trimmed }) },
+  // Y no se escribe NADA si la reserva ha cambiado entre la lectura y la
+  // escritura: la condición de estado viaja dentro del propio UPDATE y el
+  // debrief se deshace con la transacción si no se aplica.
+  const applied = await prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: statusesEndingAt("ATTENDED") } },
+      data: { status: "ATTENDED", checkedInAt: new Date() },
+    });
+    if (updated.count === 0) return false;
+    await tx.sessionDebrief.upsert({
+      where: { bookingId },
+      create: { bookingId, feeling, note: trimmed ?? null },
+      update: { feeling, ...(trimmed === undefined ? {} : { note: trimmed }) },
+    });
+    return true;
   });
-
-  // Un debrief implica que la persona asistió.
-  await prisma.booking.update({
-    where: { id: bookingId },
-    data: { status: "ATTENDED", checkedInAt: new Date() },
-  });
+  if (!applied) {
+    return { ok: false, error: bookingTransitionMessage(booking.status, "ATTENDED"), status: 409 };
+  }
 
   // La revalidación de rutas la hace quien llama (acción de servidor o route
   // handler): necesita el contexto de petición de Next, y meterla aquí ataba el

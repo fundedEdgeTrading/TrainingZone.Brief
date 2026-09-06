@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
-import type { Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client";
+import type { Prisma, Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { centerScopeFor, isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 import { resolveAptitude } from "@/lib/aptitude-light";
 import { feelingOrigin } from "@/lib/session-debrief";
 
@@ -31,17 +32,39 @@ export type BriefRule = {
   adaptation: string | null;
 };
 
+/**
+ * E1-01 (RB-SEG-001): frontera de centro del Session Brief, para el índice.
+ *
+ * `canViewSessionDebrief` (rbac.ts) responde a "¿este rol puede abrir un
+ * debrief?", no a "¿de qué centros?": para `OWNER`/`CENTER_DIRECTOR` decía
+ * `true` ante cualquier sesión de la organización. Con eso, la dirección de La
+ * Jota listaba 43 sesiones de tres centros. El `where` que devuelve esta
+ * función es lo único que acota el índice, y sale del mismo `centerScopeFor`
+ * que la agenda: un solo criterio de "mis centros" en toda la aplicación.
+ *
+ * `{}` = sin frontera de centro (dirección de organización). El `orgId` lo
+ * sigue poniendo el llamante, siempre.
+ */
+export async function briefScopeWhere(user: ScopedUser): Promise<Prisma.ClassSessionWhereInput> {
+  const scope = await centerScopeFor(user);
+  if (scope === null) return {};
+  return { centerId: { in: scope } };
+}
+
 export async function getSessionBrief({
   orgId,
   sessionId,
   actorUserId,
   actorRole,
+  actorCenterId,
   d,
 }: {
   orgId: string;
   sessionId: string;
   actorUserId: string;
   actorRole: Role;
+  /** Centro base de quien pide (`User.centerId`); con las filas de `CenterMembership` forma su ámbito. */
+  actorCenterId: string | null;
   /** Día de la serie que se está briefando ("YYYY-MM-DD"); por defecto, la fecha base. */
   d?: string | null;
 }) {
@@ -61,6 +84,18 @@ export async function getSessionBrief({
     },
   });
   if (!row) return null;
+
+  // E1-01 (RB-SEG-001): el ámbito de centro va ANTES que cualquier otra cosa, y
+  // desde luego antes de tocar `HealthRecord` o de escribir en `AuditLog`: una
+  // sesión ajena no puede dejar rastro de "lectura legítima" de un dato de
+  // salud que nunca se debió leer. La comprobación vive aquí, y no en cada
+  // pantalla, porque web y app llaman a esta misma función: un solo arreglo
+  // cierra las dos superficies.
+  const inScope = await isCenterInScope(
+    { id: actorUserId, role: actorRole, orgId, centerId: actorCenterId },
+    row.centerId
+  );
+  if (!inScope) return null;
 
   // Solo el entrenador asignado (o quien dirigió la sesión) y dirección pueden
   // abrir el debrief individual. Devolvemos null → notFound() para no revelar
@@ -161,12 +196,25 @@ export type WeeklyDebriefReport = {
   }[];
 }[];
 
-/** Agrega los SessionDebrief de la semana [weekStart, weekStart+7d) por entrenador y sesión. */
-export async function getWeeklyDebriefReport(orgId: string, weekStart: Date): Promise<WeeklyDebriefReport> {
+/**
+ * Agrega los SessionDebrief de la semana [weekStart, weekStart+7d) por
+ * entrenador y sesión.
+ *
+ * E1-03 (RB-SEG-003): el informe se acota al ámbito de centro de quien lo abre.
+ * Sin eso, `/feedback/debriefs-semanales` agregaba las notas de debrief —texto
+ * libre del entrenador sobre cómo le fue a cada socio— de los tres centros de
+ * la organización, y el total no cuadraba con la agenda de quien lo miraba.
+ */
+export async function getWeeklyDebriefReport(user: ScopedUser, weekStart: Date): Promise<WeeklyDebriefReport> {
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const debriefs = await prisma.sessionDebrief.findMany({
-    where: { booking: { occurrenceDate: { gte: weekStart, lt: weekEnd }, session: { orgId } } },
+    where: {
+      booking: {
+        occurrenceDate: { gte: weekStart, lt: weekEnd },
+        session: { orgId: user.orgId, ...(await briefScopeWhere(user)) },
+      },
+    },
     include: {
       booking: {
         select: {
@@ -226,11 +274,11 @@ export type ClientFeedbackBySession = Map<string, { feeling: string; rpe: number
  * (vía el bookingId guardado en `structured`) para mostrarlo junto al SessionDebrief
  * de la misma sesión — nunca junto al canal confidencial de TrainerRating.
  */
-export async function getWeeklyClientFeedback(orgId: string, weekStart: Date): Promise<ClientFeedbackBySession> {
+export async function getWeeklyClientFeedback(user: ScopedUser, weekStart: Date): Promise<ClientFeedbackBySession> {
   const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const assessments = await prisma.selfAssessment.findMany({
-    where: { orgId, kind: "post-sesion", createdAt: { gte: weekStart, lt: weekEnd } },
+    where: { orgId: user.orgId, kind: "post-sesion", createdAt: { gte: weekStart, lt: weekEnd } },
     select: { text: true, structured: true },
   });
   if (assessments.length === 0) return new Map();
@@ -238,8 +286,11 @@ export async function getWeeklyClientFeedback(orgId: string, weekStart: Date): P
   const bookingIds = assessments
     .map((a) => (a.structured as { bookingId?: string } | null)?.bookingId)
     .filter((id): id is string => !!id);
+  // E1-03: mismo ámbito que el informe con el que se pinta. Una reserva fuera
+  // de ámbito no llega al mapa, así que no puede colarse por un `sessionId` que
+  // el informe no listó.
   const bookings = await prisma.booking.findMany({
-    where: { id: { in: bookingIds } },
+    where: { id: { in: bookingIds }, session: { orgId: user.orgId, ...(await briefScopeWhere(user)) } },
     select: { id: true, sessionId: true },
   });
   const sessionIdByBooking = new Map(bookings.map((b) => [b.id, b.sessionId]));

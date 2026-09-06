@@ -1,14 +1,14 @@
 import type { NextRequest } from "next/server";
 import { getSessionBrief } from "@/lib/brief-queries";
 import { formatDateParam } from "@/lib/date-utils";
-import { requireApiRole } from "../../../_lib/api-session";
+import { requireApiRoute } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
 
 const LIGHT_ORDER: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
 
 // Espejo de src/app/(app)/brief/[id]/page.tsx (detalle de Session Brief).
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief/[id]");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id } = await params;
@@ -18,6 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     sessionId: id,
     actorUserId: claims.sub,
     actorRole: claims.role,
+    actorCenterId: claims.centerId,
     d: req.nextUrl.searchParams.get("d"),
   });
   if (!brief) return apiError("No se ha encontrado esa sesión.", 404);

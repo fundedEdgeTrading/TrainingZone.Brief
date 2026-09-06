@@ -50,6 +50,10 @@ import type {
   TrainerMemberDetailResponse,
   TrainerMemberFilter,
   TrainerMembersResponse,
+  NoShowOptions,
+  MarkNoShowInput,
+  MarkNoShowResult,
+  ClearNoShowResult,
 } from "./types";
 
 // `enabled` en las dos consultas del portal: son endpoints de SOCIO —el
@@ -645,6 +649,53 @@ export function useDiscardAttendee(sessionId: string) {
       queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
       queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
     },
+  });
+}
+
+// ---------- No-show desde la app (E2-14, RB-RES-009) ----------
+
+/**
+ * Los motivos salen del servidor, que los deriva del enum `NoShowReason`: si
+ * un día cambia la lista, el desplegable cambia solo. Copiarla aquí era la
+ * forma segura de que web y app acabaran ofreciendo motivos distintos.
+ */
+export function useNoShowOptions(bookingId: string | null) {
+  return useQuery({
+    queryKey: ["no-show-options", bookingId],
+    queryFn: () => apiRequest<NoShowOptions>(`/trainer/bookings/${bookingId}/no-show`),
+    enabled: Boolean(bookingId),
+  });
+}
+
+/** Invalida lo que cambia al mover una asistencia: roster, agenda y panel. */
+function invalidateAfterAttendanceChange(queryClient: ReturnType<typeof useQueryClient>, sessionId: string) {
+  queryClient.invalidateQueries({ queryKey: ["staff-session-attendees", sessionId] });
+  queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+  queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
+}
+
+export function useMarkNoShow(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, ...body }: MarkNoShowInput) =>
+      apiRequest<MarkNoShowResult>(`/trainer/bookings/${bookingId}/no-show`, { method: "POST", body }),
+    onSuccess: () => invalidateAfterAttendanceChange(queryClient, sessionId),
+  });
+}
+
+/**
+ * Rectificar la falta. Si se había devuelto la sesión, el servidor vuelve a
+ * descontarla sin dejar el bono en negativo.
+ */
+export function useClearNoShow(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, status }: { bookingId: string; status?: "BOOKED" | "ATTENDED" }) =>
+      apiRequest<ClearNoShowResult>(
+        `/trainer/bookings/${bookingId}/no-show${status === "ATTENDED" ? "?status=ATTENDED" : ""}`,
+        { method: "DELETE" }
+      ),
+    onSuccess: () => invalidateAfterAttendanceChange(queryClient, sessionId),
   });
 }
 

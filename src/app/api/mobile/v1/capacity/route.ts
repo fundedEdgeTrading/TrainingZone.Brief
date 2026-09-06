@@ -9,7 +9,12 @@ import { expandOccurrences, sessionsInRangeWhere } from "@/lib/session-occurrenc
 import { parseDateParam, formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { sessionServiceKind } from "@/lib/session-balance";
-import { MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
+import {
+  MAX_GROUP_CAPACITY,
+  centerCapacityCeiling,
+  checkCenterDefaultCapacity,
+  checkSessionCapacity,
+} from "@/lib/group-capacity";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk, apiError } from "../_lib/response";
 
@@ -107,20 +112,32 @@ export async function PATCH(req: NextRequest) {
   const user = { id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId };
 
   if (body.sessionId) {
-    const capacity = Math.round(Number(body.capacity));
-    if (!Number.isFinite(capacity) || capacity < 1 || capacity > MAX_GROUP_CAPACITY) {
-      return apiError(`El aforo va de 1 a ${MAX_GROUP_CAPACITY} plazas.`, 400);
-    }
+    // El aforo se valida DESPUÉS de cargar la sesión: el tope depende del
+    // centro que la imparte, no de un 30 fijo, y de si la sesión es de grupo.
     const session = await prisma.classSession.findFirst({
       where: { id: body.sessionId, orgId: claims.orgId },
-      select: { id: true, centerId: true, bookings: { select: { status: true, occurrenceDate: true } } },
+      select: {
+        id: true,
+        centerId: true,
+        classType: true,
+        capacity: true,
+        center: { select: { defaultGroupCapacity: true } },
+        bookings: { select: { status: true, occurrenceDate: true } },
+      },
     });
     if (!session) return apiError("Sesión no encontrada.", 404);
     if (!(await isCenterInScope(user, session.centerId))) return apiError("Sesión no encontrada.", 404);
 
+    // E2-13: una franja de entrenamiento personal es de una plaza por
+    // definición y la web la fuerza a 1. Aquí se aceptaba cualquier
+    // `sessionId`, así que desde el móvil se le podían poner 12.
+    if (sessionServiceKind(session.classType) !== "GROUP") {
+      return apiError("Una franja de entrenamiento personal es de una plaza: su aforo no se cambia.", 400);
+    }
+
     // El tope inferior es la ocupación real: bajar de ahí dejaría a socios ya
     // inscritos fuera de una sesión en la que siguen apuntados.
-    const maxBooked = Math.max(
+    const occupied = Math.max(
       0,
       ...session.bookings
         .filter((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW")
@@ -128,20 +145,27 @@ export async function PATCH(req: NextRequest) {
         .filter((time, index, all) => all.indexOf(time) === index)
         .map((time) => occupiedSpots(session.bookings, new Date(time)))
     );
-    if (capacity < maxBooked) {
-      return apiError(`Ya hay ${maxBooked} plazas ocupadas: cancela una reserva antes de bajar el aforo.`, 400);
-    }
 
-    await prisma.classSession.update({ where: { id: session.id }, data: { capacity } });
-    return apiOk({ capacity });
+    const checked = checkSessionCapacity({
+      capacity: body.capacity,
+      ceiling: centerCapacityCeiling(session.center.defaultGroupCapacity),
+      // Una sesión creada con más de 30 antes del arreglo sigue siendo
+      // editable (y bajable) en vez de quedar bloqueada por su propio valor.
+      currentCapacity: session.capacity,
+      occupied,
+    });
+    if (!checked.ok) return apiError(checked.error, 400);
+
+    await prisma.classSession.update({ where: { id: session.id }, data: { capacity: checked.value } });
+    return apiOk({ capacity: checked.value });
   }
 
   if (body.centerId) {
-    const value = body.defaultGroupCapacity;
-    const capacity = value == null ? null : Math.round(Number(value));
-    if (capacity !== null && (!Number.isFinite(capacity) || capacity < 1 || capacity > MAX_GROUP_CAPACITY)) {
-      return apiError(`El aforo por defecto va de 1 a ${MAX_GROUP_CAPACITY} plazas.`, 400);
-    }
+    // Mismo validador que el formulario web: el aforo por defecto del centro
+    // no puede saltarse el tope global.
+    const parsed = checkCenterDefaultCapacity(body.defaultGroupCapacity);
+    if (!parsed.ok) return apiError(parsed.error, 400);
+    const capacity = parsed.value;
     if (!(await isCenterInScope(user, body.centerId))) return apiError("No se ha encontrado ese centro.", 404);
     const center = await prisma.center.findFirst({ where: { id: body.centerId, orgId: claims.orgId }, select: { id: true } });
     if (!center) return apiError("No se ha encontrado ese centro.", 404);
