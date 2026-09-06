@@ -4,7 +4,7 @@ import { listPayments, getBillingKpis, getDelinquentMembers, getMembersForPaymen
 import { centerScopeFor } from "@/lib/center-scope";
 import { listActivePlansForOrg } from "@/lib/members-queries";
 import { isStripeConfiguredForOrg } from "@/lib/stripe";
-import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
+import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
 import { KpiCard, Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
@@ -19,7 +19,7 @@ function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
-const STATUS_LABEL: Record<string, string> = { PAID: "Pagado", PENDING: "Pendiente", FAILED: "Fallido", REFUNDED: "Devuelto" };
+const STATUS_LABEL = PAYMENT_STATUS_LABEL;
 const PAYMENT_STATUSES: PaymentStatus[] = ["PAID", "PENDING", "FAILED", "REFUNDED"];
 
 export default async function BillingPage({
@@ -46,9 +46,24 @@ export default async function BillingPage({
     isStripeConfiguredForOrg(session.user.orgId),
   ]);
 
+  // E6-06: exportar es cosa de dirección, igual que en /api/export/payments.
+  const canExport = session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR";
+
   return (
     <div className="tz-page space-y-6">
-      <PageHeader description="Cero dudas sobre quién está al corriente (F3). Facturación certificada (VERI*FACTU) y pasarela de pago online quedan fuera de esta entrega — aquí solo se registra el cobro." />
+      <PageHeader
+        description="Cero dudas sobre quién está al corriente (F3). Facturación certificada (VERI*FACTU) y pasarela de pago online quedan fuera de esta entrega — aquí solo se registra el cobro."
+        actions={
+          canExport ? (
+            <a
+              href="/api/export/payments"
+              className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+            >
+              Exportar cobros
+            </a>
+          ) : undefined
+        }
+      />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard label="Cobrado este mes" value={euros(kpis.paidThisMonthCents)} tone="good" delay={0.04} />

@@ -51,6 +51,8 @@ export default async function MembersPage({
   const params = await searchParams;
   const canCreate = canManageMembers(session.user.role);
   const canImport = canImportMembers(session.user.role);
+  // E6-06: exportar es cosa de dirección, igual que en /api/export/members.
+  const canExport = session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR";
 
   const selection: MemberSelection = {
     state: parseFilterValues(params.state),
@@ -156,10 +158,18 @@ export default async function MembersPage({
       <PageHeader
         description="Filtra desde la cabecera de cada columna: los cambios se aplican al instante."
         actions={
-          canCreate ? (
+          canCreate || canExport ? (
             <div className="flex items-center gap-2">
+              {canExport && (
+                <a
+                  href="/api/export/members"
+                  className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+                >
+                  Exportar CSV
+                </a>
+              )}
               {canImport && <ImportMembersDrawer centers={centers} />}
-              <NewMemberDrawer centers={centers} plans={plans} />
+              {canCreate && <NewMemberDrawer centers={centers} plans={plans} />}
             </div>
           ) : undefined
         }
