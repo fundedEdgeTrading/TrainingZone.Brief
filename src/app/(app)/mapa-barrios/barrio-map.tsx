@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { tessellate } from "@/lib/barrio-geometry";
+import { tessellate, type Ring } from "@/lib/barrio-geometry";
+import { coversCity, ringsFromTopology } from "@/lib/barrio-geojson";
 import { INK_DARK, haloForInk, type BarrioCenter, type BarrioStat } from "@/lib/barrio-map";
 
 /** Metros que se andan en un minuto (≈4,7 km/h): el radio del anillo de cada centro. */
@@ -71,6 +72,10 @@ export type BarrioMapProps = {
   showCenters?: boolean;
   /** Opacidad del relleno de las celdas; bájese para que se vea más callejero debajo. */
   cellOpacity?: number;
+  /** Clave de la ciudad activa: es la que se pide a `/api/geo/[ciudad]` (E11-08). */
+  cityKey: string;
+  /** Avisa de qué geometría se está pintando, para que la leyenda no mienta (E11-08). */
+  onGeometry?: (realGeometry: boolean) => void;
 };
 
 type Box = { l: number; r: number; t: number; b: number };
@@ -105,6 +110,8 @@ export function BarrioMap({
   walkMinutes = 15,
   showCenters = true,
   cellOpacity = 0.86,
+  cityKey,
+  onGeometry,
 }: BarrioMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -124,6 +131,20 @@ export function BarrioMap({
   // hay geometría—, pero una organización que solo esté en Santander no tiene
   // por qué asomarse primero al Ebro.
   const initialCenterRef = useRef<[number, number]>([points[0]?.lat ?? 40.4168, points[0]?.lng ?? -3.7038]);
+
+  /**
+   * E11-08 · Los contornos reales de la ciudad activa, si están publicados.
+   *
+   * `null` mientras se piden y cuando no los hay: en los dos casos se pinta la
+   * teselación, así que el mapa nunca se queda en blanco esperando una descarga.
+   * Se pide SOLO la ciudad que se está mirando — servir el país entero para
+   * pintar Zaragoza sería mandar noventa y nueve ciudades que nadie va a ver.
+   */
+  const [geo, setGeo] = useState<{ city: string; byCode: Record<string, Ring> } | null>(null);
+  // La geometría lleva pegada la ciudad para la que se descargó: así, al cambiar
+  // de ciudad, el valor viejo deja de aplicar SOLO y no hace falta ponerlo a
+  // null desde el efecto (que además sería un repintado en cascada).
+  const realRings = geo?.city === cityKey ? geo.byCode : null;
 
   // Última foto de lo que pinta el mapa. Los manejadores de Leaflet y los
   // temporizadores viven fuera del ciclo de render: leen de aquí en vez de
@@ -317,13 +338,46 @@ export function BarrioMap({
     };
   }, [frame, layoutLabels]);
 
+  // E11-08 · Descarga de la geometría publicada. Un 404 es un estado normal
+  // ("esta ciudad no la tiene"), no una avería: se cae a la teselación.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(`/api/geo/${encodeURIComponent(cityKey)}`);
+        if (!response.ok) return;
+        const rings = ringsFromTopology(await response.json());
+        // Media ciudad con contorno real y media con teselación es peor que la
+        // ciudad entera aproximada: o cubre todos los barrios, o no se usa.
+        if (!cancelled && coversCity(rings, points.map((p) => p.code))) {
+          setGeo({ city: cityKey, byCode: rings.byCode });
+        }
+      } catch {
+        // Sin red, o JSON corrupto: la teselación sigue ahí.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cityKey, points]);
+
   // Geometría: se reconstruye al cambiar de ciudad, nunca al cambiar de métrica.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const { colors: fill, values: text, cellOpacity: base } = viewRef.current;
 
-    const rings = tessellate(points);
+    /**
+     * E11-08 · `topojson-client` sustituye a `tessellate()` cuando hay
+     * geometría. La vista ya trabajaba sobre anillos, así que color, etiquetas,
+     * foco y encuadre no se enteran de cuál es cuál — y con contornos publicados
+     * desaparece de golpe el acantilado de `tessellate()`, que es O(n²) y
+     * síncrono en el hilo principal.
+     */
+    const rings = realRings ? points.map((p) => realRings[p.code]) : tessellate(points);
+    onGeometry?.(realRings !== null);
     // El encuadre va ANTES de crear geometría: un `path` añadido mientras la
     // vista aún apunta a la otra ciudad se dibuja contra unos límites de
     // renderer que todavía no existen y sale vacío.
@@ -412,7 +466,7 @@ export function BarrioMap({
     frame();
     // El juego de puntos y de centros cambia con la ciudad: es lo que dispara la
     // reconstrucción, junto a los parámetros que redibujan los anillos.
-  }, [points, centers, showCenters, walkMinutes, frame, paint]);
+  }, [points, centers, showCenters, walkMinutes, frame, paint, realRings, onGeometry]);
 
   // Cambio de métrica, resalte o foco: solo relleno, sin tocar geometría.
   useEffect(() => {

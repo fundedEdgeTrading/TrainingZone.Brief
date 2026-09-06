@@ -21,6 +21,7 @@
     "@anthropic-ai/sdk": "^0.120.0",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "@types/topojson-client": "^3.1.5",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -36,6 +37,7 @@
     "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",
     "stripe": "^22.3.2",
+    "topojson-client": "^3.1.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

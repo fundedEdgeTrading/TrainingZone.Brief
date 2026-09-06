@@ -97,6 +97,26 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     await expect(page.locator(".tz-barrio-map")).toHaveAttribute("role", "application");
   });
 
+  test("E11-08 — sin geometría publicada se pinta la teselación, y la nota lo dice", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/mapa-barrios");
+
+    // El recuento de polígonos es lo que esta historia podía romper: con
+    // geometría real serían los mismos anillos por otra vía, y sin ella siguen
+    // siendo los de `tessellate()`. En los dos casos, un polígono por barrio.
+    await expect
+      .poll(() => page.locator(".tz-barrio-map .leaflet-overlay-pane path").count(), { timeout: 15_000 })
+      .toBeGreaterThan(5);
+
+    // Y se declara cuál se está usando: decir "teselación" pintando barrios
+    // reales sería tan falso como lo contrario. La nota sale en dos sitios —el
+    // pie de la leyenda y el <caption> de la tabla—, así que se comprueban los
+    // dos en vez de elegir uno.
+    const nota = page.getByText(/teselación desde el centroide/);
+    await expect(nota).toHaveCount(2);
+    await expect(nota.first()).toBeVisible();
+  });
+
   test("el selector de ciudad reencuadra sobre los barrios de la otra ciudad", async ({ page }) => {
     await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios");

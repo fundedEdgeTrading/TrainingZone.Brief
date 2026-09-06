@@ -35,14 +35,6 @@ import {
   type BarrioMapParams,
 } from "@/lib/barrio-map-params";
 
-/**
- * E11-05 · La nota se condiciona a la geometría que se esté usando de verdad
- * (E11-08 la conmuta), y declara las DOS aproximaciones encadenadas: la anterior
- * solo advertía de la teselación y se callaba que la correspondencia CP→barrio
- * es también un "mejor esfuerzo" reconocido.
- */
-const GEOMETRY_NOTE = geometryNote(false);
-
 /** Parámetros del mapa. Fijos hoy; el sitio natural de convertirlos en preferencia del centro. */
 const WALK_MINUTES = 15;
 const SHOW_CENTERS = true;
@@ -127,6 +119,11 @@ export function BarrioMapView({
   // única vía a secas. Se puede plegar para mirar el plano entero.
   const [panelOpen, setPanelOpen] = useState(true);
   const gaps = hasGaps(coverage);
+  // E11-08 · Qué geometría se está pintando de verdad. La nota de la leyenda se
+  // condiciona a esto: decir "teselación" cuando se están pintando los barrios
+  // reales del ayuntamiento es tan falso como lo contrario.
+  const [realGeometry, setRealGeometry] = useState(false);
+  const note = useMemo(() => geometryNote(realGeometry), [realGeometry]);
 
   const city = cities.find((c) => c.key === cityKey) ?? cities[0];
   const def = metricDef(metric);
@@ -224,6 +221,8 @@ export function BarrioMapView({
       )}
 
       <BarrioMap
+        cityKey={city.key}
+        onGeometry={setRealGeometry}
         points={city.points}
         centers={city.centers}
         colors={colors}
@@ -430,7 +429,7 @@ export function BarrioMapView({
                 onMetric={selectMetric}
                 onHover={setHovered}
                 onSelect={selectBarrio}
-                geometryNote={GEOMETRY_NOTE}
+                geometryNote={note}
               />
             </div>
           </div>
@@ -515,7 +514,7 @@ export function BarrioMapView({
             {coverageSentence(coverage.members, "socio", "socios")}{" "}
             {coverageSentence(coverage.leads, "lead", "leads")}
           </p>
-          <p className="mt-1 text-brand-muted">{GEOMETRY_NOTE}</p>
+          <p className="mt-1 text-brand-muted">{note}</p>
         </div>
       </div>
 
