@@ -30,6 +30,7 @@ export async function generateMetadata({
     city: ctx.center.city,
     neighborhood: ctx.center.neighborhood,
     description: ctx.center.description,
+    publicPage: ctx.center.publicPage,
   });
 }
 

@@ -13,6 +13,7 @@ import {
 } from "./actions";
 import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
+import { CenterPublicCard } from "./center-public-card";
 import { StaffDrawer } from "./staff-drawer";
 import { StaffRowActions, StaffActionsProvider } from "./staff-row-actions";
 import AptaLogo from "@/components/apta-logo";
@@ -247,6 +248,10 @@ export default async function OrganizationPage({
                   </Button>
                 </ActionForm>
               )}
+              {/* E9-05 + E9-15 · NAP editable y, sobre todo, las dos URLs
+                  públicas del centro: hasta aquí el embudo comercial entero
+                  solo era alcanzable escribiendo la dirección a mano. */}
+              {canOrg && org && <CenterPublicCard center={c} orgSlug={org.slug} />}
             </div>
           ))}
           {centers.length === 0 && <p className="text-sm text-muted">Todavía no hay centros.</p>}

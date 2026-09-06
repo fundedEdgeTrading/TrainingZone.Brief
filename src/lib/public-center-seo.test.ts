@@ -27,6 +27,7 @@ function center(over: Partial<PublicCenterSeo> = {}): PublicCenterSeo {
     city: "Zaragoza",
     neighborhood: "La Jota",
     description: null,
+    publicPage: true,
     ...over,
   };
 }

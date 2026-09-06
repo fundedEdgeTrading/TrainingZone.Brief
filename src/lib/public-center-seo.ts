@@ -26,11 +26,29 @@ export type PublicCenterSeo = {
   neighborhood: string | null;
   /** Párrafo propio del centro. Es el campo que decide si esto posiciona. */
   description: string | null;
+  /**
+   * Interruptor de publicación (E9-05). Por defecto APAGADO: publicar los datos
+   * de un centro es una decisión suya, no un efecto colateral de migrar. Un
+   * centro sin publicar sigue siendo alcanzable por su enlace directo —el
+   * gimnasio lo reparte a mano— pero ni entra en el sitemap ni se indexa.
+   */
+  publicPage: boolean;
 };
 
 /** La URL pública de alta de socios de un centro. Fuente única: la usa el sitemap, la canónica y la puesta en marcha. */
 export function membershipPath(orgSlug: string, centerSlug: string): string {
   return `/hazte-socio/${orgSlug}/${centerSlug}`;
+}
+
+/**
+ * Etiqueta de caché de la ficha pública de un centro (E9-14).
+ *
+ * Vive aquí, y no en la query, para que quien EDITA el centro pueda invalidarla
+ * sin arrastrar Prisma a un módulo de acciones que ya lo tiene por otro lado:
+ * es una cadena, y las dos puntas tienen que escribir exactamente la misma.
+ */
+export function centerPublicTag(centerId: string): string {
+  return `center-public:${centerId}`;
 }
 
 /** La URL del formulario de leads embebible. No se indexa (canoniza a la de arriba). */
@@ -78,6 +96,7 @@ export function centerMembershipMetadata(center: PublicCenterSeo): Metadata {
   return {
     title,
     description,
+    robots: center.publicPage ? undefined : { index: false, follow: true },
     alternates: { canonical: url },
     openGraph: {
       type: "website",

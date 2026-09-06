@@ -8,7 +8,9 @@ import { getPublicMembershipContext } from "@/lib/public-membership-queries";
 import { GENERIC_CENTER_METADATA, centerMembershipMetadata } from "@/lib/public-center-seo";
 import { isRecurring } from "@/lib/member-billing";
 import { planServiceKind } from "@/lib/members-queries";
+import { asOpeningHours } from "@/lib/opening-hours";
 import MemberBillingLinkForm from "./member-billing-link-form";
+import { CenterNapBlock } from "./center-nap";
 import { SERVICE_LABEL } from "@/lib/service-labels";
 
 /**
@@ -40,6 +42,7 @@ export async function generateMetadata({
     city: ctx.center.city,
     neighborhood: ctx.center.neighborhood,
     description: ctx.center.description,
+    publicPage: ctx.center.publicPage,
   });
 }
 
@@ -158,6 +161,24 @@ export default async function PublicMembershipPage({
           </p>
           <MemberBillingLinkForm orgSlug={orgSlug} centerSlug={centerSlug} />
         </div>
+
+        {/* E9-05 · Dirección, teléfono, horario y mapa: sin esto la página no
+            casa con ninguna intención local ("gimnasio en Delicias"), que es
+            justamente la búsqueda que trae socios a un centro de barrio. */}
+        <CenterNapBlock
+          center={{
+            name: ctx.center.name,
+            address: ctx.center.address,
+            phone: ctx.center.phone,
+            city: ctx.center.city,
+            postalCode: ctx.center.postalCode,
+            neighborhood: ctx.center.neighborhood,
+            description: ctx.center.description,
+            lat: ctx.center.lat,
+            lng: ctx.center.lng,
+            hours: asOpeningHours(ctx.center.openingHours),
+          }}
+        />
       </div>
     </div>
   );

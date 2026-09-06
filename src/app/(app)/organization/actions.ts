@@ -1,8 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { parseOpeningHours } from "@/lib/opening-hours";
+import { centerPublicTag } from "@/lib/public-center-seo";
 import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
@@ -100,6 +103,84 @@ function parseCoordinate(raw: FormDataEntryValue | null, min: number, max: numbe
   const value = Number(text);
   if (!Number.isFinite(value) || value < min || value > max) return "invalid";
   return value;
+}
+
+/**
+ * E9-05 · Ficha pública del centro: el NAP, el párrafo propio y el interruptor
+ * de publicación.
+ *
+ * Hasta aquí `phone`, `city`, `postalCode`, `neighborhood`, `description`,
+ * `openingHours` y `publicPage` existían en el esquema y no había forma de
+ * escribirlos desde ninguna pantalla. Sin teléfono ni horario no hay página
+ * pública que valga, y sin `description` la plantilla compartida sigue siendo
+ * contenido duplicado por mucho que cambie el título.
+ *
+ * E11-03 · `lat`/`lng` se editan también aquí: hasta ahora solo se tecleaban en
+ * el alta y no había pantalla para corregirlas después, así que un dedo gordo en
+ * un signo dejaba el centro en otro continente para siempre.
+ */
+export async function updateCenterPublicProfile(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const centerId = String(formData.get("centerId") ?? "");
+
+  const center = await prisma.center.findFirst({
+    where: { id: centerId, orgId: session.user.orgId },
+    select: { id: true },
+  });
+  if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+
+  const lat = parseCoordinate(formData.get("lat"), -90, 90);
+  const lng = parseCoordinate(formData.get("lng"), -180, 180);
+  if (lat === "invalid" || lng === "invalid") {
+    return { ok: false, error: "Las coordenadas tienen que ser números (latitud -90..90, longitud -180..180)." };
+  }
+  if ((lat === null) !== (lng === null)) {
+    return { ok: false, error: "Indica latitud y longitud, o ninguna de las dos." };
+  }
+
+  const hours = parseOpeningHours(String(formData.get("openingHours") ?? ""));
+  if (!hours.ok) return { ok: false, error: hours.error };
+
+  const publicPage = formData.get("publicPage") === "on";
+  const description = text(formData.get("description"));
+  const address = text(formData.get("address"));
+
+  // Publicar una ficha vacía es peor que no publicarla: la plantilla queda
+  // idéntica a la de los otros noventa y nueve centros, que es exactamente el
+  // contenido duplicado que E9-04 vino a arreglar.
+  if (publicPage && (!address || !description)) {
+    return { ok: false, error: "Para publicar la página hacen falta al menos la dirección y la descripción del centro." };
+  }
+
+  await prisma.center.update({
+    where: { id: centerId },
+    data: {
+      address,
+      phone: text(formData.get("phone")),
+      city: text(formData.get("city")),
+      postalCode: text(formData.get("postalCode")),
+      neighborhood: text(formData.get("neighborhood")),
+      description,
+      openingHours: hours.value ?? Prisma.DbNull,
+      publicPage,
+      lat,
+      lng,
+    },
+  });
+
+  revalidatePath("/organization");
+  // E9-14 · La ficha pública se sirve cacheada: al editarla hay que tirar su
+  // entrada, o el cambio no se ve hasta que expire la revalidación.
+  // `updateTag` y no `revalidateTag`: esto es una acción de servidor y quien
+  // acaba de guardar tiene que ver SU cambio, no una versión rancia mientras se
+  // refresca por detrás.
+  updateTag(centerPublicTag(centerId));
+  return { ok: true };
+}
+
+/** Campo de texto opcional: `null` cuando viene vacío, para no guardar cadenas en blanco. */
+function text(raw: FormDataEntryValue | null): string | null {
+  return String(raw ?? "").trim() || null;
 }
 
 // Editar el logo de un centro (si es null, hereda el de la organización / Apta).
