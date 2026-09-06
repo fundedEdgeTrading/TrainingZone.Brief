@@ -17,9 +17,11 @@ import type {
   BookingStatus,
   BriefDetailResponse,
   BriefRosterEntry,
+  CalendarEntry,
   LoginOrganization,
   LoginResponse,
   MeResponse,
+  MemberCalendarResponse,
   MembershipItem,
   NotificationItem,
   NotificationsResponse,
@@ -183,6 +185,31 @@ export function notificationItem(overrides: Partial<NotificationItem> = {}): Not
 
 export function notificationsResponse(overrides: Partial<NotificationsResponse> = {}): NotificationsResponse {
   return { notifications: [notificationItem()], ...overrides };
+}
+
+export function calendarEntry(overrides: Partial<CalendarEntry> = {}): CalendarEntry {
+  return {
+    bookingId: "booking-1",
+    day: TEST_TODAY,
+    sessionName: "Grupo reducido",
+    startTime: "19:00",
+    endTime: "20:00",
+    centerName: "TRAINING ZONE La Jota",
+    trainerName: "Marcos Iglesias",
+    serviceKind: "GROUP",
+    status: "BOOKED",
+    feedbackAvg: null,
+    ...overrides,
+  };
+}
+
+export function memberCalendarResponse(overrides: Partial<MemberCalendarResponse> = {}): MemberCalendarResponse {
+  return {
+    month: TEST_TODAY.slice(0, 7),
+    entries: [calendarEntry()],
+    summary: { attended: 0, booked: 1, noShow: 0 },
+    ...overrides,
+  };
 }
 
 export function membershipItem(overrides: Partial<MembershipItem> = {}): MembershipItem {

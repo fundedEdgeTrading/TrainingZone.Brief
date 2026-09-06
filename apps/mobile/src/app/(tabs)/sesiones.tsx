@@ -144,10 +144,10 @@ export default function MySessionsScreen() {
 }
 
 /**
- * Vista de calendario. `month` pinta la rejilla del mes con los tres estados
- * reales —Reservada (incluye lista de espera), Realizada y No presentada— y
- * `history` la misma información como lista, para quien busca una sesión
- * concreta y no un mes.
+ * Vista de calendario. `month` pinta la rejilla del mes con los CUATRO estados
+ * reales —Reservada, En espera (E2-10: no tiene plaza, no es lo mismo),
+ * Realizada y No presentada— y `history` la misma información como lista,
+ * para quien busca una sesión concreta y no un mes.
  */
 function CalendarView({ mode }: { mode: "month" | "history" }) {
   const theme = useTheme();
@@ -174,7 +174,10 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
   function toneFor(status: BookingStatus): { color: string; label: string } | null {
     if (status === "ATTENDED") return { color: theme.good, label: "Realizada" };
     if (status === "NO_SHOW") return { color: theme.critical, label: "No presentada" };
-    if (status === "BOOKED" || status === "WAITLISTED") return { color: theme.gold, label: "Reservada" };
+    if (status === "BOOKED") return { color: theme.gold, label: "Reservada" };
+    // E2-10: WAITLISTED no tiene plaza — "Reservada" prometía un sitio que no
+    // hay. Distinta etiqueta y distinto color, nunca la misma palabra que BOOKED.
+    if (status === "WAITLISTED") return { color: theme.warning, label: "En espera" };
     return null;
   }
 
@@ -215,6 +218,7 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
               <View style={styles.legend}>
                 {[
                   { color: theme.gold, label: "Reservada" },
+                  { color: theme.warning, label: "En espera" },
                   { color: theme.good, label: "Realizada" },
                   { color: theme.critical, label: "No presentada" },
                 ].map((item) => (
@@ -240,6 +244,7 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
                       if (!day) return <View key={`empty-${dayIndex}`} style={styles.cell} />;
                       const entries = byDay.get(day) ?? [];
                       const tone = entries.length ? toneFor(entries[0].status) : null;
+                      const waiting = entries[0]?.status === "WAITLISTED";
                       const isToday = day === today;
                       const isSelected = day === selected;
                       return (
@@ -258,7 +263,16 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
                           <Text style={[styles.cellNumber, { color: isToday ? theme.inkText : theme.text }]}>
                             {Number(day.slice(-2))}
                           </Text>
-                          <View style={[styles.cellDot, { backgroundColor: tone?.color ?? "transparent" }]} />
+                          {/* En espera se dibuja como anillo, no como punto relleno:
+                              la distinción no puede depender solo del color. */}
+                          <View
+                            style={[
+                              styles.cellDot,
+                              waiting
+                                ? { backgroundColor: "transparent", borderWidth: 1.5, borderColor: tone?.color ?? "transparent" }
+                                : { backgroundColor: tone?.color ?? "transparent" },
+                            ]}
+                          />
                         </Pressable>
                       );
                     })}

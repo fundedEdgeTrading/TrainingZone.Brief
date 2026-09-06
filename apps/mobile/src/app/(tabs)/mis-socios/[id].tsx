@@ -230,6 +230,10 @@ function SessionsTab({ sessions }: { sessions: TrainerMemberSession[] }) {
     <>
       {sessions.map((session) => {
         const noShow = session.status === "NO_SHOW";
+        // E2-10: en el calendario de la ficha (vista de staff) no había NINGÚN
+        // distintivo entre una reserva con plaza y una en lista de espera —
+        // recepción no podía saber, de un vistazo, quién tiene sitio de verdad.
+        const waiting = session.status === "WAITLISTED";
         const scored = session.scores
           ? Object.entries(session.scores).filter(([, value]) => value != null)
           : [];
@@ -244,12 +248,15 @@ function SessionsTab({ sessions }: { sessions: TrainerMemberSession[] }) {
               <Text style={[styles.dateNumber, { color: noShow ? theme.critical : theme.text }]}>{date.getDate()}</Text>
             </View>
             <View style={{ flex: 1, gap: 5 }}>
-              <Text style={[typo.rowTitle, { color: noShow ? theme.critical : theme.text }]} numberOfLines={1}>
-                {session.sessionName}
-              </Text>
+              <View style={styles.sessionTitleRow}>
+                <Text style={[typo.rowTitle, { color: noShow ? theme.critical : theme.text, flexShrink: 1 }]} numberOfLines={1}>
+                  {session.sessionName}
+                </Text>
+                {waiting ? <Badge label="En espera" tone="warning" /> : null}
+              </View>
               <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={1}>
                 {session.startTime}–{session.endTime}
-                {noShow ? " · no se presentó" : session.status === "ATTENDED" ? " · asistió" : ""}
+                {noShow ? " · no se presentó" : session.status === "ATTENDED" ? " · asistió" : waiting ? " · sin plaza confirmada" : ""}
               </Text>
               {scored.length > 0 ? (
                 <View style={styles.scoreGrid}>
@@ -432,6 +439,7 @@ const styles = StyleSheet.create({
   badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   kpiRow: { flexDirection: "row", gap: 8 },
   sessionCard: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
+  sessionTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   dateBlock: { width: 42, height: 46, borderRadius: radii.chip, alignItems: "center", justifyContent: "center" },
   dateWeekday: { fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.8 },
   dateNumber: { fontFamily: fonts.bold, fontSize: 16, ...tabular },
