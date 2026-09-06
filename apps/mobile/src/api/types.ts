@@ -70,6 +70,8 @@ export type BookableSession = {
   canBook: boolean;
   /** Cancelación gratuita: fuera de esa ventana, cancelar consume la sesión del bono. */
   canCancelFreely: boolean;
+  /** Antelación de la ventana del centro, en horas (E2-06): la app ya no la escribe a pelo. */
+  cancelWindowHours: number;
   myBookingId: string | null;
   myBookingStatus: BookingStatus | null;
 };
@@ -113,6 +115,8 @@ export type UpcomingBooking = {
   sessionCancelled: boolean;
   full: boolean;
   canCancelFreely: boolean;
+  /** Antelación de la ventana del centro, en horas (E2-06). */
+  cancelWindowHours: number;
 };
 
 export type PendingFeedback = {

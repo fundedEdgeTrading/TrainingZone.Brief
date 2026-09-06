@@ -366,8 +366,8 @@ function ConfirmSheet({
         <View style={[styles.noticeDot, { backgroundColor: theme.warning }]} />
         <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1 }]}>
           {session.canCancelFreely
-            ? "Cancelación gratuita hasta 12 h antes. Después se consume la sesión del bono."
-            : "Estás dentro de las 12 h previas: si cancelas, la sesión se consume igualmente."}
+            ? `Cancelación gratuita hasta ${session.cancelWindowHours} h antes. Después se consume la sesión del bono.`
+            : `Estás dentro de las ${session.cancelWindowHours} h previas: si cancelas, la sesión se consume igualmente.`}
         </Text>
       </View>
     </Sheet>

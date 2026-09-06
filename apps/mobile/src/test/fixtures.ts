@@ -90,6 +90,7 @@ export function bookableSession(overrides: Partial<BookableSession> = {}): Booka
     startsAt: `${occurrenceDate}T19:00:00.000Z`,
     canBook: true,
     canCancelFreely: true,
+    cancelWindowHours: 24,
     myBookingId: null,
     myBookingStatus: null as BookingStatus | null,
     ...overrides,
@@ -133,6 +134,7 @@ export function upcomingBooking(overrides: Partial<UpcomingBooking> = {}): Upcom
     sessionCancelled: false,
     full: false,
     canCancelFreely: true,
+    cancelWindowHours: 24,
     ...overrides,
   };
 }
