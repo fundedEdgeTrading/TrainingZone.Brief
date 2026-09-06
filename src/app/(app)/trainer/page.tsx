@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { getTrainerPanelData, formatHoursEs } from "@/lib/trainer-panel-queries";
+import { getTrainerPanelData, formatHoursEs, listTrainersInScope } from "@/lib/trainer-panel-queries";
 import { formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezone } from "@/lib/timezone";
 import { KpiCard, Card } from "@/components/kpi-card";
@@ -32,15 +32,36 @@ const ADHERENCE_COLOR = (pct: number) => (pct >= 85 ? "var(--color-good)" : pct 
 export default async function TrainerPanelPage({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string }>;
+  searchParams: Promise<{ day?: string; trainer?: string }>;
 }) {
-  const session = await requireRole(["TRAINER", "TRAINER_ADMIN"]);
-  const [params, center] = await Promise.all([
-    searchParams,
-    session.user.centerId
-      ? prisma.center.findUnique({ where: { id: session.user.centerId }, select: { name: true, timezone: true } })
-      : Promise.resolve(null),
-  ]);
+  // E12-11: dirección entra al panel de su propio equipo. Antes esto era
+  // `["TRAINER", "TRAINER_ADMIN"]` y quien paga a los entrenadores se quedaba
+  // fuera; es un bug de negocio, no una medida de confidencialidad.
+  const session = await requireRole(["TRAINER", "TRAINER_ADMIN", "OWNER", "CENTER_DIRECTOR"]);
+  const isDirection = session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR";
+
+  // El ámbito lo pone `listTrainersInScope`: dirección de centro ve a los de
+  // SUS centros; dirección de organización, a toda la organización.
+  const team = isDirection ? await listTrainersInScope(session.user) : [];
+  const params = await searchParams;
+  const subject = isDirection
+    ? (team.find((t) => t.id === params.trainer) ?? team[0] ?? null)
+    : { id: session.user.id, name: session.user.name ?? "Entrenador", centerId: session.user.centerId };
+
+  if (!subject) {
+    return (
+      <div className="tz-page">
+        <EmptyState
+          title="Todavía no hay entrenadores en tu ámbito"
+          description="Cuando des de alta a alguien del equipo, su panel aparecerá aquí."
+        />
+      </div>
+    );
+  }
+
+  const center = subject.centerId
+    ? await prisma.center.findUnique({ where: { id: subject.centerId }, select: { name: true, timezone: true } })
+    : null;
 
   // "Sesión en curso" y "faltan X minutos" se calculan con la hora del
   // entrenador, no la del servidor (que corre en UTC). Ver `resolveTimezone`.
@@ -54,9 +75,12 @@ export default async function TrainerPanelPage({
   // Nunca hacia atrás: un `day` pasado por URL anterior a hoy se acota a hoy.
   const selectedDay = requestedDay < today ? today : requestedDay;
 
-  const data = await getTrainerPanelData(session.user.orgId, session.user.id, session.user.role, timezone, selectedDay);
+  // El panel se calcula para el entrenador MIRADO, con el rol de quien mira:
+  // el ámbito de salud sigue siendo el de quien consulta (`canViewHealthData`),
+  // así que dirección ve el panel, no lo que no le toca.
+  const data = await getTrainerPanelData(session.user.orgId, subject.id, session.user.role, timezone, selectedDay);
 
-  const firstName = session.user.name?.split(" ")[0] ?? "Entrenador";
+  const firstName = subject.name?.split(" ")[0] ?? "Entrenador";
   const dateLabel = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   const kicker = `${dateLabel.charAt(0).toUpperCase()}${dateLabel.slice(1)}${center?.name ? ` · ${center.name}` : ""}`;
 
@@ -81,6 +105,25 @@ export default async function TrainerPanelPage({
 
   return (
     <div className="tz-page">
+      {isDirection && team.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <span className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-muted mr-1">Equipo</span>
+          {team.map((t) => (
+            <Link
+              key={t.id}
+              href={`/trainer?trainer=${t.id}${params.day ? `&day=${params.day}` : ""}`}
+              className={
+                t.id === subject.id
+                  ? "rounded-pill border border-brand-ink bg-brand-ink px-3 py-1.5 text-xs font-bold text-white"
+                  : "rounded-pill border border-brand-border px-3 py-1.5 text-xs font-semibold text-brand-text hover:bg-tz-bone transition-colors duration-150"
+              }
+            >
+              {t.name}
+            </Link>
+          ))}
+        </div>
+      )}
+
       <div className="flex items-end justify-between gap-6 flex-wrap mb-6">
         <div>
           <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-brand-muted mb-2 tz-fade-up" style={{ animationDelay: ".05s" }}>
@@ -88,7 +131,7 @@ export default async function TrainerPanelPage({
           </div>
           <h1 className="font-display font-extrabold text-[30px] sm:text-[38px] leading-[1.05] tracking-[-.025em] text-brand-text">
             <span className="inline-block" style={{ animation: "tzRollUp .5s both", animationDelay: ".06s" }}>
-              {greetingForHour(now.getHours())},
+              {isDirection ? "Panel de" : `${greetingForHour(now.getHours())},`}
             </span>{" "}
             <span className="relative inline-block" style={{ animation: "tzRollUp .5s both", animationDelay: ".16s" }}>
               {firstName}.

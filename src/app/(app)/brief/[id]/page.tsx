@@ -6,6 +6,7 @@ import { formatDateParam } from "@/lib/date-utils";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import BriefCard from "./brief-card";
+import { requireFeature } from "@/lib/entitlements";
 
 const LIGHT_ORDER: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
 
@@ -17,6 +18,10 @@ export default async function SessionBriefPage({
   searchParams: Promise<{ d?: string }>;
 }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  // E6-02: la ruta hija hereda el gate de su padre. Sin esto, `/brief`
+  // redirigía a `/planes` con plan Esencial y este enlace —el que pinta la
+  // propia agenda— respondía 200 con el semáforo completo.
+  await requireFeature("salud_aptitud");
   const { id } = await params;
   const { d } = await searchParams;
 

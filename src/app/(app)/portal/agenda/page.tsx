@@ -10,14 +10,13 @@ import {
   CANCEL_WINDOW_HOURS,
 } from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
+import { serviceLabel, serviceLabelLower } from "@/lib/service-labels";
 import { getOnlineWorkouts } from "@/lib/online-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import SessionCard from "./session-card";
 import UpcomingBookings from "./upcoming-bookings";
 import { PostSessionFeedbackPrompts } from "./post-session-feedback";
 import { OnlineWorkoutLibrary } from "./online-library";
-
-const SERVICE_LABEL: Record<string, string> = { EP: "Entrenamiento personal", GROUP: "Grupos reducidos" };
 
 export default async function PortalAgendaPage() {
   const session = await requireRole(["MEMBER"]);
@@ -89,7 +88,7 @@ export default async function PortalAgendaPage() {
                   )}
                   <div>
                     <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">
-                      {SERVICE_LABEL[b.serviceKind] ?? b.serviceKind}
+                      {serviceLabel(b.serviceKind)}
                     </div>
                     <div className="text-sm text-brand-muted mt-0.5">Sesiones disponibles en tu bono</div>
                   </div>
@@ -137,7 +136,7 @@ export default async function PortalAgendaPage() {
           <div>
             <div className="text-sm font-bold text-critical">
               Te has quedado sin sesiones en tu bono de{" "}
-              {depleted.map((d) => (SERVICE_LABEL[d.serviceKind] ?? d.serviceKind).toLowerCase()).join(" y ")}.
+              {depleted.map((d) => serviceLabelLower(d.serviceKind)).join(" y ")}.
             </div>
             <p className="text-[13px] text-brand-text-2 mt-0.5">
               Renueva tu bono para seguir reservando tus sesiones.{" "}

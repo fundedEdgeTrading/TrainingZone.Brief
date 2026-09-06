@@ -21,6 +21,7 @@ import {
   updateMesocycleHeader,
   updateMesocyclePhase,
 } from "@/lib/mesocycle-queries";
+import { orgHasFeatureNow } from "@/lib/entitlements";
 
 const MESOCYCLE_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"];
 
@@ -93,12 +94,25 @@ function lines(value: string): string[] {
     .filter(Boolean);
 }
 
+/** Mensaje único del gate de IA (E6-03), con la salida concreta a la vista. */
+const AI_NOT_INCLUDED = {
+  ok: false as const,
+  error: "Tu plan no incluye la programación con IA. Puedes cambiar de plan en /planes.",
+};
+
 export async function generateMesocycleAction(
   memberId: string,
   input: { profile: string; level: string; weeks: number; availability: string }
 ): Promise<GenerateResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
   if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
+
+  // E6-03 · Antes de nada: la generación con IA es el único módulo con coste
+  // marginal real (~0,18 $ por generación, facturados a Apta). Se comprueba
+  // ANTES de leer la ficha del socio y, desde luego, antes de llamar al
+  // proveedor: sin esto, cualquier organización en Esencial o Avanzado generaba
+  // mesociclos que pagábamos nosotros.
+  if (!(await orgHasFeatureNow(session.user.orgId, "ia_programacion"))) return AI_NOT_INCLUDED;
 
   if (!isEpProfile(input.profile)) return { ok: false, error: "Elige un grupo Training Zone válido." };
   const availability = lines(input.availability);
@@ -142,6 +156,8 @@ export async function refineMesocycleAction(
   request: string
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
+  // E6-03: refinar también llama al modelo, así que también se comprueba.
+  if (!(await orgHasFeatureNow(session.user.orgId, "ia_programacion"))) return AI_NOT_INCLUDED;
   if (!request.trim()) return { ok: false, error: "Escribe qué quieres cambiar." };
 
   const detail = await getMesocycleDetail(session.user.orgId, mesocycleId);

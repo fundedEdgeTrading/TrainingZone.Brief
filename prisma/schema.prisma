@@ -50,6 +50,15 @@ model Organization {
   /// reenvía el email de bienvenida.
   provisioningSessionId        String?        @unique
 
+  // ---------- Menores y tutores (E10-12, decisión D-P8) ----------
+  // El umbral del art. 7 LOPDGDD son 14 años, pero la política la declara cada
+  // organización: por defecto SOLO MAYORES DE 18, que es lo que no obliga a
+  // nadie a montar el flujo de tutores para poder dar de alta a un socio.
+  // Activar menores exige el circuito completo de consentimiento del tutor
+  // (campos `guardian*` de Member).
+  allowsMinors    Boolean @default(false)
+  minimumAgeYears Int     @default(18)
+
   stripeAccount StripeAccount?
 
   centers           Center[]
@@ -86,6 +95,8 @@ model Organization {
   assessmentCustomQuestions AssessmentCustomQuestion[]
   performanceMetrics        PerformanceMetric[]
   mesocycles                Mesocycle[]
+  sessionLedger             SessionLedger[]
+  retentionPolicies         RetentionPolicy[]
 }
 
 model Center {
@@ -106,6 +117,22 @@ model Center {
   // que llevan su propia capacidad (SessionTemplate/ClassSession.capacity).
   defaultGroupCapacity Int?
   createdAt            DateTime @default(now())
+
+  // ---------- Ficha pública del centro (E9-05) ----------
+  // Lo que hoy vive en un folleto y no en la aplicación: sin teléfono ni
+  // horario no hay página pública que valga, y sin ciudad/CP/barrio el centro
+  // no aparece en ninguna búsqueda local. `openingHours` es JSON porque el
+  // horario real de un centro no cabe en una columna (franjas por día, festivos
+  // y horario de verano); su forma la fija quien construya E9-05.
+  phone        String?
+  city         String?
+  postalCode   String?
+  neighborhood String?
+  description  String?
+  openingHours Json?
+  // Interruptor de la página pública. Por defecto APAGADA: publicar los datos
+  // de un centro es una decisión suya, no un efecto colateral de migrar.
+  publicPage   Boolean @default(false)
 
   organization     Organization       @relation(fields: [orgId], references: [id])
   users            User[]
@@ -239,6 +266,8 @@ model User {
   assessmentsFilled        Assessment[]         @relation("AssessmentFilledBy")
   mesocyclesCreated        Mesocycle[]          @relation("MesocycleCreatedBy")
   mesocyclesApproved       Mesocycle[]          @relation("MesocycleApprovedBy")
+  sessionLedgerEntries     SessionLedger[]      @relation("SessionLedgerActor")
+  retentionPoliciesEdited  RetentionPolicy[]    @relation("RetentionPolicyEditor")
 
   // Sustituye al @unique global de email: el mismo email puede tener membresía
   // en varias organizaciones, pero solo una dentro de cada una.
@@ -354,6 +383,18 @@ model Member {
   consentImages      Boolean     @default(false) // uso de imágenes (fotos de evolución)
   consentMarketing   Boolean     @default(false)
   consentAI          Boolean     @default(false) // tratamiento por IA de sus datos (valoraciones, mesociclos)
+  // ---------- Tutor legal del socio menor (E10-12) ----------
+  // Solo se rellenan cuando la organización admite menores y el socio lo es.
+  // `guardianConsentAt` es la marca de que el consentimiento existe;
+  // `guardianIdDocument` y `guardianEvidence` son la identificación y el
+  // justificante que lo hacen verificable (art. 7.2 LOPDGDD).
+  guardianName       String?
+  guardianEmail      String?
+  guardianPhone      String?
+  guardianIdDocument String?
+  guardianConsentAt  DateTime?
+  guardianEvidence   String?
+
   consentContractAt  DateTime?
   consentHealthAt    DateTime?
   consentImagesAt    DateTime?
@@ -508,18 +549,18 @@ model ReferenceRange {
 // con los permisos generales de la ficha, sin consentimiento ni registro de
 // lectura, así que no debe usarse como historial clínico encubierto.
 model MemberNote {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   orgId        String
   memberId     String
   authorUserId String?
   body         String
   // Destacada: sube al bloque de cabecera de Actividad y no caduca con el
   // tiempo, para que el entrenador la vea antes de la sesión aunque sea vieja.
-  important    Boolean  @default(false)
+  important    Boolean   @default(false)
   // Archivada: deja de pintarse en el hilo y en el bloque destacado, pero la
   // fila se conserva y sigue siendo consultable. Nunca se borra una nota.
   archivedAt   DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id])
   member       Member       @relation(fields: [memberId], references: [id])
@@ -596,6 +637,11 @@ model MembershipPlan {
 
 enum SubscriptionStatus {
   ACTIVE
+  /// Congelación VOLUNTARIA del socio (agosto, lesión, viaje). En Stripe es un
+  /// `pause_collection`. Un socio PAUSED no es un moroso (HU-ST-14).
+  PAUSED
+  /// Corte por IMPAGO. `FROZEN` significaba las dos cosas a la vez, y por eso la
+  /// lista de morosos mezclaba a quien se había ido de vacaciones.
   FROZEN
   CANCELLED
   EXPIRED
@@ -641,11 +687,12 @@ model Subscription {
   // (cuenta conectada del gimnasio). Null para bonos puntuales (no recurrentes).
   stripeSubscriptionId String? @unique
 
-  member   Member         @relation(fields: [memberId], references: [id])
-  plan     MembershipPlan @relation(fields: [planId], references: [id])
-  center   Center         @relation(fields: [centerId], references: [id])
+  member   Member          @relation(fields: [memberId], references: [id])
+  plan     MembershipPlan  @relation(fields: [planId], references: [id])
+  center   Center          @relation(fields: [centerId], references: [id])
   payments Payment[]
   bookings Booking[]
+  ledger   SessionLedger[]
 
   @@index([memberId])
   @@index([centerId])
@@ -854,6 +901,7 @@ model Booking {
   member       Member          @relation(fields: [memberId], references: [id])
   subscription Subscription?   @relation(fields: [subscriptionId], references: [id])
   debrief      SessionDebrief?
+  ledger       SessionLedger[]
 
   @@index([sessionId])
   @@index([sessionId, occurrenceDate])
@@ -923,6 +971,41 @@ model Payment {
 // pasa siempre por lib/health-access.ts, que aplica la matriz de permisos
 // y registra cada lectura en AuditLog (ADR-008).
 
+/**
+ * Zonas de lesión (E3-02). Lista CERRADA a propósito: con texto libre, "rodilla
+ * dcha.", "Rodilla derecha" y "rodilla der." eran tres zonas distintas y
+ * ninguna emparejaba con la regla de aptitud, así que el semáforo se quedaba en
+ * verde con la lesión delante. La lateralidad NO entra aquí: es `Laterality`,
+ * campo aparte.
+ */
+enum InjuryZone {
+  CERVICALES
+  HOMBRO
+  CODO
+  MUNECA
+  MANO
+  DORSAL
+  LUMBAR
+  CADERA
+  INGLE
+  ISQUIOSURALES
+  CUADRICEPS
+  RODILLA
+  GEMELO
+  TOBILLO
+  PIE
+  OTRA
+}
+
+/// Lado del cuerpo (E3-02). `NO_APLICA` es para las zonas axiales (lumbar,
+/// cervicales, dorsal), que no tienen lado.
+enum Laterality {
+  IZQUIERDA
+  DERECHA
+  BILATERAL
+  NO_APLICA
+}
+
 enum HealthRecordType {
   INJURY
   CHRONIC_CONDITION
@@ -969,7 +1052,17 @@ model HealthRecord {
   memberId         String?
   leadId           String?
   type             HealthRecordType
+  /// Texto libre heredado ("hombro derecho"). DEPRECADO por E3-02: se conserva
+  /// mientras las pantallas migran a `zoneCode` + `side`, que es lo que empareja
+  /// con `AptitudeRule`. No escribas lógica nueva contra este campo.
   zone             String? // p.ej. "hombro derecho"
+  /// Zona de la lesión, lista cerrada (E3-02). El texto libre hacía que
+  /// "rodilla dcha." y "rodilla derecha" fueran zonas distintas y el semáforo
+  /// no encendiera.
+  zoneCode         InjuryZone?
+  /// Lateralidad, campo APARTE de la zona: una regla de aptitud se declara por
+  /// zona y vale para los dos lados, y el lado es dato del socio, no de la regla.
+  side             Laterality?
   description      String
   severity         HealthSeverity
   status           HealthStatus     @default(ACTIVE)
@@ -1019,7 +1112,12 @@ enum AptitudeLight {
 model AptitudeRule {
   id             String        @id @default(cuid())
   orgId          String
-  injuryZone     String // coincide con HealthRecord.zone
+  injuryZone     String // DEPRECADO (E3-02): texto libre, sustituido por `zoneCode`
+  /// Zona sobre la que aplica la regla (E3-02). `side` null = cualquiera de los
+  /// dos lados, que es el caso normal: una limitación de hombro lo es del
+  /// hombro lesionado, no del derecho.
+  zoneCode       InjuryZone?
+  side           Laterality?
   blockArea      String // p.ej. "Empuje vertical"
   light          AptitudeLight
   adaptation     String? // p.ej. "reducir ROM, carga <=60%"
@@ -1077,11 +1175,16 @@ model AuditLog {
   createdAt   DateTime @default(now())
 
   organization Organization @relation(fields: [orgId], references: [id])
-  actor        User?        @relation(fields: [actorUserId], references: [id])
+  // E10-14: la baja de un usuario NO puede obligar a la aplicación a modificar
+  // el log. Con `SetNull` el nulo lo pone la propia integridad referencial —que
+  // no pasa por el trigger append-only ni por los permisos del rol de
+  // aplicación— y el código se limita a AÑADIR la fila que anota la corrección.
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
 
   @@index([orgId])
   @@index([entityType, entityId])
   @@index([memberId])
+  @@index([createdAt])
 }
 
 // ---------- Motor de retención (G.3) ----------
@@ -1187,6 +1290,10 @@ model Lead {
   occupation        String // alimenta BI nicho (RB-BI-003)
   hasChildren       Boolean? // BI demográfico (RB-BI-003), pregunta opcional
   sex               Sex? // BI-2/RB-BI-005: se hereda al Member al convertir (RB-LEAD-007)
+  // E10-12: sin fecha de nacimiento en el lead no hay forma de saber que quien
+  // deja sus datos de salud en el formulario público es menor. Opcional en el
+  // esquema, obligatoria en el formulario que la pida (lo decide E10-12).
+  birthDate         DateTime?
   goals             String
   hasTrainedBefore  Boolean
   hasTrainedNote    String?
@@ -1729,6 +1836,9 @@ model Mesocycle {
   safetyCriteria   Json // heredado del screening de la valoración: lo que NO se puede programar
   weeklyLayout     Json // "Lun TZ · Mié TZ · Vie TZ · Mar Gym · Jue Gym"
   milestones       Json // hoja de ruta: semana → hitos medibles
+  /// Día en que arranca el mesociclo (E3-12). Sin él, "semana 3" no se puede
+  /// situar en el calendario y la hoja de ruta no dice nada a quien la lee.
+  startDate        DateTime?
   aiConversation   Json? // historial multi-turno del refinado con la IA
   approvedAt       DateTime?
   approvedByUserId String?
@@ -1770,6 +1880,10 @@ model MesocyclePhase {
   name        String
   weekFrom    Int
   weekTo      Int
+  /// Fase de descarga (E3-12): baja de volumen deliberada. Es un atributo de la
+  /// fase, no un nombre convenido, para que el brief y la app puedan avisar de
+  /// que toca descargar sin adivinarlo del título.
+  deload      Boolean @default(false)
   notes       String?
 
   mesocycle Mesocycle      @relation(fields: [mesocycleId], references: [id], onDelete: Cascade)
@@ -1822,4 +1936,109 @@ model MesocycleExercise {
   block MesocycleBlock @relation(fields: [blockId], references: [id], onDelete: Cascade)
 
   @@index([blockId])
+}
+
+// ---------- Libro mayor de sesiones de bono (E2-15) ----------
+
+/// Por qué se movió el saldo. Cada motivo corresponde a un punto de escritura
+/// real de `Subscription.sessionsRemaining`; no hay ninguno más.
+enum SessionLedgerReason {
+  PURCHASE // alta del bono (recepción, checkout, importación)
+  BOOKING // reserva que consume sesión
+  CANCELLATION // cancelación dentro de ventana: devuelve
+  NO_SHOW_REFUND // falta que dirección decide devolver (RB-RES-009)
+  MANUAL_ADJUSTMENT // ajuste desde la ficha (RB-RES-006)
+  EXPIRY // caducidad del bono
+  CORRECTION // corrección de un asiento anterior
+}
+
+/// INVARIANTE DEL TRIMESTRE: ninguna operación mueve `sessionsRemaining` sin
+/// escribir aquí, en la misma transacción. Hasta ahora el saldo era un número
+/// suelto que subía y bajaba sin dejar rastro: cuando un socio decía "me falta
+/// una sesión", nadie podía comprobarlo. El asiento es inmutable — una
+/// corrección es otro asiento (`CORRECTION`), nunca una edición.
+model SessionLedger {
+  id             String              @id @default(cuid())
+  orgId          String
+  subscriptionId String
+  /// Reserva que provocó el movimiento, cuando la hay.
+  bookingId      String?
+  /// Firmado: negativo consume, positivo devuelve. Nunca 0.
+  delta          Int
+  /// Saldo resultante. `null` = bono ilimitado (`sessionsRemaining` null), que
+  /// también deja asiento: interesa saber que se usó, aunque no descuente.
+  balanceAfter   Int?
+  reason         SessionLedgerReason
+  /// Quién lo provocó. `null` = el sistema (cron, webhook de Stripe).
+  actorUserId    String?
+  note           String?
+  createdAt      DateTime            @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  booking      Booking?     @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  actor        User?        @relation("SessionLedgerActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([subscriptionId, createdAt])
+  @@index([bookingId])
+}
+
+// ---------- Deduplicación de eventos de Stripe (HU-ST-05) ----------
+
+/// Un evento de Stripe se entrega MÁS DE UNA VEZ por diseño. Sin esta tabla,
+/// una reentrega de `checkout.session.completed` creaba el bono dos veces.
+/// La fila se inserta ANTES de procesar y se marca `processedAt` al terminar:
+/// si el procesado falla, la fila queda sin marcar y Stripe reintenta.
+model StripeWebhookEvent {
+  /// `event.id` de Stripe (`evt_…`). Es la clave de idempotencia.
+  id          String    @id
+  type        String
+  /// Cuenta conectada que originó el evento (`acct_…`). `null` = plano 1, el
+  /// Stripe de Apta.
+  account     String?
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+  /// Último error de procesado, para poder mirar por qué Stripe sigue
+  /// reintentando sin bucear en los logs del proveedor.
+  lastError   String?
+
+  @@index([type])
+  @@index([processedAt])
+}
+
+// ---------- Plazos de conservación (E10-08, decisión D-C3) ----------
+
+/// Tipo de dato al que se le pone plazo. Uno por regla del motor de retención.
+enum RetentionCategory {
+  CONTRACT_BILLING // contrato y cobros: 6 años (art. 30 CCom) / 4 (art. 66 LGT)
+  HEALTH_DATA // salud: relación + 5 años (art. 1964 CC)
+  PROGRESS_PHOTOS // fotos de evolución: se borran a la baja
+  AUDIT_LOG // traza de accesos: 2-3 años
+  UNCONVERTED_LEAD // lead que no cerró: 12 meses
+  EXPIRED_INVITATION // invitaciones caducadas
+  REVOKED_REFRESH_TOKEN // tokens de refresco revocados
+  PENDING_PAYMENT_ORG // organizaciones que se registraron y no pagaron (TTL)
+}
+
+/// Plazos parametrizables por organización (D-C3: se construye con la tabla de
+/// partida y se ajusta tras la validación jurídica SIN tocar código). El suelo
+/// legal viaja con la fila y una restricción de base de datos impide relajarlo:
+/// un centro puede conservar más tiempo del mínimo, nunca menos.
+model RetentionPolicy {
+  id               String            @id @default(cuid())
+  orgId            String
+  category         RetentionCategory
+  /// Plazo aplicado, en días desde el hecho que arranca el cómputo.
+  retentionDays    Int
+  /// Mínimo legal, en días. `CHECK (retentionDays >= minimumLegalDays)`.
+  minimumLegalDays Int               @default(0)
+  updatedAt        DateTime          @updatedAt
+  updatedByUserId  String?
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  updatedBy    User?        @relation("RetentionPolicyEditor", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, category])
+  @@index([orgId])
 }

@@ -2,19 +2,12 @@
 
 import { useState } from "react";
 import type { MembershipPlan, PlanType } from "@prisma/client";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { ImageDropzone } from "@/components/ui/dropzone";
 import { Button } from "@/components/ui/button";
 import { ActionForm } from "@/components/ui/action-form";
 import { updateMembershipPlan } from "./actions";
-
-const PLAN_TYPE_LABEL: Record<PlanType, string> = {
-  MONTHLY: "Cuota mensual",
-  SESSION_PACK: "Bono de sesiones",
-  DROP_IN: "Sesión suelta",
-  PERSONAL_TRAINING: "Entrenamiento personal",
-  DUO: "Dúo",
-  ONLINE: "Online",
-};
+import { PLAN_TYPE_LABEL } from "@/lib/membership-plan-types";
 
 /**
  * Edición en un panel lateral, en la línea de la ficha de socio. El aviso sobre
@@ -88,6 +81,24 @@ export function EditPlanDrawer({ plan }: { plan: MembershipPlan }) {
                   placeholder="Opcional"
                 />
               </Field>
+
+              <Field label="Descripción (la ve el socio)">
+                <Textarea
+                  name="description"
+                  rows={3}
+                  maxLength={400}
+                  defaultValue={plan.description ?? ""}
+                  placeholder="Qué incluye este producto y para quién es."
+                />
+              </Field>
+              <ImageDropzone
+                name="imageUrl"
+                label="Foto del producto"
+                hint="1600 × 1000"
+                shape="rounded"
+                sizeClassName="w-full h-[120px]"
+                defaultValue={plan.imageUrl}
+              />
 
               <p className="text-xs text-muted bg-tz-sand border border-brand-border rounded-control p-3">
                 Si cambias el precio, las suscripciones ya en marcha conservan el importe que

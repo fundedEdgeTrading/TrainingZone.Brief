@@ -10,6 +10,7 @@ import { absoluteUrl, createMemberInvitation, onboardingUrlFor } from "@/lib/inv
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { createSubscriptionFromPlan, resolveSubscriptionTerms } from "@/lib/subscriptions";
 
 export type ImportSummary = {
   total: number;
@@ -95,38 +96,44 @@ async function upsertImportedSubscription(
     select: { id: true },
   });
 
-  const priceCents = sub.priceCents ?? plan.priceCents;
   // Sin fecha de alta de la cuota se usa la de inscripción del socio: es lo más
   // cercano a la verdad y deja el histórico coherente. `new Date()` fecharía
   // todas las altas el día de la importación y falsearía la antigüedad.
   const startDate = sub.startDate ?? joinedAt ?? new Date();
-  const sessionsRemaining = plan.type === "SESSION_PACK" ? sub.sessionsRemaining : null;
-  // El CSV solo trae las sesiones que quedan, no las gastadas hasta la fecha de
-  // importación. El total contratado (`sessionsIncluded`) se toma del plan; si
-  // el plan no define uno, se asume que lo restante es todo lo contratado.
-  const sessionsIncluded = sessionsRemaining !== null ? (plan.sessionsIncluded ?? sessionsRemaining) : null;
+  // E4-30: la importación sigue LA MISMA REGLA que el alta manual. El CSV solo
+  // manda cuando trae un saldo (lo que le queda al socio a mitad de bono); si no
+  // lo trae, decide el plan, igual que en recepción. Antes había aquí una regla
+  // propia —saldo solo para `SESSION_PACK`— que dejaba ilimitada una cuota
+  // mensual con sesiones incluidas.
+  const terms = resolveSubscriptionTerms(plan, {
+    priceCents: sub.priceCents,
+    sessionsRemaining: sub.sessionsRemaining ?? undefined,
+  });
 
   if (existing) {
+    // La reimportación NO reescribe el saldo salvo que el CSV traiga uno: el
+    // gimnasio corrige el fichero y lo vuelve a subir, y devolver el bono a su
+    // saldo inicial le regalaría al socio las sesiones ya gastadas.
     await prisma.subscription.update({
       where: { id: existing.id },
       data: {
-        priceCents,
+        priceCents: terms.priceCents,
         startDate,
-        ...(sessionsRemaining !== null ? { sessionsRemaining, sessionsIncluded } : {}),
+        ...(sub.sessionsRemaining !== null
+          ? { sessionsRemaining: terms.sessionsRemaining, sessionsIncluded: terms.sessionsIncluded }
+          : {}),
       },
     });
     return false;
   }
 
-  await prisma.subscription.create({
-    data: {
-      memberId,
-      planId: plan.id,
-      centerId,
-      startDate,
-      priceCents,
-      ...(sessionsRemaining !== null ? { sessionsRemaining, sessionsIncluded } : {}),
-    },
+  await createSubscriptionFromPlan(prisma, {
+    memberId,
+    centerId,
+    plan,
+    startDate,
+    priceCents: sub.priceCents,
+    sessionsRemaining: sub.sessionsRemaining ?? undefined,
   });
   return true;
 }

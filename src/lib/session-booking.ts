@@ -27,12 +27,6 @@ export function occupiedSpots(
   ).length;
 }
 
-/** Nombre de la modalidad tal y como se le nombra a una persona. */
-export const SERVICE_LABEL: Record<string, string> = {
-  EP: "entrenamiento personal",
-  GROUP: "grupos reducidos",
-};
-
 /**
  * ¿Esta cancelación libera una plaza que merezca aviso? (RB-RES-007)
  *

@@ -26,8 +26,6 @@ import type { BookableSession, SessionBalance } from "@/api/types";
 // B1 + B2 del handoff: reservar sesión y la hoja de confirmación.
 type Filter = "all" | "EP" | "GROUP";
 
-const BALANCE_LABEL: Record<string, string> = { EP: "Personal", GROUP: "Grupos", ONLINE: "Online" };
-
 function kindOf(session: { classType: string }): "EP" | "GROUP" {
   return session.classType === "Personal Training" ? "EP" : "GROUP";
 }
@@ -162,7 +160,7 @@ function BalanceCard({ balance }: { balance: SessionBalance }) {
 
   return (
     <Card style={styles.balanceCard} padding={14}>
-      <Text style={[typo.kpiLabel, { color: theme.textMuted }]}>{BALANCE_LABEL[balance.serviceKind] ?? balance.serviceKind}</Text>
+      <Text style={[typo.kpiLabel, { color: theme.textMuted }]}>{balance.serviceLabel}</Text>
       <View style={styles.balanceValueRow}>
         <Text style={[typo.kpi, { color }]}>{balance.unlimited ? "∞" : remaining}</Text>
         {balance.total != null ? <Text style={[styles.balanceTotal, { color: theme.textFaint }]}>/{balance.total}</Text> : null}

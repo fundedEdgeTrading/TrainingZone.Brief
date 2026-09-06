@@ -98,6 +98,10 @@ export function sessionBalance(overrides: Partial<SessionBalance> = {}): Session
   const serviceKind: ServiceKind = overrides.serviceKind ?? "GROUP";
   return {
     serviceKind,
+    // El rótulo lo resuelve el SERVIDOR con la fuente única (E12-04): la app no
+    // tiene tabla de nombres, ni siquiera en las fixtures. Por defecto se usa la
+    // propia clave; el test que quiera comprobar el texto pasa `serviceLabel`.
+    serviceLabel: serviceKind,
     remaining: unlimited ? null : 4,
     unlimited,
     used: unlimited ? null : 4,

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { resolveTimezone } from "@/lib/timezone";
 import { formatInstantDateTime } from "@/lib/date-utils";
 import { requireRole } from "@/lib/guard";
-import { requireFeature } from "@/lib/entitlements";
+import { orgHasFeatureNow } from "@/lib/entitlements";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { Badge } from "@/components/ui/badge";
@@ -61,9 +61,12 @@ export default async function AuditPage({
   searchParams: Promise<{ page?: string; action?: string; from?: string; to?: string; q?: string }>;
 }) {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
-  // RB-PLAN-003: además del rol, el plan contratado. Sin esto, la URL directa
-  // se saltaría el filtro del menú.
-  await requireFeature("exportaciones");
+  // E6-07 (decisión D-C7): la CONSULTA del registro entra en todos los planes.
+  // El responsable del tratamiento es el gimnasio: ante un requerimiento del
+  // art. 32 RGPD tiene que poder acreditar quién accedió a los datos de salud
+  // de sus socios, y el `AuditLog` se escribe tenga el plan que tenga. Lo que
+  // sigue siendo de pago es la exportación masiva, gateada en su endpoint.
+  const canExport = await orgHasFeatureNow(session.user.orgId, "exportaciones");
   const timeZone = await resolveTimezone();
 
   const params = await searchParams;
@@ -106,12 +109,23 @@ export default async function AuditPage({
       <PageHeader
         description="Registro append-only (ADR-008). Cada lectura de un dato de salud y cada apertura del Session Brief con indicadores de salud queda registrada aquí, exigible bajo RGPD Art. 9."
         actions={
-          <Link
-            href={`/api/audit/export?${exportQs.toString()}`}
-            className="inline-flex items-center gap-2 bg-white text-brand-text border border-brand-border rounded-[10px] px-4 py-2 text-sm font-semibold hover:bg-tz-bone transition-colors duration-150"
-          >
-            Exportar CSV →
-          </Link>
+          canExport ? (
+            <Link
+              href={`/api/audit/export?${exportQs.toString()}`}
+              className="inline-flex items-center gap-2 bg-white text-brand-text border border-brand-border rounded-[10px] px-4 py-2 text-sm font-semibold hover:bg-tz-bone transition-colors duration-150"
+            >
+              Exportar CSV →
+            </Link>
+          ) : (
+            // E6-07: la exportación masiva sigue siendo de pago, y el botón dice
+            // qué plan la incluye en vez de llevar a un muro sin explicación.
+            <Link
+              href="/planes?feature=exportaciones"
+              className="inline-flex items-center gap-2 bg-white text-brand-muted border border-brand-border rounded-[10px] px-4 py-2 text-sm font-semibold hover:bg-tz-bone transition-colors duration-150"
+            >
+              Exportar CSV · incluido en Avanzado →
+            </Link>
+          )
         }
       />
 

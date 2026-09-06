@@ -4,6 +4,8 @@
 // de cliente que solo necesitan estas cuentas (el bono del sidebar) no arrastren
 // el cliente de base de datos.
 
+import { serviceLabel } from "@/lib/service-labels";
+
 // RB-PERFIL-001: secciones condicionales derivadas de las suscripciones activas,
 // no de un flag nuevo. EP y online siempre tienen entrenador responsable
 // explícito (RB-PERFIL-002/decisión §11.4); "solo grupos" no.
@@ -109,6 +111,14 @@ export function effectiveSessionsIncluded(sub: {
 // de casar).
 export type SessionBalance = {
   serviceKind: ServiceKind;
+  /**
+   * Rótulo de la modalidad, resuelto en el servidor con la fuente única
+   * (`service-labels.ts`, E12-04). Viaja en la respuesta a propósito: la app
+   * nativa no puede importar de `src/lib`, y mantener allí su propia tabla es
+   * exactamente cómo el mismo bono acabó llamándose "Personal" en la app y
+   * "Entrenamiento personal" en el portal.
+   */
+  serviceLabel: string;
   remaining: number | null;
   unlimited: boolean;
   used: number | null;
@@ -140,6 +150,7 @@ export function getSessionBalances(
   }
   return [...byKind.entries()].map(([serviceKind, v]) => ({
     serviceKind,
+    serviceLabel: serviceLabel(serviceKind),
     remaining: v.unlimited ? null : v.remaining,
     unlimited: v.unlimited,
     used: v.unlimited || v.total === 0 ? null : v.used,

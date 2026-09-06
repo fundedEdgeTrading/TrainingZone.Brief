@@ -13,6 +13,7 @@ import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
+import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -357,17 +358,10 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
   if (!(await centerIsInScope(session.user, center.id))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
 
-  const subscription = await prisma.subscription.create({
-    data: {
-      memberId: member.id,
-      planId: plan.id,
-      centerId: center.id,
-      startDate: new Date(),
-      priceCents: plan.priceCents,
-      status: "ACTIVE",
-      sessionsRemaining: plan.sessionsIncluded ?? null,
-      sessionsIncluded: plan.sessionsIncluded ?? null,
-    },
+  const subscription = await createSubscriptionFromPlan(prisma, {
+    memberId: member.id,
+    centerId: center.id,
+    plan,
   });
 
   await prisma.auditLog.create({
@@ -458,7 +452,24 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
         await tx.notification.deleteMany({ where: { recipientUserId: member.userId } });
         await tx.chatMessage.updateMany({ where: { senderUserId: member.userId }, data: { senderUserId: null } });
         await tx.invitation.deleteMany({ where: { userId: member.userId } });
-        await tx.auditLog.updateMany({ where: { actorUserId: member.userId }, data: { actorUserId: null } });
+        // E10-14: aquí había un `auditLog.updateMany(...)` que soltaba el actor
+        // a mano. El `AuditLog` es append-only por construcción (trigger +
+        // REVOKE en la migración de las costuras), así que la aplicación NO
+        // toca filas anteriores: el nulo lo pone la integridad referencial
+        // (`AuditLog_actorUserId_fkey` es ON DELETE SET NULL) al borrar el
+        // usuario, y la corrección se ANOTA en una fila nueva.
+        const anonymized = await tx.auditLog.count({ where: { actorUserId: member.userId } });
+        await tx.auditLog.create({
+          data: {
+            orgId: session.user.orgId,
+            actorUserId: session.user.id,
+            action: "AUDIT_ACTOR_ANONYMIZED",
+            entityType: "User",
+            entityId: member.userId,
+            memberId,
+            metadata: { reason: "MEMBER_DELETED", entries: anonymized },
+          },
+        });
         await tx.user.delete({ where: { id: member.userId } });
       }
 

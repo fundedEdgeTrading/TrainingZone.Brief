@@ -7,6 +7,7 @@ import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -83,18 +84,7 @@ async function reconcileMemberCheckoutSession(
       const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { primaryCenterId: true } });
       if (member) {
         const centerId = session.metadata?.centerId || member.primaryCenterId;
-        const subscription = await prisma.subscription.create({
-          data: {
-            memberId,
-            planId: plan.id,
-            centerId,
-            startDate: new Date(),
-            priceCents: plan.priceCents,
-            status: "ACTIVE",
-            sessionsRemaining: plan.sessionsIncluded ?? null,
-            sessionsIncluded: plan.sessionsIncluded ?? null,
-          },
-        });
+        const subscription = await createSubscriptionFromPlan(prisma, { memberId, centerId, plan });
         await prisma.payment.update({ where: { id: payment.id }, data: { subscriptionId: subscription.id } });
       }
     }

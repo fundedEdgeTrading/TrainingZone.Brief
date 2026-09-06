@@ -18,12 +18,7 @@ import { MobileNavProvider } from "./mobile-nav";
 import { AccountMenuProvider } from "./account-menu";
 import { HomeRouteProvider } from "./home-route";
 import { RouteProgress } from "@/components/ui/route-progress";
-
-const SERVICE_LABEL: Record<"EP" | "GROUP" | "ONLINE", string> = {
-  EP: "Entrenamiento personal",
-  GROUP: "Grupos reducidos",
-  ONLINE: "Online",
-};
+import { SERVICE_LABEL } from "@/lib/service-labels";
 
 /** "HOY 19:00" / "MAÑANA 19:00" / "MAR 19:00" para la meta de "Reservar clase" en el sidebar. */
 function shortDayTimeLabel(startsAt: Date, startTime: string, timezone: string) {

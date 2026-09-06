@@ -76,6 +76,13 @@ export type ServiceKind = "GROUP" | "EP" | "ONLINE";
 
 export type SessionBalance = {
   serviceKind: ServiceKind;
+  /**
+   * Cómo se llama la modalidad. Lo resuelve el SERVIDOR con la fuente única
+   * (E12-04): la app no mantiene su propia tabla de rótulos, que es cómo el
+   * mismo bono acabó siendo "Personal" aquí y "Entrenamiento personal" en el
+   * portal del socio.
+   */
+  serviceLabel: string;
   remaining: number | null;
   unlimited: boolean;
   /** Sesiones ya gastadas del bono contratado (null si el bono es ilimitado). */
@@ -425,7 +432,15 @@ export type ProductItem = {
   featured: boolean;
 };
 
-export type ProductsResponse = { canManage: boolean; centerName: string | null; products: ProductItem[] };
+/** Tipo de producto con su rótulo, servido por el servidor: la app no mantiene su propia tabla (E4-29). */
+export type PlanTypeOption = { value: string; label: string };
+
+export type ProductsResponse = {
+  canManage: boolean;
+  centerName: string | null;
+  planTypes: PlanTypeOption[];
+  products: ProductItem[];
+};
 
 export type SaveProductInput = {
   name: string;
@@ -434,6 +449,8 @@ export type SaveProductInput = {
   priceCents: number;
   sessionsIncluded: number | null;
   validityDays: number | null;
+  /** Los SEIS tipos del dominio (E4-29). Manda sobre `serviceKind`. */
+  planType: string;
   serviceKind: ServiceKind;
   visible: boolean;
 };

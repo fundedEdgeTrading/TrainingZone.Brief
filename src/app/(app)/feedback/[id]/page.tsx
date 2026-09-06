@@ -14,6 +14,7 @@ import {
 import type { BadgeTone } from "@/components/ui/badge";
 import { AlignmentTrack } from "../alignment-track";
 import { RequestFeedbackButton, FeedbackDetailActions } from "../feedback-actions";
+import { requireFeature } from "@/lib/entitlements";
 
 function initials(first: string, last: string) {
   return `${first[0] ?? ""}${last[0] ?? ""}`.toUpperCase();
@@ -43,6 +44,9 @@ function interpretation(cat: AlignmentCategory, hasClient: boolean, hasDebrief: 
 
 export default async function FeedbackDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // E6-02: la ruta hija hereda el gate de su padre. `/feedback` redirigía a
+  // `/planes` con plan Esencial y esta respondía 200 escribiendo la URL.
+  await requireFeature("feedback_direccion");
   const { id } = await params;
 
   const member = await getMemberFeedbackDetail(session.user.orgId, id);

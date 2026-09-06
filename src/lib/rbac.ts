@@ -85,13 +85,42 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   "/brief": "salud_aptitud",
   "/health/aptitude-rules": "salud_aptitud",
   "/health/reference-ranges": "salud_aptitud",
-  "/audit": "exportaciones",
+  // `/audit` NO se gatea (E6-07, decisión D-C7). El responsable del tratamiento
+  // es el gimnasio: ante un requerimiento del art. 32 RGPD tiene que poder
+  // acreditar quién accedió a los datos de salud de sus socios, y no puede
+  // depender de haber comprado un plan superior —el `AuditLog` se escribe
+  // igualmente—. Lo que sigue siendo de pago es la EXPORTACIÓN masiva, gateada
+  // en `api/audit/export` con la funcionalidad `exportaciones`.
+  //
+  // `ia_programacion` tampoco aparece aquí, y no es un olvido: no hay ninguna
+  // ruta que gatear —el coste no está en mirar un mesociclo, sino en generarlo—.
+  // Se comprueba donde se produce el gasto, antes de llamar al proveedor de IA:
+  // `members/[id]/mesociclos/actions.ts` en la web y el mapa de rutas móvil
+  // (`mobile-feature-routes.ts`) en la app. Ver E6-03.
 };
+
+/**
+ * Funcionalidad que cubre una ruta, CON HERENCIA a las rutas hijas (E6-02).
+ *
+ * El mapa declaraba `/brief` y `/feedback`, pero `brief/[id]` y `feedback/[id]`
+ * no llamaban a la guarda: con plan Esencial, `/brief` redirigía a `/planes` y
+ * `/brief/<sessionId>` —el enlace que pinta la propia agenda— respondía 200 con
+ * el semáforo completo. Heredar por prefijo es lo que hace que añadir una hija
+ * nueva no vuelva a abrir el agujero.
+ */
+export function featureForRoute(pathname: string): PlatformFeature | undefined {
+  let best: { key: string; feature: PlatformFeature } | undefined;
+  for (const [key, feature] of Object.entries(FEATURE_BY_ROUTE)) {
+    if (pathname !== key && !pathname.startsWith(`${key}/`)) continue;
+    if (!best || key.length > best.key.length) best = { key, feature };
+  }
+  return best?.feature;
+}
 
 /** Aplica el mapa anterior a una navegación ya resuelta por rol. */
 export function withFeatureFlags(items: NavItem[]): NavItem[] {
   return items.map((item) => {
-    const feature = FEATURE_BY_ROUTE[item.href];
+    const feature = featureForRoute(item.href);
     return feature ? { ...item, feature } : item;
   });
 }
@@ -105,6 +134,10 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   OWNER: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
     { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
+    // E12-11: dirección ve el panel de su propio equipo. `/trainer` estaba
+    // restringido a TRAINER, así que quien paga a los entrenadores no podía
+    // mirar cómo les va.
+    { href: "/trainer", label: "Panel del equipo", section: "Vista general", icon: "panel" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
     { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
@@ -125,6 +158,8 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
   CENTER_DIRECTOR: [
     { href: "/dashboard", label: "Panel de control", section: "Vista general", icon: "panel" },
     { href: "/feedback", label: "Feedback", section: "Vista general", icon: "feedback" },
+    // E12-11: los entrenadores de SUS centros, no los de toda la organización.
+    { href: "/trainer", label: "Panel del equipo", section: "Vista general", icon: "panel" },
     { href: "/members", label: "Socios", section: "Día a día", icon: "socios" },
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
     { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
@@ -375,7 +410,7 @@ export function defaultRouteForRole(role: Role): string {
   // evita redirigir a una ruta sin permiso (y su bucle) y también aterrizar a
   // un cliente de tier bajo en un módulo que no ha comprado.
   const items = NAV_BY_ROLE[role];
-  const alwaysAvailable = items.find((item) => !FEATURE_BY_ROUTE[item.href]);
+  const alwaysAvailable = items.find((item) => !featureForRoute(item.href));
   return alwaysAvailable?.href ?? items[0]?.href ?? "/login";
 }
 
