@@ -16,6 +16,7 @@ import { Icon } from "@/components/Icon";
 import { ScoreBar } from "@/components/ScoreBar";
 import { useCountdown } from "@/components/Countdown";
 import { EmptyState } from "@/components/EmptyState";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { formatDayLabel } from "@/utils/format";
@@ -53,7 +54,7 @@ export default function SessionFeedbackScreen() {
   const toast = useToast();
   const reduced = useReducedMotion();
   const { id, d } = useLocalSearchParams<{ id: string; d?: string }>();
-  const { data, isLoading, isError } = useSessionFeedback(id, d);
+  const { data, isLoading, isError, error } = useSessionFeedback(id, d);
   const saveFeedback = useSaveSessionFeedback(id);
 
   const [index, setIndex] = useState(0);
@@ -219,7 +220,7 @@ export default function SessionFeedbackScreen() {
       {isLoading ? (
         <SkeletonList rows={3} />
       ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudo cargar la sesión" description="Vuelve a intentarlo desde tu panel." />
+        <QueryErrorState error={error} title="No se pudo cargar la sesión" description="Vuelve a intentarlo desde tu panel." />
       ) : !current ? (
         <EmptyState icon="users" title="Sin asistentes" description="Nadie tenía reserva en esta sesión." />
       ) : (

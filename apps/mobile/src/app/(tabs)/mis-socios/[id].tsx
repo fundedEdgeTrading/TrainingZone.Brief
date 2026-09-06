@@ -26,6 +26,7 @@ import { Sheet } from "@/components/Sheet";
 import { Stepper } from "@/components/Stepper";
 import { ScoreReadout } from "@/components/ScoreBar";
 import { EmptyState } from "@/components/EmptyState";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -59,7 +60,7 @@ export default function TrainerMemberDetailScreen() {
   const theme = useTheme();
   const [tab, setTab] = useState<Tab>("sesiones");
   const [noting, setNoting] = useState(false);
-  const { data, isLoading, isError, refetch, isRefetching } = useTrainerMemberDetail(id);
+  const { data, isLoading, isError, error, refetch, isRefetching } = useTrainerMemberDetail(id);
 
   const canPlan = data?.canManageMesocycles ?? false;
   const tabs: { value: Tab; label: string }[] = [
@@ -98,7 +99,7 @@ export default function TrainerMemberDetailScreen() {
       {isLoading ? (
         <SkeletonList rows={4} shape="row" note="Cargando la ficha…" />
       ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudo cargar la ficha" description="Desliza hacia abajo para reintentar." />
+        <QueryErrorState error={error} title="No se pudo cargar la ficha" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
           <HeroCard padding={17}>

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import type { DebriefFeeling } from "@prisma/client";
-import { requireApiRole } from "../../../../_lib/api-session";
+import { requireApiRoute } from "../../../../_lib/api-session";
 import { requireApiCenterScope } from "../../../../_lib/api-guards";
 import { apiOk, apiError } from "../../../../_lib/response";
 
@@ -11,7 +11,7 @@ const FEELINGS: DebriefFeeling[] = ["GREEN", "AMBER", "RED"];
 
 // Espejo de src/app/(app)/brief/[id]/actions.ts (setDebrief).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief/[id]/debrief");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id: sessionId } = await params;

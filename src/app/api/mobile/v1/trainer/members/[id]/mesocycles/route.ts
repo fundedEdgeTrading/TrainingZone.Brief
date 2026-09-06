@@ -7,7 +7,7 @@ import { getMesocycleBriefingForMember } from "@/lib/health-access";
 import { generateMesocyclePlan } from "@/lib/ai/mesocycle-generator";
 import { DEFAULT_PROFILE, EP_PROFILE_LABEL, isEpProfile } from "@/lib/ai/ep-profile";
 import { createMesocycleFromPlan, listMesocyclesForMember } from "@/lib/mesocycle-queries";
-import { requireApiRole } from "../../../../_lib/api-session";
+import { requireApiRoute } from "../../../../_lib/api-session";
 import { requireApiFeature } from "../../../../_lib/api-guards";
 import { apiOk, apiError } from "../../../../_lib/response";
 
@@ -21,7 +21,7 @@ const MIN_WEEKS = 4;
 const MAX_WEEKS = 12;
 
 async function guard(req: NextRequest, memberId: string) {
-  const auth = await requireApiRole(req, MESOCYCLE_ROLES);
+  const auth = await requireApiRoute(req, MESOCYCLE_ROLES, "/trainer/members/[id]/mesocycles");
   if (!auth.ok) return { ok: false as const, response: auth.response };
   const { claims } = auth;
   if (!canManageMesocycles(claims.role)) {

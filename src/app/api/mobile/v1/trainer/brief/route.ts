@@ -4,12 +4,12 @@ import { briefScopeWhere } from "@/lib/brief-queries";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { expandOccurrences, isSameDay, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
-import { requireApiRole } from "../../_lib/api-session";
+import { requireApiRoute } from "../../_lib/api-session";
 import { apiOk } from "../../_lib/response";
 
 // Espejo de src/app/(app)/brief/page.tsx (índice de Session Brief).
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRole(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
 

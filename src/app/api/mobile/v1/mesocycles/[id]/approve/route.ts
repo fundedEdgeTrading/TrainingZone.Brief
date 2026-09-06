@@ -3,7 +3,7 @@ import type { Role } from "@prisma/client";
 import { isMemberInScope } from "@/lib/center-scope";
 import { canManageMesocycles } from "@/lib/rbac";
 import { approveMesocycle, getMesocycleDetail } from "@/lib/mesocycle-queries";
-import { requireApiRole } from "../../../_lib/api-session";
+import { requireApiRoute } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
 
 // RB innegociable (§7.4): nada que salga de un modelo llega al socio sin que
@@ -12,7 +12,7 @@ import { apiOk, apiError } from "../../../_lib/response";
 const MESOCYCLE_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"];
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, MESOCYCLE_ROLES);
+  const auth = await requireApiRoute(req, MESOCYCLE_ROLES, "/mesocycles/[id]/approve");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   if (!canManageMesocycles(claims.role)) return apiError("No tienes permiso para aprobar mesociclos.", 403);
