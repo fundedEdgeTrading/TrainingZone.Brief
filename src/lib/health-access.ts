@@ -18,8 +18,11 @@ import { scrubAll, scrubIdentifiers } from "@/lib/ai/pseudonymize";
 import {
   ASSESSMENT_KIND_LABEL,
   DAYS_PER_WEEK_LABEL,
+  INJURY_ZONE_TO_PAIN_ZONE,
   PAIN_ZONE_LABEL,
   isInitialAnswers,
+  type PainZone,
+  type ScreeningAnswers,
 } from "@/lib/assessments/schemas";
 
 /**
@@ -486,6 +489,225 @@ export async function createHealthRecordsFromAssessment({
   });
 
   return { ok: true };
+}
+
+/**
+ * Estado declarado HOY, para precargar el screening de una revisión (E3-06).
+ *
+ * Las zonas salen de los `HealthRecord` vigentes —no de la última valoración—
+ * porque son la verdad que usa el semáforo y recogen también lo que se haya
+ * añadido a mano en la ficha desde entonces. Las casillas y los textos libres
+ * sí vienen de la última valoración completada: son respuestas a una pregunta,
+ * y no se pueden reconstruir de un registro clínico sin adivinar.
+ */
+export async function getScreeningDraftForMember({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+}): Promise<ScreeningAnswers | null> {
+  if (!canViewHealthData(actorRole)) return null;
+
+  const [records, last] = await Promise.all([
+    prisma.healthRecord.findMany({
+      where: { memberId, member: { orgId }, type: "INJURY", status: { in: OPEN_HEALTH_STATUSES } },
+      select: { zoneCode: true, side: true },
+    }),
+    prisma.assessment.findFirst({
+      where: { memberId, orgId, completedAt: { not: null } },
+      orderBy: { completedAt: "desc" },
+      select: { kind: true, answers: true },
+    }),
+  ]);
+
+  const zonasDolor: PainZone[] = [];
+  const lateralidadDolor: ScreeningAnswers["lateralidadDolor"] = {};
+  for (const record of records) {
+    if (!record.zoneCode) continue;
+    const painZone = INJURY_ZONE_TO_PAIN_ZONE[record.zoneCode];
+    if (!painZone || zonasDolor.includes(painZone)) continue;
+    zonasDolor.push(painZone);
+    if (record.side && record.side !== "NO_APLICA") lateralidadDolor[painZone] = record.side;
+  }
+
+  const previous = last ? parseAnswers(last.kind, last.answers) : null;
+  const screening = previous && "screening" in previous ? previous.screening : undefined;
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "HEALTH_RECORD_READ",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: { recordCount: records.length, from: "ASSESSMENT_REVIEW_DRAFT" },
+    },
+  });
+
+  return {
+    cardiovascular: screening?.cardiovascular ?? false,
+    hipertension: screening?.hipertension ?? false,
+    diabetes: screening?.diabetes ?? false,
+    medicacion: screening?.medicacion ?? "",
+    cirugias: screening?.cirugias ?? "",
+    // Lo que se escribió la vez anterior NO se arrastra: "molestia en el hombro
+    // desde marzo" contestaba a marzo. Se vuelve a preguntar en blanco.
+    lesionesActuales: "",
+    zonasDolor,
+    lateralidadDolor,
+  };
+}
+
+export type ScreeningReconciliation = {
+  /** Lesiones declaradas HOY, tal y como salen del bloque de zonas de dolor. */
+  injuries: { zoneCode: InjuryZone; side: Laterality | null; description: string; severity: HealthSeverity }[];
+  /**
+   * Zonas que el cuestionario es capaz de expresar. Solo dentro de esta lista se
+   * puede dar una lesión por resuelta: el catálogo tiene zonas que la valoración
+   * ni pregunta (codo, muñeca, ingle, gemelo...) y una lesión ahí NO puede
+   * resolverse por no aparecer marcada en un formulario que no la ofrece.
+   */
+  reconcilableZones: InjuryZone[];
+  /** Condiciones no lesionales del screening (medicación, cirugías, crónicas). */
+  conditions: { type: HealthRecordType; description: string; severity: HealthSeverity }[];
+};
+
+export type ReconcileResult =
+  | { ok: true; created: number; resolved: number }
+  | { ok: false; error: "forbidden" | "not_found" | "no_consent" };
+
+/**
+ * Revisión periódica de valoración (E3-06): lo declarado hoy contra lo que ya
+ * consta. Es lo que hace que una lumbalgia que aparece en el mes 4 entre en el
+ * semáforo sin que nadie la teclee a mano en la ficha.
+ *
+ * Tres reglas:
+ *  · zona marcada que antes no estaba → se crea el `HealthRecord`;
+ *  · zona que deja de estar marcada → se marca RESUELTA con fecha, **nunca se
+ *    borra**: el histórico clínico no se reescribe;
+ *  · zona que sigue igual → no se toca nada, así que repetir la revisión sin
+ *    cambios no duplica ni un registro.
+ *
+ * La identidad de una lesión es su ZONA, no su lado: cambiar el lado es editar
+ * la lesión, y eso se hace desde la ficha. Una revisión es una lista de
+ * comprobación, no un editor.
+ */
+export async function reconcileScreeningFromAssessment({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+  assessmentId,
+  screening,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  assessmentId: string;
+  screening: ScreeningReconciliation;
+}): Promise<ReconcileResult> {
+  if (!canEditHealthData(actorRole)) return { ok: false, error: "forbidden" };
+
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { id: true, consentHealth: true },
+  });
+  if (!member) return { ok: false, error: "not_found" };
+  if (!member.consentHealth) return { ok: false, error: "no_consent" };
+
+  const open = await prisma.healthRecord.findMany({
+    where: { memberId, status: { in: OPEN_HEALTH_STATUSES } },
+    select: { id: true, type: true, zoneCode: true, description: true },
+  });
+
+  const now = new Date();
+  const declaredZones = new Set(screening.injuries.map((i) => i.zoneCode));
+  const openInjuryZones = new Set(
+    open.filter((r) => r.type === "INJURY" && r.zoneCode).map((r) => r.zoneCode as InjuryZone)
+  );
+
+  const toCreate = [
+    ...screening.injuries
+      .filter((i) => !openInjuryZones.has(i.zoneCode))
+      .map((i) => ({
+        memberId,
+        type: "INJURY" as const,
+        zone: injuryZoneLabel(i.zoneCode, i.side),
+        zoneCode: i.zoneCode,
+        side: i.side,
+        description: i.description,
+        severity: i.severity,
+        status: "ACTIVE" as const,
+        reportedByUserId: actorUserId,
+        consentSignedAt: now,
+      })),
+    // Las condiciones no lesionales se identifican por tipo + texto: sin esto,
+    // cada revisión volvería a crear "Hipertensión declarada".
+    ...screening.conditions
+      .filter((c) => !open.some((r) => r.type === c.type && r.description === c.description))
+      .map((c) => ({
+        memberId,
+        type: c.type,
+        zone: null,
+        zoneCode: null,
+        side: null,
+        description: c.description,
+        severity: c.severity,
+        status: "ACTIVE" as const,
+        reportedByUserId: actorUserId,
+        consentSignedAt: now,
+      })),
+  ];
+
+  const reconcilable = new Set(screening.reconcilableZones);
+  const toResolve = open.filter(
+    (r) =>
+      r.type === "INJURY" &&
+      r.zoneCode !== null &&
+      reconcilable.has(r.zoneCode) &&
+      !declaredZones.has(r.zoneCode)
+  );
+
+  if (toCreate.length) await prisma.healthRecord.createMany({ data: toCreate });
+
+  for (const record of toResolve) {
+    await prisma.healthRecord.update({
+      where: { id: record.id },
+      data: { status: "RESOLVED", statusChangedAt: now, resolvedAt: now },
+    });
+    await prisma.auditLog.create({
+      data: {
+        orgId,
+        actorUserId,
+        action: "HEALTH_RECORD_STATUS_CHANGED",
+        entityType: "HealthRecord",
+        entityId: record.id,
+        memberId,
+        metadata: { to: "RESOLVED", via: "ASSESSMENT_REVIEW", assessmentId },
+      },
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "HEALTH_SCREENING_RECONCILED",
+      entityType: "Assessment",
+      entityId: assessmentId,
+      memberId,
+      metadata: { created: toCreate.length, resolved: toResolve.length },
+    },
+  });
+
+  return { ok: true, created: toCreate.length, resolved: toResolve.length };
 }
 
 /**

@@ -134,23 +134,32 @@ const customAnswersRecord = z
   .optional()
   .default({});
 
+/**
+ * Screening clínico. Vive fuera de `initialAssessmentSchema` porque desde E3-06
+ * lo pregunta TAMBIÉN la revisión: una lumbalgia que aparece en el mes 4 tiene
+ * que entrar en el semáforo sin que nadie la teclee a mano en la ficha.
+ */
+export const screeningSchema = z.object({
+  cardiovascular: z.boolean(),
+  hipertension: z.boolean(),
+  diabetes: z.boolean(),
+  medicacion: optionalText,
+  cirugias: optionalText,
+  lesionesActuales: optionalText,
+  zonasDolor: z.array(z.enum(PAIN_ZONES)).default([]),
+  // E3-02: el lado va APARTE de la zona. La valoración escribía "hombro" sin
+  // lado mientras el catálogo de reglas estaba lateralizado, y de las ocho
+  // zonas solo dos encontraban regla. Ahora se pregunta lo que hay que
+  // preguntar, y la zona sigue siendo la misma para los dos lados.
+  lateralidadDolor: z.partialRecord(z.enum(PAIN_ZONES), z.enum(LATERALITY_VALUES)).optional().default({}),
+});
+
+export type ScreeningAnswers = z.infer<typeof screeningSchema>;
+
 export const initialAssessmentSchema = vitalsSchema.extend({
   perfil: perfilSchema,
   experiencia: experienciaSchema,
-  screening: z.object({
-    cardiovascular: z.boolean(),
-    hipertension: z.boolean(),
-    diabetes: z.boolean(),
-    medicacion: optionalText,
-    cirugias: optionalText,
-    lesionesActuales: optionalText,
-    zonasDolor: z.array(z.enum(PAIN_ZONES)).default([]),
-    // E3-02: el lado va APARTE de la zona. La valoración escribía "hombro" sin
-    // lado mientras el catálogo de reglas estaba lateralizado, y de las ocho
-    // zonas solo dos encontraban regla. Ahora se pregunta lo que hay que
-    // preguntar, y la zona sigue siendo la misma para los dos lados.
-    lateralidadDolor: z.partialRecord(z.enum(PAIN_ZONES), z.enum(LATERALITY_VALUES)).optional().default({}),
-  }),
+  screening: screeningSchema,
   marcas: marksSchema,
   cierre: z.object({
     notasEntrenador: optionalText,
@@ -162,6 +171,13 @@ export const initialAssessmentSchema = vitalsSchema.extend({
 });
 
 export const reviewAssessmentSchema = vitalsSchema.extend({
+  /**
+   * E3-06 · la revisión vuelve a preguntar por lesiones. Opcional a propósito:
+   * las revisiones ya guardadas no lo llevan, y exigirlo las dejaría sin detalle
+   * en la ficha (`parseAnswers` devolvería null). Lo que sí garantiza el
+   * formulario es que las nuevas siempre lo traen.
+   */
+  screening: screeningSchema.optional(),
   seguimiento: z.object({
     adherenciaPercibida: z.number().int().min(1).max(5).optional(),
     progresoPercibido: z.number().int().min(1).max(5).optional(),
@@ -308,6 +324,14 @@ export const PAIN_ZONE_TO_INJURY_ZONE: Record<PainZone, InjuryZone> = {
   TOBILLO: "TOBILLO",
   OTRO: "OTRA",
 };
+
+/** De vuelta: qué zona del cuestionario representa una zona del catálogo.
+ *  PARCIAL a propósito — el catálogo tiene zonas que el cuestionario no
+ *  pregunta (codo, muñeca, ingle, gemelo...), y una lesión ahí NO puede
+ *  resolverse por no aparecer marcada en una revisión que ni la ofrece. */
+export const INJURY_ZONE_TO_PAIN_ZONE: Partial<Record<InjuryZone, PainZone>> = Object.fromEntries(
+  (Object.entries(PAIN_ZONE_TO_INJURY_ZONE) as [PainZone, InjuryZone][]).map(([pain, injury]) => [injury, pain])
+) as Partial<Record<InjuryZone, PainZone>>;
 
 /** Zonas del cuestionario que sí tienen lado, y por tanto lo preguntan. */
 export function painZoneNeedsSide(zone: PainZone): boolean {

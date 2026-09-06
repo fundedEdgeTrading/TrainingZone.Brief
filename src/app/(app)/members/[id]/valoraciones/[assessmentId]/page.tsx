@@ -4,6 +4,7 @@ import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
 import { requireRole, memberIsInScope } from "@/lib/guard";
 import { getAssessment, getAssessmentConfig, parseAnswers } from "@/lib/assessments/queries";
+import { getScreeningDraftForMember } from "@/lib/health-access";
 import { milestoneLabelOf } from "@/lib/assessments/config";
 import {
   DAYS_PER_WEEK_LABEL,
@@ -42,9 +43,17 @@ export default async function AssessmentDetailPage({
   const { id, assessmentId } = await params;
   const timeZone = await resolveTimezone();
 
-  const [assessment, config] = await Promise.all([
+  const [assessment, config, screeningDraft] = await Promise.all([
     getAssessment(session.user.orgId, assessmentId),
     getAssessmentConfig(session.user.orgId),
+    // E3-06: la revisión llega precargada con lo que ya consta declarado, para
+    // que el entrenador confirme o desmarque en vez de teclearlo otra vez.
+    getScreeningDraftForMember({
+      memberId: id,
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+    }),
   ]);
   if (!assessment || assessment.memberId !== id) notFound();
   if (!(await memberIsInScope(session.user, id))) notFound();
@@ -102,6 +111,7 @@ export default async function AssessmentDetailPage({
             kind={assessment.kind}
             config={config}
             draft={memberDraft}
+            screeningDraft={screeningDraft}
           />
         </>
       ) : !answers ? (
@@ -188,6 +198,23 @@ export default async function AssessmentDetailPage({
                   <Row label="Objetivo del próximo periodo" value={answers.seguimiento.objetivoProximoPeriodo} />
                 </ul>
               </Card>
+              {/* E3-06: las revisiones anteriores a esta historia no llevan screening. */}
+              {answers.screening && (
+                <Card title="Screening de salud" meta="Reconciliado con la ficha de salud">
+                  <ul className="list-none">
+                    <Row label="Cardiovascular" value={yesNo(answers.screening.cardiovascular)} />
+                    <Row label="Hipertensión" value={yesNo(answers.screening.hipertension)} />
+                    <Row label="Diabetes" value={yesNo(answers.screening.diabetes)} />
+                    <Row label="Medicación" value={answers.screening.medicacion} />
+                    <Row label="Cirugías" value={answers.screening.cirugias} />
+                    <Row label="Lesiones actuales" value={answers.screening.lesionesActuales} />
+                    <Row
+                      label="Zonas de dolor"
+                      value={answers.screening.zonasDolor.map((z: PainZone) => PAIN_ZONE_LABEL[z]).join(", ")}
+                    />
+                  </ul>
+                </Card>
+              )}
               <Card title="Cierre">
                 <ul className="list-none">
                   <Row label="Notas del entrenador" value={answers.cierre.notasEntrenador} />
