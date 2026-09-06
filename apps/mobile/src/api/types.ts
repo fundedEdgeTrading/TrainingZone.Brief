@@ -916,6 +916,25 @@ export type DiscardResult = { refunded: boolean; withinWindow: boolean; overridd
 
 export type DiscardInput = { reason?: string | null; forceRefund?: boolean; notifyMember?: boolean };
 
+// ---------- No-show desde la app (E2-14, RB-RES-009) ----------
+
+/** Motivos del enum `NoShowReason`, servidos por la API para no copiarlos aquí. */
+export type NoShowReasonOption = { value: string; help: string };
+
+export type NoShowOptions = { reasons: NoShowReasonOption[] };
+
+/**
+ * El motivo es obligatorio y la devolución es una decisión explícita: el
+ * servidor no devuelve nada si no se le pide (RB-RES-009).
+ */
+export type MarkNoShowInput = { bookingId: string; reason: string; refundSession: boolean };
+
+/** `refunded` es lo que REALMENTE pasó, no lo que se pidió: `noShowRefunded`
+ *  impide devolver dos veces la misma sesión. */
+export type MarkNoShowResult = { status: "NO_SHOW"; reason: string; refunded: boolean };
+
+export type ClearNoShowResult = { status: "BOOKED" | "ATTENDED" };
+
 // ---------- Hueco de EP ----------
 
 export type CreateEpSlotInput = {

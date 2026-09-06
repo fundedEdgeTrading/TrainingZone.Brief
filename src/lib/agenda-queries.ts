@@ -15,7 +15,7 @@ import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
 import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
-import { statusesEndingAt } from "@/lib/booking-transitions";
+import { checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import { coversSessionKind } from "@/lib/member-session-scope";
 import { enforcementStartsAt } from "@/lib/portal-queries";
 import { sessionServiceKind } from "@/lib/members-queries";
@@ -645,30 +645,42 @@ export async function bookSessionForMemberAsStaff(
  * la bandera pase de false a true es lo que impide devolver dos veces la misma
  * sesión si se marca dos veces (o dos personas a la vez).
  */
+export type NoShowResult =
+  | { ok: true; memberId: string; sessionId: string; refunded: boolean }
+  | { ok: false; error: string; conflict?: true };
+
 export async function markBookingNoShow(
   orgId: string,
   bookingId: string,
-  opts: { sessionId: string; reason: NoShowReason; refundSession: boolean }
-) {
+  opts: {
+    /**
+     * Acota además a una sesión concreta. Lo manda la web, donde el id sale de
+     * la página de la sesión; la app llega solo con el `bookingId` y el ámbito
+     * se lo da la guarda de centro.
+     */
+    sessionId?: string;
+    reason: NoShowReason;
+    refundSession: boolean;
+  }
+): Promise<NoShowResult> {
   const booking = await prisma.booking.findFirst({
-    // Acotado a la sesión Y a la organización, igual que el check-in: el id de
-    // la reserva viaja desde el cliente y por sí solo no dice de quién es.
-    //
-    // WAITLISTED y CANCELLED quedan fuera: no hay asistencia que registrar en
-    // una reserva que nunca ocupó plaza. ATTENDED sí entra, porque marcar la
-    // falta es también rectificar un check-in dado por error.
+    // Acotado a la organización (y a la sesión, si viene): el id de la reserva
+    // viaja desde el cliente y por sí solo no dice de quién es.
     where: {
       id: bookingId,
-      sessionId: opts.sessionId,
       session: { orgId },
-      // RB-RES-010: la lista de estados sale de la máquina compartida
-      // (`booking-transitions.ts`), no de un literal que hay que acordarse de
-      // mantener al día — WAITLISTED y CANCELLED quedan fuera solos.
-      status: { in: statusesEndingAt("NO_SHOW") },
+      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
     },
-    select: { id: true, memberId: true, subscriptionId: true, noShowRefunded: true },
+    select: { id: true, sessionId: true, status: true, memberId: true, subscriptionId: true, noShowRefunded: true },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  // RB-RES-010: WAITLISTED y CANCELLED quedan fuera —no hay asistencia que
+  // registrar en una reserva que nunca ocupó plaza—, y la razón se cuenta en
+  // vez de esconderse detrás de un "no encontrada". ATTENDED sí entra: marcar
+  // la falta es también rectificar un check-in dado por error.
+  const transition = checkBookingTransition(booking.status, "NO_SHOW");
+  if (!transition.ok) return { ok: false as const, error: transition.error, conflict: true as const };
 
   const refunded = await prisma.$transaction(async (tx) => {
     const applied = await tx.booking.updateMany({
@@ -695,7 +707,7 @@ export async function markBookingNoShow(
   });
   if (refunded === null) return { ok: false as const, error: "No se ha encontrado esa reserva." };
 
-  return { ok: true as const, memberId: booking.memberId, refunded };
+  return { ok: true as const, memberId: booking.memberId, sessionId: booking.sessionId, refunded };
 }
 
 /**
@@ -704,15 +716,25 @@ export async function markBookingNoShow(
  * sesión al bono, se vuelve a descontar — si no, rectificar un "No asistió"
  * marcado por error regalaría una sesión cada vez.
  */
-export async function clearBookingNoShow(orgId: string, bookingId: string, nextStatus: "BOOKED" | "ATTENDED") {
+export async function clearBookingNoShow(
+  orgId: string,
+  bookingId: string,
+  nextStatus: "BOOKED" | "ATTENDED"
+): Promise<NoShowResult> {
   const booking = await prisma.booking.findFirst({
-    // RB-RES-010: deshacer una falta parte de una falta. Sin acotar el estado,
-    // este mismo `bookingId` servía para llevar a ATTENDED una reserva
-    // CANCELLED o WAITLISTED — la misma vía que se cerró en las otras cuatro.
-    where: { id: bookingId, session: { orgId }, status: "NO_SHOW" },
-    select: { id: true, subscriptionId: true, noShowRefunded: true },
+    where: { id: bookingId, session: { orgId } },
+    select: { id: true, sessionId: true, status: true, memberId: true, subscriptionId: true, noShowRefunded: true },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  // RB-RES-010: deshacer una falta parte de una falta. Sin acotar el estado,
+  // este mismo `bookingId` servía para llevar a ATTENDED una reserva CANCELLED
+  // o WAITLISTED — la misma vía que se cerró en los otros cuatro puntos.
+  if (booking.status !== "NO_SHOW") {
+    return { ok: false as const, error: "Esa reserva no está marcada como falta.", conflict: true as const };
+  }
+  const transition = checkBookingTransition(booking.status, nextStatus);
+  if (!transition.ok) return { ok: false as const, error: transition.error, conflict: true as const };
 
   await prisma.$transaction(async (tx) => {
     // La bandera es también aquí el cierre de la operación, en el mismo UPDATE
@@ -741,7 +763,7 @@ export async function clearBookingNoShow(orgId: string, bookingId: string, nextS
     });
   });
 
-  return { ok: true as const };
+  return { ok: true as const, memberId: booking.memberId, sessionId: booking.sessionId, refunded: false };
 }
 
 export type DeleteSessionResult =

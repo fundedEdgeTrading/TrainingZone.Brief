@@ -54,6 +54,10 @@ export const MOBILE_ROUTES_WITHOUT_FEATURE: readonly string[] = [
   "/staff",
   "/tasks",
   "/trainer/panel",
+  // E2-14: marcar y rectificar una falta es trabajo del día del entrenador,
+  // como la agenda. Se declara aquí para que el test de exhaustividad no
+  // dependa de que alguien se acuerde.
+  "/trainer/bookings",
 ];
 
 /** Normaliza a "/segmento/segmento", sin barra final ni prefijo de la API. */
