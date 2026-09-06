@@ -66,9 +66,12 @@ export async function canAddCenter(orgId: string): Promise<CanAddCenterResult> {
   if (current < limit) return { ok: true };
 
   const suffix = plan.maxCenters === 1 ? "1 centro" : `${plan.maxCenters} centros`;
+  const cta = plan.customPricingAboveLimit
+    ? "Para más centros, contacta con nosotros: precio a medida."
+    : "Para añadir más, cambia de plan.";
   return {
     ok: false,
-    error: `Tu plan ${plan.name} incluye ${suffix}. Para añadir más, cambia de plan.`,
+    error: `Tu plan ${plan.name} incluye ${suffix}. ${cta}`,
   };
 }
 

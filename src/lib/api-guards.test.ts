@@ -102,10 +102,15 @@ test("requireApiFeature · con la funcionalidad contratada, todo sigue igual", a
   const claims = claimsFor(fx.directorId, "CENTER_DIRECTOR", fx.centerA);
 
   assert.equal((await requireApiFeature(claims, "salud_aptitud")).ok, true);
-  // Y lo que el plan Avanzado no incluye sigue cerrado.
-  assert.equal((await requireApiFeature(claims, "ia_programacion")).ok, false);
+  // E6-04: la IA entra en Avanzado con cupo (el cupo en sí lo aplica E6-03).
+  assert.equal((await requireApiFeature(claims, "ia_programacion")).ok, true);
 
   await prisma.organization.update({ where: { id: fx.orgId }, data: { platformPlan: "esencial_mes" } });
+});
+
+test("requireApiFeature · plan Esencial sigue sin ia_programacion", async () => {
+  const claims = claimsFor(fx.directorId, "CENTER_DIRECTOR", fx.centerA);
+  assert.equal((await requireApiFeature(claims, "ia_programacion")).ok, false);
 });
 
 test("requireApiFeature · soporte de Apta queda exento", async () => {

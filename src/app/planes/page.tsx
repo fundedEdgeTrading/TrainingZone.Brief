@@ -4,10 +4,12 @@ import {
   CORE_FEATURES,
   FEATURE_LABEL,
   PLATFORM_PLANS,
+  fundadorClosesAt,
   listPurchasablePlans,
   type PlatformFeature,
   type PlatformPlan,
 } from "@/lib/platform-plans";
+import { remainingFundadorSeats } from "@/lib/platform-billing";
 import Hero from "./hero";
 import Tour from "./tour";
 import HowItWorks from "./how-it-works";
@@ -41,6 +43,8 @@ export default async function PlanesPage({
 }) {
   const params = await searchParams;
   const purchasable = listPurchasablePlans();
+  const fundadorSeatsLeft = purchasable.some((p) => p.limitedOffer) ? await remainingFundadorSeats() : null;
+  const fundadorCloses = fundadorClosesAt();
 
   // Mensual por defecto; el anual se enseña con ?periodo=ano.
   const showYearly = params.periodo === "ano";
@@ -103,7 +107,7 @@ export default async function PlanesPage({
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {visible.map((plan) => (
-                <PlanCard key={plan.code} plan={plan} />
+                <PlanCard key={plan.code} plan={plan} seatsLeft={fundadorSeatsLeft} closesAt={fundadorCloses} />
               ))}
             </div>
           )}
@@ -139,7 +143,15 @@ function PeriodLink({ active, href, label }: { active: boolean; href: string; la
   );
 }
 
-function PlanCard({ plan }: { plan: PlatformPlan }) {
+function PlanCard({
+  plan,
+  seatsLeft,
+  closesAt,
+}: {
+  plan: PlatformPlan;
+  seatsLeft: number | null;
+  closesAt: Date | null;
+}) {
   const centers =
     plan.maxCenters === null
       ? "Centros ilimitados"
@@ -164,14 +176,17 @@ function PlanCard({ plan }: { plan: PlatformPlan }) {
         )}
         {plan.limitedOffer && (
           <span className="text-[10px] font-bold uppercase tracking-[0.08em] bg-apta-gold text-tz-black rounded-pill px-2 py-1">
-            Plazas limitadas
+            {seatsLeft != null ? `${seatsLeft} ${seatsLeft === 1 ? "plaza" : "plazas"}` : "Plazas limitadas"}
           </span>
         )}
       </div>
 
       <p className="font-display font-extrabold text-2xl text-tz-black mt-2">{plan.priceLabel}</p>
       <p className="text-xs text-muted mt-0.5">{INTERVAL_LABEL[plan.interval]}</p>
-      <p className="text-[13px] font-semibold text-brand-text-2 mt-4">{centers}</p>
+      <p className="text-[13px] font-semibold text-brand-text-2 mt-4">
+        {centers}
+        {plan.customPricingAboveLimit && " · más centros, precio a medida"}
+      </p>
 
       <ul className="mt-3 space-y-1.5 flex-1">
         <li className="text-[13px] text-muted">Todo el núcleo de gestión incluido</li>
@@ -179,26 +194,40 @@ function PlanCard({ plan }: { plan: PlatformPlan }) {
           <li key={f} className="text-[13px] text-brand-text-2 flex gap-2">
             <span aria-hidden="true">✓</span>
             {FEATURE_LABEL[f]}
+            {f === "ia_programacion" && plan.aiGenerationsPerMonth && ` (${plan.aiGenerationsPerMonth}/mes)`}
           </li>
         ))}
       </ul>
 
       {plan.interval === "lifetime" && (
         <p className="text-xs text-muted mt-4 border-t border-tz-linen pt-3">
-          Actualizaciones incluidas de por vida. No incluye la programación por IA, que se factura por
-          uso en el plan Élite.
+          Actualizaciones incluidas de por vida. No incluye el cupo mensual de programación por IA,
+          que sí lleva el plan Avanzado.
+          {closesAt && (
+            <>
+              {" "}
+              Oferta hasta el{" "}
+              {closesAt.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}.
+            </>
+          )}
         </p>
       )}
 
-      <form action="/api/checkout" method="POST" className="mt-5">
-        <input type="hidden" name="planCode" value={plan.code} />
-        <button
-          type="submit"
-          className="w-full rounded-control bg-tz-black text-tz-bone font-semibold text-[15px] py-3 transition-colors duration-200 hover:bg-brand-ink-soft"
-        >
-          Contratar {plan.name}
-        </button>
-      </form>
+      {plan.limitedOffer && seatsLeft === 0 ? (
+        <p className="mt-5 w-full rounded-control bg-tz-sand text-brand-muted font-semibold text-[15px] py-3 text-center">
+          Sin plazas disponibles
+        </p>
+      ) : (
+        <form action="/api/checkout" method="POST" className="mt-5">
+          <input type="hidden" name="planCode" value={plan.code} />
+          <button
+            type="submit"
+            className="w-full rounded-control bg-tz-black text-tz-bone font-semibold text-[15px] py-3 transition-colors duration-200 hover:bg-brand-ink-soft"
+          >
+            Contratar {plan.name}
+          </button>
+        </form>
+      )}
     </div>
   );
 }

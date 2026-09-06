@@ -8,7 +8,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "¿Qué pasa si tengo más de un centro?",
-    a: "El precio de Apta escala por número de centros, no por número de socios: cuantos más socios des de alta, mejor para ti. Esencial incluye 1 centro, Avanzado hasta 3 y Élite centros ilimitados.",
+    a: "El precio de Apta escala por número de centros, no por número de socios: cuantos más socios des de alta, mejor para ti. Esencial incluye 1 centro, Avanzado hasta 3 y Élite hasta 10; por encima, hablamos de precio a medida.",
   },
   {
     q: "¿Cómo cobro yo a mis socios?",
