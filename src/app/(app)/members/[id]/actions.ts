@@ -14,6 +14,7 @@ import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type Role, type Sex } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -673,4 +674,18 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
 
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
+}
+
+/** E12-17: traza de "se abrió WhatsApp" desde la alerta de retención de la ficha. */
+export async function logMemberWhatsappContactAction(memberId: string): Promise<void> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!(await memberIsInScope(session.user, memberId))) return;
+  await logWhatsappContactOpened({
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    entityType: "Member",
+    entityId: memberId,
+    memberId,
+    reason: "retention_alert",
+  });
 }

@@ -14,6 +14,8 @@ import { PostponePaymentAction, RefundPaymentAction } from "./payment-lifecycle-
 import { BillingStatusFilter } from "./billing-status-filter";
 import { parseFilterValues } from "@/lib/filter-params";
 import type { PaymentStatus } from "@prisma/client";
+import { WhatsAppButton } from "@/components/ui/whatsapp-button";
+import { logPaymentWhatsappContactAction } from "./actions";
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
@@ -166,9 +168,16 @@ export default async function BillingPage({
                     <Badge tone={PAYMENT_STATUS_TONE[p.status]}>{STATUS_LABEL[p.status]}</Badge>
                   </td>
                   <td data-label="Recibo" className="py-2 text-faint">{p.receiptNumber}</td>
-                  <td data-label="Acciones" className="py-2 empty:hidden">
+                  <td data-label="Acciones" className="py-2 empty:hidden flex flex-wrap items-center gap-1.5">
                     {p.status === "PENDING" && <PostponePaymentAction paymentId={p.id} />}
                     {p.status === "PAID" && <RefundPaymentAction paymentId={p.id} />}
+                    {p.status === "FAILED" && (
+                      <WhatsAppButton
+                        phone={p.member.phone}
+                        message={`Hola ${p.member.firstName}, hemos visto que el último recibo de tu cuota no se ha podido cobrar. ¿Puedes revisar tu método de pago?`}
+                        logAction={logPaymentWhatsappContactAction.bind(null, p.id)}
+                      />
+                    )}
                   </td>
                 </tr>
               ))}

@@ -20,7 +20,7 @@ export async function listPayments(
       ...(opts.statuses?.length ? { status: { in: opts.statuses } } : { status: opts.status || undefined }),
       ...(opts.centerIds !== undefined ? { member: { primaryCenterId: { in: opts.centerIds } } } : {}),
     },
-    include: { member: { select: { id: true, firstName: true, lastName: true } } },
+    include: { member: { select: { id: true, firstName: true, lastName: true, phone: true } } },
     orderBy: { date: "desc" },
     take: 100,
   });

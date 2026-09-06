@@ -18,6 +18,8 @@ import {
   LeadNoteForm,
   ConvertLeadForm,
 } from "./lead-detail-actions";
+import { WhatsAppButton } from "@/components/ui/whatsapp-button";
+import { logLeadWhatsappContactAction } from "../actions";
 
 const STATUS_LABEL: Record<string, string> = {
   SIN_CONTACTAR: "Sin contactar",
@@ -151,6 +153,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="space-y-4">
                 <OwnerAssignForm leadId={lead.id} staff={staff} ownerUserId={lead.ownerUserId} />
                 <StageButtons leadId={lead.id} status={lead.status} />
+                {lead.status === "SIN_CONTACTAR" && (
+                  <WhatsAppButton
+                    phone={lead.phone}
+                    message={`Hola ${lead.firstName}, soy de ${lead.center.name}. Hemos recibido tu interés y queríamos ponernos en contacto contigo. ¿Cuándo te viene bien hablar?`}
+                    logAction={logLeadWhatsappContactAction.bind(null, lead.id)}
+                  />
+                )}
               </div>
             </Card>
           )}

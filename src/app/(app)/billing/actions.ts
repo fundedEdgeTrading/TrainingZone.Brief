@@ -7,6 +7,7 @@ import type { PaymentMethod } from "@prisma/client";
 import { confirmLeadClosureForMember } from "@/lib/leads-queries";
 import { createCheckoutSession, type CheckoutResult } from "@/lib/stripe-checkout";
 import { createPaymentWithReceipt } from "@/lib/payments";
+import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
 
 export type PaymentActionResult = { ok: true } | { ok: false; error: string };
 
@@ -66,4 +67,22 @@ export async function createStripeCheckoutAction(formData: FormData): Promise<Ch
   const planId = String(formData.get("planId") ?? "");
   if (!memberId || !planId) return { ok: false, error: "Selecciona un socio y un plan." };
   return createCheckoutSession(session.user.orgId, memberId, planId, session.user.id);
+}
+
+/** E12-17: traza de "se abrió WhatsApp" desde un recibo fallido. */
+export async function logPaymentWhatsappContactAction(paymentId: string): Promise<void> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION"]);
+  const payment = await prisma.payment.findFirst({
+    where: { id: paymentId, orgId: session.user.orgId },
+    select: { memberId: true },
+  });
+  if (!payment || !(await memberIsInScope(session.user, payment.memberId))) return;
+  await logWhatsappContactOpened({
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    entityType: "Payment",
+    entityId: paymentId,
+    memberId: payment.memberId,
+    reason: "failed_payment",
+  });
 }

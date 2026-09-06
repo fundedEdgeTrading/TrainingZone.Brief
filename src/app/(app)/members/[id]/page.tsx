@@ -69,6 +69,8 @@ import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
 import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
 import { StaffChatThread } from "./staff-chat-thread";
+import { WhatsAppButton } from "@/components/ui/whatsapp-button";
+import { logMemberWhatsappContactAction } from "./actions";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -853,6 +855,13 @@ export default async function MemberDetailPage({
                 Venía {retentionRisk.baselineFreq.toFixed(1)} veces por semana (media de las 12 semanas previas) y en
                 las últimas 2 semanas lleva {retentionRisk.recentFreq.toFixed(1)}.
               </p>
+              <div className="mt-3">
+                <WhatsAppButton
+                  phone={member.phone}
+                  message={`Hola ${member.firstName}, hemos visto que últimamente vienes menos por el centro. ¿Va todo bien? Si necesitas cambiar algo de tu plan, dínoslo.`}
+                  logAction={logMemberWhatsappContactAction.bind(null, member.id)}
+                />
+              </div>
             </div>
           )}
 
