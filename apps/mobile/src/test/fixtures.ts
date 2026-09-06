@@ -23,6 +23,8 @@ import type {
   NotificationItem,
   NotificationsResponse,
   PendingFeedback,
+  ProductItem,
+  ProductsResponse,
   RefreshResponse,
   Role,
   ServiceKind,
@@ -180,6 +182,37 @@ export function notificationItem(overrides: Partial<NotificationItem> = {}): Not
 
 export function notificationsResponse(overrides: Partial<NotificationsResponse> = {}): NotificationsResponse {
   return { notifications: [notificationItem()], ...overrides };
+}
+
+export function productItem(overrides: Partial<ProductItem> = {}): ProductItem {
+  return {
+    id: "product-1",
+    name: "Bono 8 sesiones",
+    description: null,
+    imageUrl: null,
+    priceCents: 8000,
+    sessionsIncluded: 8,
+    validityDays: 60,
+    planType: "SESSION_PACK",
+    serviceKind: "GROUP",
+    visible: true,
+    subscribersCount: null,
+    featured: false,
+    ...overrides,
+  };
+}
+
+export function productsResponse(overrides: Partial<ProductsResponse> = {}): ProductsResponse {
+  return {
+    canManage: false,
+    centerName: "TRAINING ZONE La Jota",
+    planTypes: [
+      { value: "SESSION_PACK", label: "Bono de sesiones" },
+      { value: "MONTHLY", label: "Cuota mensual" },
+    ],
+    products: [productItem()],
+    ...overrides,
+  };
 }
 
 export function briefRosterEntry(overrides: Partial<BriefRosterEntry> = {}): BriefRosterEntry {

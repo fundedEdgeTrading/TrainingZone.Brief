@@ -18,6 +18,7 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ProductThumb } from "@/components/ProductThumb";
 import { Icon } from "@/components/Icon";
 import { formatEuros } from "@/utils/format";
+import { isRecurringPlanType } from "@/utils/plan-type";
 import type { ProductItem } from "@/api/types";
 
 // A2 del handoff: catálogo del centro en el primer login del socio. Mientras no
@@ -34,8 +35,15 @@ export default function PlansScreen() {
   // no se está eligiendo plan por primera vez, se está cambiando el que hay.
   const upgrading = state.status === "signedIn" && Boolean(state.user.member?.hasActiveMembership);
   const products = (data?.products ?? []).filter((p) => p.visible);
+  // E5-12: el hueco destacado se sigue quedando con el primer producto (es el
+  // sitio de más atención de la pantalla), pero la insignia "Más elegido" ya
+  // no se pone sola — solo aparece si el propio producto la declara.
   const featured = products.find((p) => p.featured) ?? products[0];
   const rest = products.filter((p) => p.id !== featured?.id);
+  // "Sin permanencia" solo es una promesa cierta cuando NINGÚN producto
+  // mostrado es una cuota recurrente: los bonos puntuales, por definición, no
+  // tienen contrato que renovar.
+  const noneRecurring = products.every((p) => !isRecurringPlanType(p.planType));
 
   return (
     <ScreenContainer
@@ -91,9 +99,11 @@ export default function PlansScreen() {
             </FadeInUp>
           ))}
 
-          <Text style={[typo.rowMetaSmall, { color: theme.textFaint, textAlign: "center" }]}>
-            Sin contrato de permanencia · cancela cuando quieras
-          </Text>
+          {noneRecurring ? (
+            <Text style={[typo.rowMetaSmall, { color: theme.textFaint, textAlign: "center" }]}>
+              Sin contrato de permanencia · cancela cuando quieras
+            </Text>
+          ) : null}
         </>
       )}
 
@@ -145,7 +155,7 @@ function FeaturedPlan({ product }: { product: ProductItem }) {
           </Text>
           <Text style={[typo.rowMeta, { color: theme.textMuted }]}>{subtitleOf(product)}</Text>
         </View>
-        <Badge label="Más elegido" tone="ink" />
+        {product.featured ? <Badge label="Más elegido" tone="ink" /> : null}
       </View>
 
       <View style={{ gap: 7, marginTop: 14 }}>
@@ -160,7 +170,9 @@ function FeaturedPlan({ product }: { product: ProductItem }) {
       <View style={styles.priceRow}>
         <View style={styles.priceBlock}>
           <Text style={[styles.price, { color: theme.text }]}>{formatEuros(product.priceCents)}</Text>
-          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>/mes</Text>
+          {isRecurringPlanType(product.planType) ? (
+            <Text style={[typo.rowMeta, { color: theme.textMuted }]}>/mes</Text>
+          ) : null}
         </View>
         <Button title="Elegir" onPress={() => router.push({ pathname: "/onboarding/pago", params: { planId: product.id } })} />
       </View>

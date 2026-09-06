@@ -463,7 +463,16 @@ export type SaveProductInput = {
 
 /** El cobro con tarjeta se abre SIEMPRE en el navegador del dispositivo, nunca en un WebView. */
 export type CheckoutResponse =
-  | { mode: "stripe"; url: string; planName: string; priceCents: number }
+  | {
+      mode: "stripe";
+      url: string;
+      planName: string;
+      priceCents: number;
+      /** Recurrente (MONTHLY/ONLINE) o bono puntual. La app ya no lo adivina por su cuenta (E5-12). */
+      isRecurring: boolean;
+      /** Fecha del próximo cobro, calculada por el servidor; `null` en un bono puntual. */
+      nextChargeAt: string | null;
+    }
   | { mode: "manual"; planName: string; priceCents: number; reason: string };
 
 // ---------- Mis bonos (B4) ----------

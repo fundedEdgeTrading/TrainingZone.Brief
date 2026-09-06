@@ -15,7 +15,8 @@ import { Icon } from "@/components/Icon";
 import { Divider } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/components/Toast";
-import { formatEuros, formatShortDate } from "@/utils/format";
+import { formatEuros } from "@/utils/format";
+import { isRecurringPlanType } from "@/utils/plan-type";
 
 /**
  * A3 del handoff: confirmar y pagar.
@@ -36,9 +37,10 @@ export default function CheckoutScreen() {
   const [manualReason, setManualReason] = useState<string | null>(null);
 
   const product = data?.products.find((p) => p.id === planId);
-
-  const nextCharge = new Date();
-  nextCharge.setMonth(nextCharge.getMonth() + 1);
+  // E5-12: ni "/mes" ni "siguiente cobro" son ciertos para un bono puntual, y
+  // la fecha del próximo cobro de una cuota recurrente no se calcula aquí —
+  // "hoy + 1 mes" es justo el cálculo que se coló para TODOS los productos.
+  const recurring = product ? isRecurringPlanType(product.planType) : false;
 
   async function pay() {
     if (!product) return;
@@ -90,8 +92,13 @@ export default function CheckoutScreen() {
 
             <View style={[styles.heroDivider, { backgroundColor: "rgba(244,240,232,.14)" }]} />
 
-            <SummaryRow label="Primer cobro hoy" value={formatEuros(product.priceCents, { decimals: true })} />
-            <SummaryRow label="Siguiente cobro" value={formatShortDate(nextCharge.toISOString())} muted />
+            <SummaryRow
+              label={recurring ? "Primer cobro hoy" : "Cobro único"}
+              value={formatEuros(product.priceCents, { decimals: true })}
+            />
+            {recurring ? (
+              <SummaryRow label="Siguiente cobro" value="Al mes de la fecha de alta" muted />
+            ) : null}
           </HeroCard>
 
           <Card style={{ gap: 12 }}>
