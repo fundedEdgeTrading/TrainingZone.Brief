@@ -30,7 +30,12 @@ export default async function PublicLeadFormPage({
           </h1>
           <p className="text-sm text-brand-text-2 mt-1">Cuéntanos sobre ti y te contactamos para tu primera valoración.</p>
         </div>
-        <PublicLeadForm orgSlug={orgSlug} centerSlug={centerSlug} channels={ctx.channels} />
+        <PublicLeadForm
+          orgSlug={orgSlug}
+          centerSlug={centerSlug}
+          orgName={ctx.organization.name}
+          channels={ctx.channels}
+        />
       </div>
     </div>
   );

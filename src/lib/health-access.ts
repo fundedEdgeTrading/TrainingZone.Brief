@@ -92,21 +92,31 @@ export async function getHealthRecordsForLead({
 }
 
 /**
- * Captura inicial de salud de un lead (RB-LEAD-001: obligatorio, aunque sea
- * "ninguna"). Dos orígenes posibles: el propio lead vía formulario público
- * (sin actor, es su propio dato) o el staff que lo atiende (gateado como el
- * resto de escritura de salud). Ambos casos dejan rastro en AuditLog.
+ * Captura inicial de salud de un lead. Dos orígenes posibles: el propio lead
+ * vía formulario público (sin actor, es su propio dato) o el staff que lo
+ * atiende (gateado como el resto de escritura de salud). Ambos casos dejan
+ * rastro en AuditLog.
+ *
+ * E10-01: `consent` es OBLIGATORIO y explícito. Antes esta función estampaba
+ * `consentSignedAt: new Date()` sin mirar, es decir, firmaba por el interesado
+ * un consentimiento que nadie le había pedido (arts. 7 y 9.2.a RGPD). Ahora la
+ * firma la trae quien recogió la casilla, con la versión del texto que la
+ * persona tenía delante; `null` significa que no consta consentimiento, y
+ * entonces `consentSignedAt` se queda vacío en vez de mentir. La versión viaja
+ * en `AuditLog.metadata` porque `HealthRecord` no tiene columna para ella.
  */
 export async function createHealthRecordForLead({
   leadId,
   orgId,
   description,
   actor,
+  consent,
 }: {
   leadId: string;
   orgId: string;
   description: string;
   actor: { userId: string; role: Role } | null;
+  consent: { signedAt: Date; version: string } | null;
 }): Promise<HealthWriteResult> {
   if (actor && !canEditHealthData(actor.role)) return { ok: false, error: "forbidden" };
 
@@ -119,7 +129,7 @@ export async function createHealthRecordForLead({
       severity: "LOW",
       status: "ACTIVE",
       reportedByUserId: actor?.userId,
-      consentSignedAt: new Date(),
+      consentSignedAt: consent?.signedAt ?? null,
     },
   });
 
@@ -130,7 +140,7 @@ export async function createHealthRecordForLead({
       action: "LEAD_HEALTH_RECORD_CREATED",
       entityType: "Lead",
       entityId: leadId,
-      metadata: { recordId: record.id },
+      metadata: { recordId: record.id, consentVersion: consent?.version ?? null },
     },
   });
 

@@ -3,6 +3,7 @@ import type { LeadCloseType, LeadStatus, Role, Sex } from "@prisma/client";
 import { createMemberWithInvitation } from "@/lib/invitations";
 import { createNotificationOnce } from "@/lib/notifications";
 import { createHealthRecordForLead } from "@/lib/health-access";
+import { LEAD_CONSENT_VERSION, resolveLeadHealthCapture } from "@/lib/consent";
 import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 
 /**
@@ -102,7 +103,24 @@ export type CreateLeadInput = {
   hasTrainedNote?: string | null;
   channel: string;
   ownerUserId?: string | null; // RB-LEAD-003: presencial → se autoasigna al actor; web → null
-  healthNote?: string | null; // RB-LEAD-001: "ninguna" también es una respuesta válida
+  /**
+   * E10-01: el formulario PÚBLICO ya no manda texto libre, manda el sí/no de
+   * `hasHealthCondition`. `healthNote` se conserva para el alta en recepción,
+   * donde el interesado está delante y el detalle se puede matizar.
+   */
+  healthNote?: string | null;
+  /** Respuesta al sí/no de salud del formulario público (E10-01). */
+  hasHealthCondition?: boolean | null;
+  /** Casilla específica del dato de salud, nunca premarcada (E10-01). */
+  healthConsent?: boolean;
+  /**
+   * Casilla comercial, SEPARADA de la de salud (E10-01). `Lead` no tiene
+   * columna para ella —el esquema está congelado este trimestre— así que la
+   * prueba del consentimiento se guarda en `AuditLog`, que es append-only y es
+   * exactamente donde el art. 7.1 quiere poder ir a buscarla. Al convertir el
+   * lead se lee de ahí para rellenar `Member.consentMarketing`.
+   */
+  marketingConsent?: boolean;
   actor?: { userId: string; role: Role } | null; // null = autocompletado por el propio lead (formulario público)
   // Rediseño Leads: alta presencial con cierre inmediato ("Cerrado directamente").
   directClose?: { planId?: string | null } | null;
@@ -140,14 +158,39 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
     },
   });
 
-  if (input.healthNote?.trim()) {
+  // E10-01: el dato de salud solo entra si hay casilla marcada. Sin ella el
+  // lead se crea igualmente con sus datos de contacto — que es justo lo que
+  // pide el escenario "sin casilla marcada": la persona no se queda sin poder
+  // pedir cita por no ceder un dato del art. 9.
+  const capture = resolveLeadHealthCapture({
+    hasCondition: input.hasHealthCondition ?? (input.healthNote?.trim() ? true : null),
+    healthConsent: input.healthConsent ?? false,
+  });
+  if (capture.capture) {
     await createHealthRecordForLead({
       leadId: lead.id,
       orgId: input.orgId,
-      description: input.healthNote.trim(),
+      // Recepción puede matizar el detalle con la persona delante; el
+      // formulario público no manda texto y se queda con la frase minimizada.
+      description: input.healthNote?.trim() || capture.description,
       actor: input.actor ?? null,
+      consent: { signedAt: capture.consentSignedAt, version: capture.consentVersion },
     });
   }
+
+  // Consta la respuesta comercial, la haya dado o no: el art. 7.1 exige poder
+  // demostrar que se pidió y qué se contestó, y un "no" registrado evita
+  // volver a preguntar por defecto.
+  await prisma.auditLog.create({
+    data: {
+      orgId: input.orgId,
+      actorUserId: input.actor?.userId ?? null,
+      action: "LEAD_MARKETING_CONSENT_RECORDED",
+      entityType: "Lead",
+      entityId: lead.id,
+      metadata: { granted: input.marketingConsent === true, consentVersion: LEAD_CONSENT_VERSION },
+    },
+  });
 
   if (input.directClose) {
     if (!input.email?.trim()) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };

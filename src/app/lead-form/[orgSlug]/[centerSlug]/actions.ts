@@ -26,7 +26,11 @@ export async function submitPublicLead(
     hasTrainedBefore: formData.get("hasTrainedBefore") === "yes",
     hasTrainedNote: String(formData.get("hasTrainedNote") ?? "") || null,
     channel: String(formData.get("channel") ?? ""),
-    healthNote: String(formData.get("healthNote") ?? "") || null,
+    // E10-01: sí/no en vez de texto libre, y la casilla decide si el dato de
+    // salud llega a guardarse. El formulario público no manda `healthNote`.
+    hasHealthCondition: formData.get("hasHealthCondition") === "yes",
+    healthConsent: formData.get("healthConsent") === "yes",
+    marketingConsent: formData.get("marketingConsent") === "yes",
     ownerUserId: null, // RB-LEAD-003: entra por formulario web, pendiente de asignar
     actor: null,
   });

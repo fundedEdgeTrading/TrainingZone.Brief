@@ -1,22 +1,36 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { ActionForm } from "@/components/ui/action-form";
+import {
+  buildLeadPrivacyNotice,
+  LEAD_HEALTH_CONSENT_LABEL,
+  LEAD_HEALTH_QUESTION,
+  LEAD_MARKETING_CONSENT_LABEL,
+} from "@/lib/consent";
 import { submitPublicLead } from "./actions";
 
 export function PublicLeadForm({
   orgSlug,
   centerSlug,
+  orgName,
   channels,
 }: {
   orgSlug: string;
   centerSlug: string;
+  orgName: string;
   channels: { id: string; label: string }[];
 }) {
   const [sent, setSent] = useState(false);
   const [hasTrained, setHasTrained] = useState(false);
+  // E10-01: el sí/no de salud sustituye al texto libre, y la casilla de salud
+  // solo aparece cuando hay algo que consentir. Ninguna de las dos casillas
+  // nace marcada.
+  const [hasCondition, setHasCondition] = useState(false);
+  const notice = buildLeadPrivacyNotice(orgName);
 
   if (sent) {
     return (
@@ -39,6 +53,31 @@ export function PublicLeadForm({
         return r;
       })}
     >
+      {/* E10-01 · capa informativa del art. 13, primera capa. La segunda capa
+          es /privacidad, enlazada al final. */}
+      <div className="rounded-xl border border-brand-border bg-tz-bone px-4 py-3.5 text-[12.5px] leading-snug text-brand-text-2 space-y-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-muted">Qué hacemos con tus datos</p>
+        <p>
+          <b className="text-tz-black">Responsable:</b> {notice.responsable}
+        </p>
+        <p>
+          <b className="text-tz-black">Finalidad:</b> {notice.finalidad}
+        </p>
+        <p>
+          <b className="text-tz-black">Base jurídica:</b> {notice.baseJuridica}
+        </p>
+        <p>
+          <b className="text-tz-black">Conservación:</b> {notice.conservacion}
+        </p>
+        <p>
+          <b className="text-tz-black">Tus derechos:</b> {notice.derechos}
+        </p>
+        <p>
+          <Link href={notice.politicaUrl} className="underline font-semibold text-tz-black">
+            Política de privacidad completa
+          </Link>
+        </p>
+      </div>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Nombre">
           <Input name="firstName" required placeholder="Tu nombre" />
@@ -108,9 +147,41 @@ export function PublicLeadForm({
           <Input name="hasTrainedNote" placeholder="Qué tipo de entrenamiento, cuánto tiempo..." />
         </Field>
       )}
-      <Field label="¿Alguna lesión, enfermedad o patología?" hint="Escribe “ninguna” si no aplica — es un campo obligatorio por tu seguridad">
-        <Input name="healthNote" required placeholder="Ninguna / detállalo aquí" />
+      <Field label={LEAD_HEALTH_QUESTION} hint="Con un sí/no basta. El detalle lo vemos en la valoración, con tu entrenador delante.">
+        <Select
+          name="hasHealthCondition"
+          value={hasCondition ? "yes" : "no"}
+          onChange={(e) => setHasCondition(e.target.value === "yes")}
+        >
+          <option value="no">No</option>
+          <option value="yes">Sí</option>
+        </Select>
       </Field>
+      {hasCondition && (
+        <label className="flex gap-3 items-start rounded-xl border border-brand-border bg-white px-4 py-3.5 cursor-pointer">
+          <input
+            type="checkbox"
+            name="healthConsent"
+            value="yes"
+            className="w-[18px] h-[18px] mt-0.5 accent-tz-black cursor-pointer shrink-0"
+          />
+          <span className="text-[12.5px] leading-snug text-brand-text-2">
+            <b className="text-tz-black">Dato de salud.</b> {LEAD_HEALTH_CONSENT_LABEL} Si no lo marcas, tu
+            solicitud se envía igual y no guardamos nada sobre tu salud.
+          </span>
+        </label>
+      )}
+      <label className="flex gap-3 items-start rounded-xl border border-brand-border bg-white px-4 py-3.5 cursor-pointer">
+        <input
+          type="checkbox"
+          name="marketingConsent"
+          value="yes"
+          className="w-[18px] h-[18px] mt-0.5 accent-tz-black cursor-pointer shrink-0"
+        />
+        <span className="text-[12.5px] leading-snug text-brand-text-2">
+          <b className="text-tz-black">Comunicaciones comerciales.</b> {LEAD_MARKETING_CONSENT_LABEL}
+        </span>
+      </label>
       <Button type="submit" className="w-full" size="lg">
         Enviar solicitud
       </Button>

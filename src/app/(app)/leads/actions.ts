@@ -44,6 +44,10 @@ export async function createLeadAction(formData: FormData): Promise<LeadWriteRes
     hasTrainedNote: String(formData.get("hasTrainedNote") ?? "") || null,
     channel: String(formData.get("channel") ?? ""),
     healthNote: String(formData.get("healthNote") ?? "") || null,
+    // E10-01: la firma del consentimiento la trae la casilla que marca quien
+    // atiende, no un `new Date()` puesto por el servidor.
+    healthConsent: formData.get("healthConsent") === "yes",
+    marketingConsent: formData.get("marketingConsent") === "yes",
     // RB-LEAD-003: contacto presencial → responsable = quien lo atiende.
     ownerUserId: session.user.id,
     actor: { userId: session.user.id, role: session.user.role },
