@@ -116,6 +116,51 @@ export async function getProgressEntriesForMember({
 }
 
 /**
+ * Detalle clínico bajo demanda (E3-05 · CN-10). La tarjeta del Session Brief
+ * imprimía la descripción cruda de cada condición: nombres de medicamentos,
+ * cirugías y patologías, literalmente, en una pantalla abierta en la sala junto
+ * a las seis personas que entrenan al lado. Es dato del Art. 9 y rompe la regla
+ * básica: **el entrenador lee adaptaciones, no historiales**.
+ *
+ * Ahora la descripción no viaja con el brief: se pide expresamente, y pedirla
+ * deja rastro. Los roles sin autorización reciben `null` — igual que en el
+ * resto del módulo, para no revelar siquiera que el detalle existe.
+ */
+export async function getClinicalDetailForMember({
+  memberId,
+  orgId,
+  actorUserId,
+  actorRole,
+}: {
+  memberId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+}) {
+  if (!canViewHealthData(actorRole)) return null;
+
+  const records = await prisma.healthRecord.findMany({
+    where: { memberId, member: { orgId }, status: { in: OPEN_HEALTH_STATUSES } },
+    orderBy: { reportedAt: "desc" },
+    select: { id: true, type: true, zoneCode: true, side: true, description: true, severity: true, status: true },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "HEALTH_CLINICAL_DETAIL_READ",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: { recordCount: records.length, from: "SESSION_BRIEF" },
+    },
+  });
+
+  return records;
+}
+
+/**
  * El propio socio leyendo SU evolución (portal y app). Entra por el mismo punto
  * único —para que no quede ninguna lectura suelta de `MemberProgressEntry`—
  * pero sin la matriz de roles, que aquí no aplica: el titular del dato no

@@ -5,13 +5,19 @@ import type { Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { resolveAptitude } from "@/lib/aptitude-light";
 
-/** Condición declarada tal y como viaja al brief (web y app leen lo mismo). */
+/**
+ * Condición declarada tal y como viaja al brief (web y app leen lo mismo).
+ *
+ * E3-05: SIN `description`. La descripción clínica —medicamentos, cirugías,
+ * patologías— no sale del servidor con el roster; se pide expresamente con
+ * `getClinicalDetailForMember`, que audita la consulta. Lo que el brief pinta
+ * es la adaptación, no el historial.
+ */
 export type BriefCondition = {
   /** Texto libre heredado. Se pinta si no hay zona del catálogo; nunca compara. */
   zone: string | null;
   zoneCode: InjuryZone | null;
   side: Laterality | null;
-  description: string;
   type: string;
 };
 
@@ -78,12 +84,12 @@ export async function getSessionBrief({
     // deja de limitar por ser antigua. Solo RESOLVED se cae del brief.
     const records = await prisma.healthRecord.findMany({
       where: { memberId: { in: memberIds }, status: { in: OPEN_HEALTH_STATUSES } },
-      select: { memberId: true, zone: true, zoneCode: true, side: true, description: true, type: true },
+      select: { memberId: true, zone: true, zoneCode: true, side: true, type: true },
     });
     for (const r of records) {
       if (!r.memberId) continue;
       const list = healthByMember.get(r.memberId) ?? [];
-      list.push({ zone: r.zone, zoneCode: r.zoneCode, side: r.side, description: r.description, type: r.type });
+      list.push({ zone: r.zone, zoneCode: r.zoneCode, side: r.side, type: r.type });
       healthByMember.set(r.memberId, list);
     }
     aptitudeRules = await prisma.aptitudeRule.findMany({ where: { orgId } });

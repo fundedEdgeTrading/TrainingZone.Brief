@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { setDebrief } from "./actions";
+import { setDebrief, loadClinicalDetail, type ClinicalDetailEntry } from "./actions";
 import type { DebriefFeeling } from "@prisma/client";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
@@ -47,9 +47,26 @@ export default function BriefCard({
 }) {
   const [pending, startTransition] = useTransition();
   const [feeling, setFeeling] = useState<DebriefFeeling | null>(entry.debrief?.feeling ?? null);
+  // E3-05: el detalle clínico no viene con la tarjeta. Se pide, y pedirlo deja
+  // rastro en AuditLog.
+  const [detail, setDetail] = useState<ClinicalDetailEntry[] | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const toast = useToast();
 
   const style = entry.light ? LIGHT_STYLE[entry.light] : null;
+
+  function openDetail() {
+    setLoadingDetail(true);
+    startTransition(async () => {
+      const result = await loadClinicalDetail(entry.bookingId, sessionId);
+      setLoadingDetail(false);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setDetail(result.entries);
+    });
+  }
 
   function tap(f: DebriefFeeling) {
     const previous = feeling;
@@ -111,6 +128,30 @@ export default function BriefCard({
               ))}
             </div>
           )}
+          {entry.light !== null &&
+            (detail ? (
+              <div className="text-xs text-text-2 space-y-1 border-t border-black/5 pt-1.5">
+                {detail.length === 0 ? (
+                  <p className="text-faint">Sin detalle registrado.</p>
+                ) : (
+                  detail.map((d, i) => (
+                    <p key={`d-${i}`}>
+                      <strong>{d.label}</strong> — {d.description}{" "}
+                      <span className="text-faint">({d.status})</span>
+                    </p>
+                  ))
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openDetail}
+                disabled={loadingDetail}
+                className="text-xs underline text-muted hover:text-tz-black disabled:opacity-60"
+              >
+                {loadingDetail ? "Abriendo…" : "Ver detalle clínico"}
+              </button>
+            ))}
         </div>
       )}
 
