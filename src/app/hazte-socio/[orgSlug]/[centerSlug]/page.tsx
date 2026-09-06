@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { PlanType } from "@prisma/client";
-import AptaLogo from "@/components/apta-logo";
+import { OrgLogo } from "@/components/org-logo";
 import { Field, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { getPublicMembershipContext } from "@/lib/public-membership-queries";
@@ -97,12 +97,9 @@ export default async function PublicMembershipPage({
       />
       <div className="w-full max-w-2xl bg-white border border-brand-border rounded-card shadow-pop p-6 sm:p-9">
         <div className="flex flex-col items-center text-center mb-6">
-          {ctx.organization.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización
-            <img src={ctx.organization.logoUrl} alt={ctx.organization.name} className="h-9 w-auto object-contain mb-3" />
-          ) : (
-            <AptaLogo variant="dark" className="text-2xl mb-3" />
-          )}
+          {/* E9-12 · Con la caja declarada siempre: el logo iba justo encima
+              del h1 y sin dimensiones recolocaba la página entera al cargar. */}
+          <OrgLogo url={ctx.organization.logoUrl} alt={ctx.organization.name} className="mb-3" />
           <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text">
             Hazte socio de {ctx.center.name}
           </h1>
