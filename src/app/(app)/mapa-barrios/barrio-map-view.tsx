@@ -7,9 +7,11 @@ import {
   classifyMetric,
   colorForValueClassified,
   colorsByCode,
+  dashedByCode,
   formatMetricValue,
   labelPriority,
   hasMissingValues,
+  inksByCode,
   legendSteps,
   metricAvailable,
   metricDef,
@@ -80,6 +82,11 @@ export function BarrioMapView({
 
   const classification = useMemo(() => classifyMetric(city.points, metric), [city, metric]);
   const colors = useMemo(() => colorsByCode(city.points, metric), [city, metric]);
+  // E11-06 · La tinta del rótulo sale del MISMO relleno que pinta la celda, así
+  // que no pueden discrepar. `readableMetricInk()` ya resolvía esto y solo se
+  // usaba en la tarjeta de foco.
+  const inks = useMemo(() => inksByCode(colors), [colors]);
+  const dashed = useMemo(() => dashedByCode(city.points, metric), [city, metric]);
   const values = useMemo(
     () =>
       Object.fromEntries(
@@ -148,6 +155,8 @@ export function BarrioMapView({
         points={city.points}
         centers={city.centers}
         colors={colors}
+        inks={inks}
+        dashed={dashed}
         values={values}
         priority={priority}
         hovered={hovered}

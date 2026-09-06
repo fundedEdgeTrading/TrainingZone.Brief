@@ -187,13 +187,13 @@ test("formatMetricValue: la tendencia positiva lleva signo y la distancia su uni
   assert.equal(formatMetricValue(30, "members"), "30");
 });
 
-test("readableMetricInk: la cifra del escalón más claro se escribe en tinta, no en hueso", () => {
-  assert.equal(readableMetricInk(SEQUENTIAL_RAMP[0]), RAMP_INK);
-  assert.equal(readableMetricInk(DIVERGING_RAMP[3]), RAMP_INK);
+test("readableMetricInk: la cifra del escalón más claro se escribe en tinta de marca, no en hueso", () => {
+  // E11-06 · La tinta de respaldo es un TOKEN y no un literal: sobre la tarjeta
+  // oscura, `#1d1d1c` daba 1,07:1 — invisible.
+  assert.equal(readableMetricInk(SEQUENTIAL_RAMP[0]), "var(--color-brand-text)");
+  assert.equal(readableMetricInk(DIVERGING_RAMP[3]), "var(--color-brand-text)");
   assert.equal(readableMetricInk(SEQUENTIAL_RAMP[6]), SEQUENTIAL_RAMP[6]);
 });
-
-const RAMP_INK = "#1d1d1c";
 
 test("groupBarriosByCity: cada ciudad con sus barrios y su centro, Zaragoza primero", () => {
   const points = [

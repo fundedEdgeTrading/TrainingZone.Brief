@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { tessellate } from "@/lib/barrio-geometry";
-import type { BarrioCenter, BarrioStat } from "@/lib/barrio-map";
+import { INK_DARK, haloForInk, type BarrioCenter, type BarrioStat } from "@/lib/barrio-map";
 
 /** Metros que se andan en un minuto (≈4,7 km/h): el radio del anillo de cada centro. */
 const WALK_METERS_PER_MINUTE = 78;
@@ -14,12 +14,19 @@ const CELL_EDGE = "#f7f4ed";
 const CELL_EDGE_ACTIVE = "#1d1d1c";
 const RING_STROKE = "#8a8574";
 
+/** Trazo de los barrios con valor negativo (E11-06). */
+const NEGATIVE_DASH = "3 3";
+
 export type BarrioMapProps = {
   /** Barrios de la ciudad activa; al cambiar de ciudad se reconstruye la geometría. */
   points: BarrioStat[];
   centers: BarrioCenter[];
   /** CP → color de relleno de la métrica activa (el mismo que su fila del ranking). */
   colors: Record<string, string>;
+  /** CP → tinta del rótulo, elegida por contraste contra ese relleno (E11-06). */
+  inks: Record<string, string>;
+  /** CP → `true` si el valor es negativo: trazo discontinuo como redundancia no cromática (E11-06). */
+  dashed: Record<string, boolean>;
   /** CP → cifra ya formateada que acompaña al nombre en la etiqueta. */
   values: Record<string, string>;
   /** CP en orden de colocación de etiquetas: primero el de más peso en la métrica. */
@@ -58,6 +65,8 @@ export function BarrioMap({
   points,
   centers,
   colors,
+  inks,
+  dashed,
   values,
   priority,
   hovered,
@@ -93,10 +102,10 @@ export function BarrioMap({
   // Última foto de lo que pinta el mapa. Los manejadores de Leaflet y los
   // temporizadores viven fuera del ciclo de render: leen de aquí en vez de
   // capturar props de un render viejo.
-  const viewRef = useRef({ colors, values, priority, hovered, focus, showLabels, cellOpacity });
+  const viewRef = useRef({ colors, inks, dashed, values, priority, hovered, focus, showLabels, cellOpacity });
   const handlersRef = useRef({ onHover, onSelect });
   useEffect(() => {
-    viewRef.current = { colors, values, priority, hovered, focus, showLabels, cellOpacity };
+    viewRef.current = { colors, inks, dashed, values, priority, hovered, focus, showLabels, cellOpacity };
     handlersRef.current = { onHover, onSelect };
   });
 
@@ -193,7 +202,7 @@ export function BarrioMap({
 
   /** Recolorea celdas y etiquetas sin tocar la geometría. */
   const paint = useCallback(() => {
-    const { colors: fill, hovered: hot, focus: pinned, cellOpacity: base } = viewRef.current;
+    const { colors: fill, inks: ink, dashed: dash, hovered: hot, focus: pinned, cellOpacity: base } = viewRef.current;
     polysRef.current.forEach((layer, code) => {
       const active = code === hot || code === pinned;
       layer.setStyle({
@@ -201,10 +210,20 @@ export function BarrioMap({
         fillOpacity: active ? Math.min(1, base + 0.1) : base,
         color: active ? CELL_EDGE_ACTIVE : CELL_EDGE,
         weight: active ? 2.6 : 1.6,
+        // E11-06 · Redundancia no cromática: los barrios que CAEN llevan borde
+        // discontinuo. La claridad de la rampa ya lleva el signo; esto lo dice
+        // además sin depender de ver ningún color.
+        dashArray: dash[code] ? NEGATIVE_DASH : undefined,
       });
       if (active) layer.bringToFront();
       const el = labelMarkersRef.current.get(code)?.getElement();
-      if (el) el.classList.toggle("hi", active);
+      if (el) {
+        el.classList.toggle("hi", active);
+        // La tinta del rótulo se elige por contraste contra su propia celda: con
+        // tinta fija, sobre el escalón más oscuro la cifra daba 1,12:1.
+        el.style.setProperty("--tz-lbl-ink", ink[code] ?? INK_DARK);
+        el.style.setProperty("--tz-lbl-halo", haloForInk(ink[code] ?? INK_DARK));
+      }
     });
     layoutLabels();
   }, [layoutLabels]);
@@ -354,7 +373,7 @@ export function BarrioMap({
   // Cambio de métrica, resalte o foco: solo relleno, sin tocar geometría.
   useEffect(() => {
     paint();
-  }, [colors, values, hovered, focus, cellOpacity, paint]);
+  }, [colors, inks, dashed, values, hovered, focus, cellOpacity, paint]);
 
   // Las etiquetas también se recolocan al ocultarlas/enseñarlas y al reordenar
   // la prioridad (cambia con la métrica).

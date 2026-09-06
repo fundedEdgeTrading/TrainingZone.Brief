@@ -80,11 +80,31 @@ export function metricDef(metric: BarrioMetric): BarrioMetricDef {
  */
 export const SEQUENTIAL_RAMP = ["#f2eee4", "#e4dac6", "#d5c19b", "#c8ab72", "#b5834b", "#9c5c30", "#8a3420"];
 
-/** Rampa divergente de Tendencia: terracota crítico → hueso neutro → verde `good`. */
-export const DIVERGING_RAMP = ["#8a3420", "#ad6844", "#d0a578", "#ece5d6", "#a8b57e", "#7a8c42", "#4b5a22"];
+/**
+ * Rampa divergente de Tendencia: terracota crítico → hueso neutro → verde `good`.
+ *
+ * E11-06 · **Rehecha.** La anterior era simétrica también en claridad: los pares
+ * (0,6), (1,5) y (2,4) tenían ΔL\* de 1,9 · 4,4 · **0,8**, así que lo único que
+ * separaba "cae un 40 %" de "sube un 40 %" era el eje rojo-verde — exactamente
+ * el que pierde el ~8 % de los hombres. Para un protanope el mapa de Tendencia
+ * era una mancha uniforme.
+ *
+ * Ahora la claridad lleva el signo: el brazo negativo es sistemáticamente más
+ * oscuro que su simétrico positivo, con ΔL\* de 26,4 · 23,1 · 16,4. Un ojo que
+ * no distingue rojo de verde sigue viendo "oscuro = cae, claro = sube". La
+ * redundancia no cromática la completa el trazo discontinuo de los negativos
+ * (ver `dashedByCode`).
+ */
+export const DIVERGING_RAMP = ["#7b2e1c", "#a5583a", "#c99b78", "#ece5d6", "#cbd79b", "#9cb254", "#7a9038"];
 
-/** Tinta legible cuando el valor cae en el escalón más claro de la rampa. */
-export const RAMP_FALLBACK_INK = "#1d1d1c";
+/**
+ * Tinta legible cuando el valor cae en el escalón más claro de la rampa.
+ *
+ * E11-06 · Deja de ser un literal. Sobre la tarjeta OSCURA, `#1d1d1c` daba
+ * 1,07:1 — invisible. Es una superficie de UI, no un dato: le toca el token, que
+ * ya es hueso en tema oscuro y tinta en claro.
+ */
+export const RAMP_FALLBACK_INK = "var(--color-brand-text)";
 
 /**
  * Color con el que escribir una cifra grande sobre fondo claro. La cifra de la
@@ -94,6 +114,61 @@ export const RAMP_FALLBACK_INK = "#1d1d1c";
  */
 export function readableMetricInk(color: string): string {
   return color === SEQUENTIAL_RAMP[0] || color === DIVERGING_RAMP[3] ? RAMP_FALLBACK_INK : color;
+}
+
+// --- Contraste (E11-06) ------------------------------------------------------
+//
+// Estas dos tintas SÍ son literales, y a diferencia de `RAMP_FALLBACK_INK` tienen
+// que serlo: se escriben ENCIMA de la rampa de datos, que es fija y no cambia con
+// el tema. Un rótulo que se volviera hueso en modo oscuro desaparecería sobre el
+// escalón más claro, que sigue siendo hueso en los dos temas.
+
+/** Tinta oscura para los escalones claros de la rampa. */
+export const INK_DARK = "#1d1d1c";
+/** Tinta hueso para los escalones oscuros. */
+export const INK_BONE = "#f7f4ed";
+
+function channelLuminance(channel: number): number {
+  const c = channel / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/** Luminancia relativa WCAG de un `#rrggbb`. */
+export function relativeLuminance(hex: string): number {
+  const value = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => channelLuminance(parseInt(value.slice(i, i + 2), 16)));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Razón de contraste WCAG entre dos colores, de 1 a 21. */
+export function contrastRatio(a: string, b: string): number {
+  const la = relativeLuminance(a);
+  const lb = relativeLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/** Claridad CIE L\* (0 negro, 100 blanco). Es la que decide si dos colores se distinguen sin ver el matiz. */
+export function lightness(hex: string): number {
+  const y = relativeLuminance(hex);
+  return y <= 216 / 24389 ? (y * 24389) / 27 : Math.cbrt(y) * 116 - 16;
+}
+
+/**
+ * E11-06 · Tinta del rótulo sobre una celda, elegida por contraste y no por
+ * costumbre.
+ *
+ * Las etiquetas del mapa se pintaban con tinta FIJA: sobre el escalón 6 el
+ * nombre daba 2,08:1 y la cifra 1,12:1 — ilegible. Y lo llamativo es que
+ * `readableMetricInk()` ya resolvía este problema, pero solo se usaba en la
+ * tarjeta de foco.
+ */
+export function readableInkOn(fill: string): string {
+  return contrastRatio(fill, INK_DARK) >= contrastRatio(fill, INK_BONE) ? INK_DARK : INK_BONE;
+}
+
+/** El halo del rótulo es la tinta contraria: es la superficie sobre la que se lee de verdad. */
+export function haloForInk(ink: string): string {
+  return ink === INK_DARK ? INK_BONE : INK_DARK;
 }
 
 /** Cuántos escalones tiene la rampa. Es el largo de las dos rampas de arriba. */
@@ -293,6 +368,24 @@ export function colorsByCode(points: BarrioStat[], metric: BarrioMetric): Record
   return Object.fromEntries(
     points.map((p) => [p.code, colorForValueClassified(metricValue(p, metric), classification)])
   );
+}
+
+/** Tinta de cada rótulo, indexada por CP. Sale del MISMO relleno que pinta la celda. */
+export function inksByCode(colors: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(colors).map(([code, fill]) => [code, readableInkOn(fill)]));
+}
+
+/**
+ * E11-06 · Qué barrios llevan trazo discontinuo: los que CAEN.
+ *
+ * Es la redundancia no cromática de la métrica divergente. La claridad ya lleva
+ * el signo, pero un patrón distinto lo dice sin depender de ver nada: en una
+ * captura en blanco y negro, o para quien tiene acromatopsia, sigue siendo
+ * legible.
+ */
+export function dashedByCode(points: BarrioStat[], metric: BarrioMetric): Record<string, boolean> {
+  if (classificationKind(metric) !== "diverging") return {};
+  return Object.fromEntries(points.map((p) => [p.code, (metricValue(p, metric) ?? 0) < 0]));
 }
 
 export function formatMetricValue(value: number | null, metric: BarrioMetric): string {
