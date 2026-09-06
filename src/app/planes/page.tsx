@@ -260,6 +260,16 @@ function ComparisonTable() {
             </tr>
           </thead>
           <tbody>
+            {/* E6-05: el argumento de venta más fuerte contra MindBody y
+                Glofox, con fila propia — no escondido en una lista genérica. */}
+            <tr className="border-b border-tz-linen/70">
+              <td data-label="" className="p-3 font-semibold text-brand-text-2">Cero comisión sobre tus cobros</td>
+              {tiers.map((t) => (
+                <td key={t.code} data-label={t.name} className="p-3 sm:text-center text-tz-black">
+                  ✓
+                </td>
+              ))}
+            </tr>
             {CORE_FEATURES.map((label) => (
               <tr key={label} className="border-b border-tz-linen/70">
                 <td data-label="" className="p-3 font-semibold text-brand-text-2">{label}</td>
