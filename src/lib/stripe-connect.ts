@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
 import { publicOrigin } from "@/lib/site";
+import {
+  buildConnectStatus,
+  missingConnectEnvVars,
+  type ConnectStatus,
+} from "@/lib/stripe-connect-status";
 
 /**
  * C.3: "Conectar con Stripe" — Connect Standard, OAuth de un botón.
@@ -111,4 +116,77 @@ export async function deauthorizeStripeAccount(accountId: string | null | undefi
     where: { accountId },
     data: { chargesEnabled: false, payoutsEnabled: false },
   });
+}
+
+/**
+ * HU-ST-07 · Estado completo de la conexión de un gimnasio, para pintar la
+ * tarjeta "Cobros a socios" sin que quede un botón muerto en ninguno de los
+ * cuatro casos posibles.
+ *
+ * Lee en vivo de Stripe (`accounts.retrieve` + el próximo payout) porque
+ * `StripeAccount` solo guarda los dos interruptores: los requisitos pendientes
+ * cambian solos según el gimnasio va subiendo papeles, y una copia local
+ * mentiría a las pocas horas. Si Stripe no responde se devuelve `unavailable` y
+ * la tarjeta degrada con su mensaje, en vez de tumbar /organization entera.
+ */
+export async function getConnectStatus(orgId: string): Promise<ConnectStatus> {
+  const missing = missingConnectEnvVars();
+  const account = await prisma.stripeAccount.findUnique({
+    where: { orgId },
+    select: { accountId: true, chargesEnabled: true, payoutsEnabled: true },
+  });
+
+  // El orden importa: un gimnasio YA conectado en un entorno al que le falta la
+  // clave merece saber que el problema es del entorno, no de su cuenta.
+  if (missing.length > 0) return { state: "not-configured", missing };
+  if (!account) return { state: "not-connected" };
+
+  const stripe = getStripeClient();
+  if (!stripe) return { state: "not-configured", missing: ["STRIPE_SECRET_KEY"] };
+
+  try {
+    const remote = await stripe.accounts.retrieve(account.accountId);
+
+    // El próximo payout solo tiene sentido preguntarlo si Stripe ya paga: en una
+    // cuenta sin payouts la llamada devolvería siempre vacío.
+    let nextPayoutArrival: number | null = null;
+    let nextPayoutCents: number | null = null;
+    if (remote.payouts_enabled) {
+      const payouts = await stripe.payouts.list(
+        { limit: 1, status: "pending" },
+        { stripeAccount: account.accountId }
+      );
+      const next = payouts.data[0];
+      if (next) {
+        nextPayoutArrival = next.arrival_date;
+        nextPayoutCents = next.amount;
+      }
+    }
+
+    // De paso se refresca el espejo local: es la lectura más fresca que vamos a
+    // tener, y `account.updated` puede haberse perdido.
+    if (remote.charges_enabled !== account.chargesEnabled || remote.payouts_enabled !== account.payoutsEnabled) {
+      await prisma.stripeAccount.update({
+        where: { orgId },
+        data: { chargesEnabled: !!remote.charges_enabled, payoutsEnabled: !!remote.payouts_enabled },
+      });
+    }
+
+    return buildConnectStatus({
+      accountId: account.accountId,
+      chargesEnabled: !!remote.charges_enabled,
+      payoutsEnabled: !!remote.payouts_enabled,
+      currentlyDue: remote.requirements?.currently_due ?? [],
+      disabledReason: remote.requirements?.disabled_reason ?? null,
+      nextPayoutArrival,
+      nextPayoutCents,
+    });
+  } catch (error) {
+    console.error("[stripe-connect] no se pudo leer el estado de la cuenta conectada", error);
+    return {
+      state: "unavailable",
+      accountId: account.accountId,
+      error: "No hemos podido consultar el estado de tu cuenta de Stripe ahora mismo.",
+    };
+  }
 }
