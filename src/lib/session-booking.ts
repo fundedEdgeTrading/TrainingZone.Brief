@@ -40,8 +40,23 @@ export function shouldNotifyVacancy(params: {
   cancelledStatus: string;
   wasFull: boolean;
   hasWaitlist: boolean;
+  /**
+   * Instante real de comienzo de la ocurrencia (`enforcementStartsAt`), y el
+   * momento contra el que se compara. E2-09: `cancelSessionBooking` no
+   * comprobaba que la sesión fuera futura, así que limpiar el roster de una
+   * clase antigua mandaba "se ha liberado una plaza" a todos los socios con
+   * bono de esa modalidad. `cancelBookingForMember` sí bloquea el pasado; la
+   * vía de staff, no.
+   *
+   * Una sesión EN CURSO tampoco se avisa: la plaza ya no se puede revender,
+   * y por eso el corte es el comienzo y no el final.
+   */
+  startsAt?: Date;
+  now?: Date;
 }): boolean {
-  return params.cancelledStatus === "BOOKED" && (params.wasFull || params.hasWaitlist);
+  if (params.cancelledStatus !== "BOOKED") return false;
+  if (params.startsAt && params.startsAt.getTime() <= (params.now ?? new Date()).getTime()) return false;
+  return params.wasFull || params.hasWaitlist;
 }
 
 export type BookableSubscription = {

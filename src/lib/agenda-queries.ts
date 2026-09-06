@@ -384,7 +384,16 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
       subscriptionId: true,
       sessionId: true,
       occurrenceDate: true,
-      session: { select: { capacity: true, bookings: { select: { status: true, occurrenceDate: true } } } },
+      session: {
+        select: {
+          capacity: true,
+          // E2-09: hace falta la hora real de comienzo para no anunciar la
+          // plaza de una clase que ya ocurrió.
+          startTime: true,
+          center: { select: { timezone: true } },
+          bookings: { select: { status: true, occurrenceDate: true } },
+        },
+      },
     },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
@@ -424,7 +433,9 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   });
   if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+  // E2-09: solo se anuncia el hueco de una clase que todavía no ha empezado.
+  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
 
@@ -1175,7 +1186,9 @@ export async function discardAttendeeAsStaff(
     }).catch(() => {});
   }
 
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+  // E2-09: el mismo corte que en `cancelSessionBooking` — `startsAt` ya está
+  // calculado aquí arriba para la ventana de descarte.
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
 

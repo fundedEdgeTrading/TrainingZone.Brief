@@ -848,7 +848,9 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   });
   if (!cancelled) return { ok: false, error: "Esta reserva ya no está activa." };
 
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+  // Aquí el pasado ya está bloqueado más arriba ("esta clase ya ha empezado"),
+  // pero el criterio viaja igualmente: la decisión de avisar es una sola.
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
     void notifySessionVacancy({
       orgId: booking.session.orgId,
       sessionId: booking.sessionId,
