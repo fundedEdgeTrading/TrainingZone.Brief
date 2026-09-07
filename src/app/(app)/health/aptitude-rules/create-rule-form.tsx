@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import type { InjuryZone } from "@prisma/client";
 import { createAptitudeRule } from "./actions";
+import { INJURY_ZONES, INJURY_ZONE_LABEL, LATERALITY_LABEL, defaultSideFor } from "@/lib/injury-zones";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
@@ -10,6 +12,8 @@ export default function CreateRuleForm() {
   const [pending, startTransition] = useTransition();
   const toast = useToast();
   const formRef = useRef<HTMLFormElement>(null);
+  const [zoneCode, setZoneCode] = useState<InjuryZone>("HOMBRO");
+  const asksSide = defaultSideFor(zoneCode) === null;
 
   return (
     <form
@@ -20,16 +24,32 @@ export default function CreateRuleForm() {
           if (result.ok) {
             toast.success("Regla añadida.");
             formRef.current?.reset();
+            setZoneCode("HOMBRO");
           } else {
             toast.error(result.error);
           }
         });
       }}
-      className="bg-brand-card border border-brand-border rounded-card p-4 shadow-card grid grid-cols-1 md:grid-cols-5 gap-3 items-end"
+      className="bg-brand-card border border-brand-border rounded-card p-4 shadow-card grid grid-cols-1 md:grid-cols-6 gap-3 items-end"
     >
       <Field label="Zona">
-        <Input name="injuryZone" placeholder="p.ej. hombro derecho" required />
+        <Select name="zoneCode" value={zoneCode} onChange={(e) => setZoneCode(e.target.value as InjuryZone)}>
+          {INJURY_ZONES.map((z) => (
+            <option key={z} value={z}>
+              {INJURY_ZONE_LABEL[z]}
+            </option>
+          ))}
+        </Select>
       </Field>
+      {asksSide && (
+        <Field label="Lado" hint="Vacío = los dos lados">
+          <Select name="side" defaultValue="">
+            <option value="">Cualquiera</option>
+            <option value="IZQUIERDA">{LATERALITY_LABEL.IZQUIERDA}</option>
+            <option value="DERECHA">{LATERALITY_LABEL.DERECHA}</option>
+          </Select>
+        </Field>
+      )}
       <Field label="Bloque">
         <Input name="blockArea" placeholder="p.ej. Empuje vertical" required />
       </Field>

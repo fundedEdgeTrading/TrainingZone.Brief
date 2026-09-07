@@ -4,67 +4,96 @@ import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { centerIsInScope } from "@/lib/guard";
+import { setSessionDebrief } from "@/lib/session-debrief";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
-import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
+import { getClinicalDetailForMember } from "@/lib/health-access";
+import { conditionLabel } from "@/lib/aptitude-light";
+import { HEALTH_STATUS_LABEL } from "@/lib/health-status";
 import type { DebriefFeeling } from "@prisma/client";
 
 export type DebriefActionResult = { ok: true } | { ok: false; error: string };
 
-// Session Debrief (G.1): un toque por persona, <20s para 8 personas.
+// Session Debrief (G.1): un toque por persona, <20s para 8 personas. El color
+// lo pone el dedo del entrenador, nunca una media (E3-07); la escritura la hace
+// `setSessionDebrief`, que es el único canal para web y app.
 export async function setDebrief(
   bookingId: string,
   sessionId: string,
-  feeling: DebriefFeeling
+  feeling: DebriefFeeling,
+  note?: string | null
 ): Promise<DebriefActionResult> {
   const session = await requireSession();
 
-  // La reserva tiene que ser de una sesión de tu organización y que puedas
-  // abrir: sin esto bastaba con estar autenticado (un socio incluido) para
-  // marcar el debrief de cualquier reserva conociendo su id.
-  const booking = await prisma.booking.findFirst({
-    where: { id: bookingId, sessionId, session: { orgId: session.user.orgId } },
-    // `status` para la máquina de estados (E2-02) y `centerId` para el ámbito
-    // de centro (E1-01): las dos comprobaciones cuelgan de la misma lectura.
-    select: { status: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
+  // El ámbito de centro (E1-01) y la máquina de estados de la reserva (E2-02)
+  // los aplica `setSessionDebrief`, que es el único canal de escritura: si
+  // vivieran aquí, la app móvil tendría que repetirlos y volveríamos a tener
+  // dos criterios.
+  const result = await setSessionDebrief({
+    bookingId,
+    sessionId,
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    actorRole: session.user.role,
+    actorCenterId: session.user.centerId,
+    feeling,
+    note,
   });
-  if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
-
-  // E1-01: si el brief de esa sesión no se puede abrir por ámbito de centro,
-  // tampoco se puede escribir su debrief. `canViewSessionDebrief` mira el rol y
-  // quién dirigió la sesión, nunca el centro.
-  if (!(await centerIsInScope(session.user, booking.session.centerId))) {
-    return { ok: false, error: "No se ha encontrado esa reserva." };
-  }
-
-  if (!canViewSessionDebrief(session.user.role, session.user.id, booking.session)) {
-    return { ok: false, error: "No tienes permiso para registrar el debrief de esta sesión." };
-  }
-
-  // RB-RES-010: un debrief marca asistencia, así que primero hay que poder
-  // asistir. Sobre una reserva CANCELLED o WAITLISTED esto guardaba el debrief
-  // y ponía `status = ATTENDED` sin preguntar: una asistencia inexistente que
-  // ocupaba aforo y falseaba adherencia, retención y KPIs.
-  const transition = checkBookingTransition(booking.status, "ATTENDED");
-  if (!transition.ok) return { ok: false, error: transition.error };
-
-  // Y no se escribe NADA si la reserva ha cambiado entre la lectura y la
-  // escritura: la condición de estado viaja dentro del propio UPDATE y el
-  // debrief se deshace con la transacción si no se aplica.
-  const applied = await prisma.$transaction(async (tx) => {
-    const updated = await tx.booking.updateMany({
-      where: { id: bookingId, status: { in: statusesEndingAt("ATTENDED") } },
-      data: { status: "ATTENDED", checkedInAt: new Date() },
-    });
-    if (updated.count === 0) return false;
-    await tx.sessionDebrief.upsert({
-      where: { bookingId },
-      create: { bookingId, feeling },
-      update: { feeling },
-    });
-    return true;
-  });
-  if (!applied) return { ok: false, error: bookingTransitionMessage(booking.status, "ATTENDED") };
+  if (!result.ok) return { ok: false, error: result.error };
 
   revalidateSessionViews(sessionId);
   return { ok: true };
+}
+
+export type ClinicalDetailEntry = { label: string; description: string; severity: string; status: string };
+export type ClinicalDetailResult =
+  | { ok: true; entries: ClinicalDetailEntry[] }
+  | { ok: false; error: string };
+
+/**
+ * E3-05 · "ver detalle clínico". La descripción completa no viaja con el brief:
+ * se pide a propósito y la petición queda en `AuditLog`. Para los roles sin
+ * autorización no hay detalle, y el mensaje no distingue entre "no puedes" y
+ * "no existe" — igual que el resto del módulo de salud.
+ */
+export async function loadClinicalDetail(
+  bookingId: string,
+  sessionId: string
+): Promise<ClinicalDetailResult> {
+  const session = await requireSession();
+
+  // Mismo control que el debrief: la reserva es de una sesión de tu
+  // organización y que puedes abrir. Y el socio sale de la reserva, nunca de un
+  // `memberId` que mande el cliente.
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, sessionId, session: { orgId: session.user.orgId } },
+    select: { memberId: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
+  });
+  if (!booking) return { ok: false, error: "No hay detalle disponible." };
+  // E1-01: el detalle clínico cuelga del brief, así que hereda su frontera de
+  // centro. Va ANTES de leer nada de salud: una sesión ajena no puede dejar
+  // rastro de "lectura legítima" de un dato que nunca se debió leer.
+  if (!(await centerIsInScope(session.user, booking.session.centerId))) {
+    return { ok: false, error: "No hay detalle disponible." };
+  }
+  if (!canViewSessionDebrief(session.user.role, session.user.id, booking.session)) {
+    return { ok: false, error: "No hay detalle disponible." };
+  }
+
+  const records = await getClinicalDetailForMember({
+    memberId: booking.memberId,
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    actorRole: session.user.role,
+  });
+  if (!records) return { ok: false, error: "No hay detalle disponible." };
+
+  return {
+    ok: true,
+    entries: records.map((r) => ({
+      label: conditionLabel({ zone: null, zoneCode: r.zoneCode, side: r.side, type: r.type }),
+      description: r.description,
+      severity: r.severity,
+      status: HEALTH_STATUS_LABEL[r.status],
+    })),
+  };
 }

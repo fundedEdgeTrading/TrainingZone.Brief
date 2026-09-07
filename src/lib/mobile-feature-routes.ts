@@ -27,8 +27,11 @@ export const MOBILE_FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   // Generación y refinado con IA: único módulo con coste marginal real
   // (~0,18 $ por generación, facturados a Apta). E6-03.
   "/trainer/members/[id]/mesocycles": "ia_programacion",
-  // Feedback 1-10 de la sesión: el contraste socio ⟷ entrenador.
-  "/trainer/sessions/[id]/feedback": "feedback_direccion",
+  // `/trainer/sessions/[id]/feedback` sale del mapa: E3-07 retiró la puntuación
+  // por ejes del flujo de sala y la ruta responde 410 sin leer ni escribir
+  // nada. Gatear por plan lo que ya no entrega ningún dato —y exigir token para
+  // contestar "esto ya no existe"— solo dejaría una entrada que aparenta
+  // proteger algo. El color de la sesión se gatea donde ahora se escribe.
   // El panel del entrenador es su día a día (agenda y pendientes): NO se gatea.
 };
 
@@ -58,6 +61,11 @@ export const MOBILE_ROUTES_WITHOUT_FEATURE: readonly string[] = [
   // como la agenda. Se declara aquí para que el test de exhaustividad no
   // dependa de que alguien se acuerde.
   "/trainer/bookings",
+  // E3-07: la puntuación por ejes salió del flujo de sala y esta ruta responde
+  // 410 sin leer ni escribir nada. Se declara aquí —y no en el mapa de gates—
+  // para que el test de exhaustividad la siga cubriendo sin fingir que hay algo
+  // que proteger detrás.
+  "/trainer/sessions",
 ];
 
 /** Normaliza a "/segmento/segmento", sin barra final ni prefijo de la API. */

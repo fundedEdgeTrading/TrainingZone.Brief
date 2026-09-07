@@ -1,11 +1,36 @@
 import { prisma } from "@/lib/prisma";
 import { canViewHealthData, canViewSessionDebrief } from "@/lib/rbac";
 import { isSameDay, resolveOccurrenceDate } from "@/lib/session-occurrences";
-import type { Prisma, Role, AptitudeLight } from "@prisma/client";
+import type { Prisma, Role, AptitudeLight, InjuryZone, Laterality } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { centerScopeFor, isCenterInScope, type ScopedUser } from "@/lib/center-scope";
+import { resolveAptitude } from "@/lib/aptitude-light";
+import { feelingOrigin } from "@/lib/session-debrief";
 
-const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
+/**
+ * Condición declarada tal y como viaja al brief (web y app leen lo mismo).
+ *
+ * E3-05: SIN `description`. La descripción clínica —medicamentos, cirugías,
+ * patologías— no sale del servidor con el roster; se pide expresamente con
+ * `getClinicalDetailForMember`, que audita la consulta. Lo que el brief pinta
+ * es la adaptación, no el historial.
+ */
+export type BriefCondition = {
+  /** Texto libre heredado. Se pinta si no hay zona del catálogo; nunca compara. */
+  zone: string | null;
+  zoneCode: InjuryZone | null;
+  side: Laterality | null;
+  type: string;
+};
+
+export type BriefRule = {
+  injuryZone: string;
+  zoneCode: InjuryZone | null;
+  side: Laterality | null;
+  blockArea: string;
+  light: AptitudeLight;
+  adaptation: string | null;
+};
 
 /**
  * E1-01 (RB-SEG-001): frontera de centro del Session Brief, para el índice.
@@ -86,8 +111,8 @@ export async function getSessionBrief({
   const canSeeHealth = canViewHealthData(actorRole);
   const memberIds = session.bookings.map((b) => b.memberId);
 
-  const healthByMember = new Map<string, { zone: string | null; description: string; type: string }[]>();
-  let aptitudeRules: { injuryZone: string; blockArea: string; light: AptitudeLight; adaptation: string | null }[] = [];
+  const healthByMember = new Map<string, BriefCondition[]>();
+  let aptitudeRules: BriefRule[] = [];
 
   if (canSeeHealth && memberIds.length) {
     // Todo lo que sigue vigente, no solo lo "activo": una lesión en
@@ -95,12 +120,12 @@ export async function getSessionBrief({
     // deja de limitar por ser antigua. Solo RESOLVED se cae del brief.
     const records = await prisma.healthRecord.findMany({
       where: { memberId: { in: memberIds }, status: { in: OPEN_HEALTH_STATUSES } },
-      select: { memberId: true, zone: true, description: true, type: true },
+      select: { memberId: true, zone: true, zoneCode: true, side: true, type: true },
     });
     for (const r of records) {
       if (!r.memberId) continue;
       const list = healthByMember.get(r.memberId) ?? [];
-      list.push({ zone: r.zone, description: r.description, type: r.type });
+      list.push({ zone: r.zone, zoneCode: r.zoneCode, side: r.side, type: r.type });
       healthByMember.set(r.memberId, list);
     }
     aptitudeRules = await prisma.aptitudeRule.findMany({ where: { orgId } });
@@ -119,13 +144,10 @@ export async function getSessionBrief({
 
   const roster = session.bookings.map((b) => {
     const conditions = healthByMember.get(b.memberId) ?? [];
-    const matchedRules = conditions.flatMap((c) =>
-      c.zone ? aptitudeRules.filter((r) => r.injuryZone === c.zone) : []
-    );
-    const worstLight = matchedRules.reduce<AptitudeLight | null>((worst, r) => {
-      if (!worst || LIGHT_RANK[r.light] > LIGHT_RANK[worst]) return r.light;
-      return worst;
-    }, null);
+    // E3-02 empareja por ZONA del catálogo cerrado más lateralidad, no por
+    // igualdad de dos textos libres; E3-03 pone la luz, incluida la de las
+    // condiciones que todavía no tienen regla escrita.
+    const { light, matchedRules, unmatchedConditions } = resolveAptitude(conditions, aptitudeRules);
 
     const isNew = Date.now() - b.member.joinedAt.getTime() < 21 * 24 * 60 * 60 * 1000;
 
@@ -135,7 +157,11 @@ export async function getSessionBrief({
       isNew,
       conditions,
       matchedRules,
-      light: worstLight, // null = sin restricciones conocidas
+      /** Lo declarado que ningún regla traduce: es lo que justifica el ámbar. */
+      unmatchedConditions,
+      // `null` SOLO si no hay nada declarado: es lo que devuelve su significado a
+      // "Sin restricciones".
+      light,
       debrief: b.debrief,
     };
   });
@@ -161,6 +187,12 @@ export type WeeklyDebriefReport = {
     yellowCount: number;
     redCount: number;
     notes: string[];
+    /**
+     * E3-07 · histórico: cuántos de estos colores los DERIVÓ el endpoint de ocho
+     * ejes (criterio retirado) en vez de ponerlos el entrenador. Un informe
+     * mezclando los dos criterios no se puede leer sin saber la proporción.
+     */
+    derivedCount: number;
   }[];
 }[];
 
@@ -212,7 +244,7 @@ export async function getWeeklyDebriefReport(user: ScopedUser, weekStart: Date):
     const key = `${cls.id}:${d.booking.occurrenceDate.toISOString()}`;
     let sessionEntry = trainerEntry.sessionIndex.get(key);
     if (!sessionEntry) {
-      sessionEntry = { sessionId: cls.id, sessionDate: d.booking.occurrenceDate, sessionName: cls.name, greenCount: 0, yellowCount: 0, redCount: 0, notes: [] };
+      sessionEntry = { sessionId: cls.id, sessionDate: d.booking.occurrenceDate, sessionName: cls.name, greenCount: 0, yellowCount: 0, redCount: 0, notes: [], derivedCount: 0 };
       trainerEntry.sessionIndex.set(key, sessionEntry);
       trainerEntry.sessions.push(sessionEntry);
     }
@@ -221,6 +253,7 @@ export async function getWeeklyDebriefReport(user: ScopedUser, weekStart: Date):
     else if (d.feeling === "AMBER") sessionEntry.yellowCount++;
     else if (d.feeling === "RED") sessionEntry.redCount++;
     if (d.note?.trim()) sessionEntry.notes.push(d.note.trim());
+    if (feelingOrigin(d) === "DERIVED") sessionEntry.derivedCount++;
   }
 
   return [...byTrainer.values()]

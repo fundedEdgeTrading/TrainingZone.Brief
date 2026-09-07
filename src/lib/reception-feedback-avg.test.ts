@@ -64,6 +64,9 @@ async function wipe() {
     select: { id: true },
   });
   for (const { id: orgId } of orgs) {
+    // E3-18: leer la media del debrief deja traza en AuditLog, así que la
+    // limpieza tiene que llevársela antes que a la organización.
+    await prisma.auditLog.deleteMany({ where: { orgId } });
     await prisma.sessionDebrief.deleteMany({ where: { booking: { session: { orgId } } } });
     await prisma.booking.deleteMany({ where: { session: { orgId } } });
     await prisma.classSession.deleteMany({ where: { orgId } });

@@ -122,6 +122,13 @@ export default async function FeedbackPage({
               {kpis.collected} de {kpis.total} socios con feedback · compara lo que reportan con el debrief de su
               entrenador
             </span>
+            {/* E3-08: el cuestionario mensual de nueve deslizadores se retiró. Lo ya
+                escrito se conserva y se sigue leyendo aquí; lo nuevo sale del debrief
+                de sesión, la asistencia y el consumo de bono. */}
+            <span className="text-brand-muted-2 text-[13px]">
+              El debrief mensual de nueve dimensiones se retiró (E3-08): lo ya registrado se conserva en modo
+              lectura, y el seguimiento se calcula del debrief de sesión, la asistencia y el consumo de bono.
+            </span>
             <Link href="/feedback/debriefs-semanales" className="text-brand-text-2 font-semibold hover:underline w-fit">
               Ver reporte semanal de debriefs de sesión →
             </Link>

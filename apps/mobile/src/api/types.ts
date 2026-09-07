@@ -278,11 +278,24 @@ export type BriefListItem = {
 
 export type BriefListResponse = { sessions: BriefListItem[] };
 
+/** Zona del catálogo cerrado y lado, campos separados (E3-02). */
+export type BriefCondition = {
+  /** Rótulo heredado de texto libre; solo para pintar cuando no hay `zoneCode`. */
+  zone: string | null;
+  zoneCode: string | null;
+  side: "IZQUIERDA" | "DERECHA" | "BILATERAL" | "NO_APLICA" | null;
+  type: string;
+};
+
 export type BriefRosterEntry = {
   bookingId: string;
   member: { id: string; firstName: string; lastName: string; state: string };
   isNew: boolean;
-  conditions: { zone: string | null; description: string; type: string }[];
+  // E3-05: la descripción clínica YA NO viaja con el roster. El entrenador lee
+  // adaptaciones, no historiales; el detalle se pide aparte y deja AuditLog.
+  conditions: BriefCondition[];
+  /** Condiciones declaradas sin regla asignada: son las que encienden el ámbar (E3-03). */
+  unmatchedConditions: BriefCondition[];
   matchedRules: { injuryZone: string; blockArea: string; light: string; adaptation: string | null }[];
   light: "RED" | "AMBER" | "GREEN" | null;
   debrief: { feeling: "GREEN" | "AMBER" | "RED" } | null;

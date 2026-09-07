@@ -134,7 +134,10 @@ export async function getMemberDetail(orgId: string, memberId: string) {
         take: 30,
         include: { session: true, debrief: true },
       },
-      progressEntries: { orderBy: { date: "desc" } },
+      // E10-02: `progressEntries` YA NO viaja en la ficha. Es dato del Art. 9
+      // (fotos de progreso y composición corporal) y se lee por el punto único,
+      // `getProgressEntriesForMember` en lib/health-access.ts, que aplica la
+      // matriz de permisos y deja rastro. Cargarlo aquí se lo daba a recepción.
       invitation: { select: { usedAt: true, expiresAt: true } },
       clientGoals: { orderBy: { createdAt: "desc" } },
     },

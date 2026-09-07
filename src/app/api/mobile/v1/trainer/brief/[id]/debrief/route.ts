@@ -1,64 +1,47 @@
 import type { NextRequest } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { canViewSessionDebrief } from "@/lib/rbac";
+import { isDebriefFeeling, setSessionDebrief } from "@/lib/session-debrief";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
-import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
-import type { DebriefFeeling } from "@prisma/client";
 import { requireApiRoute } from "../../../../_lib/api-session";
-import { requireApiCenterScope } from "../../../../_lib/api-guards";
 import { apiOk, apiError } from "../../../../_lib/response";
 
-const FEELINGS: DebriefFeeling[] = ["GREEN", "AMBER", "RED"];
-
-// Espejo de src/app/(app)/brief/[id]/actions.ts (setDebrief).
+/**
+ * Debrief de sesión desde la app. E3-07: ya no es un "espejo" de la web que
+ * pueda derivar — web y app escriben por el MISMO canal (`setSessionDebrief`),
+ * con el mismo contrato y la misma gramática: color 🟢🟡🔴 más una frase
+ * opcional, puesto por el dedo del entrenador.
+ *
+ * El ámbito de centro (E1-01) y la máquina de estados de la reserva (E2-02 ·
+ * RB-RES-010) los aplica ese canal: este endpoint fue con el que se verificó el
+ * fallo —`POST …/debrief` sobre una reserva cancelada respondía
+ * `{"saved":true}` y la dejaba en ATTENDED— y ahora la garantía no depende de
+ * que cada superficie se acuerde de repetirla.
+ */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief/[id]/debrief");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id: sessionId } = await params;
 
-  const body = (await req.json().catch(() => null)) as { bookingId?: string; feeling?: string } | null;
-  const bookingId = body?.bookingId;
-  const feeling = body?.feeling;
-  if (!bookingId || !feeling || !FEELINGS.includes(feeling as DebriefFeeling)) {
+  const body = (await req.json().catch(() => null)) as
+    | { bookingId?: string; feeling?: string; note?: string | null }
+    | null;
+  if (!body?.bookingId || !isDebriefFeeling(body.feeling)) {
     return apiError("Falta la reserva o el estado de la sesión.", 400);
   }
 
-  const booking = await prisma.booking.findFirst({
-    where: { id: bookingId, sessionId, session: { orgId: claims.orgId } },
-    select: { status: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
+  const result = await setSessionDebrief({
+    bookingId: body.bookingId,
+    sessionId,
+    orgId: claims.orgId,
+    actorUserId: claims.sub,
+    actorRole: claims.role,
+    actorCenterId: claims.centerId,
+    feeling: body.feeling,
+    note: body.note,
   });
-  if (!booking) return apiError("No se ha encontrado esa reserva.", 404);
-
-  // E1-01: mismo ámbito de centro que la lectura del brief de la que cuelga.
-  const scope = await requireApiCenterScope(claims, booking.session.centerId);
-  if (!scope.ok) return apiError("No se ha encontrado esa reserva.", 404);
-
-  if (!canViewSessionDebrief(claims.role, claims.sub, booking.session)) {
-    return apiError("No tienes permiso para registrar el debrief de esta sesión.", 403);
-  }
-
-  // RB-RES-010, misma costura que la web (`brief/[id]/actions.ts`). Este es el
-  // endpoint con el que se verificó el fallo: `POST …/debrief` sobre una
-  // reserva cancelada respondía `{"saved":true}` y la dejaba en ATTENDED.
-  // 409 y no 400: la petición es correcta, lo que no encaja es el estado.
-  const transition = checkBookingTransition(booking.status, "ATTENDED");
-  if (!transition.ok) return apiError(transition.error, 409);
-
-  const applied = await prisma.$transaction(async (tx) => {
-    const updated = await tx.booking.updateMany({
-      where: { id: bookingId, status: { in: statusesEndingAt("ATTENDED") } },
-      data: { status: "ATTENDED", checkedInAt: new Date() },
-    });
-    if (updated.count === 0) return false;
-    await tx.sessionDebrief.upsert({
-      where: { bookingId },
-      create: { bookingId, feeling: feeling as DebriefFeeling },
-      update: { feeling: feeling as DebriefFeeling },
-    });
-    return true;
-  });
-  if (!applied) return apiError(bookingTransitionMessage(booking.status, "ATTENDED"), 409);
+  // 409 y no 400 cuando el estado no encaja: la petición es correcta, lo que no
+  // encaja es la reserva.
+  if (!result.ok) return apiError(result.error, result.status);
 
   revalidateSessionViews(sessionId);
   return apiOk({ saved: true });
