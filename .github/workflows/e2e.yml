@@ -143,6 +143,14 @@ jobs:
       - name: Tests y cobertura
         run: npm run test:ci
 
+      # E7-04 · la cobertura se publica donde se lee: el resumen del workflow,
+      # que es la primera pantalla al terminar CI. `if: always()` porque el
+      # número interesa igual —o más— cuando algo ha fallado. Los umbrales los
+      # aplica Jest en el paso de arriba; esto solo informa.
+      - name: Publicar cobertura en el resumen
+        if: always()
+        run: node scripts/coverage-summary.mjs
+
       - name: Guardar informe de cobertura
         if: always()
         uses: actions/upload-artifact@v4
