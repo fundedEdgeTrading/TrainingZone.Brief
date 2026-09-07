@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { isDebriefFeeling, setSessionDebrief } from "@/lib/session-debrief";
+import { clearSessionDebrief, isDebriefFeeling, setSessionDebrief } from "@/lib/session-debrief";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { requireApiRoute } from "../../../../_lib/api-session";
 import { apiOk, apiError } from "../../../../_lib/response";
@@ -41,6 +41,33 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   });
   // 409 y no 400 cuando el estado no encaja: la petición es correcta, lo que no
   // encaja es la reserva.
+  if (!result.ok) return apiError(result.error, result.status);
+
+  revalidateSessionViews(sessionId);
+  return apiOk({ saved: true });
+}
+
+// Desmarcar asistencia desde la app (E2-03): el estado local no basta, hay que
+// avisar al servidor o la reserva se queda en ATTENDED para siempre. Mismo
+// canal que el POST (`clearSessionDebrief`), así que lleva el mismo ámbito de
+// centro y la misma máquina de estados.
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRoute(req, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], "/trainer/brief/[id]/debrief");
+  if (!auth.ok) return auth.response;
+  const { claims } = auth;
+  const { id: sessionId } = await params;
+
+  const body = (await req.json().catch(() => null)) as { bookingId?: string } | null;
+  if (!body?.bookingId) return apiError("Falta la reserva.", 400);
+
+  const result = await clearSessionDebrief({
+    bookingId: body.bookingId,
+    sessionId,
+    orgId: claims.orgId,
+    actorUserId: claims.sub,
+    actorRole: claims.role,
+    actorCenterId: claims.centerId,
+  });
   if (!result.ok) return apiError(result.error, result.status);
 
   revalidateSessionViews(sessionId);

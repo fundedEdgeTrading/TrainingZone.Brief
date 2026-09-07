@@ -123,6 +123,63 @@ export async function setSessionDebrief({
   return { ok: true };
 }
 
+/**
+ * Desmarcar asistencia (E2-03): el mismo canal, en sentido contrario. Vuelve
+ * la reserva a `BOOKED` y borra el debrief — nunca a `CANCELLED`, que es lo
+ * que costó garantizar en `booking-transitions.ts` (E2-02). Lleva las mismas
+ * comprobaciones de ámbito de centro y permiso que `setSessionDebrief`: un
+ * segundo canal de escritura sin ellas sería volver a tener dos criterios.
+ */
+export async function clearSessionDebrief({
+  bookingId,
+  sessionId,
+  orgId,
+  actorUserId,
+  actorRole,
+  actorCenterId,
+}: {
+  bookingId: string;
+  sessionId: string;
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  actorCenterId: string | null;
+}): Promise<SetDebriefResult> {
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, sessionId, session: { orgId } },
+    select: { status: true, session: { select: { centerId: true, trainerId: true, directedByUserId: true } } },
+  });
+  if (!booking) return { ok: false, error: "No se ha encontrado esa reserva.", status: 404 };
+
+  const inScope = await isCenterInScope(
+    { id: actorUserId, role: actorRole, orgId, centerId: actorCenterId },
+    booking.session.centerId
+  );
+  if (!inScope) return { ok: false, error: "No se ha encontrado esa reserva.", status: 404 };
+
+  if (!canViewSessionDebrief(actorRole, actorUserId, booking.session)) {
+    return { ok: false, error: "No tienes permiso para registrar el debrief de esta sesión.", status: 403 };
+  }
+
+  const transition = checkBookingTransition(booking.status, "BOOKED");
+  if (!transition.ok) return { ok: false, error: transition.error, status: 409 };
+
+  const applied = await prisma.$transaction(async (tx) => {
+    const updated = await tx.booking.updateMany({
+      where: { id: bookingId, status: { in: statusesEndingAt("BOOKED") } },
+      data: { status: "BOOKED", checkedInAt: null },
+    });
+    if (updated.count === 0) return false;
+    await tx.sessionDebrief.deleteMany({ where: { bookingId } });
+    return true;
+  });
+  if (!applied) {
+    return { ok: false, error: bookingTransitionMessage(booking.status, "BOOKED"), status: 409 };
+  }
+
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // Histórico: de dónde salió el color (escenario "histórico")
 // ---------------------------------------------------------------------------

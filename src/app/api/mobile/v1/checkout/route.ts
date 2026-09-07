@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createMemberCheckout, isSellableInApp, PLAN_NOT_SELLABLE_IN_APP_ERROR } from "@/lib/member-billing";
+import { createMemberCheckout, isRecurring, isSellableInApp, PLAN_NOT_SELLABLE_IN_APP_ERROR } from "@/lib/member-billing";
 import { requireMember } from "../_lib/require-member";
 import { apiOk, apiError } from "../_lib/response";
 
@@ -43,8 +43,28 @@ export async function POST(req: NextRequest) {
     origin: "portal",
   });
 
+  // E5-12: la app calculaba "hoy + 1 mes" ella misma para CUALQUIER producto,
+  // incluidos los bonos puntuales que no tienen "siguiente cobro". El cálculo
+  // se hace aquí, una vez, con la misma regla que decide si el plan es
+  // recurrente (`isRecurring`).
+  const recurring = isRecurring(plan.type);
+  const nextChargeAt = recurring ? nextMonthFrom(new Date()).toISOString() : null;
+
   if (!result.ok) {
     return apiOk({ mode: "manual" as const, planName: plan.name, priceCents: plan.priceCents, reason: result.error });
   }
-  return apiOk({ mode: "stripe" as const, url: result.url, planName: plan.name, priceCents: plan.priceCents });
+  return apiOk({
+    mode: "stripe" as const,
+    url: result.url,
+    planName: plan.name,
+    priceCents: plan.priceCents,
+    isRecurring: recurring,
+    nextChargeAt,
+  });
+}
+
+function nextMonthFrom(date: Date): Date {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + 1);
+  return next;
 }

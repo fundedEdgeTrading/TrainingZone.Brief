@@ -19,9 +19,30 @@ import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
-import type { BriefRosterEntry } from "@/api/types";
+import type { BriefCondition, BriefRosterEntry } from "@/api/types";
 
 const LIGHT_RANK: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
+
+/**
+ * Rótulo de una condición sin regla, SIN la descripción clínica (E3-05: el
+ * entrenador lee adaptaciones, no diagnósticos). El servidor ya no la manda;
+ * aquí solo se compone tipo + zona con lo que sí viaja en el roster.
+ */
+const HEALTH_TYPE_LABEL: Record<string, string> = {
+  INJURY: "Lesión",
+  CHRONIC_CONDITION: "Condición crónica",
+  MEDICATION: "Medicación",
+  SURGERY: "Cirugía",
+  PREGNANCY: "Embarazo",
+  ALLERGY: "Alergia",
+};
+
+function conditionLabel(condition: BriefCondition): string {
+  const type = HEALTH_TYPE_LABEL[condition.type] ?? "Condición";
+  if (!condition.zone) return type;
+  const side = condition.side && condition.side !== "NO_APLICA" ? ` (${condition.side.toLowerCase()})` : "";
+  return `${type} · ${condition.zone}${side}`;
+}
 
 /**
  * Session Brief: con quién estás a punto de entrenar y qué hay que adaptarle.
@@ -186,15 +207,16 @@ function RosterCard({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: 
     const previous = feeling;
     // Un toque = asistió y el debrief queda en verde; el matiz (regular/mal) se
     // afina en el feedback 1-10, que es donde hay ocho ejes para decirlo.
+    // El segundo toque desmarca: también se manda al servidor (E2-03), para
+    // que la Booking vuelva a BOOKED y el bono no quede consumido a ciegas.
     const next = feeling ? null : "GREEN";
     setFeeling(next);
-    if (!next) return;
     saveDebrief.mutate(
       { bookingId: entry.bookingId, feeling: next },
       {
         onError: () => {
           setFeeling(previous);
-          toast.show("No se pudo marcar la asistencia.", "critical");
+          toast.show("No se pudo actualizar la asistencia.", "critical");
         },
       }
     );
@@ -219,11 +241,25 @@ function RosterCard({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: 
         </View>
 
         {entry.matchedRules.map((rule, index) => (
-          <View key={index} style={[styles.adaptation, { backgroundColor: theme.sheet }]}>
+          <View key={`rule-${index}`} style={[styles.adaptation, { backgroundColor: theme.sheet }]}>
             <Text style={[typo.rowTitleSmall, { color: theme.text }]}>{rule.blockArea}</Text>
             {rule.adaptation ? (
               <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{rule.adaptation}</Text>
             ) : null}
+          </View>
+        ))}
+
+        {/* Condición declarada sin regla asignada (RB-SALUD-010, E3-01/E3-03):
+            no hay adaptación que pintar, pero no puede desaparecer del brief
+            como si no existiera — es justo la que más se salta hoy. Sin
+            descripción clínica (E3-05): solo tipo y zona. */}
+        {entry.unmatchedConditions.map((condition, index) => (
+          <View
+            key={`unmatched-${index}`}
+            style={[styles.adaptation, { backgroundColor: theme.sheet, borderWidth: 1, borderColor: theme.warning }]}
+          >
+            <Text style={[typo.rowTitleSmall, { color: theme.warning }]}>Condición sin regla asignada</Text>
+            <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{conditionLabel(condition)}</Text>
           </View>
         ))}
       </View>
@@ -233,6 +269,7 @@ function RosterCard({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: 
 
 /** Fila compacta: para quien no lleva nada que adaptar. */
 function CompactRow({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: string }) {
+  const toast = useToast();
   const [feeling, setFeeling] = useState(entry.debrief?.feeling ?? null);
   const saveDebrief = useSaveDebrief(sessionId);
 
@@ -246,12 +283,21 @@ function CompactRow({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: 
           checked={Boolean(feeling)}
           busy={saveDebrief.isPending}
           onPress={() => {
-            if (feeling) {
-              setFeeling(null);
-              return;
-            }
-            setFeeling("GREEN");
-            saveDebrief.mutate({ bookingId: entry.bookingId, feeling: "GREEN" }, { onError: () => setFeeling(null) });
+            const previous = feeling;
+            // Desmarcar también se manda al servidor (E2-03): dejarlo solo en
+            // estado local es lo que hacía que la reserva siguiera en ATTENDED
+            // para siempre y el check volviera a aparecer al recargar.
+            const next = feeling ? null : "GREEN";
+            setFeeling(next);
+            saveDebrief.mutate(
+              { bookingId: entry.bookingId, feeling: next },
+              {
+                onError: () => {
+                  setFeeling(previous);
+                  toast.show("No se pudo actualizar la asistencia.", "critical");
+                },
+              }
+            );
           }}
         />
       }

@@ -18,13 +18,14 @@ import { SkeletonList } from "@/components/Skeleton";
 import { ProductThumb } from "@/components/ProductThumb";
 import { Icon } from "@/components/Icon";
 import { formatEuros } from "@/utils/format";
+import { isRecurringPlanType } from "@/utils/plan-type";
 import type { ProductItem } from "@/api/types";
 
 // A2 del handoff: catálogo del centro en el primer login del socio. Mientras no
 // haya bono vivo, esta pantalla sustituye a las tabs (ver (tabs)/_layout.tsx).
 export default function PlansScreen() {
   const theme = useTheme();
-  const { state, logout } = useAuth();
+  const { state } = useAuth();
   const { data, isLoading, isError, refetch, isRefetching } = useProducts();
 
   const firstName = state.status === "signedIn" ? state.user.member?.firstName ?? state.user.name.split(" ")[0] : "";
@@ -36,9 +37,17 @@ export default function PlansScreen() {
   // HU-ST-10/D-S3: el plan ONLINE no se enlaza a su compra desde la app (el
   // servidor ya no se lo manda al socio; esto cubre a quien entre aquí con rol
   // de dirección, que sí lo recibe para poder gestionarlo).
+  //
+  // E5-12: el hueco destacado se sigue quedando con el primer producto (es el
+  // sitio de más atención de la pantalla), pero la insignia "Más elegido" ya
+  // no se pone sola — solo aparece si el propio producto la declara.
   const products = (data?.products ?? []).filter((p) => p.visible && p.sellableInApp);
   const featured = products.find((p) => p.featured) ?? products[0];
   const rest = products.filter((p) => p.id !== featured?.id);
+  // "Sin permanencia" solo es una promesa cierta cuando NINGÚN producto
+  // mostrado es una cuota recurrente: los bonos puntuales, por definición, no
+  // tienen contrato que renovar.
+  const noneRecurring = products.every((p) => !isRecurringPlanType(p.planType));
 
   return (
     <ScreenContainer
@@ -49,18 +58,18 @@ export default function PlansScreen() {
         <ScreenHeader
           kicker={centerName ? centerName.toUpperCase() : "TU CENTRO"}
           title={upgrading ? "Ampliar tu bono" : firstName ? `Elige tu plan, ${firstName}` : "Elige tu plan"}
-          tight={upgrading}
+          tight
           right={
-            upgrading ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Volver"
-                onPress={() => goBack("/mas")}
-                style={[styles.backButton, { borderColor: theme.border }]}
-              >
-                <Icon name="chevron-left" size={17} color={theme.text} />
-              </Pressable>
-            ) : undefined
+            // E5-14 (D-M3): con el muro retirado, esta pantalla ya no es la
+            // única puerta de entrada a la app — siempre hay que poder volver.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Volver"
+              onPress={() => goBack("/mas")}
+              style={[styles.backButton, { borderColor: theme.border }]}
+            >
+              <Icon name="chevron-left" size={17} color={theme.text} />
+            </Pressable>
           }
         />
         <Text style={[typo.rowMeta, { color: theme.textMuted, marginTop: 8 }]}>
@@ -94,19 +103,14 @@ export default function PlansScreen() {
             </FadeInUp>
           ))}
 
-          <Text style={[typo.rowMetaSmall, { color: theme.textFaint, textAlign: "center" }]}>
-            Sin contrato de permanencia · cancela cuando quieras
-          </Text>
+          {noneRecurring ? (
+            <Text style={[typo.rowMetaSmall, { color: theme.textFaint, textAlign: "center" }]}>
+              Sin contrato de permanencia · cancela cuando quieras
+            </Text>
+          ) : null}
         </>
       )}
 
-      {/* Salir solo tiene sentido en el gate: quien viene de «Ampliar» ya está
-          dentro de la app y solo quiere volver. */}
-      {!upgrading ? (
-        <Pressable accessibilityRole="button" onPress={logout} style={styles.logout}>
-          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>Cerrar sesión</Text>
-        </Pressable>
-      ) : null}
     </ScreenContainer>
   );
 }
@@ -148,7 +152,7 @@ function FeaturedPlan({ product }: { product: ProductItem }) {
           </Text>
           <Text style={[typo.rowMeta, { color: theme.textMuted }]}>{subtitleOf(product)}</Text>
         </View>
-        <Badge label="Más elegido" tone="ink" />
+        {product.featured ? <Badge label="Más elegido" tone="ink" /> : null}
       </View>
 
       <View style={{ gap: 7, marginTop: 14 }}>
@@ -163,7 +167,9 @@ function FeaturedPlan({ product }: { product: ProductItem }) {
       <View style={styles.priceRow}>
         <View style={styles.priceBlock}>
           <Text style={[styles.price, { color: theme.text }]}>{formatEuros(product.priceCents)}</Text>
-          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>/mes</Text>
+          {isRecurringPlanType(product.planType) ? (
+            <Text style={[typo.rowMeta, { color: theme.textMuted }]}>/mes</Text>
+          ) : null}
         </View>
         <Button title="Elegir" onPress={() => router.push({ pathname: "/onboarding/pago", params: { planId: product.id } })} />
       </View>
@@ -207,6 +213,5 @@ const styles = StyleSheet.create({
   priceBlock: { flexDirection: "row", alignItems: "baseline", gap: 4 },
   price: { fontFamily: fonts.bold, fontSize: 27, ...tabular },
   priceSmall: { fontFamily: fonts.bold, fontSize: 22, ...tabular },
-  logout: { alignSelf: "center", paddingVertical: 10 },
   backButton: { width: 40, height: 40, borderRadius: radii.control, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 });

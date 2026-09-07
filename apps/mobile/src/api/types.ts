@@ -21,6 +21,8 @@ export type MeResponse = {
   role: Role;
   orgId: string;
   centerId: string | null;
+  /** Preferencia explícita del socio/entrenador, fuente única con la web (D-M5, E13-02). */
+  theme: "LIGHT" | "DARK";
   /** Solo para MEMBER: resuelve el gate de compra del primer login (A2). */
   member: {
     id: string;
@@ -68,6 +70,8 @@ export type BookableSession = {
   canBook: boolean;
   /** Cancelación gratuita: fuera de esa ventana, cancelar consume la sesión del bono. */
   canCancelFreely: boolean;
+  /** Antelación de la ventana del centro, en horas (E2-06): la app ya no la escribe a pelo. */
+  cancelWindowHours: number;
   myBookingId: string | null;
   myBookingStatus: BookingStatus | null;
 };
@@ -111,6 +115,8 @@ export type UpcomingBooking = {
   sessionCancelled: boolean;
   full: boolean;
   canCancelFreely: boolean;
+  /** Antelación de la ventana del centro, en horas (E2-06). */
+  cancelWindowHours: number;
 };
 
 export type PendingFeedback = {
@@ -478,7 +484,16 @@ export type SaveProductInput = {
 
 /** El cobro con tarjeta se abre SIEMPRE en el navegador del dispositivo, nunca en un WebView. */
 export type CheckoutResponse =
-  | { mode: "stripe"; url: string; planName: string; priceCents: number }
+  | {
+      mode: "stripe";
+      url: string;
+      planName: string;
+      priceCents: number;
+      /** Recurrente (MONTHLY/ONLINE) o bono puntual. La app ya no lo adivina por su cuenta (E5-12). */
+      isRecurring: boolean;
+      /** Fecha del próximo cobro, calculada por el servidor; `null` en un bono puntual. */
+      nextChargeAt: string | null;
+    }
   | { mode: "manual"; planName: string; priceCents: number; reason: string };
 
 // ---------- Mis bonos (B4) ----------

@@ -426,6 +426,9 @@ export async function getBookableSessions(
         startsAt,
         canBook: startsAt.getTime() - now.getTime() >= MIN_LEAD_MINUTES * 60 * 1000,
         canCancelFreely: canCancelWithoutPenalty(startsAt),
+        // E2-06: la app pintaba "12 h" a pelo mientras el servidor aplicaba
+        // esta ventana; con el número viajando ya no puede desincronizarse.
+        cancelWindowHours: CANCEL_WINDOW_HOURS,
         myBookingId: myBooking?.id ?? null,
         myBookingStatus: myBooking?.status ?? null,
       };
@@ -478,6 +481,8 @@ export type UpcomingBooking = {
   /** La clase la anuló el centro: la reserva sigue viva pero ya no ocupa cupo. */
   sessionCancelled: boolean;
   canCancelFreely: boolean;
+  /** Horas de antelación de la ventana de cancelación del centro (E2-06). */
+  cancelWindowHours: number;
   /** Aforo de esa ocurrencia ya cubierto. Si es `false` con `status: WAITLISTED`, hay hueco para reclamarlo. */
   full: boolean;
 };
@@ -565,7 +570,7 @@ export async function getMemberUpcomingBookings(
     })
     .filter((b) => b.startsAt.getTime() > now)
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-    .map((b) => ({ ...b, canCancelFreely: canCancelWithoutPenalty(b.startsAt) }));
+    .map((b) => ({ ...b, canCancelFreely: canCancelWithoutPenalty(b.startsAt), cancelWindowHours: CANCEL_WINDOW_HOURS }));
 }
 
 /**

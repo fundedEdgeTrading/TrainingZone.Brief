@@ -3,13 +3,15 @@ import { ActivityIndicator, Animated, Text, View, StyleSheet } from "react-nativ
 import { Redirect, Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/auth/auth-context";
-import { hasTaskInbox, isTrainerRole, needsMembershipGate, tabsFor, type TabName } from "@/auth/routes";
+import { hasTaskInbox, isAppSupportedRole, isTrainerRole, tabsFor, type TabName } from "@/auth/routes";
 import { useNotifications, useTasks, useTrainerPanel } from "@/api/queries";
 import { useTheme, layout } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
 import { easeOutSoft, tabFade, tabIconPop, useReducedMotion } from "@/theme/motion";
 import { Icon, type IconName } from "@/components/Icon";
 import { PortalGate } from "@/components/PortalGate";
+import { UnsupportedRoleScreen } from "@/components/UnsupportedRoleScreen";
+import { MembershipBanner } from "@/components/MembershipBanner";
 import type { Role } from "@/api/types";
 
 /**
@@ -103,8 +105,10 @@ export default function TabsLayout() {
     );
   }
   if (state.status === "signedOut") return <Redirect href="/login" />;
-  // Gate de compra (A2): sin bono vivo, el socio no entra al portal.
-  if (needsMembershipGate(state.user)) return <Redirect href="/onboarding/planes" />;
+  // Recorte a dos roles (D-M4, E13-01): antes de repartir pestañas, ni
+  // siquiera se pregunta por ellas si el rol no es de los que la app
+  // conserva — así no queda ni una pestaña ni una rejilla vacía para el resto.
+  if (!isAppSupportedRole(state.user.role)) return <UnsupportedRoleScreen role={state.user.role} />;
 
   // `tabsFor` deja al menos «Más» a un rol sin pestañas declaradas: sin eso la
   // barra saldría vacía y el usuario se quedaría dentro de la app sin ninguna
@@ -117,6 +121,7 @@ export default function TabsLayout() {
   return (
     <>
       <PortalGate isMember={state.user.role === "MEMBER"} />
+      <MembershipBanner />
       <Tabs
         // `backBehavior` por defecto es `firstRoute`, y eso rompía TODAS las
         // flechas de «volver» de las pantallas que son pestaña oculta (Aforo,
@@ -143,8 +148,11 @@ export default function TabsLayout() {
           // Se toma el valor de ENTRADA, que es el que se mira.
           animation: "fade",
           transitionSpec: { animation: "timing", config: { duration: tabFade.in, easing: easeOutSoft } },
-          tabBarActiveTintColor: theme.gold,
-          tabBarInactiveTintColor: theme.textFaint,
+          // E8-04: theme.gold sobre blanco da 2,20:1 y theme.textFaint 2,54:1
+          // — ni el 3:1 de componente ni el 4,5:1 de texto. La navegación
+          // principal era ilegible al sol. goldText/textMuted sí cumplen.
+          tabBarActiveTintColor: theme.goldText,
+          tabBarInactiveTintColor: theme.textMuted,
           // La barra va FIJADA al borde inferior, a todo el ancho y sin margen
           // por debajo: antes flotaba con 12 px a los lados y un hueco variable
           // abajo (`insets.bottom - 4`), que en los móviles sin barra de gestos
@@ -169,7 +177,7 @@ export default function TabsLayout() {
             elevation: 0,
             shadowOpacity: 0,
           },
-          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 9.5, letterSpacing: 0.3 },
+          tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.3 },
           // Con el teclado abierto la barra taparía el campo que se está
           // escribiendo (buscadores de socios, notas del feedback).
           tabBarHideOnKeyboard: true,
@@ -247,7 +255,9 @@ function TabBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <View style={[styles.badge, { backgroundColor: theme.gold }]}>
-      <Text style={[styles.badgeText, { color: theme.inkText }]} numberOfLines={1}>
+      {/* E8-10: el círculo del contador es de altura fija (15 px) — sin tope,
+          el 200 % de WCAG 1.4.4 lo desborda en vez de quedarse dentro. */}
+      <Text style={[styles.badgeText, { color: theme.inkText }]} numberOfLines={1} maxFontSizeMultiplier={1.3}>
         {count > 9 ? "9+" : count}
       </Text>
     </View>
@@ -268,5 +278,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: { fontFamily: fonts.bold, fontSize: 9, lineHeight: 12 },
+  badgeText: { fontFamily: fonts.bold, fontSize: 11, lineHeight: 13 },
 });

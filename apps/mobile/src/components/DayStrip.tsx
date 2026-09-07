@@ -67,6 +67,6 @@ export function DayStrip({
 const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: 8, paddingHorizontal: layout.screenPadding },
   day: { width: 52, height: 60, borderRadius: radii.chip, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 2 },
-  weekday: { fontFamily: fonts.bold, fontSize: 9, letterSpacing: 0.8 },
+  weekday: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.8 },
   number: { fontFamily: fonts.bold, fontSize: 16, ...tabular },
 });
