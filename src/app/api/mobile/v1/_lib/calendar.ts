@@ -7,6 +7,15 @@ import { sessionServiceKind } from "@/lib/members-queries";
  * ficha D3). Se construye solo con `Booking.occurrenceDate`, que ya guarda el
  * día concreto de la serie recurrente: no hay que expandir ocurrencias.
  */
+/**
+ * E1-06 (RB-SEG-004): este tipo NO declara `feedbackAvg`, y ese es el punto.
+ *
+ * `debriefAverage` promedia técnica, actitud, energía, **movilidad** y **dolor
+ * invertido**: es un dato de salud, y la matriz de permisos excluye a recepción
+ * explícitamente (`canViewHealthData`, rbac.ts). Al ser una clave que el tipo no
+ * tiene, añadirla de vuelta a este payload rompe la compilación en vez de
+ * filtrar el dato en silencio — que es justo lo que pedía la historia.
+ */
 export type CalendarEntryDto = {
   bookingId: string;
   day: string;
@@ -17,13 +26,17 @@ export type CalendarEntryDto = {
   trainerName: string | null;
   serviceKind: "EP" | "GROUP";
   status: "BOOKED" | "WAITLISTED" | "ATTENDED" | "NO_SHOW" | "CANCELLED";
+};
+
+/** La misma entrada, para quien sí puede ver el debrief. */
+export type CalendarEntryWithDebriefDto = CalendarEntryDto & {
   /** Nota media del feedback del entrenador (0-10) si la sesión ya se puntuó. */
   feedbackAvg: number | null;
 };
 
-export type MemberCalendarDto = {
+export type MemberCalendarDto<Entry extends CalendarEntryDto = CalendarEntryDto> = {
   month: string;
-  entries: CalendarEntryDto[];
+  entries: Entry[];
   summary: { attended: number; booked: number; noShow: number };
 };
 
@@ -54,44 +67,16 @@ export function debriefAverage(debrief: {
   return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10;
 }
 
-/**
- * `includeDebrief` decide si se manda `feedbackAvg` (la media del debrief que
- * el entrenador rellena tras la sesión — técnica, actitud, dolor percibido...
- * confidencial por `canViewSessionDebrief`, rbac.ts). Es `false` por defecto:
- * el calendario del PROPIO socio (`portal/member-calendar`) no debe llevarlo
- * nunca, y hasta ahora lo llevaba sin ningún control. El calendario que
- * consulta el staff sobre la ficha de un socio (`members/[id]/calendar`) sí lo
- * pide explícitamente.
- */
-export async function getMemberCalendar(
-  memberId: string,
-  month: string | null,
-  includeDebrief = false
-): Promise<MemberCalendarDto> {
-  const { start, end, key } = monthRange(month);
+const CALENDAR_SESSION_SELECT = {
+  name: true,
+  classType: true,
+  startTime: true,
+  endTime: true,
+  center: { select: { name: true } },
+  trainer: { select: { name: true } },
+} as const;
 
-  const bookings = await prisma.booking.findMany({
-    where: { memberId, occurrenceDate: { gte: start, lt: end } },
-    include: {
-      session: { select: { name: true, classType: true, startTime: true, endTime: true, center: { select: { name: true } }, trainer: { select: { name: true } } } },
-      ...(includeDebrief ? { debrief: true } : {}),
-    },
-    orderBy: [{ occurrenceDate: "asc" }],
-  });
-
-  const entries: CalendarEntryDto[] = bookings.map((b) => ({
-    bookingId: b.id,
-    day: formatDateParam(b.occurrenceDate),
-    sessionName: b.session.name,
-    startTime: b.session.startTime,
-    endTime: b.session.endTime,
-    centerName: b.session.center.name,
-    trainerName: b.session.trainer?.name ?? null,
-    serviceKind: sessionServiceKind(b.session.classType),
-    status: b.status,
-    feedbackAvg: "debrief" in b ? debriefAverage(b.debrief) : null,
-  }));
-
+function summarize<Entry extends CalendarEntryDto>(key: string, entries: Entry[]): MemberCalendarDto<Entry> {
   return {
     month: key,
     entries,
@@ -101,4 +86,72 @@ export async function getMemberCalendar(
       noShow: entries.filter((e) => e.status === "NO_SHOW").length,
     },
   };
+}
+
+/**
+ * Calendario mensual SIN nada derivado del debrief.
+ *
+ * Es el que reciben el propio socio (`portal/member-calendar`) y los roles del
+ * staff que no ven datos de salud, recepción entre ellos (E1-06). No es una
+ * versión recortada por prudencia: la clave `feedbackAvg` no existe en el
+ * payload, así que tampoco llega como `null` —lo que ya diría que el dato
+ * existe— ni puede volver por descuido sin romper la compilación.
+ */
+export async function getMemberCalendar(memberId: string, month: string | null): Promise<MemberCalendarDto> {
+  const { start, end, key } = monthRange(month);
+
+  const bookings = await prisma.booking.findMany({
+    where: { memberId, occurrenceDate: { gte: start, lt: end } },
+    include: { session: { select: CALENDAR_SESSION_SELECT } },
+    orderBy: [{ occurrenceDate: "asc" }],
+  });
+
+  return summarize(
+    key,
+    bookings.map((b) => ({
+      bookingId: b.id,
+      day: formatDateParam(b.occurrenceDate),
+      sessionName: b.session.name,
+      startTime: b.session.startTime,
+      endTime: b.session.endTime,
+      centerName: b.session.center.name,
+      trainerName: b.session.trainer?.name ?? null,
+      serviceKind: sessionServiceKind(b.session.classType),
+      status: b.status,
+    }))
+  );
+}
+
+/**
+ * El mismo calendario, con la media del debrief que el entrenador rellena tras
+ * la sesión. Solo para quien pasa `canViewHealthData` (rbac.ts): el promedio
+ * incluye movilidad y dolor.
+ */
+export async function getMemberCalendarWithDebrief(
+  memberId: string,
+  month: string | null
+): Promise<MemberCalendarDto<CalendarEntryWithDebriefDto>> {
+  const { start, end, key } = monthRange(month);
+
+  const bookings = await prisma.booking.findMany({
+    where: { memberId, occurrenceDate: { gte: start, lt: end } },
+    include: { session: { select: CALENDAR_SESSION_SELECT }, debrief: true },
+    orderBy: [{ occurrenceDate: "asc" }],
+  });
+
+  return summarize(
+    key,
+    bookings.map((b) => ({
+      bookingId: b.id,
+      day: formatDateParam(b.occurrenceDate),
+      sessionName: b.session.name,
+      startTime: b.session.startTime,
+      endTime: b.session.endTime,
+      centerName: b.session.center.name,
+      trainerName: b.session.trainer?.name ?? null,
+      serviceKind: sessionServiceKind(b.session.classType),
+      status: b.status,
+      feedbackAvg: debriefAverage(b.debrief),
+    }))
+  );
 }

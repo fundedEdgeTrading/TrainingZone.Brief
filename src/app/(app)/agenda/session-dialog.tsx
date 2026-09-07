@@ -170,7 +170,15 @@ export default function SessionDialog({
     fd.set("id", dlg.id);
     fd.set("centerId", centerId);
     startDeleteTransition(async () => {
-      const res = await deleteSessionAction(fd);
+      let res = await deleteSessionAction(fd);
+      // RB-AGENDA-010: con asistencias ya registradas el borrado se para y pide
+      // confirmación expresa — borrarlas destruye histórico y no devuelve esas
+      // sesiones al bono. Solo entonces se repite con el visto bueno.
+      if (!res.ok && res.needsConfirmation) {
+        if (!window.confirm(`${res.error}\n\n¿Borrarla de todos modos?`)) return;
+        fd.set("confirmSettled", "on");
+        res = await deleteSessionAction(fd);
+      }
       if (res.ok) {
         toast.success("Sesión eliminada");
         onDone();

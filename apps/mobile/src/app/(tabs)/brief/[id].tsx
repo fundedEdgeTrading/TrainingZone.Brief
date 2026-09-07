@@ -15,6 +15,7 @@ import { Avatar } from "@/components/Avatar";
 import { Icon } from "@/components/Icon";
 import { Divider, ListRow } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -58,7 +59,7 @@ function effectiveLight(entry: BriefRosterEntry): "RED" | "AMBER" | "GREEN" | nu
 export default function BriefDetailScreen() {
   const { id, d } = useLocalSearchParams<{ id: string; d?: string }>();
   const theme = useTheme();
-  const { data, isLoading, isError, refetch, isRefetching } = useBriefDetail(id, d);
+  const { data, isLoading, isError, error, refetch, isRefetching } = useBriefDetail(id, d);
 
   const { needAttention, rest } = useMemo(() => {
     const roster = [...(data?.roster ?? [])].sort(
@@ -104,7 +105,7 @@ export default function BriefDetailScreen() {
       {isLoading ? (
         <SkeletonList rows={4} shape="avatarRow" note="Cargando el brief…" />
       ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudo cargar la sesión" description="Desliza hacia abajo para reintentar." />
+        <QueryErrorState error={error} title="No se pudo cargar la sesión" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
           <HeroCard padding={17}>

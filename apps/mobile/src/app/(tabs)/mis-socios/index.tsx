@@ -15,6 +15,7 @@ import { Field } from "@/components/Field";
 import { Icon } from "@/components/Icon";
 import { ListRow } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useDebounced } from "@/utils/use-debounced";
@@ -33,7 +34,7 @@ export default function TrainerMembersScreen() {
   const theme = useTheme();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<TrainerMemberFilter>("all");
-  const { data, isLoading, isError, refetch, isRefetching } = useTrainerMembers(filter, useDebounced(search));
+  const { data, isLoading, isError, error, refetch, isRefetching } = useTrainerMembers(filter, useDebounced(search));
 
   // Adherencia como color: verde ≥ 85, ámbar < 70. Es la lectura que hace el
   // entrenador de un vistazo, y una cifra suelta no la da.
@@ -109,7 +110,7 @@ export default function TrainerMembersScreen() {
       }
       ListEmptyComponent={
         isLoading ? null : isError || !data ? (
-          <EmptyState icon="alert" title="No se pudieron cargar tus socios" description="Desliza hacia abajo para reintentar." />
+          <QueryErrorState error={error} title="No se pudieron cargar tus socios" description="Desliza hacia abajo para reintentar." />
         ) : (
           <EmptyState
             icon="users"

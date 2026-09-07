@@ -2,8 +2,8 @@ import Link from "next/link";
 import RequestLinkForm from "@/app/preferencias/request-link-form";
 
 export const metadata = {
-  title: "Darse de baja",
-  description: "Deja de recibir los correos prescindibles de tu centro.",
+  title: "Baja de comunicaciones",
+  description: "Deja de recibir los correos comerciales prescindibles de tu centro.",
 };
 
 /**
@@ -17,11 +17,16 @@ export default function UnsubscribeRequestPage() {
       <div className="w-full max-w-md bg-white border border-tz-linen rounded-card shadow-pop p-8 space-y-5">
         <div>
           <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
-            Darte de baja
+            Baja de comunicaciones comerciales
           </h1>
           <p className="text-sm text-muted mt-2">
-            La forma más rápida es el enlace <b>Darme de baja</b> del pie de cualquiera de nuestros correos. Si no lo
-            tienes a mano, escribe tu email y te enviamos uno nuevo.
+            Esta página es solo para dejar de recibir correo comercial (avisos de plazas, cumpleaños, valoraciones…).
+            Si quieres dar de baja tu cuota o tu bono, hazlo desde{" "}
+            <Link href="/portal/membresia#suscripcion" className="underline font-semibold">
+              tu suscripción en el portal
+            </Link>
+            . La forma más rápida de darte de baja del correo comercial es el enlace <b>Darme de baja</b> del pie de
+            cualquiera de nuestros correos. Si no lo tienes a mano, escribe tu email y te enviamos uno nuevo.
           </p>
         </div>
         <RequestLinkForm ctaLabel="Enviarme el enlace de baja" />

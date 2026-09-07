@@ -22,6 +22,7 @@ import {
   updateMesocyclePhase,
 } from "@/lib/mesocycle-queries";
 import { orgHasFeatureNow } from "@/lib/entitlements";
+import { aiGenerationGate } from "@/lib/ai/dpa";
 
 const MESOCYCLE_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"];
 
@@ -100,6 +101,17 @@ const AI_NOT_INCLUDED = {
   error: "Tu plan no incluye la programación con IA. Puedes cambiar de plan en /planes.",
 };
 
+/**
+ * E3-15 · decisión D-C5: hasta que el DPA con el proveedor de IA conste
+ * firmado, la generación no opera sobre datos de un socio real. Se comprueba
+ * ANTES de leer la ficha: leerla para no usarla ya sería tratarla.
+ */
+async function dpaError(orgId: string): Promise<string | null> {
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
+  const gate = aiGenerationGate({ slug: org?.slug ?? null });
+  return gate.allowed ? null : gate.reason;
+}
+
 export async function generateMesocycleAction(
   memberId: string,
   input: { profile: string; level: string; weeks: number; availability: string }
@@ -113,6 +125,9 @@ export async function generateMesocycleAction(
   // proveedor: sin esto, cualquier organización en Esencial o Avanzado generaba
   // mesociclos que pagábamos nosotros.
   if (!(await orgHasFeatureNow(session.user.orgId, "ia_programacion"))) return AI_NOT_INCLUDED;
+
+  const dpaBlocked = await dpaError(session.user.orgId);
+  if (dpaBlocked) return { ok: false, error: dpaBlocked };
 
   if (!isEpProfile(input.profile)) return { ok: false, error: "Elige un grupo Training Zone válido." };
   const availability = lines(input.availability);
@@ -158,6 +173,8 @@ export async function refineMesocycleAction(
   const session = await requireRole(MESOCYCLE_ROLES);
   // E6-03: refinar también llama al modelo, así que también se comprueba.
   if (!(await orgHasFeatureNow(session.user.orgId, "ia_programacion"))) return AI_NOT_INCLUDED;
+  const dpaBlocked = await dpaError(session.user.orgId);
+  if (dpaBlocked) return { ok: false, error: dpaBlocked };
   if (!request.trim()) return { ok: false, error: "Escribe qué quieres cambiar." };
 
   const detail = await getMesocycleDetail(session.user.orgId, mesocycleId);
@@ -189,13 +206,26 @@ export async function refineMesocycleAction(
 
 export async function approveMesocycleAction(
   memberId: string,
-  mesocycleId: string
+  mesocycleId: string,
+  /** E3-12 · "YYYY-MM-DD": obligatoria al aprobar si el mesociclo no la tiene ya. */
+  startDate?: string | null
 ): Promise<MesocycleActionResult> {
   const session = await requireRole(MESOCYCLE_ROLES);
   const scopeError = await mesocycleScopeError(session.user, { mesocycleId });
   if (scopeError) return { ok: false, error: scopeError };
 
-  const result = await approveMesocycle(session.user.orgId, mesocycleId, session.user.id);
+  let start: Date | null = null;
+  if (startDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+      return { ok: false, error: "La fecha de inicio no es válida." };
+    }
+    // Componentes locales, no `new Date("2026-09-07")`, que se interpreta en UTC
+    // y en España adelantaría el arranque un día.
+    const [y, m, d] = startDate.split("-").map(Number);
+    start = new Date(y, m - 1, d);
+  }
+
+  const result = await approveMesocycle(session.user.orgId, mesocycleId, session.user.id, start);
   if (!result.ok) return result;
   revalidateMesocycle(memberId, mesocycleId);
   return { ok: true };

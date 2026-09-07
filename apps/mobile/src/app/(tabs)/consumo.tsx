@@ -103,10 +103,13 @@ export default function ConsumptionScreen() {
                         </Text>
                       </View>
                     </View>
+                    {/* E2-15: las dos cifras salen del mismo libro mayor que el
+                        listado de abajo, así que no pueden contradecirlo. Antes la
+                        tarjeta decía "5 gastadas de 12", el resumen "0 gastadas" y
+                        el listado no tenía ni una línea de consumo. */}
                     <View style={styles.counters}>
                       <Counter label="Gastadas" value={data.summary.spent} color={theme.text} />
                       <Counter label="Devueltas" value={data.summary.returned} color={theme.good} />
-                      <Counter label="No presentadas" value={data.summary.noShow} color={theme.critical} />
                     </View>
                   </Card>
                 </FadeInUp>
@@ -117,6 +120,15 @@ export default function ConsumptionScreen() {
                 <Chip label="Personal" selected={filter === "EP"} onPress={() => setFilter("EP")} />
                 <Chip label="Grupos" selected={filter === "GROUP"} onPress={() => setFilter("GROUP")} />
               </ChipRow>
+
+              {/* E2-15, histórico previo: el libro empieza en una fecha. Decirlo
+                  evita que el listado se lea como si fuera todo el histórico. */}
+              {data.detailSince ? (
+                <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>
+                  Hay detalle desde el {formatDayMonth(data.detailSince)}. Lo anterior está resumido en el saldo de
+                  apertura de cada bono.
+                </Text>
+              ) : null}
             </>
           ) : null}
         </>

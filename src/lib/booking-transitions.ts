@@ -27,9 +27,10 @@ export const ALLOWED_BOOKING_TRANSITIONS: Record<BookingStatus, readonly Booking
   // saliéndose.
   WAITLISTED: ["BOOKED", "CANCELLED"],
   // Rectificación de una asistencia mal marcada (RB-RES-009): la sesión pasa a
-  // falta, con motivo y decisión de devolución. También se puede desmarcar sin
-  // más (un check-in puesto por error): vuelve a reservada, nunca a cancelada
-  // (E2-03).
+  // falta, con motivo y decisión de devolución, o vuelve a estar simplemente
+  // reservada — que es lo que hace desmarcar el check-in en la agenda y en la
+  // app. `BOOKED` es la vuelta legítima y la única: desmarcar NUNCA cancela la
+  // reserva (E2-02), porque cancelar devuelve bono y libera plaza.
   ATTENDED: ["NO_SHOW", "BOOKED"],
   // Deshacer una falta (`clearBookingNoShow`): vuelve a asistida o a reservada.
   NO_SHOW: ["ATTENDED", "BOOKED"],
@@ -92,4 +93,41 @@ export function assertBookingTransition(from: BookingStatus, to: BookingStatus):
 export function statusesThatCanReach(to: BookingStatus): BookingStatus[] {
   const all = Object.keys(ALLOWED_BOOKING_TRANSITIONS) as BookingStatus[];
   return all.filter((from) => from !== to && ALLOWED_BOOKING_TRANSITIONS[from].includes(to));
+}
+
+/**
+ * Lo mismo, incluido el propio destino: re-marcar lo que ya está marcado no
+ * cambia nada y se acepta (`canBookingTransition` con `from === to`). Es la
+ * lista exacta que va en el `where` del UPDATE condicional, así que la
+ * comprobación previa y la carrera dicen siempre lo mismo.
+ */
+export function statusesEndingAt(to: BookingStatus): BookingStatus[] {
+  return [to, ...statusesThatCanReach(to)];
+}
+
+export type BookingTransitionCheck = { ok: true } | { ok: false; error: string };
+
+/**
+ * `assertBookingTransition` contado como resultado, para los puntos de
+ * escritura que atienden a una persona.
+ *
+ * El `bookingId` viaja desde el cliente (la agenda, el brief de la web y los
+ * dos endpoints del entrenador en la app), así que una transición imposible no
+ * siempre es un fallo de programación: puede ser una pantalla abierta desde
+ * hace rato sobre una reserva que alguien acaba de cancelar. Eso se contesta
+ * con un mensaje —409 en la API— y no con un 500.
+ *
+ * Es el único envoltorio: los CUATRO puntos de escritura entran por aquí. La
+ * historia lo dice sin rodeos —cuatro parches separados vuelven a divergir— y
+ * es justo lo que pasó (`markBookingNoShow` sí validaba el estado de partida;
+ * las otras cuatro vías, ninguna).
+ */
+export function checkBookingTransition(from: BookingStatus, to: BookingStatus): BookingTransitionCheck {
+  try {
+    assertBookingTransition(from, to);
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof BookingTransitionError) return { ok: false, error: error.message };
+    throw error;
+  }
 }

@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Field, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { ActionForm } from "@/components/ui/action-form";
+import { MAX_GROUP_CAPACITY } from "@/lib/group-capacity";
 import { updateCenterCapacity } from "./actions";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
@@ -46,7 +47,15 @@ export default async function AforoPage() {
               </p>
             </div>
             <Field label="Plazas por sesión" hint="Vacío = sin valor por defecto">
-              <Input name="defaultGroupCapacity" type="number" min="1" step="1" defaultValue={center.defaultGroupCapacity ?? ""} />
+              {/* E2-13: el input declara el tope, no solo el suelo. */}
+              <Input
+                name="defaultGroupCapacity"
+                type="number"
+                min="1"
+                max={MAX_GROUP_CAPACITY}
+                step="1"
+                defaultValue={center.defaultGroupCapacity ?? ""}
+              />
             </Field>
             <Button type="submit" className="md:col-span-3 md:justify-self-start">
               Guardar aforo

@@ -19,6 +19,17 @@ import PurchasePlanButton from "./purchase-plan-button";
 import { RenewalModal } from "./renewal-modal";
 import { PendingSessionsRating } from "./pending-sessions";
 import { SERVICE_LABEL } from "@/lib/service-labels";
+import { getMemberBillingSnapshot } from "./billing-view";
+import { ReceiptDownloadButton } from "./receipt-download-button";
+import { SubscriptionManagement } from "./subscription-management";
+import { FreezeManagement } from "./freeze-management";
+import { getMemberFreezePolicyView } from "./freeze-view";
+
+const RECEIPT_STATUS_LABEL: Record<string, string> = { PAID: "Cobrado", FAILED: "Fallido", REFUNDED: "Devuelto" };
+
+function shortDate(date: Date) {
+  return date.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
+}
 
 export const metadata: Metadata = { title: "Mi membresía · Training Zone" };
 
@@ -65,12 +76,15 @@ export default async function PortalMembresiaPage({
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
   const today = zonedToday(timezone);
 
-  const [adherence, trainerName, plans, pending] = await Promise.all([
+  const [adherence, trainerName, plans, pending, billing] = await Promise.all([
     getMemberPlanAdherence(member.id, timezone),
     getLastEpTrainerName(member.id),
     getActiveMembershipPlans(session.user.orgId),
     getPendingSessionFeedback(member.id, timezone),
+    getMemberBillingSnapshot(session.user.orgId, member.id),
   ]);
+
+  const freezePolicy = billing.subscriptionId ? await getMemberFreezePolicyView(billing.subscriptionId) : null;
 
   const activeSub = member.subscriptions[0];
   const kind = activeSub ? planServiceKind(activeSub.plan.type) : undefined;
@@ -118,6 +132,18 @@ export default async function PortalMembresiaPage({
       {checkout === "cancelled" && (
         <div className="rounded-control border border-brand-border bg-tz-bone px-4 py-3 text-sm text-brand-text-2">
           Has cancelado el pago. Puedes intentarlo de nuevo cuando quieras.
+        </div>
+      )}
+
+      {/* E5-02: cambio de estado — baja programada o congelación, antes de nada más. */}
+      {billing.cancelAt && (
+        <div className="rounded-control border border-warning/30 bg-warning-bg px-4 py-3 text-sm text-warning-text">
+          Baja programada para el {shortDate(billing.cancelAt)}. Hasta entonces sigues teniendo acceso completo.
+        </div>
+      )}
+      {billing.status === "FROZEN" && (
+        <div className="rounded-control border border-brand-border bg-tz-bone px-4 py-3 text-sm text-brand-text-2">
+          Tu suscripción está congelada{billing.pauseUntil ? ` hasta el ${shortDate(billing.pauseUntil)}` : " sin fecha de reanudación"}.
         </div>
       )}
 
@@ -197,24 +223,86 @@ export default async function PortalMembresiaPage({
               </div>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/[.06] border border-white/[.16] rounded-2xl px-4 py-3.5">
-              <div className="text-[10px] font-bold tracking-[.1em] uppercase text-brand-muted">Adherencia</div>
-              <div className="font-display font-extrabold text-2xl text-white mt-1.5 tabular-nums">
-                {adherence.pct ?? "—"}
-                {adherence.pct != null && <span className="text-sm text-brand-muted-2">%</span>}
-              </div>
-            </div>
-            <div className="bg-white/[.06] border border-white/[.16] rounded-2xl px-4 py-3.5">
-              <div className="text-[10px] font-bold tracking-[.1em] uppercase text-brand-muted">Racha</div>
-              <div className="font-display font-extrabold text-2xl text-white mt-1.5 tabular-nums">
-                {adherence.streakWeeks}
-                <span className="text-sm text-brand-muted-2"> sem</span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
+
+      {/* E5-02: lo que hoy faltaba — cuánto paga, cuándo se le cobra y sus recibos. */}
+      {billing.hasSubscription && (
+        <div className="bg-white border border-brand-border rounded-2xl p-[22px] tz-fade-up" style={{ animationDelay: "0.06s" }}>
+          <div className="font-display font-extrabold text-base uppercase text-brand-text">Tu cuota</div>
+          <div className="mt-3.5 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[13px] text-brand-muted">Importe</span>
+              <span className="font-display font-extrabold text-base text-brand-text">
+                {euros(billing.priceCents ?? 0)}
+                {billing.recurring && <span className="text-xs font-bold text-brand-muted-2">/mes</span>}
+              </span>
+            </div>
+            {billing.recurring ? (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-brand-muted">Próximo cobro</span>
+                <span className="text-[13px] font-semibold text-brand-text text-right">
+                  {billing.nextChargeAt ? shortDate(billing.nextChargeAt) : "—"}
+                  {billing.cardLast4 ? ` · tarjeta ····${billing.cardLast4}` : ""}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[13px] text-brand-muted">Caduca</span>
+                <span className="text-[13px] font-semibold text-brand-text">
+                  {billing.expiresAt ? shortDate(billing.expiresAt) : "Sin fecha de caducidad"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {billing.receipts.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-brand-border">
+              <div className="text-[11px] font-bold uppercase tracking-[.1em] text-brand-muted mb-2.5">Recibos</div>
+              <div className="flex flex-col gap-2.5">
+                {billing.receipts.map((r) => (
+                  <div key={r.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold text-brand-text truncate">{r.concept}</div>
+                      <div className="text-xs text-brand-muted mt-0.5">
+                        {shortDate(r.date)} · {RECEIPT_STATUS_LABEL[r.status] ?? r.status}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-[13px] font-bold text-brand-text tabular-nums">{euros(r.amountCents)}</span>
+                      {r.downloadable ? (
+                        <ReceiptDownloadButton paymentId={r.id} />
+                      ) : (
+                        <span className="text-xs text-brand-muted-2">—</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* E5-01: gestionar la suscripción y darse de baja sin salir del portal. */}
+      {billing.hasSubscription && (
+        <SubscriptionManagement
+          recurring={billing.recurring}
+          hasStripeCustomer={!!member.stripeCustomerId}
+          initialCancelAt={billing.cancelAt}
+          centerName={member.primaryCenter.name}
+          centerPhone={member.primaryCenter.phone}
+        >
+          {/* E5-06: congelar/reanudar el bono desde el propio portal. */}
+          {freezePolicy && (
+            <FreezeManagement
+              status={billing.status === "ACTIVE" || billing.status === "FROZEN" ? billing.status : null}
+              pauseUntil={billing.pauseUntil}
+              policy={freezePolicy}
+            />
+          )}
+        </SubscriptionManagement>
+      )}
 
       {/* Valora tus sesiones (F16) — el badge de "Mi membresía" en el sidebar cuenta estas pendientes */}
       <PendingSessionsRating pending={pendingItems} />

@@ -8,6 +8,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { createMembershipPlan, setMembershipPlanActive } from "./actions";
 import { EditPlanDrawer } from "./product-controls";
 import { PLAN_TYPE_LABEL } from "@/lib/membership-plan-types";
+import { isPendingStripeSync } from "@/lib/stripe-catalog";
 
 function euros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
@@ -138,7 +139,16 @@ function planToRow(plan: MembershipPlan): DataTableRow {
       validity: plan.validityDays ?? -1,
     },
     cells: {
-      name: <span className="font-medium text-brand-text">{plan.name}</span>,
+      name: (
+        <span className="inline-flex items-center gap-2">
+          <span className="font-medium text-brand-text">{plan.name}</span>
+          {/* HU-ST-08: sin cuenta de Stripe conectada (o con Stripe caído al
+              guardar) el producto existe solo en Apta. Se puede cobrar a mano,
+              pero no online, y quien lo creó merece saberlo aquí y no al
+              intentar venderlo. */}
+          {isPendingStripeSync(plan) && <Badge tone="warning">Pendiente de sincronizar</Badge>}
+        </span>
+      ),
       type: PLAN_TYPE_LABEL[plan.type],
       price: euros(plan.priceCents),
       sessions: plan.sessionsIncluded ?? "—",

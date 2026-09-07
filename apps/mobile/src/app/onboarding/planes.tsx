@@ -34,10 +34,14 @@ export default function PlansScreen() {
   // «Ampliar» desde Más. Con bono vivo hay que poder volver, y el copy cambia:
   // no se está eligiendo plan por primera vez, se está cambiando el que hay.
   const upgrading = state.status === "signedIn" && Boolean(state.user.member?.hasActiveMembership);
-  const products = (data?.products ?? []).filter((p) => p.visible);
+  // HU-ST-10/D-S3: el plan ONLINE no se enlaza a su compra desde la app (el
+  // servidor ya no se lo manda al socio; esto cubre a quien entre aquí con rol
+  // de dirección, que sí lo recibe para poder gestionarlo).
+  //
   // E5-12: el hueco destacado se sigue quedando con el primer producto (es el
   // sitio de más atención de la pantalla), pero la insignia "Más elegido" ya
   // no se pone sola — solo aparece si el propio producto la declara.
+  const products = (data?.products ?? []).filter((p) => p.visible && p.sellableInApp);
   const featured = products.find((p) => p.featured) ?? products[0];
   const rest = products.filter((p) => p.id !== featured?.id);
   // "Sin permanencia" solo es una promesa cierta cuando NINGÚN producto

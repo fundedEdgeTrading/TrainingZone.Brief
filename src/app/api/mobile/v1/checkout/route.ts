@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createMemberCheckout, isRecurring } from "@/lib/member-billing";
+import { createMemberCheckout, isRecurring, isSellableInApp, PLAN_NOT_SELLABLE_IN_APP_ERROR } from "@/lib/member-billing";
 import { requireMember } from "../_lib/require-member";
 import { apiOk, apiError } from "../_lib/response";
 
@@ -30,6 +30,10 @@ export async function POST(req: NextRequest) {
     select: { id: true, name: true, priceCents: true, type: true },
   });
   if (!plan) return apiError("Ese producto ya no está disponible.", 404);
+  // HU-ST-10/D-S3: el plan ONLINE no se vende desde la app. No basta con
+  // ocultarlo del catálogo: un cliente antiguo, o un planId escrito a mano,
+  // llegaría igual hasta aquí.
+  if (!isSellableInApp(plan.type)) return apiError(PLAN_NOT_SELLABLE_IN_APP_ERROR, 403);
 
   const result = await createMemberCheckout({
     orgId: claims.orgId,

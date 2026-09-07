@@ -29,7 +29,7 @@ export default async function ReferenceRangesPage() {
 
   return (
     <div className="tz-page space-y-4">
-      <PageHeader description="Rangos de referencia de composición corporal (docs/COMPOSICION_CORPORAL_TANITA.md §3). Alimentan el semáforo de la ficha del socio. Si no hay fila para una métrica, se usan los valores por defecto del propio informe Tanita." />
+      <PageHeader description="Rangos de referencia de composición corporal (docs/COMPOSICION_CORPORAL_TANITA.md §3). Alimentan el semáforo de la ficha del socio y de su portal, y se definen por sexo y tramo de edad. Si no hay fila que le corresponda a un socio, su valor se muestra SIN semáforo (E3-09): un dato sin norma poblacional no se pinta de un color inventado, y menos de rojo." />
 
       {canEdit && <CreateRangeForm />}
 
