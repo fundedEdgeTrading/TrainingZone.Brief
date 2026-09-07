@@ -10,10 +10,17 @@ import { join } from "node:path";
  * `createCheckoutSession` era una línea que llamaba a `createMemberCheckout`
  * con un solo consumidor; `/portal/plan` y `/portal/comprar` duplicaban el
  * redirect de `next.config.ts` en su propio `page.tsx`.
+ *
+ * `/portal/billing/checkout` se recuperó al fusionar con HU-ST-10 (D-S3, otra
+ * pista): esa historia la trata como una de las «dos puertas de compra de la
+ * app» y le añade la guarda de `isSellableInApp`, así que sigue viva —
+ * `plan-store-rules.test.ts` la protege. `/portal/billing/portal` (el Billing
+ * Portal de Stripe) sigue sin consumidor y sigue borrada.
  */
 
-test("E12-07 · los endpoints móviles sin consumidor se han borrado", () => {
-  assert.equal(existsSync(join("src", "app", "api", "mobile", "v1", "portal", "billing")), false);
+test("E12-07 · el endpoint sin consumidor (portal/billing/portal) se ha borrado; checkout sigue vivo por HU-ST-10", () => {
+  assert.equal(existsSync(join("src", "app", "api", "mobile", "v1", "portal", "billing", "portal")), false);
+  assert.equal(existsSync(join("src", "app", "api", "mobile", "v1", "portal", "billing", "checkout")), true);
 });
 
 test("E12-07 · createCheckoutSession se elimina; su consumidor llama a createMemberCheckout", () => {

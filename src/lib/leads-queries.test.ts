@@ -24,6 +24,9 @@ before(async () => {
 
 after(async () => {
   if (!orgId) return;
+  // `createLead` deja traza en AuditLog (consentimiento comercial): sin
+  // borrarla primero, la FK bloquea el borrado de la organización.
+  await prisma.auditLog.deleteMany({ where: { orgId } });
   await prisma.lead.deleteMany({ where: { orgId } });
   await prisma.center.deleteMany({ where: { orgId } });
   await prisma.organization.deleteMany({ where: { id: orgId } });
