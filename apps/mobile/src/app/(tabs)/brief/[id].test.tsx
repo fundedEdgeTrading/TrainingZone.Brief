@@ -24,9 +24,12 @@ describe("Session Brief · condiciones sin regla (T1 / E3-01)", () => {
           briefRosterEntry({
             bookingId: "booking-hta",
             member: { id: "m-1", firstName: "Elena", lastName: "Ruiz", state: "ACTIVE" },
-            conditions: [{ zone: null, description: "Hipertensión controlada con medicación", type: "HYPERTENSION" }],
+            // El servidor (E3-03) ya resuelve la luz y separa las condiciones
+            // sin regla: el cliente solo pinta lo que llega.
+            conditions: [{ zone: null, zoneCode: null, side: null, type: "MEDICATION" }],
+            unmatchedConditions: [{ zone: null, zoneCode: null, side: null, type: "MEDICATION" }],
             matchedRules: [],
-            light: null,
+            light: "AMBER",
           }),
         ],
       }),
@@ -60,9 +63,10 @@ describe("Session Brief · condiciones sin regla (T1 / E3-01)", () => {
         roster: [
           briefRosterEntry({
             conditions: [
-              { zone: "hombro", description: "Tendinopatía de hombro", type: "INJURY" },
-              { zone: null, description: "Diabetes tipo 2", type: "DIABETES" },
+              { zone: "hombro", zoneCode: "HOMBRO", side: null, type: "INJURY" },
+              { zone: null, zoneCode: null, side: null, type: "CHRONIC_CONDITION" },
             ],
+            unmatchedConditions: [{ zone: null, zoneCode: null, side: null, type: "CHRONIC_CONDITION" }],
             matchedRules: [{ injuryZone: "hombro", blockArea: "Empuje sobre cabeza", light: "RED", adaptation: "Evitar press militar" }],
             light: "RED",
           }),

@@ -29,6 +29,7 @@ function booking(overrides: Partial<UpcomingBooking>): UpcomingBooking {
     trainerImage: null,
     sessionCancelled: false,
     canCancelFreely: true,
+    cancelWindowHours: 24,
     full: false,
     ...overrides,
   };

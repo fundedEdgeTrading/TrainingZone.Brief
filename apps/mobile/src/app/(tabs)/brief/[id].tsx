@@ -19,29 +19,29 @@ import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
-import type { BriefRosterEntry } from "@/api/types";
+import type { BriefCondition, BriefRosterEntry } from "@/api/types";
 
 const LIGHT_RANK: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
 
 /**
- * Condiciones declaradas que no encuentran ninguna regla de aptitud (por zona
- * nula o por no casar con ninguna `matchedRule`). El servidor las manda en
- * `conditions`, pero solo `matchedRules` decidía la luz: un socio con
- * hipertensión o embarazo declarados, sin regla que casara, salía "Sin
- * restricciones" (RB-SALUD-010, E3-01).
+ * Rótulo de una condición sin regla, SIN la descripción clínica (E3-05: el
+ * entrenador lee adaptaciones, no diagnósticos). El servidor ya no la manda;
+ * aquí solo se compone tipo + zona con lo que sí viaja en el roster.
  */
-function unmatchedConditions(entry: BriefRosterEntry) {
-  const matchedZones = new Set(entry.matchedRules.map((r) => r.injuryZone));
-  return entry.conditions.filter((c) => !c.zone || !matchedZones.has(c.zone));
-}
+const HEALTH_TYPE_LABEL: Record<string, string> = {
+  INJURY: "Lesión",
+  CHRONIC_CONDITION: "Condición crónica",
+  MEDICATION: "Medicación",
+  SURGERY: "Cirugía",
+  PREGNANCY: "Embarazo",
+  ALLERGY: "Alergia",
+};
 
-/** La luz efectiva del socio: la más restrictiva entre la del servidor y AMBER
- * si tiene alguna condición sin regla. Nunca GREEN con condiciones declaradas. */
-function effectiveLight(entry: BriefRosterEntry): "RED" | "AMBER" | "GREEN" | null {
-  const base = entry.light;
-  if (unmatchedConditions(entry).length === 0) return base;
-  if (base && LIGHT_RANK[base] < LIGHT_RANK.AMBER) return base; // RED sigue siendo lo más restrictivo
-  return "AMBER";
+function conditionLabel(condition: BriefCondition): string {
+  const type = HEALTH_TYPE_LABEL[condition.type] ?? "Condición";
+  if (!condition.zone) return type;
+  const side = condition.side && condition.side !== "NO_APLICA" ? ` (${condition.side.toLowerCase()})` : "";
+  return `${type} · ${condition.zone}${side}`;
 }
 
 /**
@@ -63,20 +63,20 @@ export default function BriefDetailScreen() {
 
   const { needAttention, rest } = useMemo(() => {
     const roster = [...(data?.roster ?? [])].sort(
-      (a, b) => (LIGHT_RANK[effectiveLight(a) ?? "GREEN"] ?? 2) - (LIGHT_RANK[effectiveLight(b) ?? "GREEN"] ?? 2)
+      (a, b) => (LIGHT_RANK[a.light ?? "GREEN"] ?? 2) - (LIGHT_RANK[b.light ?? "GREEN"] ?? 2)
     );
     return {
-      needAttention: roster.filter((e) => effectiveLight(e) === "RED" || effectiveLight(e) === "AMBER"),
-      rest: roster.filter((e) => effectiveLight(e) !== "RED" && effectiveLight(e) !== "AMBER"),
+      needAttention: roster.filter((e) => e.light === "RED" || e.light === "AMBER"),
+      rest: roster.filter((e) => e.light !== "RED" && e.light !== "AMBER"),
     };
   }, [data]);
 
   const counts = useMemo(() => {
     const roster = data?.roster ?? [];
     return {
-      green: roster.filter((e) => !effectiveLight(e) || effectiveLight(e) === "GREEN").length,
-      amber: roster.filter((e) => effectiveLight(e) === "AMBER").length,
-      red: roster.filter((e) => effectiveLight(e) === "RED").length,
+      green: roster.filter((e) => !e.light || e.light === "GREEN").length,
+      amber: roster.filter((e) => e.light === "AMBER").length,
+      red: roster.filter((e) => e.light === "RED").length,
       checked: roster.filter((e) => e.debrief).length,
       total: roster.length,
     };
@@ -201,9 +201,7 @@ function RosterCard({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: 
   const toast = useToast();
   const [feeling, setFeeling] = useState(entry.debrief?.feeling ?? null);
   const saveDebrief = useSaveDebrief(sessionId);
-  const light = effectiveLight(entry);
-  const accent = light === "RED" ? theme.critical : light === "AMBER" ? theme.warning : theme.good;
-  const unmatched = unmatchedConditions(entry);
+  const accent = entry.light === "RED" ? theme.critical : entry.light === "AMBER" ? theme.warning : theme.good;
 
   function markAttendance() {
     const previous = feeling;
@@ -251,16 +249,17 @@ function RosterCard({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: 
           </View>
         ))}
 
-        {/* Condición declarada sin regla asignada (RB-SALUD-010, E3-01): no hay
-            adaptación que pintar, pero no puede desaparecer del brief como si
-            no existiera — es justo la que más se salta hoy. */}
-        {unmatched.map((condition, index) => (
+        {/* Condición declarada sin regla asignada (RB-SALUD-010, E3-01/E3-03):
+            no hay adaptación que pintar, pero no puede desaparecer del brief
+            como si no existiera — es justo la que más se salta hoy. Sin
+            descripción clínica (E3-05): solo tipo y zona. */}
+        {entry.unmatchedConditions.map((condition, index) => (
           <View
             key={`unmatched-${index}`}
             style={[styles.adaptation, { backgroundColor: theme.sheet, borderWidth: 1, borderColor: theme.warning }]}
           >
             <Text style={[typo.rowTitleSmall, { color: theme.warning }]}>Condición sin regla asignada</Text>
-            <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{condition.description}</Text>
+            <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{conditionLabel(condition)}</Text>
           </View>
         ))}
       </View>

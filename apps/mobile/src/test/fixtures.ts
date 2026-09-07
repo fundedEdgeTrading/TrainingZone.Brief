@@ -246,6 +246,7 @@ export function productItem(overrides: Partial<ProductItem> = {}): ProductItem {
     visible: true,
     subscribersCount: null,
     featured: false,
+    sellableInApp: true,
     ...overrides,
   };
 }
@@ -269,6 +270,7 @@ export function briefRosterEntry(overrides: Partial<BriefRosterEntry> = {}): Bri
     member: { id: "member-1", firstName: "Marina", lastName: "Castillo", state: "ACTIVE" },
     isNew: false,
     conditions: [],
+    unmatchedConditions: [],
     matchedRules: [],
     light: null,
     debrief: null,
