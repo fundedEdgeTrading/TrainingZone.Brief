@@ -8,8 +8,17 @@ import { submitSessionRatingAction } from "./actions";
 const TAGS = ["Motivador", "Técnico", "Puntual", "Exigente", "Cercano", "Buena energía"];
 const DISCOMFORT_OPTIONS = ["Ninguna", "Leve", "Moderada"];
 const COMPLETED_OPTIONS = ["Sí, todos", "Casi todos", "A medias"];
+// E5-10: mismas tres opciones que tenía el formulario de /portal/agenda antes
+// de fusionarse aquí — alimentan el semáforo del Session Brief del entrenador
+// (brief-queries.ts lee `structured.feeling`).
+const FEELINGS = [
+  { value: "GREEN" as const, label: "Genial", dot: "bg-good" },
+  { value: "AMBER" as const, label: "Normal", dot: "bg-warning" },
+  { value: "RED" as const, label: "Duro", dot: "bg-critical" },
+];
 
 type SliderKey = "trainerScore" | "energy" | "rpe";
+type Feeling = (typeof FEELINGS)[number]["value"];
 
 export type RatingSession = {
   bookingId: string;
@@ -25,9 +34,20 @@ type Answers = {
   discomfort: string | null;
   completed: string | null;
   tags: string[];
+  feeling: Feeling | null;
+  comment: string;
 };
 
-const DEFAULT_ANSWERS: Answers = { trainerScore: 8, energy: 7, rpe: 6, discomfort: null, completed: null, tags: [] };
+const DEFAULT_ANSWERS: Answers = {
+  trainerScore: 8,
+  energy: 7,
+  rpe: 6,
+  discomfort: null,
+  completed: null,
+  tags: [],
+  feeling: null,
+  comment: "",
+};
 
 const noopSubscribe = () => () => {};
 function useMounted() {
@@ -102,7 +122,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
   }
 
   async function submit() {
-    if (!session || pending) return;
+    if (!session || pending || !answers.feeling) return;
     setPending(true);
     const result = await submitSessionRatingAction(session.bookingId, {
       trainerScore: answers.trainerScore,
@@ -111,6 +131,8 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
       rpe: answers.rpe,
       discomfort: answers.discomfort,
       completed: answers.completed,
+      feeling: answers.feeling,
+      comment: answers.comment.trim() || null,
     });
     setPending(false);
     if (result.ok) {
@@ -222,6 +244,30 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                       Sé sincera: esto ayuda a tu entrenador a ajustar tu plan.
                     </p>
                   </div>
+                  <div>
+                    <div className="text-sm font-bold text-brand-text mb-3">¿Cómo te ha ido en general?</div>
+                    <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="¿Cómo te ha ido?">
+                      {FEELINGS.map((f) => {
+                        const active = answers.feeling === f.value;
+                        return (
+                          <button
+                            key={f.value}
+                            type="button"
+                            onClick={() => setAnswers((a) => ({ ...a, feeling: f.value }))}
+                            aria-pressed={active}
+                            className={`flex items-center justify-center gap-2.5 rounded-[14px] py-[15px] text-sm font-semibold text-brand-text border transition-colors duration-[180ms] ${
+                              active
+                                ? "border-brand-ink bg-surface-soft shadow-[inset_0_0_0_1px_var(--color-brand-ink)]"
+                                : "border-brand-border bg-brand-card hover:border-brand-border-hover"
+                            }`}
+                          >
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${f.dot}`} />
+                            {f.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <RatingSlider
                     label="Nivel de energía"
                     hint="¿Con qué energía llegaste?"
@@ -254,6 +300,19 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
                     value={answers.completed}
                     onChange={(v) => setAnswers((a) => ({ ...a, completed: v }))}
                   />
+                  <div>
+                    <div className="text-sm font-bold text-brand-text mb-3">
+                      Algo que quieras contarle a tu entrenador{" "}
+                      <span className="font-medium text-brand-muted-2">· opcional</span>
+                    </div>
+                    <textarea
+                      value={answers.comment}
+                      onChange={(e) => setAnswers((a) => ({ ...a, comment: e.target.value }))}
+                      rows={2}
+                      placeholder="Escribe aquí..."
+                      className="w-full rounded-control border border-brand-border bg-white px-4 py-3 text-[14px] text-brand-text placeholder:text-faint outline-none transition-[border-color,box-shadow] duration-200 focus:border-brand-ink focus:ring-[3px] focus:ring-tz-black/[0.08] resize-none"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -292,7 +351,7 @@ export function SessionRatingModal({ session, onClose }: { session: RatingSessio
               )}
               {step === 1 && (
                 <button
-                  disabled={pending}
+                  disabled={pending || !answers.feeling}
                   onClick={submit}
                   className="bg-good text-white rounded-[11px] px-[26px] py-[13px] font-display font-extrabold text-[13.5px] uppercase tracking-[.03em] hover:bg-good active:scale-[.98] transition-[background-color,transform] duration-150 disabled:opacity-60"
                 >

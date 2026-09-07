@@ -10,6 +10,7 @@ import { EP_PROFILE_LABEL } from "@/lib/ai/ep-profile";
 import { aiGeneratedLabel } from "@/lib/ai/ai-act";
 import type { MesocycleDetail } from "@/lib/mesocycle-queries";
 import { MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "../panel";
+import { currentWeekLabel, currentWeekOf } from "@/lib/mesocycle-schedule";
 import {
   approveMesocycleAction,
   archiveMesocycleAction,
@@ -78,9 +79,12 @@ function totalWeeks(mesocycle: MesocycleDetail): number {
  */
 function metaOf(mesocycle: MesocycleDetail, memberName?: string): string {
   const weekly = strings(mesocycle.weeklyLayout).length;
+  // E3-12 · en qué semana del plan está el socio HOY: es lo que convierte la
+  // hoja de ruta en una periodización y no en un documento.
+  const current = currentWeekOf(mesocycle, mesocycle.phases);
   return [
     EP_PROFILE_LABEL[mesocycle.profile],
-    `${totalWeeks(mesocycle)} semanas`,
+    current ? currentWeekLabel(current) : `${totalWeeks(mesocycle)} semanas`,
     `${mesocycle.phases.length} fases`,
     weekly > 0 ? `${weekly} días/semana` : "",
     memberName ?? "",
@@ -406,6 +410,14 @@ export function MesocycleEditor({
   );
 }
 
+/** "YYYY-MM-DD" en hora local: `toISOString()` en España adelantaría un día. */
+function localDay(date: Date): string {
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /* ── 1. Cabecera ──────────────────────────────────────────────────────────── */
 
 function HeaderCard({
@@ -424,6 +436,10 @@ function HeaderCard({
   const { pending, run } = useAction();
   const [title, setTitle] = useState(mesocycle.title);
   const [objective, setObjective] = useState(mesocycle.objective);
+  // E3-12 · fecha de inicio, obligatoria al aprobar. Por defecto, hoy.
+  const [startDate, setStartDate] = useState(() =>
+    localDay(mesocycle.startDate ?? new Date())
+  );
   const [safety, setSafety] = useState(() => strings(mesocycle.safetyCriteria).join("\n"));
 
   const safetyCriteria = strings(mesocycle.safetyCriteria);
@@ -537,15 +553,28 @@ function HeaderCard({
         <div className="shrink-0 max-w-full flex flex-col items-end gap-2.5">
           <div className="flex gap-2 flex-wrap justify-end">
             {isDraft && (
-              <button
-                type="button"
-                disabled={pending}
-                className={INK_SOLID_BUTTON}
-                onClick={() => run(() => approveMesocycleAction(memberId, mesocycle.id), "Mesociclo aprobado.")}
-              >
-                <CheckIcon />
-                Aprobar mesociclo
-              </button>
+              <>
+                {/* E3-12: sin fecha de inicio, "semana 3" no se puede situar en el
+                    calendario y la hoja de ruta no dice nada. Es obligatoria al aprobar. */}
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  aria-label="Fecha de inicio del mesociclo"
+                  className="h-9 rounded-control border border-tz-bone/30 bg-tz-black/20 px-2.5 text-sm text-tz-bone"
+                />
+                <button
+                  type="button"
+                  disabled={pending}
+                  className={INK_SOLID_BUTTON}
+                  onClick={() =>
+                    run(() => approveMesocycleAction(memberId, mesocycle.id, startDate), "Mesociclo aprobado.")
+                  }
+                >
+                  <CheckIcon />
+                  Aprobar mesociclo
+                </button>
+              </>
             )}
             <button type="button" className={INK_GHOST_BUTTON} onClick={() => window.print()}>
               <DownloadIcon />

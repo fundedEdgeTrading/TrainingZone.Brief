@@ -75,7 +75,9 @@ export function AddProgressEntryForm({ memberId }: { memberId: string }) {
           <NumField name="bodyWaterPct" label="Agua corporal (%)" />
           <NumField name="visceralFatRating" label="Grasa visceral" step="1" />
           <NumField name="bmrKcal" label="BMR (kcal)" step="1" />
-          <NumField name="metabolicAge" label="Edad metabólica" step="1" />
+          {/* E3-10: la edad metabólica ya no se teclea a mano ni se presenta como
+              métrica de seguimiento. Se sigue importando de la báscula y se
+              conserva en la exportación de datos del socio. */}
         </div>
       </div>
 

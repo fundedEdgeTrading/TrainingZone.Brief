@@ -1,11 +1,21 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { verifyEmailPreferencesToken } from "@/lib/email-verification";
 import { getMemberEmailPreferences } from "@/lib/email-preferences-queries";
 import PreferencesForm from "./preferences-form";
+import { tokenPageMetadata } from "@/lib/seo";
 
 // El token viaja en la URL y las preferencias cambian con cada guardado: esta
 // página no puede servirse cacheada (mismo motivo que /gestionar-suscripcion).
 export const dynamic = "force-dynamic";
+
+/**
+ * E9-02 · El token viaja en la URL: `noindex`, `nofollow`, `nocache` y
+ * `referrer: no-referrer` — sin esto, un enlace de este correo indexado es
+ * acceso sin contraseña, y la cabecera `Referer` filtra el token a cualquier
+ * tercero que la página cargue.
+ */
+export const metadata: Metadata = tokenPageMetadata("Preferencias de correo");
 
 function InfoScreen({ title, body, cta }: { title: string; body: string; cta?: { href: string; label: string } }) {
   return (

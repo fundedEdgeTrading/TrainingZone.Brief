@@ -156,7 +156,11 @@ export async function KpiRow({ orgId, centerId, range }: PanelProps) {
 
 export async function PostalPanel({ orgId, centerId, range }: PanelProps) {
   const { points, opportunity } = await getPostalPanelData(orgId, { centerId, range });
-  return <PostalMapPanel points={points} opportunity={opportunity} />;
+  // E11-07 · El periodo y el centro bajan hasta el enlace del mapa de barrios,
+  // que hasta ahora apuntaba a `/mapa-barrios` a secas y perdía los dos.
+  return (
+    <PostalMapPanel points={points} opportunity={opportunity} range={range ?? "mes"} centerId={centerId ?? null} />
+  );
 }
 
 /* ---------- 4. Dinero ---------- */

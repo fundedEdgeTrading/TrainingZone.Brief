@@ -346,8 +346,8 @@ const styles = StyleSheet.create({
   kpiGrid: { flexDirection: "row", gap: 8 },
   kpiTile: { flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 11, paddingHorizontal: 9, gap: 3 },
   kpiValueRow: { flexDirection: "row", alignItems: "baseline", gap: 4 },
-  kpiHint: { fontFamily: fonts.bold, fontSize: 10.5, ...tabular },
-  kpiLabel: { fontFamily: fonts.medium, fontSize: 9, letterSpacing: 0.5, textTransform: "uppercase" },
+  kpiHint: { fontFamily: fonts.bold, fontSize: 11, ...tabular },
+  kpiLabel: { fontFamily: fonts.medium, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase" },
   agendaRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12 },
   agendaTime: { fontFamily: fonts.bold, fontSize: 12.5, width: 44, ...tabular },
 });

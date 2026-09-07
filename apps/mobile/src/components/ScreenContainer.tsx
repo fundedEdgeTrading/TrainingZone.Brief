@@ -1,19 +1,22 @@
 import { useEffect, useState, type PropsWithChildren, type ReactElement } from "react";
 import {
   Animated,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   View,
+  type ListRenderItemInfo,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type RefreshControlProps,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme, layout } from "@/theme/theme";
-import { authEnter, easeOutSoft, useReducedMotion } from "@/theme/motion";
+import { authEnter, easeOutSoft, stagger, useReducedMotion } from "@/theme/motion";
 import { useAuth } from "@/auth/auth-context";
+import { FadeInUp } from "@/components/FadeInUp";
 
 type Props = PropsWithChildren<{
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -126,6 +129,77 @@ export function ScreenContainer({
       {scroll}
     </Animated.View>
   );
+}
+
+/**
+ * E8-09: variante virtualizada de `ScreenContainer`, sobre `FlatList`.
+ *
+ * `ScreenContainer` monta todo dentro de un `ScrollView`: un centro con 500
+ * socios eran 500 tarjetas vivas con su propio `Animated.Value` a la vez, y la
+ * paginación de `socios/index.tsx` (`flatMap` + `onEndReached`) las iba
+ * acumulando TODAS dentro de ese mismo `ScrollView`. Aquí solo se pinta lo que
+ * cabe en pantalla, más el margen de `windowSize`.
+ *
+ * El resto de la pantalla —cabecera, buscador, chips— se pasa como
+ * `ListHeaderComponent`, que es la parte fija de arriba, no un elemento más
+ * de la lista.
+ */
+export function ScreenList<T>({
+  data,
+  renderItem,
+  keyExtractor,
+  ListHeaderComponent,
+  ListEmptyComponent,
+  refreshControl,
+  onEndReached,
+  ListFooterComponent,
+  gap = layout.gap,
+}: {
+  data: T[];
+  renderItem: (info: ListRenderItemInfo<T>) => ReactElement | null;
+  keyExtractor: (item: T, index: number) => string;
+  ListHeaderComponent?: ReactElement | null;
+  ListEmptyComponent?: ReactElement | null;
+  refreshControl?: ReactElement<RefreshControlProps>;
+  onEndReached?: () => void;
+  ListFooterComponent?: ReactElement | null;
+  gap?: number;
+}) {
+  const theme = useTheme();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <FlatList
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={{
+        paddingTop: insets.top + 14,
+        paddingHorizontal: layout.screenPadding,
+        paddingBottom: 28,
+        gap,
+      }}
+      data={data}
+      renderItem={renderItem}
+      keyExtractor={keyExtractor}
+      ListHeaderComponent={ListHeaderComponent}
+      ListHeaderComponentStyle={{ gap, marginBottom: gap }}
+      ListEmptyComponent={ListEmptyComponent}
+      ListFooterComponent={ListFooterComponent}
+      refreshControl={refreshControl}
+      onEndReached={onEndReached}
+      onEndReachedThreshold={0.4}
+      keyboardShouldPersistTaps="handled"
+      // El sexto elemento en adelante ya no anima: con listas largas, animar
+      // cada fila que entra en pantalla al hacer scroll deja de leerse como
+      // una entrada y empieza a leerse como parpadeo.
+      initialNumToRender={12}
+    />
+  );
+}
+
+/** Envuelve la fila en `FadeInUp` solo para las primeras seis (E8-09). */
+export function listItemEntry(index: number, node: ReactElement): ReactElement {
+  if (index >= 6) return node;
+  return <FadeInUp delay={stagger(index)}>{node}</FadeInUp>;
 }
 
 /**

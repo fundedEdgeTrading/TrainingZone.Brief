@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  photoHint: { fontFamily: "Poppins_500Medium", fontSize: 10.5, letterSpacing: 1.2, color: "#9C9686" },
+  photoHint: { fontFamily: "Poppins_500Medium", fontSize: 11, letterSpacing: 1.2, color: "#9C9686" },
   content: { gap: layout.gap, padding: layout.screenPadding, paddingBottom: 40 },
   allocationHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   total: { fontFamily: fonts.bold, fontSize: 13, ...tabular },

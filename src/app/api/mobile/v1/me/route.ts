@@ -10,7 +10,9 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { id: claims.sub },
-    select: { id: true, name: true, email: true, image: true, role: true, orgId: true, centerId: true },
+    // `theme` (E13-02, D-M5): la app lee la preferencia del servidor en vez de
+    // decidir solo con el ajuste del sistema operativo, como ya hace la web.
+    select: { id: true, name: true, email: true, image: true, role: true, orgId: true, centerId: true, theme: true },
   });
   if (!user) return apiError("No autenticado.", 401);
 

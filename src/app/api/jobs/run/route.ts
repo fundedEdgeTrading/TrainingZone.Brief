@@ -6,11 +6,13 @@ import { runLeadOwnerAlertRule } from "@/lib/leads-queries";
 import { runFewSessionsScheduledRule, runLowPackBalanceRule } from "@/lib/trainer-alerts";
 import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runConsecutiveNoShowsRule } from "@/lib/no-show-alerts";
+import { backfillOpeningEntries } from "@/lib/session-ledger";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 import { runAssessmentDueRule } from "@/lib/assessment-jobs";
 import { runBirthdayRule } from "@/lib/birthday-jobs";
+import { runSessionReminderRule } from "@/lib/session-reminders";
 import { runRetentionAlertRule } from "@/lib/retention";
 import { runSepaPrenotificationRule } from "@/lib/sepa-prenotification-job";
 import { purgeAuditLog, purgePendingPaymentOrganizations, runDataRetention, type RetentionRunReport } from "@/lib/data-retention";
@@ -51,6 +53,8 @@ export async function GET(req: NextRequest) {
     feedbackCyclePrompts: 0,
     assessmentsDue: 0,
     birthdayGreetings: 0,
+    sessionReminders: 0,
+    ledgerOpeningEntries: 0,
     sepaPrenotifications: 0,
     dataRetention: 0,
     auditLogPurged: 0,
@@ -94,12 +98,21 @@ export async function GET(req: NextRequest) {
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
     summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
     summary.birthdayGreetings += await run(org.id, "birthdayGreetings", () => runBirthdayRule(org.id));
+    summary.sessionReminders += await run(org.id, "sessionReminders", () => runSessionReminderRule(org.id));
+    // E2-15: fila de apertura del libro mayor para los bonos anteriores a él.
+    // Es idempotente (solo entra el bono que no tiene ningún asiento), así que
+    // pasar por aquí en cada ejecución no cuesta nada y no hace falta un
+    // despliegue especial para el histórico.
+    summary.ledgerOpeningEntries += await run(org.id, "ledgerOpeningEntries", () =>
+      prisma.$transaction((tx) => backfillOpeningEntries(tx, org.id))
+    );
     // E10-13: el preaviso de cargo SEPA es correo de servicio y va con el resto
     // de reglas temporales. Sin él, el socio domiciliado se entera del cargo
     // por el extracto y el esquema SEPA Core queda incumplido.
     summary.sepaPrenotifications += await run(org.id, "sepaPrenotifications", () => runSepaPrenotificationRule(org.id));
     // E10-08 · motor de conservación. Va el ÚLTIMO de la organización: purga y
-    // anonimiza, y las reglas anteriores todavía quieren leer lo que borra.
+    // anonimiza, y TODAS las reglas anteriores —recordatorios y libro mayor
+    // incluidos— todavía quieren leer lo que borra.
     summary.dataRetention += await run(org.id, "dataRetention", async () => {
       const reports = await runDataRetention(org.id);
       retention.push(...reports.map((r) => ({ ...r, orgId: org.id })));

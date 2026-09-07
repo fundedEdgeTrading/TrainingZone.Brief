@@ -58,6 +58,28 @@ function withPathname(req: NextRequest) {
   return NextResponse.next({ request: { headers } });
 }
 
+/**
+ * E9-01 · Lo que el proxy NO mira.
+ *
+ * A las exclusiones de siempre (`_next`, favicon, imágenes) se suman tres que
+ * son de rastreo, no de estética:
+ *
+ *  · `.txt` y `.xml` — Googlebot pide `/robots.txt` ANTES de rastrear nada. Un
+ *    307 a `/login?callbackUrl=/robots.txt` no se lee como "prohibido", se lee
+ *    como "no disponible", y el rastreo del host entero queda en suspenso.
+ *    Mismo caso para `/sitemap.xml`.
+ *  · `.well-known/` — la verificación de App Links (`assetlinks.json`) y de
+ *    Universal Links (`apple-app-site-association`) la hacen Google y Apple sin
+ *    sesión y sin seguir redirecciones: si rebotan, la verificación falla EN
+ *    SILENCIO y el enlace profundo simplemente deja de abrir la app. No lleva
+ *    extensión en el caso de Apple, así que se excluye por prefijo.
+ *
+ * Excluir de aquí no publica nada por sí solo: solo significa que si el fichero
+ * existe se sirve tal cual. Cualquier otra ruta sigue pasando por la
+ * comprobación de sesión de abajo.
+ */
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|webp)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|\\.well-known/|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|txt|xml|webmanifest)$).*)",
+  ],
 };

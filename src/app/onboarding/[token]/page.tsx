@@ -1,6 +1,8 @@
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { ROLE_LABEL } from "@/lib/rbac";
 import OnboardingForm from "./onboarding-form";
+import { tokenPageMetadata } from "@/lib/seo";
 
 // Sin generateStaticParams, Next.js podría cachear indefinidamente la
 // primera respuesta que reciba cada token (p. ej. si un escáner de
@@ -8,6 +10,14 @@ import OnboardingForm from "./onboarding-form";
 // El token es de un solo uso y sensible al tiempo, así que esta página
 // debe renderizarse siempre en el momento de la petición.
 export const dynamic = "force-dynamic";
+
+/**
+ * E9-02 · El token viaja en la URL: `noindex`, `nofollow`, `nocache` y
+ * `referrer: no-referrer` — sin esto, un enlace de este correo indexado es
+ * acceso sin contraseña, y la cabecera `Referer` filtra el token a cualquier
+ * tercero que la página cargue.
+ */
+export const metadata: Metadata = tokenPageMetadata("Activa tu cuenta");
 
 function InvalidLinkScreen({ message }: { message: string }) {
   return (

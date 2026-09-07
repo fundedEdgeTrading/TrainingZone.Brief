@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { createMemberCheckout } from "@/lib/member-billing";
+import { createMemberCheckout, isSellableInApp, PLAN_NOT_SELLABLE_IN_APP_ERROR } from "@/lib/member-billing";
 import { requireMember } from "../../../_lib/require-member";
 import { apiOk, apiError } from "../../../_lib/response";
 
@@ -24,9 +24,13 @@ export async function POST(req: NextRequest) {
   // comprable desde este endpoint, a diferencia de `/api/mobile/v1/checkout`.
   const plan = await prisma.membershipPlan.findFirst({
     where: { id: parsed.data.planId, orgId: auth.claims.orgId, active: true },
-    select: { id: true },
+    select: { id: true, type: true },
   });
   if (!plan) return apiError("Ese producto ya no está disponible.", 404);
+  // HU-ST-10/D-S3: misma regla que en `/api/mobile/v1/checkout`. Las dos
+  // puertas de compra de la app comparten la fuente (`isSellableInApp`), no una
+  // copia de la lista de tipos.
+  if (!isSellableInApp(plan.type)) return apiError(PLAN_NOT_SELLABLE_IN_APP_ERROR, 403);
 
   const result = await createMemberCheckout({
     orgId: auth.claims.orgId,

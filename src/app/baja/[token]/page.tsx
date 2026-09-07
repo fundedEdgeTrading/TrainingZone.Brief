@@ -1,9 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { verifyEmailPreferencesToken } from "@/lib/email-verification";
 import { getMemberEmailPreferences } from "@/lib/email-preferences-queries";
 import UnsubscribeForm from "./unsubscribe-form";
+import { tokenPageMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * E9-02 · El token viaja en la URL: `noindex`, `nofollow`, `nocache` y
+ * `referrer: no-referrer` — sin esto, un enlace de este correo indexado es
+ * acceso sin contraseña, y la cabecera `Referer` filtra el token a cualquier
+ * tercero que la página cargue.
+ */
+export const metadata: Metadata = tokenPageMetadata("Darse de baja");
 
 function InfoScreen({ title, body, cta }: { title: string; body: string; cta?: { href: string; label: string } }) {
   return (
@@ -68,11 +78,12 @@ export default async function UnsubscribePage({ params }: { params: Promise<{ to
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-brand-muted">{view.brandName}</p>
           <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black mt-1">
-            Darte de baja
+            Baja de comunicaciones comerciales
           </h1>
           <p className="text-sm text-muted mt-2">
             Hola, {view.firstName}. Dejaremos de enviar a <b>{view.email}</b> los avisos de plazas, los recordatorios de
-            valoración, la felicitación de cumpleaños y las novedades del centro.
+            valoración, la felicitación de cumpleaños y las novedades del centro. Esto no afecta a tu cuota ni a tu
+            acceso: si quieres dar de baja tu suscripción, hazlo desde tu portal.
           </p>
         </div>
 

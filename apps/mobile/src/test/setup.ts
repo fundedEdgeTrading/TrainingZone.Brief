@@ -23,6 +23,9 @@ jest.mock("expo-secure-store", () => {
   const store = new Map<string, string>();
   return {
     __store: store,
+    // E10-18: el valor real no importa en el doble — solo que `client.ts` lo
+    // pase tal cual a `setItemAsync`, así que basta con que exista.
+    WHEN_UNLOCKED_THIS_DEVICE_ONLY: "AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY",
     getItemAsync: jest.fn(async (key: string) => store.get(key) ?? null),
     setItemAsync: jest.fn(async (key: string, value: string) => void store.set(key, value)),
     deleteItemAsync: jest.fn(async (key: string) => void store.delete(key)),

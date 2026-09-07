@@ -3,7 +3,6 @@ import type { BookingStatus, MemberState, NoShowReason } from "@prisma/client";
 import { formatDateParam } from "@/lib/date-utils";
 import { toMin } from "@/app/(app)/agenda/agenda-utils";
 import { sessionServiceKind } from "@/lib/session-balance";
-import { withSignedPhotoUrls } from "@/lib/progress-photos";
 
 /**
  * Búsqueda por nombre/email, compartida por el listado y por la base de
@@ -135,16 +134,19 @@ export async function getMemberDetail(orgId: string, memberId: string) {
         take: 30,
         include: { session: true, debrief: true },
       },
-      progressEntries: { orderBy: { date: "desc" } },
+      // E10-02: `progressEntries` YA NO viaja en la ficha. Es dato del Art. 9
+      // (fotos de progreso y composición corporal) y se lee por el punto único,
+      // `getProgressEntriesForMember` en lib/health-access.ts, que aplica la
+      // matriz de permisos y deja rastro. Cargarlo aquí se lo daba a recepción.
       invitation: { select: { usedAt: true, expiresAt: true } },
       clientGoals: { orderBy: { createdAt: "desc" } },
     },
   });
-  if (!member) return null;
-  // E10-20: la foto ya no está en la columna. Lo que se entrega a la pantalla
-  // es un enlace firmado y caducado que pasa por `/api/progress-photos`, donde
-  // se aplican los permisos de salud y se deja rastro en `AuditLog`.
-  return { ...member, progressEntries: withSignedPhotoUrls(member.progressEntries, member.id) };
+  // E10-20: la firma de las URL de foto ya no vive aquí. Con E10-02,
+  // `progressEntries` salió de la ficha y se lee por el punto único
+  // (`getProgressEntriesForMember`, lib/health-access.ts); la firma se aplica
+  // allí, que es por donde pasa ahora tanto la web como la app.
+  return member;
 }
 
 // Modalidad de servicio y cuentas de saldo: viven en session-balance.ts, que no

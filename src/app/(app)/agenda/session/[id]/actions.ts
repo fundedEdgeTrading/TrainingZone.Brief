@@ -12,6 +12,7 @@ import {
 } from "@/lib/agenda-queries";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { parseNoShowReason } from "@/lib/no-show";
+import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import { notifyConsecutiveNoShows } from "@/lib/no-show-alerts";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
@@ -72,22 +73,33 @@ export async function toggleCheckIn(bookingId: string, sessionId: string): Promi
   });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
 
+  // Desmarcar devuelve a BOOKED, nunca a CANCELLED: cancelar libera plaza y
+  // devuelve bono, y quitar un check no es ninguna de las dos cosas (E2-02).
   const newStatus = booking.status === "ATTENDED" ? "BOOKED" : "ATTENDED";
+
+  // RB-RES-010: el estado de partida manda. Una reserva WAITLISTED nunca ocupó
+  // plaza ni consumió bono, así que alternar su check la metía en una sesión
+  // llena sin pasar por la promoción; una CANCELLED, directamente, resucitaba.
+  const transition = checkBookingTransition(booking.status, newStatus);
+  if (!transition.ok) return { ok: false, error: transition.error };
 
   // Rectificar una falta no es solo cambiar el estado: hay que borrar el motivo
   // y, si aquella falta devolvió la sesión al bono, volver a descontarla
   // (RB-RES-009). Por eso pasa por `clearBookingNoShow` y no por un update suelto.
   if (booking.status === "NO_SHOW") {
-    const cleared = await clearBookingNoShow(actor.user.orgId, bookingId, newStatus);
+    const cleared = await clearBookingNoShow(actor.user.orgId, bookingId, newStatus, actor.user.id);
     if (!cleared.ok) return cleared;
   } else {
-    await prisma.booking.update({
-      where: { id: bookingId },
+    // La condición de estado viaja también dentro del UPDATE: entre la lectura
+    // y la escritura la reserva puede haberse cancelado desde el portal.
+    const applied = await prisma.booking.updateMany({
+      where: { id: bookingId, status: { in: statusesEndingAt(newStatus) } },
       data: {
         status: newStatus,
         checkedInAt: newStatus === "ATTENDED" ? new Date() : null,
       },
     });
+    if (applied.count === 0) return { ok: false, error: bookingTransitionMessage(booking.status, newStatus) };
   }
   revalidateSessionViews(sessionId);
   return { ok: true, checkedIn: newStatus === "ATTENDED" };
@@ -120,7 +132,12 @@ export async function markNoShowAction(
   const reason = parseNoShowReason(reasonRaw);
   if (!reason) return { ok: false, error: "Indica el motivo de la falta." };
 
-  const result = await markBookingNoShow(actor.user.orgId, bookingId, { sessionId, reason, refundSession });
+  const result = await markBookingNoShow(actor.user.orgId, bookingId, {
+    sessionId,
+    reason,
+    refundSession,
+    actorUserId: actor.user.id,
+  });
   if (!result.ok) return result;
 
   // Tres faltas seguidas sin avisar son un aviso a dirección, no un incidente

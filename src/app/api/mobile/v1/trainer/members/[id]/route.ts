@@ -4,14 +4,14 @@ import { getTrainerMemberDetail } from "@/lib/trainer-members-queries";
 import { isMemberInScope } from "@/lib/center-scope";
 import { canManageMesocycles } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
-import { requireApiRole } from "../../../_lib/api-session";
+import { requireApiRoute } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
 
 const TRAINER_ROLES: Role[] = ["TRAINER", "TRAINER_ADMIN", "OWNER", "CENTER_DIRECTOR"];
 const MAX_NOTE_LENGTH = 2000;
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, TRAINER_ROLES);
+  const auth = await requireApiRoute(req, TRAINER_ROLES, "/trainer/members/[id]");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id } = await params;
@@ -34,7 +34,7 @@ type NoteBody = { body?: string };
 
 /** «Nueva nota» de la ficha: el gesto que el entrenador hace en la sala. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole(req, TRAINER_ROLES);
+  const auth = await requireApiRoute(req, TRAINER_ROLES, "/trainer/members/[id]");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
   const { id } = await params;

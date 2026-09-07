@@ -685,6 +685,69 @@ export function renderAssessmentDueEmail(opts: {
 // el token caducado pide uno nuevo desde /preferencias y le llega este. Lleva
 // el mismo shell y la misma ficha que el resto.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 09 · Recordatorio de sesión (E5-03/RB-RES-013) — a 24h y a 2h
+//
+// Correo de SERVICIO: se envía aunque el socio haya desactivado las
+// comunicaciones comerciales (`emailOptOutAt`) y no lleva enlace de baja
+// publicitaria — solo Privacidad. La única preferencia que lo desactiva es la
+// suya propia, específica de recordatorios, gestionable en su portal.
+// ---------------------------------------------------------------------------
+export function renderSessionReminderEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  variant: "24H" | "2H";
+  sessionName: string;
+  dateLabel: string;
+  startTime: string;
+  centerName: string;
+  agendaUrl: string;
+  room?: string;
+  trainerName?: string;
+  /** Ventana real de cancelación del centro (RB-RES-005), nunca un literal fijo. */
+  cancelWindowHours: number;
+  postalAddress?: string;
+}) {
+  const is24h = opts.variant === "24H";
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Agenda",
+    preheader: is24h
+      ? `Mañana entrenas: ${opts.sessionName} a las ${opts.startTime}.`
+      : `Tu sesión empieza en 2 horas: ${opts.sessionName} a las ${opts.startTime}.`,
+    eyebrow: is24h ? "Recordatorio · mañana" : "Recordatorio · en 2 horas",
+    title: is24h
+      ? `¡Hola, ${esc(opts.memberFirstName)}!<br>Mañana entrenas.`
+      : `¡Hola, ${esc(opts.memberFirstName)}!<br>Tu sesión es en 2 horas.`,
+    bodyHtml: is24h
+      ? p(
+          `Recuerda que mañana tienes ${strong(opts.sessionName)} a las ${strong(opts.startTime)}. Si no puedes ir, cancela con antelación para no perder la sesión de tu bono.`,
+          true
+        )
+      : p(`Tu sesión de ${strong(opts.sessionName)} empieza en 2 horas. Nos vemos en ${strong(opts.centerName)}.`, true),
+    rows: [
+      { label: "Sesión", value: opts.sessionName },
+      { label: "Fecha", value: opts.dateLabel },
+      { label: opts.room ? "Hora · Sala" : "Hora", value: opts.room ? `${opts.startTime} · ${opts.room}` : opts.startTime },
+      ...(opts.trainerName ? [{ label: "Entrenador", value: opts.trainerName }] : []),
+      { label: "Centro", value: opts.centerName },
+    ],
+    ctaLabel: is24h ? "Ver o cancelar mi reserva" : "Ver mi reserva",
+    ctaUrl: opts.agendaUrl,
+    noteHtml: is24h
+      ? `Puedes cancelar sin penalización hasta ${opts.cancelWindowHours}h antes de la clase. Pasado ese plazo, la sesión se da por empleada y no se devuelve a tu bono.`
+      : "Este es solo un recordatorio: no hace falta que confirmes nada.",
+    signOff: `Nos vemos en el centro,<br>${strong(`El equipo de ${opts.centerName}`)}`,
+    senderName: opts.centerName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason:
+      "Recibes este email porque tienes una reserva confirmada — es un correo de servicio de tu reserva. Puedes desactivar los recordatorios desde tu portal, en Perfil.",
+    footerLinksHtml: PRIVACY(),
+  });
+}
+
 export function renderEmailPreferencesLinkEmail(opts: {
   recipientFirstName: string;
   brandName: string;

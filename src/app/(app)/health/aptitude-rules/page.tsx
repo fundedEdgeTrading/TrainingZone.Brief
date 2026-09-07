@@ -7,6 +7,8 @@ import { requireFeature } from "@/lib/entitlements";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
+import { injuryZoneLabel } from "@/lib/injury-zones";
+import { countMembersAffectedByRules, type RuleImpact } from "@/lib/aptitude-rules-queries";
 import DeleteButton from "./delete-button";
 import CreateRuleForm from "./create-rule-form";
 
@@ -23,11 +25,16 @@ export default async function AptitudeRulesPage() {
   // se saltaría el filtro del menú.
   await requireFeature("salud_aptitud");
 
-  const rules = await prisma.aptitudeRule.findMany({
-    where: { orgId: session.user.orgId },
-    include: { editedBy: { select: { name: true } } },
-    orderBy: [{ injuryZone: "asc" }, { light: "desc" }],
-  });
+  const [rules, impact] = await Promise.all([
+    prisma.aptitudeRule.findMany({
+      where: { orgId: session.user.orgId },
+      include: { editedBy: { select: { name: true } } },
+      orderBy: [{ zoneCode: "asc" }, { injuryZone: "asc" }, { light: "desc" }],
+    }),
+    // E3-04: a cuánta gente afecta cada regla HOY. Agregado, no una consulta por
+    // regla, y acotado al ámbito de centro de quien mira.
+    countMembersAffectedByRules(session.user),
+  ]);
 
   return (
     <div className="tz-page space-y-4">
@@ -37,7 +44,7 @@ export default async function AptitudeRulesPage() {
 
       <DataTable
         columns={canEdit ? ruleColumns : ruleColumns.filter((c) => c.key !== "actions")}
-        rows={rules.map((r) => ruleToRow(r, canEdit, timeZone))}
+        rows={rules.map((r) => ruleToRow(r, canEdit, timeZone, impact.get(r.id)))}
         emptyTitle="Sin reglas"
       />
     </div>
@@ -51,22 +58,41 @@ const ruleColumns: DataTableColumn[] = [
   { key: "blockArea", header: "Bloque", sortable: true },
   { key: "light", header: "Semáforo", sortable: true },
   { key: "adaptation", header: "Adaptación", sortable: true, className: "text-muted" },
+  { key: "affected", header: "Socios afectados", sortable: true, className: "tz-nums" },
   { key: "editedBy", header: "Editado por", sortable: true, className: "text-faint text-xs" },
   { key: "actions", header: "" },
 ];
 
-function ruleToRow(r: Rule, canEdit: boolean, timeZone: string): DataTableRow {
+/** Rótulo de la zona: del catálogo si ya está normalizada, del texto heredado si no. */
+function zoneText(r: Rule): string {
+  return r.zoneCode ? injuryZoneLabel(r.zoneCode, r.side) : r.injuryZone;
+}
+
+function ruleToRow(r: Rule, canEdit: boolean, timeZone: string, impact?: RuleImpact): DataTableRow {
+  const affected = impact?.affectedMembers ?? 0;
   return {
     key: r.id,
+    // Una regla huérfana —0 socios PERO lesiones registradas en su zona— está
+    // mal escrita, y hasta ahora eso no se veía de ninguna manera.
+    className: impact?.orphan ? "bg-warning-bg" : undefined,
     sortValues: {
-      injuryZone: r.injuryZone,
+      injuryZone: zoneText(r),
       blockArea: r.blockArea,
       light: r.light,
       adaptation: r.adaptation ?? "",
+      affected,
       editedBy: r.updatedAt.getTime(),
     },
     cells: {
-      injuryZone: r.injuryZone,
+      injuryZone: r.zoneCode ? (
+        zoneText(r)
+      ) : (
+        // E3-02: regla heredada que el mapeo declarado no supo traducir. No se
+        // descarta ni se adivina: se enseña como está y se pide revisarla.
+        <span title="Zona sin normalizar: revísala para que vuelva a emparejar.">
+          {r.injuryZone} <span className="text-warning-text">· revisar</span>
+        </span>
+      ),
       blockArea: r.blockArea,
       light: (
         <span className="inline-flex items-center gap-1.5">
@@ -75,6 +101,13 @@ function ruleToRow(r: Rule, canEdit: boolean, timeZone: string): DataTableRow {
         </span>
       ),
       adaptation: r.adaptation ?? "—",
+      affected: impact?.orphan ? (
+        <span className="text-warning-text font-semibold" title="Hay lesiones registradas en esta zona y la regla no llega a ninguna: revisa la zona o el lado.">
+          0 · revisar
+        </span>
+      ) : (
+        affected
+      ),
       editedBy: (
         <>
           {r.editedBy?.name} · {formatInstantDate(r.updatedAt, timeZone)}

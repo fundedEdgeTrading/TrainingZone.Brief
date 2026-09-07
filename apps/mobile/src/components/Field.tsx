@@ -63,6 +63,12 @@ export function Field({ label, action, suffix, error, right, style, multiline, o
         ]}
       >
         <TextInput
+          // E8-03: la etiqueta es un <Text> suelto y en React Native no hay
+          // asociación implícita como el `htmlFor` de la web — sin esto,
+          // VoiceOver/TalkBack anunciaban "campo de texto" a secas, login
+          // incluido. `error` se anuncia como pista, no solo en rojo.
+          accessibilityLabel={label ?? props.placeholder}
+          accessibilityHint={error ?? undefined}
           placeholderTextColor={placeholder}
           multiline={multiline}
           onFocus={(e) => {
