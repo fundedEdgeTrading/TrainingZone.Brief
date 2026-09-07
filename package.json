@@ -13,6 +13,7 @@
     "db:migrate-injury-zones": "tsx prisma/migrate-injury-zones.ts",
     "db:studio": "prisma studio",
     "test:unit": "tsx --test $(find src -name '*.test.ts')",
+    "test:unit:coverage": "node scripts/test-unit-coverage.mjs",
     "test:e2e": "playwright test",
     "migrate:fotos": "tsx scripts/migrate-progress-photos.ts",
     "export:fichajes": "tsx scripts/export-timeclock.ts"
