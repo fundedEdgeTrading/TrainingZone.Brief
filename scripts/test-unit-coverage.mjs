@@ -34,18 +34,43 @@ function testFiles(dir) {
   return out;
 }
 
+/**
+ * `--test-coverage-exclude` existe desde Node 22.5. CI corre Node 20 (ver
+ * `node-version` en el workflow), donde Node RECHAZA el proceso entero con
+ * "bad option" en vez de ignorar la bandera: pasarla sin comprobar dejó el job
+ * en rojo aunque los tests estuvieran verdes.
+ *
+ * Así que se detecta el runtime en vez de darlo por hecho. Sin exclusiones el
+ * informe sigue sirviendo para lo que pide la historia —ver qué módulo está sin
+ * probar y decidir dónde escribir el siguiente test, que se lee fichero a
+ * fichero—, pero el TOTAL queda inflado porque cuenta también los ficheros de
+ * prueba, que están cubiertos por definición. Cuando pasa, el resumen lo dice
+ * en vez de publicar un número que aparenta más de lo que hay.
+ */
+const [major, minor] = process.versions.node.split(".").map(Number);
+const supportsExclude = major > 22 || (major === 22 && minor >= 5);
+
 const args = [
   "--test",
   "--experimental-test-coverage",
   // Ni los propios tests ni sus andamios: la cobertura que interesa es la del
   // código que se envía, y un fichero de fixtures siempre sale al 100 % por
   // definición —lo ejecuta el test que lo usa— así que solo diluye el número.
-  "--test-coverage-exclude=**/*.test.ts",
-  "--test-coverage-exclude=**/e7-07-fixture.ts",
+  ...(supportsExclude ? ["--test-coverage-exclude=**/*.test.ts", "--test-coverage-exclude=**/e7-07-fixture.ts"] : []),
   ...testFiles("src"),
 ];
 
-const child = spawn("tsx", args, { stdio: ["inherit", "pipe", "inherit"], shell: process.platform === "win32" });
+/**
+ * Se lanza `process.execPath` con el CLI de tsx como argumento, en vez del
+ * envoltorio `tsx` del PATH. El envoltorio arranca con `#!/usr/bin/env node`, o
+ * sea con el PRIMER node del PATH, que no tiene por qué ser este: y como quien
+ * consume la bandera de arriba es el proceso hijo, la comprobación de versión
+ * estaría mirando un runtime distinto del que decide. Así son el mismo, por
+ * construcción.
+ */
+const TSX_CLI = new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url).pathname;
+
+const child = spawn(process.execPath, [TSX_CLI, ...args], { stdio: ["inherit", "pipe", "inherit"] });
 
 let buffered = "";
 child.stdout.on("data", (chunk) => {
@@ -81,6 +106,15 @@ function publish(output) {
   // de ficheros y en el resumen no se lee. El detalle sigue en el log del job.
   const all = report.split("\n").find((line) => line.startsWith("all files")) ?? "";
 
+  const nota = supportsExclude
+    ? "Medida con la cobertura experimental de `node:test` sobre el cargador de tsx (sin c8: el mapeo de fuentes funciona)."
+    : [
+        `**El total de arriba está inflado**: este runtime es Node ${process.versions.node} y`,
+        "`--test-coverage-exclude` necesita 22.5, así que los ficheros de prueba cuentan dentro",
+        "(y están cubiertos por definición). El detalle por fichero de abajo sí es fiable, que es",
+        "lo que sirve para decidir dónde escribir el siguiente test. Con Node ≥ 22.5 el total sale limpio.",
+      ].join("\n");
+
   const markdown = [
     "### Cobertura de la web (`npm run test:unit`)",
     "",
@@ -88,9 +122,9 @@ function publish(output) {
     all.trim() || "sin datos",
     "```",
     "",
-    "Medida con la cobertura experimental de `node:test` sobre el cargador de tsx",
-    "(sin c8: el mapeo de fuentes funciona). Sin umbral: primero se mide, y cuando",
-    "el número dirija alguna decisión se discute exigirlo.",
+    nota,
+    "",
+    "Sin umbral: primero se mide, y cuando el número dirija alguna decisión se discute exigirlo.",
     "",
     "<details><summary>Informe completo por fichero</summary>",
     "",
