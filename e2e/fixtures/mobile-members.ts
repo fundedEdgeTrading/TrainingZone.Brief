@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { setPassword } from "@/lib/identity";
+import { CONSENT_VERSION } from "@/lib/consent";
 
 /**
  * Socios, sesiones y reservas de usar y tirar DENTRO de la organización de
@@ -90,6 +91,17 @@ export async function createFixtureMember(
       lastName: tag,
       email,
       state: "ACTIVE",
+      // E5-08: sin esto el socio entra al portal detrás del muro de primera
+      // sesión (edad, contacto de emergencia y declaración de salud) y no llega
+      // a ver ninguna clase — el spec de paridad se caía ahí, no en la reserva.
+      // El socio de estos fixtures es uno que ya pasó por la puerta.
+      birthDate: new Date("1990-05-17"),
+      emergencyContact: "Contacto de prueba · 600000000",
+      consentHealth: true,
+      // Con la versión vigente firmada: si no, el portal recibe al socio con el
+      // aviso de reconsentimiento encima de la lista de clases.
+      consentVersion: CONSENT_VERSION,
+      consentHealthAt: new Date(),
     },
   });
   const subscription = await prisma.subscription.create({
@@ -185,11 +197,38 @@ export async function cleanupFixtures() {
   await prisma.classSession.deleteMany({ where: { id: { in: sessionIds } } });
   await prisma.auditLog.deleteMany({ where: { memberId: { in: memberIds } } });
   await prisma.subscription.deleteMany({ where: { memberId: { in: memberIds } } });
+  // Todo lo que cuelga del socio con FK obligatoria. La lista sale del esquema
+  // (los modelos con `memberId String` sin `?`) y no de ir persiguiendo el
+  // error de clave ajena que toque: pasar por el portal web, por ejemplo, deja
+  // `AnnouncementView`, que no tiene nada que ver con reservas.
+  await prisma.announcementView.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.clientFeedback.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.selfAssessment.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.trainerDebrief.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.trainerRating.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.retentionAlert.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.memberNote.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.conversation.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.assessment.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.mesocycle.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.workoutProgram.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.performanceMetric.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.memberProgressEntry.deleteMany({ where: { memberId: { in: memberIds } } });
+  await prisma.payment.deleteMany({ where: { memberId: { in: memberIds } } });
   await prisma.member.deleteMany({ where: { id: { in: memberIds } } });
 
-  const userIds = members.map((m) => m.userId).filter((id): id is string => Boolean(id));
-  const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { identityId: true } });
-  await prisma.user.deleteMany({ where: { id: { in: userIds } } });
-  await prisma.identity.deleteMany({ where: { id: { in: users.map((u) => u.identityId) } } });
+  // Por el PREFIJO DE EMAIL y no solo por los socios encontrados: si un
+  // `beforeAll` se cae entre crear la identidad y crear el socio, la fila
+  // huérfana bloquea la siguiente ejecución con un choque de email único —y el
+  // fallo aparece en un test que no tiene nada que ver.
+  const users = await prisma.user.findMany({
+    where: { email: { startsWith: `${FIXTURE_TAG}.` } },
+    select: { id: true, identityId: true },
+  });
+  // Reservar y cancelar genera avisos al socio: cuelgan del usuario con FK
+  // obligatoria, así que se sueltan antes de borrarlo.
+  await prisma.notification.deleteMany({ where: { recipientUserId: { in: users.map((u) => u.id) } } });
+  await prisma.user.deleteMany({ where: { id: { in: users.map((u) => u.id) } } });
+  await prisma.identity.deleteMany({ where: { email: { startsWith: `${FIXTURE_TAG}.` } } });
   await prisma.membershipPlan.deleteMany({ where: { name: { startsWith: `${FIXTURE_TAG}-` } } });
 }
