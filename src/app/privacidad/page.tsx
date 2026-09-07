@@ -81,6 +81,16 @@ export default function PrivacyPage() {
             y puedes descargarlos desde tu perfil.
           </p>
         </section>
+
+        <section className="border-t border-tz-linen pt-6">
+          <p className="text-sm leading-relaxed text-brand-text-2">
+            Qué cookies usamos y por qué, en{" "}
+            <Link href="/cookies" className="underline font-semibold">
+              Cookies
+            </Link>
+            .
+          </p>
+        </section>
       </div>
     </div>
   );

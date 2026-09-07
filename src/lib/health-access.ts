@@ -272,6 +272,41 @@ export type HealthWriteResult =
   | { ok: false; error: "forbidden" | "not_found" | "no_consent" };
 
 /**
+ * Declaración de salud mínima que el propio socio hace en el muro de alta
+ * (E5-08/F-ALTA), antes de tener entrenador asignado. Mismo patrón que
+ * `createHealthRecordForLead`: obligatoria aunque sea "ninguna", sin actor de
+ * staff detrás — es su propio dato, y declararlo ES el consentimiento mínimo
+ * de Art. 9 RGPD para tratarlo (`consentHealth`).
+ */
+export async function createSelfDeclaredHealthRecord({
+  memberId,
+  orgId,
+  description,
+}: {
+  memberId: string;
+  orgId: string;
+  description: string;
+}): Promise<void> {
+  const now = new Date();
+  await prisma.member.update({ where: { id: memberId }, data: { consentHealth: true, consentHealthAt: now } });
+
+  const record = await prisma.healthRecord.create({
+    data: { memberId, type: "CHRONIC_CONDITION", zone: null, description, severity: "LOW", status: "ACTIVE", consentSignedAt: now },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      action: "MEMBER_HEALTH_SELF_DECLARED",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      metadata: { recordId: record.id },
+    },
+  });
+}
+
+/**
  * Alta de un registro de salud (lesión, condición crónica...) por el MISMO
  * punto único que la lectura: aplica la matriz de permisos, exige
  * consentimiento explícito de datos de salud (Art. 9 RGPD) y deja rastro

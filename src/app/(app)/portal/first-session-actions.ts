@@ -6,15 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
 import { saveMemberInitialPart } from "@/lib/assessments/member-part";
 import { memberInitialPartSchema } from "@/lib/assessments/schemas";
+import { createSelfDeclaredHealthRecord } from "@/lib/health-access";
 import {
   missingEssentialProfileFields,
+  needsHealthDeclaration,
   type EssentialProfileField,
 } from "@/lib/member-first-session";
 
 export type FirstSessionResult = { ok: true } | { ok: false; error: string };
-
-const PHONE_RE = /^[+\d][\d\s-]{5,}$/;
-const POSTAL_CODE_RE = /^\d{5}$/; // mismo criterio que los leads (RB-LEAD-010)
 
 /** Edad admitida, la misma que exige el perfil de la valoración inicial. */
 const MIN_AGE = 14;
@@ -44,21 +43,21 @@ function validateField(field: EssentialProfileField, raw: string): { value: Date
       if (age > MAX_AGE) return { error: "Revisa la fecha de nacimiento." };
       return { value: date };
     }
-    case "phone":
-      return PHONE_RE.test(raw) ? { value: raw } : { error: "El teléfono no tiene un formato válido." };
-    case "postalCode":
-      return POSTAL_CODE_RE.test(raw) ? { value: raw } : { error: "El código postal debe tener 5 dígitos." };
     default:
       return { value: raw };
   }
 }
 
 /**
- * Cierra el primer tramo del muro: los datos que la importación no pudo traer.
+ * Cierra el tramo bloqueante del muro (E5-08): edad, contacto de emergencia y
+ * la declaración de salud mínima — lo único que el servicio necesita de
+ * verdad para la primera sesión. El resto del perfil (CP, domicilio,
+ * teléfono) ya no pasa por aquí: se pide después, sin bloquear.
  *
- * Solo escribe los que faltaban. Recalcular aquí la lista —en vez de fiarse de
- * lo que llegue en el formulario— evita que un envío manipulado sobrescriba un
- * dato que dirección ya había corregido a mano en la ficha.
+ * Solo escribe los campos esenciales que faltaban. Recalcular aquí la lista
+ * —en vez de fiarse de lo que llegue en el formulario— evita que un envío
+ * manipulado sobrescriba un dato que dirección ya había corregido a mano en
+ * la ficha.
  */
 export async function completeEssentialProfileAction(formData: FormData): Promise<FirstSessionResult> {
   const session = await requireRole(["MEMBER"]);
@@ -66,7 +65,8 @@ export async function completeEssentialProfileAction(formData: FormData): Promis
   if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
 
   const missing = missingEssentialProfileFields(member);
-  if (!missing.length) return { ok: true };
+  const missingHealthDeclaration = needsHealthDeclaration(member);
+  if (!missing.length && !missingHealthDeclaration) return { ok: true };
 
   const data: Record<string, Date | string> = {};
   for (const field of missing) {
@@ -75,7 +75,21 @@ export async function completeEssentialProfileAction(formData: FormData): Promis
     data[field] = result.value;
   }
 
-  await prisma.member.update({ where: { id: member.id }, data });
+  let healthDeclaration = "";
+  if (missingHealthDeclaration) {
+    healthDeclaration = textField(formData, "healthDeclaration");
+    if (!healthDeclaration) {
+      return { ok: false, error: "Cuéntanos si tienes alguna lesión o condición de salud — si no tienes ninguna, escribe «Ninguna»." };
+    }
+  }
+
+  if (Object.keys(data).length) {
+    await prisma.member.update({ where: { id: member.id }, data });
+  }
+
+  if (missingHealthDeclaration) {
+    await createSelfDeclaredHealthRecord({ memberId: member.id, orgId: session.user.orgId, description: healthDeclaration });
+  }
 
   await prisma.auditLog.create({
     data: {
@@ -85,7 +99,7 @@ export async function completeEssentialProfileAction(formData: FormData): Promis
       entityType: "Member",
       entityId: member.id,
       memberId: member.id,
-      metadata: { fields: missing },
+      metadata: { fields: missing, healthDeclaration: missingHealthDeclaration },
     },
   });
 

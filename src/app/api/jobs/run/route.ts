@@ -12,6 +12,7 @@ import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
 import { runAssessmentDueRule } from "@/lib/assessment-jobs";
 import { runBirthdayRule } from "@/lib/birthday-jobs";
+import { runSessionReminderRule } from "@/lib/session-reminders";
 import { runRetentionAlertRule } from "@/lib/retention";
 import { reportJobFailures } from "@/lib/job-failure-report";
 
@@ -50,6 +51,7 @@ export async function GET(req: NextRequest) {
     feedbackCyclePrompts: 0,
     assessmentsDue: 0,
     birthdayGreetings: 0,
+    sessionReminders: 0,
     ledgerOpeningEntries: 0,
   };
 
@@ -86,6 +88,7 @@ export async function GET(req: NextRequest) {
     summary.feedbackCyclePrompts += await run(org.id, "feedbackCyclePrompts", () => runFeedbackCycleRule(org.id));
     summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
     summary.birthdayGreetings += await run(org.id, "birthdayGreetings", () => runBirthdayRule(org.id));
+    summary.sessionReminders += await run(org.id, "sessionReminders", () => runSessionReminderRule(org.id));
     // E2-15: fila de apertura del libro mayor para los bonos anteriores a él.
     // Es idempotente (solo entra el bono que no tiene ningún asiento), así que
     // pasar por aquí en cada ejecución no cuesta nada y no hace falta un
