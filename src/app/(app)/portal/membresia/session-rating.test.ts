@@ -88,7 +88,10 @@ test("una valoración combinada limpia la pendiente Y alimenta el Session Brief"
 
   const weekStart = new Date(now);
   weekStart.setDate(weekStart.getDate() - 3);
-  const bySession = await getWeeklyClientFeedback(org.id, weekStart);
+  // ScopedUser de dirección de organización (E1-03): ámbito de toda la
+  // organización, igual que el informe semanal que consume este mapa.
+  const scopedOwner = { id: "owner-fixture", role: "OWNER" as const, orgId: org.id, centerId: null };
+  const bySession = await getWeeklyClientFeedback(scopedOwner, weekStart);
   const feedback = bySession.get(session.id);
   assert.ok(feedback, "el Session Brief tiene que seguir recibiendo el feeling de la valoración combinada");
   assert.equal(feedback![0].feeling, "GREEN");
