@@ -84,8 +84,12 @@ jobs:
       # Después de migrar: los tests de los reconciliadores de Stripe Billing
       # montan su propia organización contra la base real, porque el riesgo que
       # cubren (reentregas y dunning) solo se manifiesta en lo que queda escrito.
-      - name: Tests unitarios
-        run: npm run test:unit
+      # E7-05 · los mismos tests, midiendo cobertura y publicándola en el
+      # resumen del workflow. Sin umbral que rompa: primero se mide. La medición
+      # usa la cobertura experimental de node:test sobre el cargador de tsx —se
+      # comprobó que el mapeo de fuentes funciona, así que no hace falta c8—.
+      - name: Tests unitarios y cobertura
+        run: npm run test:unit:coverage
 
       - name: Build
         run: npm run build
@@ -142,6 +146,14 @@ jobs:
 
       - name: Tests y cobertura
         run: npm run test:ci
+
+      # E7-04 · la cobertura se publica donde se lee: el resumen del workflow,
+      # que es la primera pantalla al terminar CI. `if: always()` porque el
+      # número interesa igual —o más— cuando algo ha fallado. Los umbrales los
+      # aplica Jest en el paso de arriba; esto solo informa.
+      - name: Publicar cobertura en el resumen
+        if: always()
+        run: node scripts/coverage-summary.mjs
 
       - name: Guardar informe de cobertura
         if: always()
