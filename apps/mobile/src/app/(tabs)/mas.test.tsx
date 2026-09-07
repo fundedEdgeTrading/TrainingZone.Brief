@@ -5,7 +5,7 @@
 import { storeTokens } from "@/api/client";
 import { meResponse } from "@/test/fixtures";
 import { renderWithProviders, screen, waitFor } from "@/test/render";
-import { reply } from "@/test/server";
+import { reply, replyDelayed } from "@/test/server";
 
 import MoreScreen from "./mas";
 
@@ -15,7 +15,9 @@ describe("Más · estado de carga de los tiles (E8-12)", () => {
   it("el tile de Tareas se anuncia \"cargando\" antes de saber el contador real", async () => {
     reply("GET /me", meResponse({ role: "TRAINER", member: null }));
     await storeTokens({ accessToken: "a", refreshToken: "r" });
-    reply("GET /tasks", { canAssign: false, scope: "mine", counts: { todo: 7, doing: 0, done: 0 }, tasks: [], done: [], assignables: [] });
+    // Con latencia: sin ella, el doble resuelve dentro del mismo tick del
+    // render y el estado de carga nunca llega a observarse.
+    replyDelayed("GET /tasks", { canAssign: false, scope: "mine", counts: { todo: 7, doing: 0, done: 0 }, tasks: [], done: [], assignables: [] }, 30);
     reply("GET /leads", { counts: { SIN_CONTACTAR: 0, SEGUIMIENTO: 0, CON_FECHA_VALORACION: 0, CERRADO: 0 }, leads: [] });
     reply("GET /notifications", { notifications: [] });
 
