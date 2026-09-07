@@ -10,9 +10,11 @@ import {
   createCenter,
   updateCenterLogo,
   assignUserToCenter,
+  updateAgePolicy,
 } from "./actions";
 import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
+import { CenterPublicCard } from "./center-public-card";
 import { StaffDrawer } from "./staff-drawer";
 import { StaffRowActions, StaffActionsProvider } from "./staff-row-actions";
 import AptaLogo from "@/components/apta-logo";
@@ -22,9 +24,10 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
-import { buildConnectOAuthUrl, isStripeConnectConfigured } from "@/lib/stripe-connect";
+import { StripeConnectCard } from "./stripe-connect-card";
 import { prisma } from "@/lib/prisma";
 import { ProductsSection } from "./products-section";
+import { ADULT_AGE, LOPDGDD_CONSENT_AGE, agePolicyLabel } from "@/lib/minors";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
@@ -158,42 +161,61 @@ export default async function OrganizationPage({
         </section>
       )}
 
+      {/* ---------- E10-12 · Menores y tutores (decisión D-P8) ---------- */}
+      {canOrg && org && (
+        <section className="space-y-3">
+          <h2 className={SECTION_TITLE}>Menores</h2>
+          <div className={CARD}>
+            <p className="text-sm text-brand-muted max-w-3xl">
+              En España el umbral del art. 7 LOPDGDD son <b>{LOPDGDD_CONSENT_AGE} años</b>: por debajo, el
+              consentimiento que preste el propio menor —y en particular el de sus datos de salud— es nulo. Activar
+              menores obliga a recoger en cada alta el consentimiento del tutor legal, con identificación y
+              justificante. Política actual: <b>{agePolicyLabel(org)}</b>.
+            </p>
+            <ActionForm
+              action={updateAgePolicy}
+              successMessage="Política de edad actualizada."
+              resetOnSuccess={false}
+              className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end mt-4"
+            >
+              <Field label="¿Admite socios menores de edad?">
+                <Select name="allowsMinors" defaultValue={org.allowsMinors ? "yes" : "no"}>
+                  <option value="no">No · solo mayores de {ADULT_AGE}</option>
+                  <option value="yes">Sí, con consentimiento del tutor</option>
+                </Select>
+              </Field>
+              <Field
+                label="Edad mínima"
+                hint={`Entre ${LOPDGDD_CONSENT_AGE} y ${ADULT_AGE}. Solo se aplica si admites menores.`}
+              >
+                <Input
+                  name="minimumAgeYears"
+                  type="number"
+                  min={LOPDGDD_CONSENT_AGE}
+                  max={ADULT_AGE}
+                  defaultValue={org.minimumAgeYears}
+                />
+              </Field>
+              <Button type="submit">Guardar política</Button>
+            </ActionForm>
+          </div>
+        </section>
+      )}
+
       {/* ---------- Cobros a socios (Parte C: Stripe Connect) ---------- */}
       {canOrg && org && (
         <section className="space-y-3">
           <h2 className={SECTION_TITLE}>Cobros a socios</h2>
-          <div className={CARD}>
-            {params.stripe_connect === "success" && (
-              <p className="text-sm text-good bg-good-bg rounded-control px-3 py-2 mb-3">Cuenta de Stripe conectada correctamente.</p>
-            )}
-            {params.stripe_connect === "error" && (
-              <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2 mb-3">
-                No se pudo conectar la cuenta de Stripe. Inténtalo de nuevo.
-              </p>
-            )}
-            {org.stripeAccount?.chargesEnabled ? (
-              <div className="flex items-center gap-2">
-                <Badge tone="good">Conectado</Badge>
-                <p className="text-sm text-brand-muted">
-                  Tu gimnasio ya puede cobrar a sus socios online. {org.stripeAccount.payoutsEnabled ? "Los pagos se transfieren a tu cuenta bancaria." : "Los payouts todavía están pendientes de verificación en Stripe."}
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-                <p className="text-sm text-brand-muted max-w-lg">
-                  Conecta tu propia cuenta de Stripe para cobrar a tus socios. Apta nunca guarda una clave secreta tuya
-                  — solo el identificador de tu cuenta conectada, vía OAuth de un botón.
-                </p>
-                {isStripeConnectConfigured() ? (
-                  <a href={buildConnectOAuthUrl(session.user.orgId)}>
-                    <Button variant="secondary">Conectar cobros con Stripe →</Button>
-                  </a>
-                ) : (
-                  <Badge tone="warning">En espera de credenciales</Badge>
-                )}
-              </div>
-            )}
-          </div>
+          {params.stripe_connect === "success" && (
+            <p className="text-sm text-good bg-good-bg rounded-control px-3 py-2">Cuenta de Stripe conectada correctamente.</p>
+          )}
+          {params.stripe_connect === "error" && (
+            <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">
+              No se pudo conectar la cuenta de Stripe. Inténtalo de nuevo.
+            </p>
+          )}
+          {/* HU-ST-07: el estado real del KYC, no solo conectado/no conectado. */}
+          <StripeConnectCard orgId={session.user.orgId} />
         </section>
       )}
 
@@ -261,6 +283,10 @@ export default async function OrganizationPage({
                   </Button>
                 </ActionForm>
               )}
+              {/* E9-05 + E9-15 · NAP editable y, sobre todo, las dos URLs
+                  públicas del centro: hasta aquí el embudo comercial entero
+                  solo era alcanzable escribiendo la dirección a mano. */}
+              {canOrg && org && <CenterPublicCard center={c} orgSlug={org.slug} />}
             </div>
           ))}
           {centers.length === 0 && <p className="text-sm text-muted">Todavía no hay centros.</p>}
@@ -292,6 +318,13 @@ export default async function OrganizationPage({
             <Field label="Longitud" hint="Opcional — para el mapa de barrios">
               <Input name="lng" placeholder="-0.8815" inputMode="decimal" />
             </Field>
+            {/* E11-03 · Solo hace falta si el aviso salta: un signo cambiado en
+                la latitud mueve el centro de continente, y sin esto se quedaba
+                así para siempre porque no había pantalla para corregirlo. */}
+            <label className="md:col-span-2 flex items-center gap-2 text-[12px] text-brand-muted">
+              <input type="checkbox" name="confirmFarCoordinates" className="h-4 w-4 accent-tz-black" />
+              Sé que este centro está lejos de los demás
+            </label>
             <Button type="submit">Añadir centro</Button>
           </ActionForm>
         )}

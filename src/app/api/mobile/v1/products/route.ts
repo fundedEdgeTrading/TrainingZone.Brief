@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { planServiceKind } from "@/lib/members-queries";
 import { requireApiSession, requireApiRole } from "../_lib/api-session";
 import { PLAN_TYPES, PLAN_TYPE_LABEL, saveMembershipPlan } from "@/lib/membership-plans";
+import { isSellableInApp } from "@/lib/member-billing";
 import { apiOk, apiError } from "../_lib/response";
 
 // Catálogo de bonos (A2 del socio) y su gestión (D4/D5 de dirección). El
@@ -44,9 +45,15 @@ export async function GET(req: NextRequest) {
     claims.centerId ? prisma.center.findUnique({ where: { id: claims.centerId }, select: { name: true } }) : null,
   ]);
 
+  // HU-ST-10/D-S3: el plan ONLINE no aparece en el catálogo del socio en la app
+  // —es contenido digital consumido dentro de la app, y venderlo por fuera de
+  // la tienda es motivo de rechazo—. Dirección sí lo ve: tiene que poder
+  // gestionarlo, y lo vende por web.
+  const visibles = canManage ? plans : plans.filter((p) => isSellableInApp(p.type));
+
   // "Más elegido": el visible con más bonos vivos (empate → el más barato, que
   // es el primero del orden). Sin suscriptores no se destaca nada.
-  const featured = plans
+  const featured = visibles
     .filter((p) => p.active && p._count.subscriptions > 0)
     .sort((a, b) => b._count.subscriptions - a._count.subscriptions)[0];
 
@@ -56,7 +63,7 @@ export async function GET(req: NextRequest) {
     // Catálogo de tipos con su rótulo, servido desde la fuente única: la app no
     // mantiene su propia tabla (E4-29/E12-04).
     planTypes: PLAN_TYPES.map((value) => ({ value, label: PLAN_TYPE_LABEL[value] })),
-    products: plans.map((p) => ({
+    products: visibles.map((p) => ({
       id: p.id,
       name: p.name,
       description: p.description,
@@ -67,6 +74,9 @@ export async function GET(req: NextRequest) {
       planType: p.type,
       serviceKind: planServiceKind(p.type) ?? "GROUP",
       visible: p.active,
+      // Para dirección: este plan existe pero no se enlaza a su compra desde la
+      // app (D-S3). La web sí lo vende.
+      sellableInApp: isSellableInApp(p.type),
       // Los socios no ven cuánta gente tiene contratado cada bono.
       subscribersCount: canManage ? p._count.subscriptions : null,
       featured: p.id === featured?.id,
@@ -100,7 +110,7 @@ export async function POST(req: NextRequest) {
     planType: body.planType as PlanType | undefined,
     serviceKind: body.serviceKind,
     active: body.visible ?? true,
-  });
+  }, claims.sub);
   if (!result.ok) return apiError(result.error, 400);
 
   return apiOk({ id: result.id }, 201);

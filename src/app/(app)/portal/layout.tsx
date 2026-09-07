@@ -4,7 +4,6 @@ import { getMemberForUser } from "@/lib/portal-queries";
 import { getOrCreateConversation, listMessages } from "@/lib/chat";
 import { needsReconsent } from "@/lib/consent";
 import { getDueAssessmentForMember } from "@/lib/assessment-jobs";
-import { getAssessmentConfig } from "@/lib/assessments/queries";
 import { getPendingBirthdayGreeting } from "@/lib/birthday-jobs";
 import { resolveTimezone } from "@/lib/timezone";
 import { resolveFirstSessionStep } from "@/lib/member-first-session-queries";
@@ -29,27 +28,23 @@ export default async function PortalLayout({ children }: { children: React.React
     const member = await getMemberForUser(session.user.id);
     if (member) {
       // F-ALTA: el muro de la primera sesión va ANTES que nada y se devuelve en
-      // lugar del portal, no encima. Un socio importado por CSV llega sin CP ni
-      // teléfono y sin valoración: pedírselo en un modal sobre un portal que
-      // sigue siendo navegable con el tabulador es pedirlo de mentira.
+      // lugar del portal, no encima. E5-08 lo redujo a lo que el servicio
+      // necesita de verdad (edad, contacto de emergencia, declaración de
+      // salud): el resto del perfil se pide después y la valoración inicial ya
+      // no bloquea aquí, se pospone más abajo con `PendingAssessmentGate`.
       const firstStep = await resolveFirstSessionStep(member);
       if (firstStep) {
-        const [org, config] = await Promise.all([
-          prisma.organization.findUnique({
-            where: { id: session.user.orgId },
-            select: { name: true, logoUrl: true },
-          }),
-          // El muro es la mitad de socio de la valoración inicial: pregunta lo
-          // que el centro haya dejado en el cuestionario, ni más ni menos.
-          getAssessmentConfig(session.user.orgId),
-        ]);
+        const org = await prisma.organization.findUnique({
+          where: { id: session.user.orgId },
+          select: { name: true, logoUrl: true },
+        });
         return (
           <FirstSessionWall
-            step={firstStep.step}
-            missing={firstStep.step === "profile" ? firstStep.missing : []}
+            missing={firstStep.missing}
+            needsHealthDeclaration={firstStep.needsHealthDeclaration}
             orgName={org?.name ?? "Training Zone"}
             orgLogoUrl={member.primaryCenter.logoUrl || org?.logoUrl || "/brand/tz-logo-white.png"}
-            disabledQuestions={config.disabledQuestions}
+            centerPhone={member.primaryCenter.phone}
           />
         );
       }

@@ -51,7 +51,7 @@ export function ProductThumb({
     >
       <Icon name="camera" size={wide ? 22 : 16} color={theme.textFaint} />
       {wide ? (
-        <Text style={{ fontFamily: fonts.medium, fontSize: 10.5, letterSpacing: 1, color: theme.textFaint }}>
+        <Text style={{ fontFamily: fonts.medium, fontSize: 11, letterSpacing: 1, color: theme.textFaint }}>
           {label ?? "FOTO DEL PRODUCTO · 1600 × 1000"}
         </Text>
       ) : null}

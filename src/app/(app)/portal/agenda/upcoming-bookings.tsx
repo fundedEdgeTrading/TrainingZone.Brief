@@ -1,6 +1,7 @@
 import { sessionServiceKind } from "@/lib/members-queries";
 import { isLiveBooking, type UpcomingBooking } from "@/lib/portal-queries";
 import BookingButton from "./booking-button";
+import { WAITLIST_NO_QUEUE_NOTICE } from "@/lib/waitlist";
 
 /**
  * "Tus próximas reservas": todas las reservas vivas del socio, también las que
@@ -65,6 +66,12 @@ export default function UpcomingBookings({
                     {b.dayLabel} · {b.startTime}
                     {b.trainerName ? ` · ${b.trainerName}` : ""} · {b.centerName}
                   </div>
+                  {/* E2-08: el número dice a cuánta gente tienes delante, no que
+                      la plaza sea tuya cuando toque. Sin esta línea se lee como
+                      un turno, y RB-RES-007 no lo es. */}
+                  {b.status === "WAITLISTED" && (
+                    <div className="text-[12px] text-brand-muted mt-0.5">{WAITLIST_NO_QUEUE_NOTICE}</div>
+                  )}
                 </div>
               </div>
               <BookingButton

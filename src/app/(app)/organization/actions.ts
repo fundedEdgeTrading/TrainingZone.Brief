@@ -1,8 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { parseOpeningHours } from "@/lib/opening-hours";
+import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
+import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
 import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
@@ -10,6 +14,7 @@ import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { canAddCenter } from "@/lib/entitlements";
+import { ADULT_AGE, LOPDGDD_CONSENT_AGE } from "@/lib/minors";
 import type { PlanType, Role } from "@prisma/client";
 import {
   PLAN_TYPES,
@@ -56,6 +61,40 @@ export async function updateOrganization(formData: FormData): Promise<OrgActionR
   return { ok: true };
 }
 
+/**
+ * E10-12 · Política de edad de la organización (decisión D-P8). Va aparte de la
+ * marca a propósito: activar menores no es un cambio cosmético, obliga al
+ * circuito completo de consentimiento de tutores en cada alta.
+ */
+export async function updateAgePolicy(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const allowsMinors = formData.get("allowsMinors") === "yes";
+  const raw = Number(String(formData.get("minimumAgeYears") ?? ""));
+
+  if (!allowsMinors) {
+    await prisma.organization.update({
+      where: { id: session.user.orgId },
+      data: { allowsMinors: false, minimumAgeYears: ADULT_AGE },
+    });
+    revalidatePath("/organization");
+    return { ok: true };
+  }
+
+  if (!Number.isFinite(raw) || raw < LOPDGDD_CONSENT_AGE || raw > ADULT_AGE) {
+    return {
+      ok: false,
+      error: `La edad mínima tiene que estar entre ${LOPDGDD_CONSENT_AGE} y ${ADULT_AGE} años: por debajo de ${LOPDGDD_CONSENT_AGE} el consentimiento de datos de salud es nulo (art. 7 LOPDGDD).`,
+    };
+  }
+
+  await prisma.organization.update({
+    where: { id: session.user.orgId },
+    data: { allowsMinors: true, minimumAgeYears: Math.floor(raw) },
+  });
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
 // ---------- Centros (alta de estructura de la empresa) ----------
 export async function createCenter(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
@@ -77,6 +116,11 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
     return { ok: false, error: "Indica latitud y longitud, o ninguna de las dos." };
   }
 
+  if (lat !== null && lng !== null) {
+    const far = await farCoordinatesError(session.user.orgId, { lat, lng }, formData);
+    if (far) return { ok: false, error: far };
+  }
+
   const existing = await prisma.center.findFirst({
     where: { orgId: session.user.orgId, slug },
     select: { id: true },
@@ -93,6 +137,39 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   return { ok: true };
 }
 
+
+/**
+ * E11-03 · Aviso de coordenadas sospechosas.
+ *
+ * Las coordenadas se teclean a mano y un signo cambiado mueve el centro de
+ * continente, en el mapa y para siempre. No se bloquea: hay organizaciones con
+ * centros de verdad muy separados. Se para UNA vez, se explica, y quien sabe lo
+ * que hace lo confirma con la casilla.
+ */
+async function farCoordinatesError(
+  orgId: string,
+  point: { lat: number; lng: number },
+  formData: FormData,
+  excludeCenterId?: string
+): Promise<string | null> {
+  if (formData.get("confirmFarCoordinates") === "on") return null;
+
+  const others = await prisma.center.findMany({
+    where: {
+      orgId,
+      lat: { not: null },
+      lng: { not: null },
+      ...(excludeCenterId ? { id: { not: excludeCenterId } } : {}),
+    },
+    select: { lat: true, lng: true },
+  });
+
+  const located = others.map((c) => ({ lat: c.lat as number, lng: c.lng as number }));
+  if (!isFarFromAll(point, located)) return null;
+
+  return `Esas coordenadas caen a más de ${SUSPICIOUS_CENTER_KM} km de todos tus demás centros. Suele ser un signo cambiado. Si es correcto, marca «Sé que este centro está lejos» y vuelve a guardar.`;
+}
+
 /** Coordenada opcional de un formulario: `null` si viene vacía, `"invalid"` si no es un número del rango. */
 function parseCoordinate(raw: FormDataEntryValue | null, min: number, max: number): number | null | "invalid" {
   const text = String(raw ?? "").trim().replace(",", ".");
@@ -100,6 +177,91 @@ function parseCoordinate(raw: FormDataEntryValue | null, min: number, max: numbe
   const value = Number(text);
   if (!Number.isFinite(value) || value < min || value > max) return "invalid";
   return value;
+}
+
+/**
+ * E9-05 · Ficha pública del centro: el NAP, el párrafo propio y el interruptor
+ * de publicación.
+ *
+ * Hasta aquí `phone`, `city`, `postalCode`, `neighborhood`, `description`,
+ * `openingHours` y `publicPage` existían en el esquema y no había forma de
+ * escribirlos desde ninguna pantalla. Sin teléfono ni horario no hay página
+ * pública que valga, y sin `description` la plantilla compartida sigue siendo
+ * contenido duplicado por mucho que cambie el título.
+ *
+ * E11-03 · `lat`/`lng` se editan también aquí: hasta ahora solo se tecleaban en
+ * el alta y no había pantalla para corregirlas después, así que un dedo gordo en
+ * un signo dejaba el centro en otro continente para siempre.
+ */
+export async function updateCenterPublicProfile(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const centerId = String(formData.get("centerId") ?? "");
+
+  // Se leen los slugs además del id: la caché de la ficha pública se etiqueta
+  // por URL (E9-14), no por identificador.
+  const center = await prisma.center.findFirst({
+    where: { id: centerId, orgId: session.user.orgId },
+    select: { id: true, slug: true, organization: { select: { slug: true } } },
+  });
+  if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
+
+  const lat = parseCoordinate(formData.get("lat"), -90, 90);
+  const lng = parseCoordinate(formData.get("lng"), -180, 180);
+  if (lat === "invalid" || lng === "invalid") {
+    return { ok: false, error: "Las coordenadas tienen que ser números (latitud -90..90, longitud -180..180)." };
+  }
+  if ((lat === null) !== (lng === null)) {
+    return { ok: false, error: "Indica latitud y longitud, o ninguna de las dos." };
+  }
+
+  if (lat !== null && lng !== null) {
+    const far = await farCoordinatesError(session.user.orgId, { lat, lng }, formData, centerId);
+    if (far) return { ok: false, error: far };
+  }
+
+  const hours = parseOpeningHours(String(formData.get("openingHours") ?? ""));
+  if (!hours.ok) return { ok: false, error: hours.error };
+
+  const publicPage = formData.get("publicPage") === "on";
+  const description = text(formData.get("description"));
+  const address = text(formData.get("address"));
+
+  // Publicar una ficha vacía es peor que no publicarla: la plantilla queda
+  // idéntica a la de los otros noventa y nueve centros, que es exactamente el
+  // contenido duplicado que E9-04 vino a arreglar.
+  if (publicPage && (!address || !description)) {
+    return { ok: false, error: "Para publicar la página hacen falta al menos la dirección y la descripción del centro." };
+  }
+
+  await prisma.center.update({
+    where: { id: centerId },
+    data: {
+      address,
+      phone: text(formData.get("phone")),
+      city: text(formData.get("city")),
+      postalCode: text(formData.get("postalCode")),
+      neighborhood: text(formData.get("neighborhood")),
+      description,
+      openingHours: hours.value ?? Prisma.DbNull,
+      publicPage,
+      lat,
+      lng,
+    },
+  });
+
+  revalidatePath("/organization");
+  // E9-14 · La ficha pública se sirve cacheada: al editarla hay que tirar su
+  // entrada, o el cambio no se ve hasta que expire la revalidación.
+  // `updateTag` y no `revalidateTag`: esto es una acción de servidor y quien
+  // acaba de guardar tiene que ver SU cambio, no una versión rancia mientras se
+  // refresca por detrás.
+  updateTag(centerPublicTag(center.organization.slug, center.slug));
+  return { ok: true };
+}
+
+/** Campo de texto opcional: `null` cuando viene vacío, para no guardar cadenas en blanco. */
+function text(raw: FormDataEntryValue | null): string | null {
+  return String(raw ?? "").trim() || null;
 }
 
 // Editar el logo de un centro (si es null, hereda el de la organización / Apta).
@@ -443,9 +605,11 @@ export async function createMembershipPlan(formData: FormData): Promise<OrgActio
   const parsed = planFormInput(formData);
   if (!parsed.ok) return parsed;
 
-  const result = await saveMembershipPlan(session.user.orgId, parsed.input);
+  // HU-ST-08: el autor va a la traza del cambio de importe (AuditLog).
+  const result = await saveMembershipPlan(session.user.orgId, parsed.input, session.user.id);
   if (!result.ok) return result;
   revalidatePath("/organization");
+  await invalidateOrgCatalog(session.user.orgId);
   return { ok: true, warning: result.warning };
 }
 
@@ -455,9 +619,10 @@ export async function updateMembershipPlan(formData: FormData): Promise<OrgActio
   if (!parsed.ok) return parsed;
   if (!parsed.input.planId) return { ok: false, error: "Producto no encontrado." };
 
-  const result = await saveMembershipPlan(session.user.orgId, parsed.input);
+  const result = await saveMembershipPlan(session.user.orgId, parsed.input, session.user.id);
   if (!result.ok) return result;
   revalidatePath("/organization");
+  await invalidateOrgCatalog(session.user.orgId);
   return { ok: true, warning: result.warning };
 }
 
@@ -473,5 +638,17 @@ export async function setMembershipPlanActive(formData: FormData): Promise<OrgAc
   const result = await archiveMembershipPlan(session.user.orgId, planId, active);
   if (!result.ok) return result;
   revalidatePath("/organization");
+  await invalidateOrgCatalog(session.user.orgId);
   return { ok: true };
+}
+
+/**
+ * E9-14 · Las fichas públicas de los centros enseñan el catálogo, y se sirven
+ * cacheadas: sin esto, una tarifa nueva no aparecería en ninguna de ellas hasta
+ * que expirase la revalidación de diez minutos. La etiqueta es de organización
+ * porque el catálogo lo es: un cambio afecta a todos sus centros a la vez.
+ */
+async function invalidateOrgCatalog(orgId: string) {
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } });
+  if (org) updateTag(orgCatalogTag(org.slug));
 }

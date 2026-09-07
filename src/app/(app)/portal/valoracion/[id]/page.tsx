@@ -2,8 +2,9 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { getAssessmentMilestones } from "@/lib/assessments/queries";
+import { getAssessmentMilestones, getAssessmentConfig } from "@/lib/assessments/queries";
 import { milestoneLabelOf } from "@/lib/assessments/config";
+import { InitialAssessmentForm } from "./initial-assessment-form";
 
 /**
  * Destino del aviso de valoración vencida (F4 §5.3): la vista del socio.
@@ -22,11 +23,38 @@ export default async function PortalAssessmentPage({ params }: { params: Promise
   // Siempre acotada al socio de la sesión: un id ajeno no abre la ficha de otro.
   const assessment = await prisma.assessment.findFirst({
     where: { id, memberId: member.id },
-    select: { kind: true, milestoneKey: true, dueDate: true, completedAt: true },
+    select: { kind: true, milestoneKey: true, dueDate: true, completedAt: true, memberPartAt: true },
   });
   if (!assessment) redirect("/portal");
 
+  // E5-08: la INITIAL tiene una parte que contesta el propio socio (perfil,
+  // objetivos, vitals) — a diferencia del resto, que las rellena el
+  // entrenador con él delante. Antes vivía bloqueando el muro de alta; ahora
+  // se pospone hasta aquí, con salida desde `PendingAssessmentGate`.
+  const showsMemberForm = assessment.kind === "INITIAL" && !assessment.completedAt && !assessment.memberPartAt;
+
   const milestones = await getAssessmentMilestones(member.orgId);
+
+  if (showsMemberForm) {
+    const config = await getAssessmentConfig(member.orgId);
+    return (
+      <div className="max-w-[720px] mx-auto flex flex-col gap-[18px]">
+        <div className="bg-white border border-brand-border rounded-[18px] p-7">
+          <div className="text-[11px] font-bold tracking-[.12em] uppercase text-brand-muted">
+            {milestoneLabelOf(assessment, milestones)}
+          </div>
+          <h1 className="font-display font-extrabold text-[24px] text-brand-text mt-1.5 tracking-[-.01em]">
+            Tu valoración inicial
+          </h1>
+          <p className="text-[14.5px] text-brand-text-2 leading-[1.6] mt-3">
+            Esta parte la contestas tú: de dónde partes y a dónde quieres llegar. Las pruebas físicas y el
+            cuestionario de salud los haréis tu entrenador y tú en la primera sesión.
+          </p>
+        </div>
+        <InitialAssessmentForm disabledQuestions={config.disabledQuestions} />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[720px] mx-auto flex flex-col gap-[18px]">

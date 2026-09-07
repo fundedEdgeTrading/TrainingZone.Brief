@@ -18,6 +18,20 @@ import { SkeletonList } from "@/components/Skeleton";
 import { formatDayMonth, formatEuros } from "@/utils/format";
 import type { ConsumptionItem, MembershipItem } from "@/api/types";
 
+/**
+ * E5-13: `renewsAt` es la caducidad en un bono puntual y el fin de periodo en
+ * una cuota — dos cosas opuestas con la misma etiqueta. Y `cancelAt` /
+ * `pauseUntil` viajaban al dispositivo sin pintarse nunca: quien pedía la
+ * baja seguía viendo "Renovación automática" hasta el último día.
+ */
+function membershipDateLabel(membership: MembershipItem): string {
+  if (membership.pauseUntil) return `Congelado hasta el ${formatDayMonth(`${membership.pauseUntil}T00:00:00`)}`;
+  if (membership.cancelAt) return `Termina el ${formatDayMonth(`${membership.cancelAt}T00:00:00`)}`;
+  if (!membership.renewsAt) return membership.isRecurring ? "Sin fecha de renovación" : "Sin fecha de caducidad";
+  const date = formatDayMonth(`${membership.renewsAt}T00:00:00`);
+  return membership.isRecurring ? `Renueva el ${date}` : `Caduca el ${date}`;
+}
+
 // B4 del handoff: "Mis bonos" — un anillo por bono y el histórico de consumos.
 export default function MembershipsScreen() {
   const theme = useTheme();
@@ -102,13 +116,21 @@ function MembershipCard({
             {membership.planName}
           </Text>
           <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
-            {membership.renewsAt ? `Renueva el ${formatDayMonth(`${membership.renewsAt}T00:00:00`)}` : "Sin fecha de renovación"}
+            {membershipDateLabel(membership)}
             {membership.centerName ? ` · ${membership.centerName}` : ""}
           </Text>
           <View style={styles.badgeRow}>
             <Badge
-              label={membership.status === "ACTIVE" ? "Activo" : membership.status === "FROZEN" ? "Congelado" : membership.status}
-              tone={membership.status === "ACTIVE" ? "good" : "warning"}
+              label={
+                membership.cancelAt
+                  ? "Baja programada"
+                  : membership.status === "ACTIVE"
+                    ? "Activo"
+                    : membership.status === "FROZEN"
+                      ? "Congelado"
+                      : membership.status
+              }
+              tone={membership.status === "ACTIVE" && !membership.cancelAt ? "good" : "warning"}
             />
             <Badge label={`${formatEuros(membership.priceCents)}${membership.isRecurring ? "/mes" : ""}`} tone="neutral" />
           </View>

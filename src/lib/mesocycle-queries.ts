@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { MesocyclePlan } from "@/lib/ai/mesocycle-schema";
 import type { MesocycleConversation } from "@/lib/ai/mesocycle-generator";
+import { approvalBlocker } from "@/lib/mesocycle-schedule";
 
 export type MesocycleWriteResult = { ok: true } | { ok: false; error: string };
 
@@ -14,6 +15,9 @@ const ARCHIVED_ERROR = "Este mesociclo está archivado y no se puede editar.";
 
 /** Árbol completo tal y como lo pinta el editor. */
 const detailInclude = {
+  // E10-17 · quién revisó la propuesta. Va en la marca del art. 50, que dice
+  // las dos cosas a la vez: que lo generó una IA y quién responde de ello.
+  approvedBy: { select: { name: true } },
   phases: {
     orderBy: { order: "asc" },
     include: {
@@ -36,7 +40,16 @@ export async function listMesocyclesForMember(orgId: string, memberId: string) {
   return prisma.mesocycle.findMany({
     where: { orgId, memberId },
     orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, status: true, profile: true, createdAt: true, approvedAt: true },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      profile: true,
+      createdAt: true,
+      approvedAt: true,
+      startDate: true,
+      phases: { select: { name: true, weekFrom: true, weekTo: true, deload: true, notes: true }, orderBy: { order: "asc" } },
+    },
   });
 }
 
@@ -129,6 +142,7 @@ export function toPlan(detail: MesocycleDetail): MesocyclePlan {
       name: phase.name,
       weekFrom: phase.weekFrom,
       weekTo: phase.weekTo,
+      deload: phase.deload,
       notes: phase.notes,
       days: phase.days.map((day) => ({
         label: day.label,
@@ -156,15 +170,48 @@ export function conversationOf(detail: MesocycleDetail): MesocycleConversation {
   return Array.isArray(detail.aiConversation) ? (detail.aiConversation as unknown as MesocycleConversation) : [];
 }
 
-/** La firma del entrenador: es lo que saca el mesociclo del borrador. */
+/**
+ * La firma del entrenador: es lo que saca el mesociclo del borrador.
+ *
+ * E3-12 · aprobar exige fecha de inicio, y que ninguna fase larga se quede sin
+ * declarar su descarga o su progresión. La validación va aquí, no en la
+ * pantalla: es la regla, no un aviso de formulario.
+ */
 export async function approveMesocycle(
   orgId: string,
   mesocycleId: string,
-  approvedByUserId: string
+  approvedByUserId: string,
+  startDate?: Date | null
 ): Promise<MesocycleWriteResult> {
+  const existing = await prisma.mesocycle.findFirst({
+    where: { id: mesocycleId, orgId },
+    select: {
+      status: true,
+      startDate: true,
+      phases: { select: { name: true, weekFrom: true, weekTo: true, deload: true, notes: true } },
+    },
+  });
+  if (!existing) return { ok: false, error: NOT_FOUND };
+  if (existing.status !== "DRAFT") return { ok: false, error: "El mesociclo ya no está en borrador." };
+
+  const effectiveStart = startDate ?? existing.startDate;
+  const blocker = approvalBlocker({ startDate: effectiveStart }, existing.phases);
+  if (blocker) return { ok: false, error: blocker };
+
   const { count } = await prisma.mesocycle.updateMany({
     where: { id: mesocycleId, orgId, status: "DRAFT" },
-    data: { status: "APPROVED", approvedAt: new Date(), approvedByUserId },
+    data: {
+      status: "APPROVED",
+      approvedAt: new Date(),
+      approvedByUserId,
+      startDate: effectiveStart,
+      // E3-18 · RB-IA-005: al aprobar se purga `aiConversation`. Contiene el
+      // briefing íntegro con la sección "Screening clínico" — una copia del dato
+      // del Art. 9 fuera del punto único de lectura. Lo que se conserva es lo
+      // que hace falta: el plan aprobado (el árbol de fases) y la marca de
+      // revisión humana (`approvedAt` + `approvedByUserId`).
+      aiConversation: Prisma.DbNull,
+    },
   });
   return count === 0 ? { ok: false, error: "El mesociclo ya no está en borrador." } : { ok: true };
 }
@@ -310,6 +357,7 @@ function planPhases(plan: MesocyclePlan): Prisma.MesocyclePhaseCreateWithoutMeso
     name: phase.name,
     weekFrom: phase.weekFrom,
     weekTo: phase.weekTo,
+    deload: phase.deload,
     notes: phase.notes,
     days: {
       create: phase.days.map((day, dayIndex) => ({

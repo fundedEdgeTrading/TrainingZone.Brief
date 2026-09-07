@@ -19,6 +19,10 @@ type Handler = {
   status: number;
   /** Cuerpo ya envuelto. `undefined` = respuesta sin JSON válido. */
   body: unknown;
+  /** Retraso antes de resolver (E8-12): sin él, un doble sin latencia real
+   * resuelve dentro del mismo tick del render y un estado de carga transitorio
+   * nunca llega a ser observable por `findBy*`. */
+  delayMs?: number;
 };
 
 type Recorded = {
@@ -61,6 +65,12 @@ function stripQuery(path: string) {
  */
 export function reply<T>(key: RouteKey, data: T, status = 200) {
   push(key, { status, body: { ok: true, data } });
+}
+
+/** Como `reply`, pero resuelve pasado `delayMs`: para observar un estado de
+ * carga que, sin latencia, se resolvería dentro del mismo tick del render. */
+export function replyDelayed<T>(key: RouteKey, data: T, delayMs: number, status = 200) {
+  push(key, { status, body: { ok: true, data }, delayMs });
 }
 
 /**
@@ -125,6 +135,8 @@ export function installFetchDouble(apiUrl: string) {
       // «No hay conexión con el servidor…».
       throw new TypeError("Network request failed");
     }
+
+    if (handler.delayMs) await new Promise((resolve) => setTimeout(resolve, handler.delayMs));
 
     return new Response(JSON.stringify(handler.body), {
       status: handler.status,

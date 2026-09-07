@@ -58,6 +58,10 @@ export default function ProductsScreen() {
                         </Text>
                         <View style={styles.badgeRow}>
                           <Badge label={product.visible ? "Visible" : "Oculto"} tone={product.visible ? "good" : "warning"} />
+                          {/* HU-ST-10/D-S3: existe y se vende, pero no desde
+                              aquí — las tiendas exigen su propia compra para
+                              contenido digital consumido dentro de la app. */}
+                          {!product.sellableInApp ? <Badge label="Solo en web" tone="neutral" /> : null}
                           {product.subscribersCount != null ? (
                             <Badge
                               label={

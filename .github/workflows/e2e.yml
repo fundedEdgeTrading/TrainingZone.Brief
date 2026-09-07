@@ -47,6 +47,17 @@ jobs:
       CANCELLATION_WINDOW_HOURS: "24"
       # Las claves de Stripe se dejan SIN definir a propósito: /planes debe
       # arrancar en modo demo, que es lo que verifica planes-gateo.spec.ts.
+      #
+      # E10-07: la comprobación de arranque exige declarar la región de la base
+      # de datos y que coincida con la documentada. `npm run start` corre en
+      # modo producción, así que sin esto el servidor no arranca en CI — y ese
+      # es justamente el comportamiento que la historia pide. Se declara aquí
+      # para que CI ejercite el camino real en vez de una excepción.
+      DATA_REGION: frankfurt
+      # E10-20: las fotos de composición corporal viven fuera de la base de
+      # datos, cifradas. Clave de usar y tirar del runner: en producción se
+      # genera con `openssl rand -base64 32` y perderla es perder las fotos.
+      PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
 
     steps:
       - uses: actions/checkout@v4

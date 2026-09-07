@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { createMemberWithInvitation } from "@/lib/invitations";
 import { completeMemberOnboarding } from "@/app/onboarding/[token]/actions";
 import { saveMemberInitialPart } from "@/lib/assessments/member-part";
+import { createSelfDeclaredHealthRecord } from "@/lib/health-access";
 
 /**
  * Alta de socio para los tests de reservas por el mismo camino que el alta real
@@ -60,9 +61,9 @@ export async function createBookingMember({
   });
   if (!result.ok) throw new Error(`No se pudo completar el onboarding del socio de prueba: ${result.error}`);
 
-  // Primer tramo del muro: los datos que la importación no trae y que el socio
-  // completa al entrar. Aquí el alta es por formulario, no por CSV, pero el
-  // muro mira el dato, no su procedencia.
+  // Primer tramo del muro (E5-08): edad y contacto de emergencia — lo único
+  // que sigue bloqueando. Dirección, ciudad, provincia, CP y teléfono ya no
+  // bloquean, pero se rellenan igual porque son datos reales del socio.
   await prisma.member.update({
     where: { id: member.id },
     data: {
@@ -75,6 +76,10 @@ export async function createBookingMember({
       emergencyContact: "Contacto E2E — 600333444",
     },
   });
+
+  // Declaración de salud mínima (E5-08/E10-03): también bloquea el muro, y
+  // `completeMemberOnboarding` no la pide — es un tramo propio, posterior.
+  await createSelfDeclaredHealthRecord({ memberId: member.id, orgId, description: "Ninguna" });
 
   // Segundo tramo: su parte de la valoración inicial, que `completeMemberOnboarding`
   // acaba de abrir.
@@ -118,6 +123,9 @@ export async function deleteBookingMembers(fixtures: Fixture[]) {
     await prisma.booking.deleteMany({ where: { memberId: f.memberId } });
     await prisma.subscription.deleteMany({ where: { memberId: f.memberId } });
     await prisma.selfAssessment.deleteMany({ where: { memberId: f.memberId } });
+    // Declaración de salud del muro (E5-08): misma clave ajena que Assessment,
+    // sin borrarla antes el `member.deleteMany` de abajo choca contra ella.
+    await prisma.healthRecord.deleteMany({ where: { memberId: f.memberId } });
     // La valoración inicial la abre el propio onboarding (F-ALTA); sin borrarla,
     // el `member.deleteMany` de abajo choca contra su clave ajena.
     await prisma.assessment.deleteMany({ where: { memberId: f.memberId } });

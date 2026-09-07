@@ -2,7 +2,6 @@ import { prisma } from "@/lib/prisma";
 import { canViewHealthData } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, zonedNow, zonedTimeToInstant } from "@/lib/date-utils";
 import { expandOccurrences, isSameDay, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
-import { listPendingTrainerDebriefs } from "@/lib/feedback-capture";
 import type { AptitudeLight, Role } from "@prisma/client";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { staffScopeFilter } from "@/lib/staff-queries";
@@ -519,10 +518,6 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const epSlotsPublished = slotsByDay.reduce((sum, d) => sum + d.reservedCount + d.freeCount, 0);
   const epSlotsReserved = slotsByDay.reduce((sum, d) => sum + d.reservedCount, 0);
 
-  // Ciclo mensual del contraste cliente vs. entrenador (/feedback de dirección):
-  // clientes de EP a los que este entrenador todavía no les ha dejado debrief.
-  const pendingClientFeedback = await listPendingTrainerDebriefs(orgId, trainerUserId);
-
   return {
     epHours,
     groupHours,
@@ -545,7 +540,6 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
     agendaSessions,
     pendingDebriefs,
     pendingBriefs,
-    pendingClientFeedback,
     aptitudeAlerts,
     epSlots,
     epSlotsPublished,

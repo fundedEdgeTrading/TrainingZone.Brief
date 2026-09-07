@@ -13,7 +13,7 @@ import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { Chip, ChipRow } from "@/components/Chip";
 import { Icon } from "@/components/Icon";
-import { EmptyState } from "@/components/EmptyState";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
@@ -35,7 +35,7 @@ export default function MesocycleScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const toast = useToast();
-  const { data, isLoading, isError, refetch, isRefetching } = useMesocycleDetail(id);
+  const { data, isLoading, isError, error, refetch, isRefetching } = useMesocycleDetail(id);
   const approve = useApproveMesocycle();
   const [dayKey, setDayKey] = useState<string | null>(null);
 
@@ -84,7 +84,7 @@ export default function MesocycleScreen() {
       {isLoading ? (
         <SkeletonList rows={4} shape="card" note="Cargando el plan…" />
       ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudo cargar el mesociclo" description="Desliza hacia abajo para reintentar." />
+        <QueryErrorState error={error} title="No se pudo cargar el mesociclo" description="Desliza hacia abajo para reintentar." />
       ) : (
         <>
           {/* Los límites, antes que la propuesta. */}

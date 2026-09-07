@@ -14,6 +14,7 @@ import { parseFilterValues } from "@/lib/filter-params";
 import { centerScopeFor, intersectCenterScope } from "@/lib/center-scope";
 import { openRetentionAlertsByMember, type RetentionSignal } from "@/lib/retention";
 import type { MemberState } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { ColumnFilter } from "@/components/ui/column-filter";
 import { FilterRail } from "@/components/ui/filter-rail";
@@ -75,7 +76,7 @@ export default async function MembersPage({
   // Estado y Centro se filtran en la query; Plan y Alta, en memoria (ver
   // `members-filters.ts`). `filterBase` solo aplica la búsqueda: es la base con
   // la que se calculan los recuentos por opción de cada eje.
-  const [rawMembers, filterBase, centers, plans] = await Promise.all([
+  const [rawMembers, filterBase, centers, plans, orgAgePolicy] = await Promise.all([
     listMembers(session.user.orgId, {
       q: params.q,
       states: selection.state as MemberState[],
@@ -84,7 +85,14 @@ export default async function MembersPage({
     listMemberFilterBase(session.user.orgId, { q: params.q, centerIds: scope ?? undefined }),
     listCentersForOrg(session.user.orgId, scope),
     canCreate ? listActivePlansForOrg(session.user.orgId) : Promise.resolve([]),
+    // E10-12: el alta necesita saber si el centro admite menores para pedir (o
+    // no) los datos del tutor. El control de verdad está en el servidor.
+    prisma.organization.findUnique({
+      where: { id: session.user.orgId },
+      select: { allowsMinors: true, minimumAgeYears: true },
+    }),
   ]);
+  const agePolicy = orgAgePolicy ?? { allowsMinors: false, minimumAgeYears: 18 };
 
   const now = new Date();
   const members = rawMembers.filter((m) =>
@@ -181,7 +189,13 @@ export default async function MembersPage({
                 </a>
               )}
               {canImport && <ImportMembersDrawer centers={centers} />}
-              {canCreate && <NewMemberDrawer centers={centers} plans={plans} />}
+              {canCreate && (
+                <NewMemberDrawer
+                  centers={centers}
+                  plans={plans}
+                  agePolicy={{ allowsMinors: agePolicy.allowsMinors, minimumAgeYears: agePolicy.minimumAgeYears }}
+                />
+              )}
             </div>
           ) : undefined
         }

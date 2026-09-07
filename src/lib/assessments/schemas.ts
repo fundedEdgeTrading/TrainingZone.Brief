@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { AssessmentKind } from "@prisma/client";
+import type { AssessmentKind, InjuryZone, Laterality } from "@prisma/client";
+import { LATERALITIES, defaultSideFor } from "@/lib/injury-zones";
 import {
   ASSESSMENT_KIND_LABEL,
   DEFAULT_ASSESSMENT_CONFIG,
@@ -49,6 +50,9 @@ export const PAIN_ZONES = [
 ] as const;
 
 export type PainZone = (typeof PAIN_ZONES)[number];
+
+/** El enum `Laterality` en la forma que zod necesita para validar la respuesta. */
+const LATERALITY_VALUES = LATERALITIES as [Laterality, ...Laterality[]];
 
 const text = z.string().trim();
 const optionalText = text.max(2000).optional().default("");
@@ -130,18 +134,114 @@ const customAnswersRecord = z
   .optional()
   .default({});
 
+
+/**
+ * E3-11 · Patrones de movimiento, movilidad y cargas de referencia.
+ *
+ * De los SIETE patrones que la propia metodología exige (bisagra, sentadilla,
+ * los dos empujes, las dos tracciones y marcha/lunge — ver
+ * `src/lib/ai/methodology/04-reglas-programacion.md`) no se evaluaba NINGUNO. Lo
+ * más cercano era `experiencia.tecnicaBasicos: BAJA|MEDIA|ALTA`, una
+ * autopercepción, y las marcas eran cuatro: dominadas, flexiones, plancha y
+ * circuito de agilidad. Ni bisagra, ni sentadilla, ni empuje horizontal, ni
+ * movilidad de tobillo u hombro, ni una sola carga de referencia.
+ *
+ * El bloque está pensado para rellenarse en menos de un minuto con el socio
+ * delante: siete toques, tres toques y los kilos que haya.
+ */
+export const MOVEMENT_PATTERNS = [
+  "BISAGRA",
+  "SENTADILLA",
+  "EMPUJE_HORIZONTAL",
+  "EMPUJE_VERTICAL",
+  "TRACCION_HORIZONTAL",
+  "TRACCION_VERTICAL",
+  "MARCHA_LUNGE",
+] as const;
+
+export type MovementPattern = (typeof MOVEMENT_PATTERNS)[number];
+
+export const MOVEMENT_PATTERN_LABEL: Record<MovementPattern, string> = {
+  BISAGRA: "Bisagra de cadera",
+  SENTADILLA: "Sentadilla",
+  EMPUJE_HORIZONTAL: "Empuje horizontal",
+  EMPUJE_VERTICAL: "Empuje vertical",
+  TRACCION_HORIZONTAL: "Tracción horizontal",
+  TRACCION_VERTICAL: "Tracción vertical",
+  MARCHA_LUNGE: "Marcha / lunge",
+};
+
+/** Tres estados, no una nota del 1 al 10: es lo que se puede juzgar de un vistazo. */
+export const PATTERN_EXECUTIONS = ["EJECUTA", "CON_REGRESION", "NO_EJECUTA"] as const;
+export type PatternExecution = (typeof PATTERN_EXECUTIONS)[number];
+
+export const PATTERN_EXECUTION_LABEL: Record<PatternExecution, string> = {
+  EJECUTA: "Ejecuta",
+  CON_REGRESION: "Con regresión",
+  NO_EJECUTA: "No ejecuta",
+};
+
+/** Pasa / no pasa. Tres chequeos, no una batería de fisioterapia. */
+export const MOBILITY_CHECKS = ["TOBILLO", "CADERA", "HOMBRO"] as const;
+export type MobilityCheck = (typeof MOBILITY_CHECKS)[number];
+
+export const MOBILITY_CHECK_LABEL: Record<MobilityCheck, string> = {
+  TOBILLO: "Tobillo (rodilla a la pared)",
+  CADERA: "Cadera (sentadilla profunda sin apoyo)",
+  HOMBRO: "Hombro (flexión sobre cabeza contra pared)",
+};
+
+const patternResultSchema = z.object({
+  nivel: z.enum(PATTERN_EXECUTIONS),
+  nota: text.max(200).optional().default(""),
+});
+
+export const movimientoSchema = z.object({
+  patrones: z.partialRecord(z.enum(MOVEMENT_PATTERNS), patternResultSchema).optional().default({}),
+  movilidad: z.partialRecord(z.enum(MOBILITY_CHECKS), z.boolean()).optional().default({}),
+  /** Kilos de referencia por patrón. La FECHA es la de la valoración, y por eso
+   *  se propagan a `PerformanceMetric`: es lo que los hace comparables entre
+   *  valoraciones sin releer todos los `answers`. */
+  cargas: z.partialRecord(z.enum(MOVEMENT_PATTERNS), z.number().nonnegative()).optional().default({}),
+});
+
+export type MovimientoAnswers = z.infer<typeof movimientoSchema>;
+
+/** Clave de `PerformanceMetric` para la carga de referencia de un patrón. */
+export function loadMetricKey(pattern: MovementPattern): string {
+  return `carga_${pattern.toLowerCase()}`;
+}
+
+export const LOAD_METRIC_KEYS = MOVEMENT_PATTERNS.map(loadMetricKey);
+
+/**
+ * Screening clínico. Vive fuera de `initialAssessmentSchema` porque desde E3-06
+ * lo pregunta TAMBIÉN la revisión: una lumbalgia que aparece en el mes 4 tiene
+ * que entrar en el semáforo sin que nadie la teclee a mano en la ficha.
+ */
+export const screeningSchema = z.object({
+  cardiovascular: z.boolean(),
+  hipertension: z.boolean(),
+  diabetes: z.boolean(),
+  medicacion: optionalText,
+  cirugias: optionalText,
+  lesionesActuales: optionalText,
+  zonasDolor: z.array(z.enum(PAIN_ZONES)).default([]),
+  // E3-02: el lado va APARTE de la zona. La valoración escribía "hombro" sin
+  // lado mientras el catálogo de reglas estaba lateralizado, y de las ocho
+  // zonas solo dos encontraban regla. Ahora se pregunta lo que hay que
+  // preguntar, y la zona sigue siendo la misma para los dos lados.
+  lateralidadDolor: z.partialRecord(z.enum(PAIN_ZONES), z.enum(LATERALITY_VALUES)).optional().default({}),
+});
+
+export type ScreeningAnswers = z.infer<typeof screeningSchema>;
+
 export const initialAssessmentSchema = vitalsSchema.extend({
+  /** E3-11 · opcional para no invalidar las valoraciones ya guardadas. */
+  movimiento: movimientoSchema.optional(),
   perfil: perfilSchema,
   experiencia: experienciaSchema,
-  screening: z.object({
-    cardiovascular: z.boolean(),
-    hipertension: z.boolean(),
-    diabetes: z.boolean(),
-    medicacion: optionalText,
-    cirugias: optionalText,
-    lesionesActuales: optionalText,
-    zonasDolor: z.array(z.enum(PAIN_ZONES)).default([]),
-  }),
+  screening: screeningSchema,
   marcas: marksSchema,
   cierre: z.object({
     notasEntrenador: optionalText,
@@ -152,7 +252,56 @@ export const initialAssessmentSchema = vitalsSchema.extend({
   custom: customAnswersRecord,
 });
 
+/**
+ * Puntuación por ejes del entrenador (E3-07). Vivía en `SessionDebrief`, donde
+ * el color de la sesión se DERIVABA de su media: promediar movilidad con
+ * actitud no significa nada, y rellenar solo el RPE dejaba al socio marcado
+ * "regular" para siempre. Los ejes son una valoración del periodo, no un gesto
+ * de sala, así que se puntúan aquí — con el socio delante y una vez al mes, no
+ * ocho deslizadores después de cada clase.
+ *
+ * Todos opcionales: el bloque se puede dejar en blanco sin bloquear la
+ * valoración.
+ */
+export const ejesSchema = z.object({
+  esfuerzoPercibido: z.number().int().min(1).max(10).optional(),
+  tecnica: z.number().int().min(1).max(10).optional(),
+  actitud: z.number().int().min(1).max(10).optional(),
+  energia: z.number().int().min(1).max(10).optional(),
+  movilidad: z.number().int().min(1).max(10).optional(),
+  dolor: z.number().int().min(1).max(10).optional(),
+  adherencia: z.number().int().min(1).max(10).optional(),
+  progreso: z.number().int().min(1).max(10).optional(),
+});
+
+export type EjesAnswers = z.infer<typeof ejesSchema>;
+
+export const EJE_LABEL: Record<keyof EjesAnswers, string> = {
+  esfuerzoPercibido: "Esfuerzo percibido (RPE)",
+  tecnica: "Técnica",
+  actitud: "Actitud",
+  energia: "Energía",
+  movilidad: "Movilidad",
+  dolor: "Dolor",
+  adherencia: "Adherencia",
+  progreso: "Progreso",
+};
+
+export const EJE_KEYS = Object.keys(EJE_LABEL) as (keyof EjesAnswers)[];
+
 export const reviewAssessmentSchema = vitalsSchema.extend({
+  /** E3-11 · también en la revisión: sin repetirlo no hay histórico que comparar. */
+  movimiento: movimientoSchema.optional(),
+  /** E3-07: los ocho ejes, fuera del debrief de sesión. Opcional para no
+   *  invalidar las revisiones ya guardadas. */
+  ejes: ejesSchema.optional(),
+  /**
+   * E3-06 · la revisión vuelve a preguntar por lesiones. Opcional a propósito:
+   * las revisiones ya guardadas no lo llevan, y exigirlo las dejaría sin detalle
+   * en la ficha (`parseAnswers` devolvería null). Lo que sí garantiza el
+   * formulario es que las nuevas siempre lo traen.
+   */
+  screening: screeningSchema.optional(),
   seguimiento: z.object({
     adherenciaPercibida: z.number().int().min(1).max(5).optional(),
     progresoPercibido: z.number().int().min(1).max(5).optional(),
@@ -283,24 +432,35 @@ export const PAIN_ZONE_LABEL: Record<PainZone, string> = {
 };
 
 /**
- * `HealthRecord.zone` se compara literalmente contra `AptitudeRule.injuryZone`
- * (lib/brief-queries.ts), así que la zona declarada tiene que escribirse con la
- * misma etiqueta que usa el catálogo de reglas o el Semáforo de Aptitud no se
- * entera. De ahí que LUMBAR sea "zona lumbar" y CUELLO "cervicales", y no lo
- * que dirían sus nombres. Las zonas que el catálogo lateraliza (hombro, rodilla,
- * tobillo) se guardan sin lado: el formulario no lo pregunta, y dirección puede
- * añadir la regla sin lado desde /health/aptitude-rules.
+ * Las zonas de dolor del cuestionario son un vocabulario de PREGUNTA (lo que se
+ * le dice al socio); `InjuryZone` es el vocabulario de DATO, el que empareja con
+ * las reglas de aptitud. Este mapa es el único puente entre los dos: mientras
+ * fueron dos textos libres comparados por igualdad, seis de las ocho zonas no
+ * encontraban regla y nadie veía el error (E3-02).
  */
-export const PAIN_ZONE_TO_HEALTH_ZONE: Record<PainZone, string> = {
-  CUELLO: "cervicales",
-  HOMBRO: "hombro",
-  ESPALDA_ALTA: "espalda alta",
-  LUMBAR: "zona lumbar",
-  CADERA: "cadera",
-  RODILLA: "rodilla",
-  TOBILLO: "tobillo",
-  OTRO: "otra zona",
+export const PAIN_ZONE_TO_INJURY_ZONE: Record<PainZone, InjuryZone> = {
+  CUELLO: "CERVICALES",
+  HOMBRO: "HOMBRO",
+  ESPALDA_ALTA: "DORSAL",
+  LUMBAR: "LUMBAR",
+  CADERA: "CADERA",
+  RODILLA: "RODILLA",
+  TOBILLO: "TOBILLO",
+  OTRO: "OTRA",
 };
+
+/** De vuelta: qué zona del cuestionario representa una zona del catálogo.
+ *  PARCIAL a propósito — el catálogo tiene zonas que el cuestionario no
+ *  pregunta (codo, muñeca, ingle, gemelo...), y una lesión ahí NO puede
+ *  resolverse por no aparecer marcada en una revisión que ni la ofrece. */
+export const INJURY_ZONE_TO_PAIN_ZONE: Partial<Record<InjuryZone, PainZone>> = Object.fromEntries(
+  (Object.entries(PAIN_ZONE_TO_INJURY_ZONE) as [PainZone, InjuryZone][]).map(([pain, injury]) => [injury, pain])
+) as Partial<Record<InjuryZone, PainZone>>;
+
+/** Zonas del cuestionario que sí tienen lado, y por tanto lo preguntan. */
+export function painZoneNeedsSide(zone: PainZone): boolean {
+  return defaultSideFor(PAIN_ZONE_TO_INJURY_ZONE[zone]) === null;
+}
 
 export const DAYS_PER_WEEK_LABEL: Record<string, string> = {
   "1": "1 día",

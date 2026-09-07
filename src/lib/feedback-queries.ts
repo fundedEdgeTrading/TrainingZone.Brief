@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { centerScopeFor, intersectCenterScope, isMemberInScope, type ScopedUser } from "@/lib/center-scope";
 
 // Página "Feedback" de Dirección: contrasta el feedback que reporta el socio
 // (ClientFeedback) con el debrief que registra su entrenador (TrainerDebrief),
@@ -84,12 +85,33 @@ export type MemberFeedbackRow = {
   periodMismatch: boolean;
 };
 
-async function listCandidateMembers(orgId: string, opts: { q?: string; centerId?: string } = {}) {
+/**
+ * E1-03 (RB-SEG-003): centros que este módulo puede mirar.
+ *
+ * Hasta ahora `centerId` era **un facet que elegía el usuario, no una
+ * frontera**: quitar el filtro de centro en `/feedback` mostraba a los socios y
+ * entrenadores de toda la organización, con sus notas de debrief. La distinción
+ * está en `intersectCenterScope`: el filtro de la pantalla solo puede reducir el
+ * ámbito, nunca ampliarlo.
+ *
+ * `undefined` = sin restricción de centro (dirección de organización); una
+ * lista vacía = no ve nada, que es lo correcto para quien no tiene ningún
+ * centro imputado.
+ */
+async function feedbackCenterIds(user: ScopedUser, requested: string[] = []): Promise<string[] | undefined> {
+  return intersectCenterScope(await centerScopeFor(user), requested);
+}
+
+async function listCandidateMembers(
+  user: ScopedUser,
+  opts: { q?: string; centerIds?: string[] } = {}
+) {
+  const centerIds = await feedbackCenterIds(user, opts.centerIds ?? []);
   return prisma.member.findMany({
     where: {
-      orgId,
+      orgId: user.orgId,
       state: "ACTIVE",
-      primaryCenterId: opts.centerId || undefined,
+      ...(centerIds ? { primaryCenterId: { in: centerIds } } : {}),
       ...(opts.q
         ? {
             OR: [
@@ -207,10 +229,10 @@ function toRow(
 export type SortBy = "divergencia" | "satisfaccion" | "nombre";
 
 export async function listMemberFeedback(
-  orgId: string,
-  opts: { q?: string; centerId?: string; cat?: AlignmentCategory | "all"; sortBy?: SortBy } = {}
+  user: ScopedUser,
+  opts: { q?: string; centerIds?: string[]; cat?: AlignmentCategory | "all"; sortBy?: SortBy } = {}
 ): Promise<MemberFeedbackRow[]> {
-  const members = await listCandidateMembers(orgId, opts);
+  const members = await listCandidateMembers(user, opts);
   const needFallback = members.filter((m) => m.trainerDebriefs.length === 0).map((m) => m.id);
   const fallbackNames = await backfillTrainerNames(needFallback);
 
@@ -277,13 +299,25 @@ export function computeFeedbackKpis(rows: MemberFeedbackRow[]): FeedbackKpis {
   };
 }
 
-export async function listCentersForFeedback(orgId: string) {
-  return prisma.center.findMany({ where: { orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } });
+/** El selector de centro solo ofrece los centros del ámbito: un desplegable que
+ * ofrece un centro ajeno es una invitación a probar el `?centerId=` a mano. */
+export async function listCentersForFeedback(user: ScopedUser) {
+  const centerIds = await feedbackCenterIds(user);
+  return prisma.center.findMany({
+    where: { orgId: user.orgId, ...(centerIds ? { id: { in: centerIds } } : {}) },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 }
 
-export async function getMemberFeedbackDetail(orgId: string, memberId: string): Promise<MemberFeedbackRow | null> {
+export async function getMemberFeedbackDetail(user: ScopedUser, memberId: string): Promise<MemberFeedbackRow | null> {
+  // E1-03: `/feedback/[id]` es una URL directa, así que la frontera tiene que
+  // estar aquí y no en el listado que lleva hasta ella. `null` → notFound(),
+  // que no revela si ese socio existe en otro centro.
+  if (!(await isMemberInScope(user, memberId))) return null;
+
   const m = await prisma.member.findFirst({
-    where: { id: memberId, orgId },
+    where: { id: memberId, orgId: user.orgId },
     include: {
       primaryCenter: { select: { id: true, name: true } },
       subscriptions: { orderBy: { createdAt: "desc" }, take: 1, include: { plan: { select: { name: true } } } },

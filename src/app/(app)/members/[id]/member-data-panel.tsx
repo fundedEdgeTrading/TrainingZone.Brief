@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { postalCodeCitiesLabel } from "@/lib/postal-codes";
 import { useRouter } from "next/navigation";
 import { Button, ButtonSpinner } from "@/components/ui/button";
@@ -9,7 +9,8 @@ import { Drawer, DrawerFooter } from "@/components/ui/drawer";
 import { Field, Input, Select } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { postalAreaLabel } from "@/lib/postal-codes";
-import { deleteMember, updateMemberData, revokeMemberConsentAction } from "./actions";
+import type { SuppressionPlan } from "@/lib/member-suppression";
+import { deleteMember, previewMemberSuppression, updateMemberData, revokeMemberConsentAction } from "./actions";
 import { useFocusRequest } from "./section-rail";
 import type { ConsentKind } from "@/lib/consent";
 
@@ -316,6 +317,13 @@ export function MemberDataPanel({
   );
 }
 
+/** Cómo se dice en pantalla cada acción del plan de supresión (E10-09). */
+const SUPPRESSION_ACTION_LABEL: Record<SuppressionPlan["effects"][number]["action"], string> = {
+  DISSOCIATE: "Se conserva sin vínculo",
+  DELETE: "Se borra",
+  ANONYMIZE: "Se conserva anonimizado",
+};
+
 /**
  * Zona de riesgo: solo la ve quien puede borrar socios (`canDeleteMembers`). Va
  * al final de la sección "Socio", después de salud y consentimientos.
@@ -332,6 +340,21 @@ export function DeleteMemberSection({
   const [deleting, startDeleting] = useTransition();
   const router = useRouter();
   const toast = useToast();
+  // E10-09: el diálogo no describe el borrado de memoria, lo pregunta. El plan
+  // que pinta es el mismo que ejecuta `deleteMember`, así que no puede quedarse
+  // desfasado prometiendo una anonimización que el código no hace.
+  const [plan, setPlan] = useState<SuppressionPlan | null>(null);
+
+  useEffect(() => {
+    if (!deleteOpen) return;
+    let cancelled = false;
+    previewMemberSuppression(member.id).then((p) => {
+      if (!cancelled) setPlan(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deleteOpen, member.id]);
 
   function handleDelete() {
     startDeleting(async () => {
@@ -355,7 +378,8 @@ export function DeleteMemberSection({
           <span className={`${KICKER} text-critical`}>Zona de riesgo</span>
         </div>
         <p className="text-[13px] text-brand-text-2 leading-relaxed mt-2.5">
-          Eliminar el socio borra su ficha, su bitácora y su historial de asistencia de forma permanente.
+          Eliminar el socio borra su ficha, su bitácora y su historial de asistencia de forma permanente. Los cobros
+          emitidos se conservan sin vínculo con la persona: son justificantes contables.
         </p>
         <div
           className="relative mt-3.5 max-w-sm"
@@ -410,16 +434,31 @@ export function DeleteMemberSection({
               <strong className="font-semibold text-brand-text">
                 {member.firstName} {member.lastName}
               </strong>{" "}
-              ({member.email}). Se borrarán sus datos de contacto, su bitácora, sus objetivos y su historial de
-              asistencia.
+              ({member.email}). Esto es lo que va a ocurrir, campo por campo:
             </p>
-            <div className="border border-brand-border rounded-xl bg-tz-bone px-[15px] py-[13px] text-[12.5px] text-brand-text-2 flex gap-2.5 items-start mt-4">
-              <span className="w-2 h-2 rounded-full bg-apta-gold mt-1.5 shrink-0" />
-              <span>
-                RGPD: los datos de salud y los pagos emitidos se conservan anonimizados por obligación legal. El
-                borrado queda registrado en Auditoría con tu usuario.
-              </span>
-            </div>
+            {plan ? (
+              <ul className="mt-4 flex flex-col gap-2.5 list-none p-0">
+                {plan.effects.map((effect) => (
+                  <li
+                    key={effect.key}
+                    className="border border-brand-border rounded-xl bg-tz-bone px-[15px] py-[13px] text-[12.5px] text-brand-text-2"
+                  >
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-brand-text">{effect.label}</span>
+                      <span className="rounded-pill px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.05em] bg-white border border-brand-border">
+                        {SUPPRESSION_ACTION_LABEL[effect.action]}
+                      </span>
+                    </span>
+                    <span className="block leading-snug mt-1">{effect.detail}</span>
+                    {effect.legalBasis && (
+                      <span className="block text-[11.5px] text-brand-muted mt-1">{effect.legalBasis}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12.5px] text-brand-muted mt-4">Calculando qué se conserva y qué se borra...</p>
+            )}
           </>
         }
       />

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { dueDateForKind } from "@/lib/assessments/queries";
 import {
   missingEssentialProfileFields,
+  needsHealthDeclaration,
   type EssentialProfileField,
   type EssentialProfileSource,
 } from "./member-first-session";
@@ -38,28 +39,29 @@ export async function ensureInitialAssessment(
   return created.id;
 }
 
-export type FirstSessionStep =
-  | { step: "profile"; missing: EssentialProfileField[] }
-  | { step: "assessment" };
+export type FirstSessionStep = {
+  step: "profile";
+  missing: EssentialProfileField[];
+  needsHealthDeclaration: boolean;
+};
 
 /**
- * Qué le queda al socio antes de poder usar el portal, en orden: primero sus
- * datos y después su parte de la valoración inicial. Null cuando ya no debe
+ * Qué le queda al socio antes de poder usar el portal. Null cuando ya no debe
  * nada y el portal se abre con normalidad.
  *
- * Solo mira valoraciones **abiertas**: una ya cerrada se rellenó entera del
- * lado del entrenador —la única vía que existía hasta F-ALTA— y volver a
- * pedírsela al socio sería preguntarle por algo que ya contestó.
+ * E5-08: la valoración inicial YA NO bloquea aquí — se pospone (F4 §5.3,
+ * `PendingAssessmentGate` en `portal/layout.tsx`, que ya sabe pedirla con
+ * salida) en vez de encerrar al socio detrás de un muro sin escape. Lo único
+ * que sigue bloqueando es lo que el servicio necesita de verdad para la
+ * primera sesión: edad, contacto de emergencia y la declaración de salud.
  */
 export async function resolveFirstSessionStep(
-  member: EssentialProfileSource & { id: string }
+  member: EssentialProfileSource & { id: string; consentHealth: boolean }
 ): Promise<FirstSessionStep | null> {
   const missing = missingEssentialProfileFields(member);
-  if (missing.length) return { step: "profile", missing };
-
-  const pending = await prisma.assessment.findFirst({
-    where: { memberId: member.id, kind: "INITIAL", completedAt: null, memberPartAt: null },
-    select: { id: true },
-  });
-  return pending ? { step: "assessment" } : null;
+  const missingHealthDeclaration = needsHealthDeclaration(member);
+  if (missing.length || missingHealthDeclaration) {
+    return { step: "profile", missing, needsHealthDeclaration: missingHealthDeclaration };
+  }
+  return null;
 }

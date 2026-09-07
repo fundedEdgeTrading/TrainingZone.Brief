@@ -1,3 +1,5 @@
+import type { MemberState } from "@prisma/client";
+
 /**
  * Ámbito y periodo del panel de dirección.
  *
@@ -37,6 +39,20 @@ export type DashboardOpts = {
    */
   centerIds?: string[];
   range?: DashboardRange;
+  /**
+   * E11-01 · Estados de socio que entran en la agregación.
+   *
+   * El mapa de barrios cuenta HOY todos los estados, cancelados y prospectos
+   * incluidos, así que un barrio del que se está yendo la gente sigue pintándose
+   * oscuro — al revés de lo que dirección necesita ver. El criterio por defecto
+   * pasa a ser "socios vivos", y este parámetro permite pedir lo contrario, que
+   * es lo que necesita la métrica de fuga (E11-09).
+   *
+   * ⚠️ El campo se declara aquí y `/mapa-barrios` ya lo envía; **quien tiene que
+   * aplicarlo es `getPostalCodeMapData`**, que es de otra pista. La petición
+   * está escrita en `docs/hu/T7-peticion-dashboard-queries.md`.
+   */
+  memberStates?: MemberState[];
 };
 
 const DAY_MS = 86_400_000;

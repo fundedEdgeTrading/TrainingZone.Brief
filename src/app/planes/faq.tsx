@@ -1,7 +1,13 @@
 // Respuestas ancladas a las decisiones cerradas del catálogo comercial
 // (docs/PLAN_IMPLEMENTACION_APTA_COMERCIAL.md §1, D-8 a D-12): no prometen
 // nada que el producto no haga todavía (p. ej. cancelación de autoservicio).
-const FAQS: { q: string; a: string }[] = [
+/**
+ * E9-07 · Exportado a propósito: el `FAQPage` del JSON-LD se genera de aquí, no
+ * se escribe a mano. Si mañana cambia una respuesta y el marcado siguiera
+ * diciendo lo anterior, el resultado enriquecido enseñaría algo que la página no
+ * dice — y eso sí es motivo de penalización.
+ */
+export const FAQS: { q: string; a: string }[] = [
   {
     q: "¿Puedo cambiar de plan más adelante?",
     a: "Sí. Desde tu cuenta puedes cambiar de plan cuando quieras: eliges el nuevo plan, confirmas el pago y el cambio se aplica al momento.",

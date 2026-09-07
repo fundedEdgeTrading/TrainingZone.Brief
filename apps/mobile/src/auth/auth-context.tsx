@@ -1,24 +1,14 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import { apiRequest, clearTokens, getStoredTokens, storeTokens, ApiError } from "@/api/client";
-import type { LoginOrganization, LoginResponse, MeResponse, Role } from "@/api/types";
+import type { LoginOrganization, LoginResponse, MeResponse } from "@/api/types";
 
-/**
- * Roles que pueden entrar en la app. Es la misma lista que `TABS_BY_ROLE`
- * (@/auth/routes): un rol con pestañas declaradas y endpoints que le responden
- * pero fuera de aquí choca en el login con «Tu rol todavía no tiene una versión
- * de la app móvil», que es lo que les pasaba a recepción y RRHH pese a que el
- * README anuncia su versión mínima y la API les sirve todas sus pantallas.
- */
-const SUPPORTED_ROLES: Role[] = [
-  "MEMBER",
-  "TRAINER",
-  "TRAINER_ADMIN",
-  "OWNER",
-  "CENTER_DIRECTOR",
-  "PLATFORM_ADMIN",
-  "RECEPTION",
-  "HR_MANAGER",
-];
+// E13-01 (D-M4): el login ya no bloquea por rol. Antes se rechazaba aquí a
+// quien tuviera un rol sin pestañas, con un error genérico de "tu rol
+// todavía no tiene versión de la app". Ahora TODOS los roles inician sesión;
+// es `(tabs)/_layout.tsx` (`isAppSupportedRole`) quien decide, tras entrar,
+// si el rol usa las pestañas de socio/entrenador o ve la pantalla que le
+// explica que su trabajo se hace desde la web — nunca una rejilla vacía ni un
+// error de login.
 
 type AuthState =
   | { status: "loading" }
@@ -60,7 +50,11 @@ type AuthContextValue = {
   consumeJustSignedIn: () => void;
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
+// Exportado (no solo el hook `useAuth`) para que `@/theme/theme` pueda leer el
+// tema explícito del usuario con `useContext` sin lanzar cuando se llama
+// fuera de `<AuthProvider>` (el `RootLayout` pinta la barra de estado antes
+// de montarlo) — E13-02.
+export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
@@ -96,16 +90,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         body: { email, password, ...(orgId ? { orgId } : {}) },
         skipAuth: true,
       });
-
-      // F1 QA: Entrenador Admin daba error de "rol no soportado" pese a tener
-      // tabs propias en TABS_BY_ROLE (mismo subconjunto que Entrenador). Lo
-      // mismo le pasaba a recepción (socios, agenda, avisos) y a RRHH (equipo,
-      // avisos): la razón por la que quedaron fuera —"sus pantallas aún no
-      // existen en la app"— dejó de ser cierta cuando entraron socios, agenda,
-      // equipo y avisos, y la API les responde 200 en todas.
-      if (!SUPPORTED_ROLES.includes(data.user.role)) {
-        return { ok: false, error: "Tu rol todavía no tiene una versión de la app móvil." };
-      }
 
       await storeTokens(data);
       setJustSignedIn(true);

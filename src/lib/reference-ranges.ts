@@ -8,18 +8,22 @@ export function ageFromBirthDate(birthDate: Date | null): number | null {
   return Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
 }
 
-// Rangos de referencia de composición corporal (docs/COMPOSICION_CORPORAL_TANITA.md §3/§8.1).
-// Tabla ReferenceRange editable por dirección; si no hay fila para la métrica/org, se cae a
-// estos valores por defecto (los del propio informe Tanita analizado), igual que AptitudeRule
-// funciona sobre reglas configurables con un catálogo de partida.
+/**
+ * Rangos de referencia de composición corporal (docs/COMPOSICION_CORPORAL_TANITA.md §3/§8.1).
+ *
+ * E3-09 · RB-SALUD-013: **ya no hay valores por defecto**. Los que había
+ * —`bodyFatPct: { min: 8, max: 19 }`, unisex y sin edad— eran los del informe
+ * Tanita de un hombre de 28 años convertidos en el defecto de toda la
+ * aplicación, y era el defecto que se usaba mientras dirección no creara filas,
+ * o sea siempre. Una mujer de 52 años con un 29 % de grasa, perfectamente
+ * normal, salía `critical` en su ficha **y en su portal**. Poner una etiqueta
+ * roja de salud a una socia sana es la forma más rápida de perderla.
+ *
+ * Sin fila de referencia para su sexo y su tramo de edad, el valor se muestra
+ * SIN semáforo. Un dato sin norma poblacional es un dato sin norma poblacional:
+ * lo honesto es enseñarlo desnudo, no pintarlo de un color inventado.
+ */
 export type RangeMetric = "bodyFatPct" | "bmi" | "visceralFatRating" | "bodyWaterPct";
-
-const DEFAULT_RANGES: Record<RangeMetric, { min: number; max: number }> = {
-  bodyFatPct: { min: 8, max: 19 },
-  bmi: { min: 18.5, max: 25 },
-  visceralFatRating: { min: 1, max: 9 },
-  bodyWaterPct: { min: 50, max: 65 },
-};
 
 export type RangeStatus = "good" | "warning" | "critical" | "unknown";
 
@@ -55,7 +59,9 @@ export async function getReferenceRange(
     .sort((a, b) => specificity(b) - specificity(a));
   const match = candidates[0];
   if (match) return { min: match.min, max: match.max };
-  return DEFAULT_RANGES[metric] ?? { min: null, max: null };
+  // Sin fila: sin semáforo (`statusForValue` devuelve "unknown"). Nunca rojo por
+  // defecto — ver la cabecera de este fichero.
+  return { min: null, max: null };
 }
 
 function specificity(r: { sex: string | null; ageMin: number | null; ageMax: number | null }): number {
@@ -78,4 +84,28 @@ export async function listReferenceRanges(orgId: string) {
     include: { editedBy: { select: { name: true } } },
     orderBy: [{ metric: "asc" }],
   });
+}
+
+/**
+ * Tendencia contra la medición anterior (E3-09). Es lo único defendible sin
+ * normativa poblacional: "has bajado 1,2 puntos desde la última toma" dice algo
+ * verdadero sobre esta persona; "29 % es crítico" no dice nada sobre ella.
+ */
+export type Trend = { delta: number; direction: "up" | "down" | "flat"; previous: number };
+
+export function trendAgainstPrevious(
+  current: number | null | undefined,
+  previous: number | null | undefined
+): Trend | null {
+  if (current == null || previous == null) return null;
+  const delta = Math.round((current - previous) * 10) / 10;
+  return { delta, direction: delta > 0 ? "up" : delta < 0 ? "down" : "flat", previous };
+}
+
+/** "−1,2 pts desde la toma anterior" · "sin cambio desde la toma anterior". */
+export function formatTrend(trend: Trend | null, unit = "pts"): string | null {
+  if (!trend) return null;
+  if (trend.direction === "flat") return "Sin cambio desde la toma anterior";
+  const sign = trend.delta > 0 ? "+" : "−";
+  return `${sign}${Math.abs(trend.delta).toString().replace(".", ",")} ${unit} desde la toma anterior`;
 }

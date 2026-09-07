@@ -16,15 +16,21 @@ import {
 import { parseDateParam } from "@/lib/date-utils";
 import { parseEditScope } from "@/lib/session-series";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
+import { checkSessionSchedule } from "@/lib/session-time";
 
 export type SessionActionResult = { ok: true } | { ok: false; error: string };
 
-const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"] as const;
+/**
+ * RB-AGENDA-010: borrar puede exigir una segunda vuelta. Si la sesión tiene
+ * asistencias ya registradas, la primera llamada no borra nada: devuelve
+ * `needsConfirmation` con el texto que hay que enseñar, y solo la segunda
+ * (`confirmSettled`) ejecuta el borrado.
+ */
+export type DeleteSessionActionResult =
+  | { ok: true }
+  | { ok: false; error: string; needsConfirmation?: true };
 
-/** "HH:MM" en reloj de 24 h; nada más entra en `ClassSession.startTime`/`endTime`. */
-function isValidHHMM(value: string): boolean {
-  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
-}
+const ALLOWED_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"] as const;
 
 export async function saveSessionAction(formData: FormData): Promise<SessionActionResult> {
   const session = await requireRole([...ALLOWED_ROLES]);
@@ -65,12 +71,14 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   let title = String(formData.get("title") ?? "").trim();
 
   if (!centerId || !trainerId || !dateRaw || !startTime) return { ok: false, error: "Completa entrenador, fecha y hora." };
-  // Sin validar el formato, un "HH:MM" corrupto se propagaba como "NaN:NaN"
-  // hasta la base de datos en vez de rechazarse aquí.
-  if (!isValidHHMM(startTime)) return { ok: false, error: "La hora de inicio no es válida." };
-  if (endTime && !isValidHHMM(endTime)) return { ok: false, error: "La hora de fin no es válida." };
+  // E2-12: la misma comprobación que hacen `moveSessionAction` y los dos
+  // endpoints móviles, desde el mismo módulo. Un "HH:MM" corrupto se
+  // propagaba como "NaN:NaN" hasta la base de datos, y un fin anterior al
+  // inicio se reescribía en silencio en vez de rechazarse.
+  const schedule = checkSessionSchedule({ date: dateRaw, startTime, endTime });
+  if (!schedule.ok) return { ok: false, error: schedule.error };
 
-  if (!endTime || endTime <= startTime) {
+  if (!endTime) {
     // La duración por defecto no puede desbordar el día: con `% 24`, una sesión
     // que empezara a las 23:45 acababa a las "00:15", una hora ANTERIOR a la de
     // inicio, y toda la aritmética de duración y solapes la leía en negativo.
@@ -111,7 +119,7 @@ export async function saveSessionAction(formData: FormData): Promise<SessionActi
   return { ok: true };
 }
 
-export async function deleteSessionAction(formData: FormData): Promise<SessionActionResult> {
+export async function deleteSessionAction(formData: FormData): Promise<DeleteSessionActionResult> {
   const session = await requireRole([...ALLOWED_ROLES]);
   if (!canManageEpSlots(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la agenda." };
 
@@ -124,7 +132,10 @@ export async function deleteSessionAction(formData: FormData): Promise<SessionAc
   if (!centerId) return { ok: false, error: "Sesión no encontrada." };
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
-  const result = await deleteSession(session.user.orgId, id);
+  const result = await deleteSession(session.user.orgId, id, {
+    actorUserId: session.user.id,
+    confirmSettled: formData.get("confirmSettled") === "on",
+  });
   if (!result.ok) return result;
 
   revalidateSessionViews();
@@ -250,6 +261,12 @@ export async function moveSessionAction(input: {
   const centerId = await getSessionCenterId(session.user.orgId, input.id);
   if (!centerId) return { ok: false, error: "Sesión no encontrada." };
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
+
+  // E2-12: arrastrar y soltar no validaba NADA. La rejilla manda día y hora
+  // calculados en el cliente, y con un cálculo roto la sesión se quedaba con
+  // "NaN:NaN" en la base de datos.
+  const schedule = checkSessionSchedule(input);
+  if (!schedule.ok) return { ok: false, error: schedule.error };
 
   const result = await rescheduleSession(session.user.orgId, input.id, parseDateParam(input.date), input.startTime, input.endTime);
   if (!result.ok) return result;

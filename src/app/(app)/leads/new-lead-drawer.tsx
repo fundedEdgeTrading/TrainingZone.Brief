@@ -171,9 +171,25 @@ export function NewLeadDrawer({
             <Field label="Objetivos (opcional)">
               <textarea name="goals" rows={2} className="w-full rounded-control border border-brand-border bg-white px-3.5 py-2.5 text-sm" />
             </Field>
-            <Field label="Lesiones / patologías (opcional)" hint="Puedes completarlo después desde la ficha del lead">
+            {/* E10-01: deja de ser obligatorio y deja de guardarse sin
+                consentimiento. En recepción la persona está delante, así que
+                aquí sí cabe el detalle — pero solo si presta el consentimiento,
+                y eso lo marca quien la atiende, no el formulario. */}
+            <Field label="Lesiones / patologías" hint="Opcional. Solo se guarda si el interesado consiente.">
               <Input name="healthNote" placeholder="Ninguna / detalle" />
             </Field>
+            <label className="flex gap-3 items-start rounded-xl border border-brand-border bg-white px-4 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                name="healthConsent"
+                value="yes"
+                className="w-[18px] h-[18px] mt-0.5 accent-tz-black cursor-pointer shrink-0"
+              />
+              <span className="text-[12.5px] leading-snug text-brand-text-2">
+                El interesado ha sido informado y <b className="text-tz-black">consiente</b> el tratamiento de su dato
+                de salud (art. 9.2.a RGPD). Sin esta marca el lead se crea igual, sin dato de salud.
+              </span>
+            </label>
 
             {mode === "directo" && (
               <div className="rounded-xl bg-trial-bg border border-trial/20 p-4 space-y-3">

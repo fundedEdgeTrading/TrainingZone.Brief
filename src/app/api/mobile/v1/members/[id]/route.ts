@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import type { Role } from "@prisma/client";
+import type { BookingStatus, Role } from "@prisma/client";
 import {
   getMemberDetail,
   getMemberAttendanceStats,
@@ -8,10 +8,11 @@ import {
   bonoUsage,
   effectiveSessionsIncluded,
 } from "@/lib/members-queries";
-import { canManageMembers } from "@/lib/rbac";
+import { canManageMembers, canViewHealthData } from "@/lib/rbac";
 import { isMemberInScope } from "@/lib/center-scope";
 import { formatDateParam } from "@/lib/date-utils";
 import { debriefAverage } from "../../_lib/calendar";
+import { auditSessionPainRead } from "@/lib/health-access";
 import { requireApiRole } from "../../_lib/api-session";
 import { apiOk, apiError } from "../../_lib/response";
 
@@ -22,6 +23,24 @@ import { apiOk, apiError } from "../../_lib/response";
 // Nada de datos de salud: la ficha móvil de dirección no expone composición
 // corporal ni condiciones (src/lib/health-access.ts sigue siendo la única vía).
 const STAFF_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "RECEPTION", "PLATFORM_ADMIN"];
+
+/**
+ * E1-06: la reserva tal y como la ve un rol SIN acceso a datos de salud. No
+ * declara `feedbackAvg` a propósito — ver el comentario en el handler.
+ */
+type MemberBookingDto = {
+  bookingId: string;
+  day: string;
+  sessionName: string;
+  startTime: string;
+  endTime: string;
+  serviceKind: "EP" | "GROUP";
+  status: BookingStatus;
+  startsAtMs: number;
+};
+
+/** La misma reserva para quien sí puede ver el debrief (`canViewHealthData`). */
+type MemberBookingWithDebriefDto = MemberBookingDto & { feedbackAvg: number | null };
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireApiRole(req, STAFF_ROLES);
@@ -39,8 +58,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!inScope) return apiError("No se ha encontrado el socio.", 404);
   const stats = await getMemberAttendanceStats(member.id);
 
+  // E1-06 (RB-SEG-004): `debriefAverage` promedia movilidad y dolor invertido,
+  // así que la media del debrief es dato de salud. La cabecera de este fichero
+  // ya decía "nada de datos de salud", pero la ruta de escritura estaba viva:
+  // con el seed salía `null` solo porque nadie había puntuado ejes todavía.
+  //
+  // `MemberBookingDto` no declara `feedbackAvg`, así que devolverlo por esta
+  // rama sería un error de compilación, no una fuga silenciosa.
   const now = Date.now();
-  const bookings = member.bookings.map((b) => ({
+  const toDto = (b: (typeof member.bookings)[number]): MemberBookingDto => ({
     bookingId: b.id,
     day: formatDateParam(b.occurrenceDate),
     sessionName: b.session.name,
@@ -48,9 +74,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     endTime: b.session.endTime,
     serviceKind: sessionServiceKind(b.session.classType),
     status: b.status,
-    feedbackAvg: debriefAverage(b.debrief),
     startsAtMs: b.occurrenceDate.getTime(),
-  }));
+  });
+
+  let bookings: (MemberBookingDto | MemberBookingWithDebriefDto)[];
+  if (canViewHealthData(claims.role)) {
+    const withDebrief = member.bookings.map((b) => ({ ...toDto(b), feedbackAvg: debriefAverage(b.debrief) }));
+    bookings = withDebrief;
+
+    // E3-18 · esa media lleva dentro `SessionDebrief.pain`. Quien abre esta
+    // ficha no es el entrenador de la sesión sino dirección: deja traza, igual
+    // que el resto de las lecturas de salud. Va dentro de la rama porque en la
+    // otra el dato ni se lee, y auditar lo que no se ha leído es ruido.
+    await auditSessionPainRead({
+      memberId: member.id,
+      orgId: claims.orgId,
+      actorUserId: claims.sub,
+      source: "MEMBER_DETAIL",
+      debriefCount: withDebrief.filter((b) => b.feedbackAvg != null).length,
+    });
+  } else {
+    bookings = member.bookings.map(toDto);
+  }
 
   const booked = member.bookings.filter((b) => b.status === "BOOKED" || b.status === "WAITLISTED").length;
   const totalSessions = stats.attended + stats.noShow;

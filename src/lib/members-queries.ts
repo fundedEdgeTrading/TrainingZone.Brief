@@ -126,7 +126,7 @@ export async function listActiveMembersForSelect(orgId: string) {
 }
 
 export async function getMemberDetail(orgId: string, memberId: string) {
-  return prisma.member.findFirst({
+  const member = await prisma.member.findFirst({
     where: { id: memberId, orgId },
     include: {
       primaryCenter: true,
@@ -137,11 +137,19 @@ export async function getMemberDetail(orgId: string, memberId: string) {
         take: 30,
         include: { session: true, debrief: true },
       },
-      progressEntries: { orderBy: { date: "desc" } },
+      // E10-02: `progressEntries` YA NO viaja en la ficha. Es dato del Art. 9
+      // (fotos de progreso y composición corporal) y se lee por el punto único,
+      // `getProgressEntriesForMember` en lib/health-access.ts, que aplica la
+      // matriz de permisos y deja rastro. Cargarlo aquí se lo daba a recepción.
       invitation: { select: { usedAt: true, expiresAt: true } },
       clientGoals: { orderBy: { createdAt: "desc" } },
     },
   });
+  // E10-20: la firma de las URL de foto ya no vive aquí. Con E10-02,
+  // `progressEntries` salió de la ficha y se lee por el punto único
+  // (`getProgressEntriesForMember`, lib/health-access.ts); la firma se aplica
+  // allí, que es por donde pasa ahora tanto la web como la app.
+  return member;
 }
 
 // Modalidad de servicio y cuentas de saldo: viven en session-balance.ts, que no

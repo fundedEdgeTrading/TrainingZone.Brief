@@ -1,6 +1,14 @@
 import { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { sessionsInRangeWhere } from "@/lib/session-occurrences";
+import {
+  OCCUPANCY_SELECT,
+  occupancyByWeekday,
+  occupancyPct,
+  occurrencesOf,
+  noShowPct,
+} from "@/lib/occupancy";
 import { nearestOf } from "@/lib/barrio-geometry";
 import type { BarrioCenter, BarrioStat } from "@/lib/barrio-map";
 import { OCCUPANCY_TARGET_PCT } from "@/lib/dashboard-targets";
@@ -104,55 +112,62 @@ export async function getOccupancyByCenter(orgId: string, opts: DashboardOpts = 
     where: opts.centerId ? { orgId, id: opts.centerId } : { orgId },
     orderBy: { name: "asc" },
   });
-  const since = new Date();
+  const until = new Date();
+  const since = new Date(until);
   since.setDate(since.getDate() - 30);
 
   const result = [];
   for (const c of centers) {
+    // E12-06: se traen las filas CANDIDATAS a tener ocurrencias en la ventana
+    // (incluidas las series nacidas antes) y se cuentan las ocurrencias reales.
     const sessions = await prisma.classSession.findMany({
-      where: { orgId, centerId: c.id, date: { gte: since, lt: new Date() }, status: "SCHEDULED" },
-      select: {
-        capacity: true,
-        bookings: { where: { status: { in: ["ATTENDED", "NO_SHOW"] } }, select: { id: true } },
-      },
+      where: { orgId, centerId: c.id, status: "SCHEDULED", ...sessionsInRangeWhere(since, until) },
+      select: OCCUPANCY_SELECT,
     });
-    const totalCapacity = sessions.reduce((s, x) => s + x.capacity, 0);
-    const totalBooked = sessions.reduce((s, x) => s + x.bookings.length, 0);
+    const occurrences = occurrencesOf(sessions, since, until);
     result.push({
       center: c.name,
-      occupancyPct: totalCapacity ? Math.round((totalBooked / totalCapacity) * 100) : 0,
-      sessions: sessions.length,
+      occupancyPct: occupancyPct(occurrences),
+      // Sesiones celebradas de verdad en la ventana, no filas de la tabla.
+      sessions: occurrences.length,
     });
   }
   return result;
 }
 
 export async function getNoShowRate(orgId: string, opts: DashboardOpts = {}) {
-  const since = new Date();
+  const until = new Date();
+  const since = new Date(until);
   since.setDate(since.getDate() - 30);
   const previousSince = new Date(since.getTime() - 30 * 86_400_000);
-  const session = { ...centerColumnScope(orgId, opts.centerId) };
 
-  const [attended, noShow, prevAttended, prevNoShow] = await Promise.all([
-    prisma.booking.count({ where: { status: "ATTENDED", session: { ...session, date: { gte: since } } } }),
-    prisma.booking.count({ where: { status: "NO_SHOW", session: { ...session, date: { gte: since } } } }),
-    prisma.booking.count({
-      where: { status: "ATTENDED", session: { ...session, date: { gte: previousSince, lt: since } } },
-    }),
-    prisma.booking.count({
-      where: { status: "NO_SHOW", session: { ...session, date: { gte: previousSince, lt: since } } },
-    }),
-  ]);
+  // E12-06: sobre las MISMAS ocurrencias que la ocupación. Contar reservas
+  // filtrando por `session.date` metía en la ventana todo el histórico de una
+  // serie cuya fecha base cayera dentro, y dejaba fuera series enteras.
+  const sessions = await prisma.classSession.findMany({
+    where: {
+      ...centerColumnScope(orgId, opts.centerId),
+      status: "SCHEDULED",
+      ...sessionsInRangeWhere(previousSince, until),
+    },
+    select: OCCUPANCY_SELECT,
+  });
 
-  const rate = (no: number, yes: number) => (no + yes ? Math.round((no / (no + yes)) * 100) : 0);
-  const current = rate(noShow, attended);
-  const previous = rate(prevNoShow, prevAttended);
+  const currentOccurrences = occurrencesOf(sessions, since, until);
+  const current = noShowPct(currentOccurrences);
+  const previousOccurrences = occurrencesOf(sessions, previousSince, since);
+  const previous = noShowPct(previousOccurrences);
+  const previousVolume = previousOccurrences.reduce((sum, o) => sum + o.attended + o.noShow, 0);
+
+  const attended = currentOccurrences.reduce((sum, o) => sum + o.attended, 0);
+  const noShow = currentOccurrences.reduce((sum, o) => sum + o.noShow, 0);
+
   // El chip de la card oscura cuenta la variación en puntos, no en porcentaje:
   // "del 8% al 6,6%" es −1,4 pts, no −17,5%.
   return {
     rate: current,
-    deltaPts: previousSince && prevAttended + prevNoShow > 0 ? current - previous : null,
-    // E12-05: la app móvil necesita el recuento crudo (sesionesHeld) además
+    deltaPts: previousVolume > 0 ? current - previous : null,
+    // E12-05: la app móvil necesita el recuento crudo (sesiones held) además
     // de la tasa — se añade aquí para que no tenga que reimplementar esta
     // misma consulta con otro nombre y otro criterio.
     attended,
@@ -162,27 +177,22 @@ export async function getNoShowRate(orgId: string, opts: DashboardOpts = {}) {
 }
 
 export async function getOccupancyByWeekday(orgId: string, opts: DashboardOpts = {}) {
-  const since = new Date();
+  const until = new Date();
+  const since = new Date(until);
   since.setDate(since.getDate() - 60);
   const sessions = await prisma.classSession.findMany({
-    where: { ...centerColumnScope(orgId, opts.centerId), date: { gte: since, lt: new Date() }, status: "SCHEDULED" },
-    select: {
-      date: true,
-      capacity: true,
-      bookings: { where: { status: { in: ["ATTENDED", "NO_SHOW"] } }, select: { id: true } },
+    where: {
+      ...centerColumnScope(orgId, opts.centerId),
+      status: "SCHEDULED",
+      ...sessionsInRangeWhere(since, until),
     },
+    select: OCCUPANCY_SELECT,
   });
-  const byWeekday = Array.from({ length: 7 }, () => ({ capacity: 0, booked: 0 }));
-  for (const s of sessions) {
-    const wd = new Date(s.date).getDay();
-    byWeekday[wd].capacity += s.capacity;
-    byWeekday[wd].booked += s.bookings.length;
-  }
+  // E12-06: cada ocurrencia se imputa a SU día. Con la fecha base, una serie
+  // "todos los laborables" cargaba entera en un solo día de la semana.
+  const pcts = occupancyByWeekday(occurrencesOf(sessions, since, until));
   const labels = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-  return byWeekday.map((v, i) => ({
-    day: labels[i],
-    occupancyPct: v.capacity ? Math.round((v.booked / v.capacity) * 100) : 0,
-  }));
+  return pcts.map((occupancyPct, i) => ({ day: labels[i], occupancyPct }));
 }
 
 export async function getRevenueByMethod(orgId: string, opts: DashboardOpts = {}) {
@@ -715,14 +725,6 @@ export async function getMemberRanking(
 // ---------- Rediseño 2026-08: KPIs con comparativa, altas/bajas e insight ----------
 
 
-type SessionRow = { date: Date; capacity: number; bookings: { id: string }[] };
-
-function occupancyOf(sessions: SessionRow[]) {
-  const capacity = sessions.reduce((s, x) => s + x.capacity, 0);
-  const booked = sessions.reduce((s, x) => s + x.bookings.length, 0);
-  return capacity ? Math.round((booked / capacity) * 100) : 0;
-}
-
 const inWindow = (d: Date, from: Date, to: Date) => d >= from && d < to;
 
 /**
@@ -731,17 +733,18 @@ const inWindow = (d: Date, from: Date, to: Date) => d >= from && d < to;
  * cada centro. Un centro con 4 sesiones no puede pesar lo mismo que uno con 90.
  */
 export async function getAverageOccupancy(orgId: string, opts: DashboardOpts = {}) {
-  const since = new Date();
+  const until = new Date();
+  const since = new Date(until);
   since.setDate(since.getDate() - 30);
   const sessions = await prisma.classSession.findMany({
-    where: { ...centerColumnScope(orgId, opts.centerId), date: { gte: since, lt: new Date() }, status: "SCHEDULED" },
-    select: {
-      date: true,
-      capacity: true,
-      bookings: { where: { status: { in: ["ATTENDED", "NO_SHOW"] } }, select: { id: true } },
+    where: {
+      ...centerColumnScope(orgId, opts.centerId),
+      status: "SCHEDULED",
+      ...sessionsInRangeWhere(since, until),
     },
+    select: OCCUPANCY_SELECT,
   });
-  return occupancyOf(sessions);
+  return occupancyPct(occurrencesOf(sessions, since, until));
 }
 
 /** Altas menos bajas del periodo activo: el KPI "Altas − bajas" y el neto del panel semanal. */
@@ -852,12 +855,12 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       select: { date: true, amountCents: true },
     }),
     prisma.classSession.findMany({
-      where: { ...centerColumnScope(orgId, opts.centerId), date: { gte: since }, status: "SCHEDULED" },
-      select: {
-        date: true,
-        capacity: true,
-        bookings: { where: { status: { in: ["ATTENDED", "NO_SHOW"] } }, select: { id: true } },
+      where: {
+        ...centerColumnScope(orgId, opts.centerId),
+        status: "SCHEDULED",
+        ...sessionsInRangeWhere(since, now),
       },
+      select: OCCUPANCY_SELECT,
     }),
     prisma.retentionAlert.findMany({ where: { member: members }, select: { createdAt: true, resolvedAt: true } }),
   ]);
@@ -865,7 +868,10 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
   const stateCount = (state: string) => stateCounts.find((r) => r.state === state)?._count._all ?? 0;
   const revenueCents = (from: Date, to: Date) =>
     payments.filter((p) => inWindow(p.date, from, to)).reduce((sum, p) => sum + p.amountCents, 0);
-  const sessionsIn = (from: Date, to: Date) => sessions.filter((x) => inWindow(x.date, from, to));
+  // E12-06: la ventana se resuelve por OCURRENCIA, no filtrando la fecha base
+  // de la fila. Así una serie de hace seis meses aporta sus clases de este mes,
+  // y una cuya base cae dentro no aporta todo su histórico de golpe.
+  const sessionsIn = (from: Date, to: Date) => occurrencesOf(sessions, from, to);
   // Stock a fecha `t`: quien ya se había dado de alta y todavía no se había ido.
   const activeAt = (t: Date) =>
     memberRows.filter((m) => m.joinedAt <= t && (!m.cancelledAt || m.cancelledAt > t)).length;
@@ -880,8 +886,8 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
   const revenueChange = pctChange(revenue, revenuePrev);
 
   const activeMembers = stateCount("ACTIVE");
-  const occupancy = occupancyOf(sessionsIn(win.from, win.to));
-  const occupancyPrev = occupancyOf(sessionsIn(win.prevFrom, win.prevTo));
+  const occupancy = occupancyPct(sessionsIn(win.from, win.to));
+  const occupancyPrev = occupancyPct(sessionsIn(win.prevFrom, win.prevTo));
   const sessionCount = sessionsIn(win.from, win.to).length;
   const sessionCountPrev = sessionsIn(win.prevFrom, win.prevTo).length;
   const openAlerts = alertsAt(now);
@@ -937,7 +943,7 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       deltaValue: occupancy - occupancyPrev,
       hint: `objetivo ${OCCUPANCY_TARGET_PCT}%`,
       accent: "ink",
-      spark: buckets.map((b) => occupancyOf(sessionsIn(b.from, b.to))),
+      spark: buckets.map((b) => occupancyPct(sessionsIn(b.from, b.to))),
     },
     {
       key: "sessions",
@@ -1018,13 +1024,12 @@ export async function getDailyInsight(orgId: string, opts: DashboardOpts = {}): 
 
   const [sessions, payments, alerts, centers] = await Promise.all([
     prisma.classSession.findMany({
-      where: { ...centerColumnScope(orgId, opts.centerId), date: { gte: win.prevFrom }, status: "SCHEDULED" },
-      select: {
-        centerId: true,
-        date: true,
-        capacity: true,
-        bookings: { where: { status: { in: ["ATTENDED", "NO_SHOW"] } }, select: { id: true } },
+      where: {
+        ...centerColumnScope(orgId, opts.centerId),
+        status: "SCHEDULED",
+        ...sessionsInRangeWhere(win.prevFrom, win.to),
       },
+      select: { centerId: true, ...OCCUPANCY_SELECT },
     }),
     prisma.payment.findMany({
       where: { ...paymentScope(orgId, opts.centerId), status: "PAID", date: { gte: win.prevFrom } },
@@ -1047,11 +1052,14 @@ export async function getDailyInsight(orgId: string, opts: DashboardOpts = {}): 
   const ranked = centers
     .map((c) => {
       const own = sessions.filter((x) => x.centerId === c.id);
+      const current = occurrencesOf(own, win.from, win.to);
       return {
         name: shortCenterName(c.name, org?.name),
-        pct: occupancyOf(own.filter((x) => inWindow(x.date, win.from, win.to))),
-        prevPct: occupancyOf(own.filter((x) => inWindow(x.date, win.prevFrom, win.prevTo))),
-        sessions: own.length,
+        pct: occupancyPct(current),
+        prevPct: occupancyPct(occurrencesOf(own, win.prevFrom, win.prevTo)),
+        // Clases celebradas en la ventana, no filas: una serie vale por todas
+        // sus ocurrencias.
+        sessions: current.length,
       };
     })
     .filter((c) => c.sessions > 0)

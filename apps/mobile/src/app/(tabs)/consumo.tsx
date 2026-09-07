@@ -5,7 +5,7 @@ import { useConsumption } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
 import { stagger } from "@/theme/motion";
-import { ScreenContainer } from "@/components/ScreenContainer";
+import { ScreenList, listItemEntry } from "@/components/ScreenContainer";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
 import { Chip, ChipRow } from "@/components/Chip";
@@ -17,6 +17,9 @@ import { capitalize, formatDayMonth } from "@/utils/format";
 import type { ConsumptionMovement } from "@/api/types";
 
 type Filter = "all" | "EP" | "GROUP";
+
+/** Fila aplanada para el `FlatList` (E8-09): un movimiento o el rótulo del mes que lo agrupa. */
+type Row = { kind: "month"; key: string; label: string } | { kind: "movement"; key: string; movement: ConsumptionMovement };
 
 /**
  * «Historial de consumo»: el libro mayor del bono.
@@ -46,78 +49,105 @@ export default function ConsumptionScreen() {
     return [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   }, [data, filter]);
 
+  // Aplanado a una sola lista (E8-09): un `FlatList` no anida grupos, así que
+  // el rótulo del mes pasa a ser una fila más, distinguida por `kind`.
+  const rows: Row[] = useMemo(
+    () =>
+      groups.flatMap(([month, movements]) => [
+        { kind: "month" as const, key: `month-${month}`, label: monthLabel(month) },
+        ...movements.map((movement) => ({ kind: "movement" as const, key: movement.id, movement })),
+      ]),
+    [groups]
+  );
+
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
-      <FadeInUp>
-        <ScreenHeader
-          kicker="TU BONO, MOVIMIENTO A MOVIMIENTO"
-          title="Historial de consumo"
-          tight
-          right={
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Volver"
-              onPress={() => goBack("/mas")}
-              style={[styles.iconButton, { borderColor: theme.border }]}
-            >
-              <Icon name="chevron-left" size={17} color={theme.text} />
-            </Pressable>
-          }
-        />
-      </FadeInUp>
-
-      {isLoading ? (
-        <SkeletonList rows={5} shape="row" note="Cargando tus movimientos…" />
-      ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudo cargar tu historial" description="Desliza hacia abajo para reintentar." />
-      ) : (
+    <ScreenList
+      data={rows}
+      keyExtractor={(row) => row.key}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+      ListHeaderComponent={
         <>
-          {bono ? (
-            <FadeInUp delay={stagger(1)}>
-              <Card style={{ gap: 14 }}>
-                <View style={styles.balanceHeader}>
-                  <View style={{ flex: 1, gap: 3 }}>
-                    <Text style={[styles.balanceValue, { color: theme.text }]}>
-                      {bono.unlimited ? "∞" : `${bono.remaining ?? 0}/${bono.total ?? 0}`}
-                    </Text>
-                    <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
-                      Disponibles
-                      {bono.renewsAt ? ` · renueva el ${formatDayMonth(bono.renewsAt)}` : ""}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.counters}>
-                  <Counter label="Gastadas" value={data.summary.spent} color={theme.text} />
-                  <Counter label="Devueltas" value={data.summary.returned} color={theme.good} />
-                  <Counter label="No presentadas" value={data.summary.noShow} color={theme.critical} />
-                </View>
-              </Card>
-            </FadeInUp>
+          <FadeInUp>
+            <ScreenHeader
+              kicker="TU BONO, MOVIMIENTO A MOVIMIENTO"
+              title="Historial de consumo"
+              tight
+              right={
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Volver"
+                  onPress={() => goBack("/mas")}
+                  style={[styles.iconButton, { borderColor: theme.border }]}
+                >
+                  <Icon name="chevron-left" size={17} color={theme.text} />
+                </Pressable>
+              }
+            />
+          </FadeInUp>
+
+          {isLoading ? (
+            <SkeletonList rows={5} shape="row" note="Cargando tus movimientos…" />
+          ) : data ? (
+            <>
+              {bono ? (
+                <FadeInUp delay={stagger(1)}>
+                  <Card style={{ gap: 14 }}>
+                    <View style={styles.balanceHeader}>
+                      <View style={{ flex: 1, gap: 3 }}>
+                        <Text style={[styles.balanceValue, { color: theme.text }]}>
+                          {bono.unlimited ? "∞" : `${bono.remaining ?? 0}/${bono.total ?? 0}`}
+                        </Text>
+                        <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
+                          Disponibles
+                          {bono.renewsAt ? ` · renueva el ${formatDayMonth(bono.renewsAt)}` : ""}
+                        </Text>
+                      </View>
+                    </View>
+                    {/* E2-15: las dos cifras salen del mismo libro mayor que el
+                        listado de abajo, así que no pueden contradecirlo. Antes la
+                        tarjeta decía "5 gastadas de 12", el resumen "0 gastadas" y
+                        el listado no tenía ni una línea de consumo. */}
+                    <View style={styles.counters}>
+                      <Counter label="Gastadas" value={data.summary.spent} color={theme.text} />
+                      <Counter label="Devueltas" value={data.summary.returned} color={theme.good} />
+                    </View>
+                  </Card>
+                </FadeInUp>
+              ) : null}
+
+              <ChipRow>
+                <Chip label="Todo" selected={filter === "all"} onPress={() => setFilter("all")} />
+                <Chip label="Personal" selected={filter === "EP"} onPress={() => setFilter("EP")} />
+                <Chip label="Grupos" selected={filter === "GROUP"} onPress={() => setFilter("GROUP")} />
+              </ChipRow>
+
+              {/* E2-15, histórico previo: el libro empieza en una fecha. Decirlo
+                  evita que el listado se lea como si fuera todo el histórico. */}
+              {data.detailSince ? (
+                <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>
+                  Hay detalle desde el {formatDayMonth(data.detailSince)}. Lo anterior está resumido en el saldo de
+                  apertura de cada bono.
+                </Text>
+              ) : null}
+            </>
           ) : null}
-
-          <ChipRow>
-            <Chip label="Todo" selected={filter === "all"} onPress={() => setFilter("all")} />
-            <Chip label="Personal" selected={filter === "EP"} onPress={() => setFilter("EP")} />
-            <Chip label="Grupos" selected={filter === "GROUP"} onPress={() => setFilter("GROUP")} />
-          </ChipRow>
-
-          {groups.length === 0 ? (
-            <EmptyState icon="wallet" title="Sin movimientos" description="Aquí aparece cada sesión gastada y cada devolución." />
-          ) : (
-            groups.map(([month, movements]) => (
-              <View key={month} style={{ gap: 10 }}>
-                <Text style={[typo.kicker, { color: theme.textMuted, marginTop: 4 }]}>{monthLabel(month)}</Text>
-                {movements.map((movement, index) => (
-                  <FadeInUp key={movement.id} delay={stagger(index)}>
-                    <MovementRow movement={movement} />
-                  </FadeInUp>
-                ))}
-              </View>
-            ))
-          )}
         </>
-      )}
-    </ScreenContainer>
+      }
+      ListEmptyComponent={
+        isLoading ? null : isError || !data ? (
+          <EmptyState icon="alert" title="No se pudo cargar tu historial" description="Desliza hacia abajo para reintentar." />
+        ) : (
+          <EmptyState icon="wallet" title="Sin movimientos" description="Aquí aparece cada sesión gastada y cada devolución." />
+        )
+      }
+      renderItem={({ item: row, index }) =>
+        row.kind === "month" ? (
+          <Text style={[typo.kicker, { color: theme.textMuted, marginTop: 4 }]}>{row.label}</Text>
+        ) : (
+          listItemEntry(index, <MovementRow movement={row.movement} />)
+        )
+      }
+    />
   );
 }
 
@@ -183,7 +213,7 @@ const styles = StyleSheet.create({
   counterValue: { fontFamily: fonts.bold, fontSize: 19, ...tabular },
   movementCard: { flexDirection: "row", alignItems: "center", gap: 11 },
   dateBlock: { width: 40, height: 44, borderRadius: radii.chip, alignItems: "center", justifyContent: "center" },
-  dateWeekday: { fontFamily: fonts.bold, fontSize: 8.5, letterSpacing: 0.8 },
+  dateWeekday: { fontFamily: fonts.bold, fontSize: 11, letterSpacing: 0.8 },
   dateNumber: { fontFamily: fonts.bold, fontSize: 15, ...tabular },
   delta: { fontFamily: fonts.bold, fontSize: 16, ...tabular },
 });

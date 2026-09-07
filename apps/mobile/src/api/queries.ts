@@ -50,6 +50,10 @@ import type {
   TrainerMemberDetailResponse,
   TrainerMemberFilter,
   TrainerMembersResponse,
+  NoShowOptions,
+  MarkNoShowInput,
+  MarkNoShowResult,
+  ClearNoShowResult,
 } from "./types";
 
 // `enabled` en las dos consultas del portal: son endpoints de SOCIO —el
@@ -180,11 +184,17 @@ export function useBriefDetail(sessionId: string, occurrenceDate?: string) {
   });
 }
 
+/**
+ * `feeling: null` desmarca: la Booking vuelve a BOOKED en el servidor (E2-03),
+ * en vez de quedarse solo en el estado local como antes.
+ */
 export function useSaveDebrief(sessionId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ bookingId, feeling }: { bookingId: string; feeling: "GREEN" | "AMBER" | "RED" }) =>
-      apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "POST", body: { bookingId, feeling } }),
+    mutationFn: ({ bookingId, feeling }: { bookingId: string; feeling: "GREEN" | "AMBER" | "RED" | null }) =>
+      feeling
+        ? apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "POST", body: { bookingId, feeling } })
+        : apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "DELETE", body: { bookingId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["brief-detail", sessionId] });
       queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
@@ -431,6 +441,14 @@ export function useRemoveStaff() {
 }
 
 // ---------- Feedback 1-10 por socio (C4) ----------
+//
+// ⚠️ RETIRADO EN EL SERVIDOR POR E3-07. `/trainer/sessions/:id/feedback` responde
+// ahora 410: los ocho ejes salen del flujo de sala (el color de la sesión se
+// derivaba de su media, y eso creaba dos criterios incompatibles de `feeling`).
+// El color va por `/trainer/brief/:id/debrief` —🟢🟡🔴 más una frase opcional,
+// mismo contrato que la web— y los ejes se puntúan en la valoración periódica,
+// desde la ficha del socio en la web. La pantalla que usa estos dos hooks tiene
+// que retirarse: es trabajo de la pista de la app (E3-01 y siguientes).
 
 export function useSessionFeedback(sessionId: string, occurrenceDate?: string) {
   return useQuery({
@@ -637,6 +655,53 @@ export function useDiscardAttendee(sessionId: string) {
       queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
       queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
     },
+  });
+}
+
+// ---------- No-show desde la app (E2-14, RB-RES-009) ----------
+
+/**
+ * Los motivos salen del servidor, que los deriva del enum `NoShowReason`: si
+ * un día cambia la lista, el desplegable cambia solo. Copiarla aquí era la
+ * forma segura de que web y app acabaran ofreciendo motivos distintos.
+ */
+export function useNoShowOptions(bookingId: string | null) {
+  return useQuery({
+    queryKey: ["no-show-options", bookingId],
+    queryFn: () => apiRequest<NoShowOptions>(`/trainer/bookings/${bookingId}/no-show`),
+    enabled: Boolean(bookingId),
+  });
+}
+
+/** Invalida lo que cambia al mover una asistencia: roster, agenda y panel. */
+function invalidateAfterAttendanceChange(queryClient: ReturnType<typeof useQueryClient>, sessionId: string) {
+  queryClient.invalidateQueries({ queryKey: ["staff-session-attendees", sessionId] });
+  queryClient.invalidateQueries({ queryKey: ["staff-agenda"] });
+  queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
+}
+
+export function useMarkNoShow(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, ...body }: MarkNoShowInput) =>
+      apiRequest<MarkNoShowResult>(`/trainer/bookings/${bookingId}/no-show`, { method: "POST", body }),
+    onSuccess: () => invalidateAfterAttendanceChange(queryClient, sessionId),
+  });
+}
+
+/**
+ * Rectificar la falta. Si se había devuelto la sesión, el servidor vuelve a
+ * descontarla sin dejar el bono en negativo.
+ */
+export function useClearNoShow(sessionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ bookingId, status }: { bookingId: string; status?: "BOOKED" | "ATTENDED" }) =>
+      apiRequest<ClearNoShowResult>(
+        `/trainer/bookings/${bookingId}/no-show${status === "ATTENDED" ? "?status=ATTENDED" : ""}`,
+        { method: "DELETE" }
+      ),
+    onSuccess: () => invalidateAfterAttendanceChange(queryClient, sessionId),
   });
 }
 

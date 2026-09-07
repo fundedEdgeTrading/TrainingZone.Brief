@@ -71,7 +71,7 @@ export default function MemberTodayScreen() {
       "Cancelar la reserva",
       booking.canCancelFreely
         ? `¿Seguro que quieres cancelar ${booking.sessionName}? La sesión vuelve a tu bono.`
-        : `Faltan menos de 12 h: cancelar ${booking.sessionName} consume la sesión del bono.`,
+        : `Faltan menos de ${booking.cancelWindowHours} h: cancelar ${booking.sessionName} consume la sesión del bono.`,
       [
         { text: "Volver", style: "cancel" },
         {

@@ -29,6 +29,11 @@ integrador: hay nueve pistas trabajando en paralelo sobre este repositorio.
 - **Stripe**: nunca borres un `Price`; archívalo. Toda creación lleva clave de idempotencia.
 - **Rótulos y permisos**: fuente única compartida entre web y app. No copies una tabla
   de permisos "como espejo": ese duplicado ya provocó un fallo documentado.
+- **Cookies**: hoy solo hay técnicas (sesión de Auth.js y `tz`), inventariadas en
+  `/cookies` (E10-22) — sin banner, porque ninguna lo exige. Cualquier cambio que
+  añada analítica, publicidad o cualquier cookie no estrictamente técnica debe
+  traer en el mismo cambio un CMP con "rechazar todo" al mismo nivel visual que
+  "aceptar todo", y actualizar el inventario de `/cookies`.
 
 **Ficheros congelados** durante el trimestre: `prisma/schema.prisma` y `src/lib/rbac.ts`.
 Si necesitas tocarlos, para y pídelo — no los edites en tu rama.

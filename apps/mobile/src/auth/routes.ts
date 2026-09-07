@@ -46,23 +46,23 @@ export type TabName =
  * una quinta —«Más»— que es un índice real del resto de la app, con contadores.
  *
  * La primera de la lista es, además, la pantalla de aterrizaje del rol.
+ *
+ * **Recorte de la app a dos roles (D-M4, E13-01)**: la tabla solo declara
+ * `MEMBER` y `TRAINER`/`TRAINER_ADMIN`. Los otros cinco roles del dominio
+ * (dirección de plataforma, dirección de organización, director de centro,
+ * recepción, RRHH) tenían aquí pestañas para pantallas de gestión con 53
+ * endpoints detrás que nadie usaba desde el móvil — la web ya les da toda su
+ * superficie. `isAppSupportedRole` corta el acceso a `(tabs)/_layout.tsx`
+ * ANTES de que se pregunte por sus pestañas, así que no hace falta una fila
+ * aquí para ellos.
  */
-export const TABS_BY_ROLE: Record<Role, TabName[]> = {
+export const TABS_BY_ROLE: Partial<Record<Role, TabName[]>> = {
   MEMBER: ["index", "agenda", "sesiones", "evolucion", "mas"],
   TRAINER: ["panel", "staff-agenda", "mis-socios", "feedback", "mas"],
   // El Entrenador Admin ve lo mismo; lo que le distingue (aforo, ajuste de
   // saldo al descartar) aparece DENTRO de esas pantallas según su permiso, no
   // como una pestaña más: su día a día es el mismo que el del entrenador.
   TRAINER_ADMIN: ["panel", "staff-agenda", "mis-socios", "feedback", "mas"],
-  OWNER: ["dashboard", "socios", "productos", "organizacion", "mas"],
-  CENTER_DIRECTOR: ["dashboard", "socios", "staff-agenda", "productos", "mas"],
-  // El soporte de plataforma NO ve socios: `canManageMembers` (src/lib/rbac.ts)
-  // se los niega, así que la pestaña abría un 403 —«No tienes permiso para ver
-  // los socios»— en vez de una lista. Sus pestañas son ahora las mismas cuatro
-  // que su menú de la web: panel, anuncios y organización.
-  PLATFORM_ADMIN: ["dashboard", "anuncios", "organizacion", "mas"],
-  RECEPTION: ["socios", "staff-agenda", "notificaciones", "mas"],
-  HR_MANAGER: ["organizacion", "notificaciones", "mas"],
 };
 
 /** Ruta de cada pestaña. `index` es la ruta índice del grupo, sin nombre propio. */
@@ -107,16 +107,20 @@ export function homeTabFor(role: Role): Href {
 }
 
 /**
- * Destino tras el login, espejo de `defaultRouteForRole` (src/lib/rbac.ts) más
- * el gate de compra del handoff: el socio sin ningún bono vivo entra al
- * catálogo del centro (A2) en lugar de a las tabs.
+ * Destino tras el login, espejo de `defaultRouteForRole` (src/lib/rbac.ts).
+ *
+ * E5-14 (D-M3): el muro de compra se retira. Antes, un socio sin bono vivo
+ * aterrizaba SIEMPRE en el catálogo (`needsMembershipGate`), sin tabs, sin
+ * historial, sin nada más que comprar o cerrar sesión. Ahora entra
+ * directamente a sus tabs, en modo lectura; `MembershipBanner` es quien
+ * ofrece renovar, sin ocupar la pantalla entera.
  */
 export function homeRouteFor(user: MeResponse): Href {
-  if (needsMembershipGate(user)) return "/onboarding/planes";
   return homeTabFor(user.role);
 }
 
-export function needsMembershipGate(user: MeResponse): boolean {
+/** Sin bono vivo (D-M3): reservar está bloqueado, el resto de la app no. */
+export function needsMembership(user: MeResponse): boolean {
   return user.role === "MEMBER" && Boolean(user.member) && !user.member?.hasActiveMembership;
 }
 
@@ -127,6 +131,17 @@ export function needsMembershipGate(user: MeResponse): boolean {
  */
 export function isTrainerRole(role: Role): boolean {
   return role === "TRAINER" || role === "TRAINER_ADMIN";
+}
+
+/**
+ * Recorte de la app a dos roles (D-M4, E13-01): en la app móvil solo entran
+ * socio y entrenador (Entrenador Admin incluido, porque su día a día es el
+ * mismo que el del entrenador — ver `isTrainerRole`). Dirección de plataforma,
+ * dirección de organización, director de centro, recepción y RRHH conservan
+ * toda su superficie en la WEB, que no se recorta.
+ */
+export function isAppSupportedRole(role: Role): boolean {
+  return role === "MEMBER" || isTrainerRole(role);
 }
 
 /** Permisos que la app consulta para enseñar u ocultar acciones (espejo de src/lib/rbac.ts). */

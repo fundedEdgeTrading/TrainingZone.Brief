@@ -14,6 +14,7 @@ import CancelBookingButton from "./cancel-booking-button";
 import BookMemberForm from "./book-member-form";
 import NoShowButton from "./no-show-button";
 import { DirectorSelect, SelfBookableToggle } from "./ep-session-controls";
+import { WAITLIST_NO_QUEUE_NOTICE } from "@/lib/waitlist";
 
 const STATUS_LABEL: Record<string, string> = {
   BOOKED: "Reservado",
@@ -130,6 +131,10 @@ export default async function SessionDetailPage({
       {waitlisted.length > 0 && (
         <div>
           <h2 className="text-sm font-semibold text-text-2 mb-2">Lista de espera ({waitlisted.length})</h2>
+          {/* E2-08: la posición se renumera al salir alguien, pero no es un
+              turno — RB-RES-007 avisa a toda la lista a la vez. Decirlo aquí
+              evita que recepción prometa una plaza que no puede reservar. */}
+          <p className="text-xs text-faint mb-2">{WAITLIST_NO_QUEUE_NOTICE}</p>
           <DataTable columns={waitlistColumns} rows={waitlisted.map(waitlistToRow)} />
         </div>
       )}

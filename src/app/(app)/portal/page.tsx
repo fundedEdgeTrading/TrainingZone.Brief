@@ -6,7 +6,10 @@ import {
   getMemberProgress,
   getMemberHealthTransparency,
   getMemberMonthlyActivity,
+  getMemberUpcomingBookings,
+  CANCEL_WINDOW_HOURS,
 } from "@/lib/portal-queries";
+import { getSessionBalances } from "@/lib/members-queries";
 import { getAnnouncementsForMember, registerAnnouncementViews } from "@/lib/announcements-queries";
 import { getPendingClientFeedback } from "@/lib/feedback-capture";
 import { resolveTimezone } from "@/lib/timezone";
@@ -14,6 +17,10 @@ import { KpiCard, Card } from "@/components/kpi-card";
 import ActivityChart from "./activity-chart";
 import { AnnouncementsBanner } from "./announcements-banner";
 import { PendingFeedbackBanner } from "./pending-feedback-banner";
+import { BonoAndNextSession } from "./bono-and-next-session";
+import { pickNextLiveBooking } from "./next-session";
+import { SecondaryProfileBanner } from "./secondary-profile-banner";
+import { SECONDARY_PROFILE_FIELDS, missingSecondaryProfileFields } from "@/lib/member-first-session";
 
 const LIGHT_COLOR: Record<string, string> = { RED: "var(--color-critical)", AMBER: "var(--color-warning)", GREEN: "var(--color-good)" };
 
@@ -25,7 +32,7 @@ export default async function PortalHomePage() {
   // "Este mes" / "este año" se cuentan sobre el calendario del centro, no el del servidor.
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
-  const [progress, adaptations, activity, announcements, pendingFeedback] = await Promise.all([
+  const [progress, adaptations, activity, announcements, pendingFeedback, upcomingBookings] = await Promise.all([
     getMemberProgress(member.id, timezone),
     getMemberHealthTransparency(member.id, session.user.orgId),
     getMemberMonthlyActivity(member.id, timezone),
@@ -36,16 +43,29 @@ export default async function PortalHomePage() {
       state: member.state,
     }),
     getPendingClientFeedback(session.user.orgId, session.user.id),
+    getMemberUpcomingBookings(member.id, timezone),
   ]);
 
   // RB-ANUN-003: contabilizar como vistos los anuncios que se le muestran.
   await registerAnnouncementViews(member.id, announcements.map((a) => a.id));
 
   const activeSub = member.subscriptions[0];
+  const balances = getSessionBalances(
+    member.subscriptions.map((s) => ({
+      status: s.status,
+      sessionsRemaining: s.sessionsRemaining,
+      sessionsIncluded: s.sessionsIncluded,
+      plan: { type: s.plan.type, sessionsIncluded: s.plan.sessionsIncluded },
+    }))
+  );
+  const nextBooking = pickNextLiveBooking(upcomingBookings);
+  const missingSecondary = missingSecondaryProfileFields(member);
+  const missingSecondaryLabels = SECONDARY_PROFILE_FIELDS.filter((f) => missingSecondary.includes(f.key)).map((f) => f.label);
 
   return (
     <div className="max-w-[1120px] mx-auto flex flex-col gap-[18px]">
       <PendingFeedbackBanner hasPending={!!pendingFeedback} />
+      <SecondaryProfileBanner memberId={member.id} missing={missingSecondary} labels={missingSecondaryLabels} />
 
       <div
         className={`grid gap-4 tz-fade-up ${
@@ -77,19 +97,12 @@ export default async function PortalHomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      {/* E5-04: las dos cosas que más se miran, sin abrir ningún cajón. */}
+      <BonoAndNextSession balances={balances} nextBooking={nextBooking} cancelWindowHours={CANCEL_WINDOW_HOURS} />
+
+      <div className="grid grid-cols-2 gap-3.5">
         <KpiCard label="Sesiones este mes" value={String(progress.totalThisMonth)} numericValue={progress.totalThisMonth} size="lg" delay={0.06} />
         <KpiCard label="Sesiones este año" value={String(progress.totalThisYear)} numericValue={progress.totalThisYear} tone="good" size="lg" delay={0.1} />
-        <KpiCard label="Total histórico" value={String(progress.totalAllTime)} numericValue={progress.totalAllTime} hint="¡sigue así!" size="lg" delay={0.14} />
-        <KpiCard
-          label="Tu mejor mes"
-          value={progress.bestMonthCount ? String(progress.bestMonthCount) : "—"}
-          numericValue={progress.bestMonthCount || undefined}
-          hint={progress.bestMonthLabel || undefined}
-          tone="accent"
-          size="lg"
-          delay={0.18}
-        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">

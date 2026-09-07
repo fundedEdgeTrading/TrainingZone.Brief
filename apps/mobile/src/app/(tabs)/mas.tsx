@@ -16,6 +16,7 @@ import { Icon, type IconName } from "@/components/Icon";
 import { Divider, ListRow } from "@/components/Row";
 import { ProgressRing } from "@/components/ProgressRing";
 import { FadeInUp } from "@/components/FadeInUp";
+import { Skeleton } from "@/components/Skeleton";
 import { formatDayMonth } from "@/utils/format";
 
 /**
@@ -62,6 +63,9 @@ function StaffMore({
   const leads = useLeads(null, "", { enabled: canManageLeads(role) });
   const notifications = useNotifications();
   const refreshing = tasks.isRefetching || leads.isRefetching || notifications.isRefetching;
+  // E8-12: mientras llega el dato, un tile SIN contador se lee como "nada
+  // pendiente" — no es un cero de verdad, es que todavía no se sabe.
+  const loading = tasks.isLoading || leads.isLoading || notifications.isLoading;
 
   const pendingTasks = tasks.data?.counts.todo ?? 0;
   const uncontactedLeads = leads.data?.counts.SIN_CONTACTAR ?? 0;
@@ -109,7 +113,7 @@ function StaffMore({
       <FadeInUp delay={stagger(1)}>
         <View style={styles.tileGrid}>
           {tiles.map((tile) => (
-            <Tile key={tile.label} {...tile} />
+            <Tile key={tile.label} {...tile} loading={loading && tile.count !== undefined} />
           ))}
         </View>
       </FadeInUp>
@@ -122,7 +126,13 @@ function StaffMore({
               title="Avisos"
               meta="Lo que hay que resolver, con su acción"
               chevron
-              right={unread > 0 ? <Badge label={`${unread}`} tone="critical" /> : undefined}
+              right={
+                notifications.isLoading ? (
+                  <Skeleton width={22} height={16} radius={8} />
+                ) : unread > 0 ? (
+                  <Badge label={`${unread}`} tone="critical" />
+                ) : undefined
+              }
               onPress={() => router.push("/notificaciones")}
             />
             {isTrainerRole(role) ? (
@@ -184,7 +194,17 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
         <ScreenHeader kicker="TU CUENTA Y TU BONO" title="Más" tight />
       </FadeInUp>
 
-      {bono ? (
+      {memberships.isLoading ? (
+        <Card style={styles.bonoCard}>
+          <View style={styles.bonoTop}>
+            <Skeleton width={88} height={88} radius={999} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <Skeleton width="70%" height={17} />
+              <Skeleton width="55%" height={12} radius={6} />
+            </View>
+          </View>
+        </Card>
+      ) : bono ? (
         <FadeInUp delay={stagger(1)}>
           <Card style={styles.bonoCard}>
             <View style={styles.bonoTop}>
@@ -226,7 +246,13 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
               title="Avisos y anuncios"
               meta="Tus sesiones y las novedades del centro"
               chevron
-              right={unread > 0 ? <Badge label={`${unread}`} tone="critical" /> : undefined}
+              right={
+                notifications.isLoading ? (
+                  <Skeleton width={22} height={16} radius={8} />
+                ) : unread > 0 ? (
+                  <Badge label={`${unread}`} tone="critical" />
+                ) : undefined
+              }
               onPress={() => router.push("/notificaciones")}
             />
             <Divider />
@@ -266,23 +292,27 @@ type TileProps = {
   count?: number;
   tone?: "warning" | "gold";
   badge?: string;
+  /** E8-12: el contador todavía no ha llegado — se pinta un esqueleto, nunca un cero. */
+  loading?: boolean;
 };
 
 /** Tile de la rejilla 2×2: icono arriba, contador arriba a la derecha. */
-function Tile({ icon, label, href, count, tone, badge }: TileProps) {
+function Tile({ icon, label, href, count, tone, badge, loading }: TileProps) {
   const theme = useTheme();
   const countColor = tone === "warning" ? theme.warning : theme.gold;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={count ? `${label}, ${count} pendientes` : label}
+      accessibilityLabel={loading ? `${label}, cargando` : count ? `${label}, ${count} pendientes` : label}
       onPress={() => router.push(href)}
       style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }]}
     >
       <View style={styles.tileTop}>
         <Icon name={icon} size={21} color={theme.text} />
-        {count ? (
+        {loading ? (
+          <Skeleton width={20} height={20} radius={999} />
+        ) : count ? (
           <View style={[styles.tileCount, { backgroundColor: countColor }]}>
             <Text style={[styles.tileCountText, { color: theme.inkText }]}>{count > 9 ? "9+" : count}</Text>
           </View>
@@ -328,7 +358,7 @@ const styles = StyleSheet.create({
   },
   tileTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   tileCount: { minWidth: 20, height: 20, borderRadius: 999, paddingHorizontal: 5, alignItems: "center", justifyContent: "center" },
-  tileCountText: { fontFamily: fonts.bold, fontSize: 10.5, ...tabular },
+  tileCountText: { fontFamily: fonts.bold, fontSize: 11, ...tabular },
   listInset: { paddingHorizontal: 14 },
   bonoCard: { gap: 14 },
   bonoTop: { flexDirection: "row", alignItems: "center", gap: 16 },

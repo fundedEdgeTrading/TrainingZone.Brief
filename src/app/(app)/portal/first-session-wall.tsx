@@ -4,59 +4,27 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Button, ButtonSpinner } from "@/components/ui/button";
-import { Field, Input, Select, Textarea } from "@/components/ui/field";
+import { Field, Input, Textarea } from "@/components/ui/field";
 import { ESSENTIAL_PROFILE_FIELDS, type EssentialProfileField } from "@/lib/member-first-session";
-import { DEFAULT_ASSESSMENT_CONFIG, isQuestionEnabled } from "@/lib/assessments/config";
-import { completeEssentialProfileAction, submitMemberInitialPartAction } from "./first-session-actions";
+import { completeEssentialProfileAction } from "./first-session-actions";
 
 /**
  * F-ALTA: el muro de la primera sesión del socio.
  *
- * A diferencia del aviso de valoración vencida (`pending-assessment-gate.tsx`),
- * este **no tiene salida**, y la diferencia es deliberada: allí lo que se pide
- * es una revisión que solo puede cerrar el entrenador, y encerrar al socio
- * fuera de su propia reserva por eso sería peor que la revisión que falta. Aquí
- * todo lo que se pregunta lo puede contestar él mismo en un minuto, así que
- * dejar un «ahora no» equivale a no pedirlo nunca — y sin CP no hay mapa de
- * barrios ni métricas de zona.
+ * E5-08 lo redujo a lo que el servicio necesita de verdad para entrenar con
+ * seguridad: edad, contacto de emergencia y una declaración de salud mínima.
+ * Antes pedía siete campos de perfil y además la valoración inicial entera,
+ * con el código postal ahí solo para alimentar el mapa de calor por barrios
+ * del cuadro de mando — bloquear la reserva para eso era el problema. El
+ * resto del perfil (CP, domicilio, teléfono) se pide después desde
+ * `/portal/perfil`, sin bloquear; la valoración inicial se pospone con
+ * `PendingAssessmentGate` (que sí tiene salida) en vez de vivir aquí.
  *
- * Se pinta en lugar del portal, no encima: un modal superpuesto deja debajo una
- * página navegable con el tabulador.
+ * Sigue sin salir a un portal navegable por debajo (un modal superpuesto
+ * dejaría el resto de la app accesible con el tabulador), pero ya no depende
+ * solo de "cerrar sesión": quien no puede rellenarlo ahora mismo puede pedir
+ * ayuda a su centro directamente desde aquí.
  */
-
-const SEXO_OPTIONS = [
-  { value: "MUJER", label: "Mujer" },
-  { value: "HOMBRE", label: "Hombre" },
-  { value: "OTRO", label: "Otro" },
-];
-
-const NIVEL_OPTIONS = [
-  { value: "BAJO", label: "Bajo — apenas me muevo" },
-  { value: "MEDIO", label: "Medio — algo de actividad" },
-  { value: "ALTO", label: "Alto — entreno con regularidad" },
-];
-
-const TECNICA_OPTIONS = [
-  { value: "BAJA", label: "Baja — nunca los he hecho" },
-  { value: "MEDIA", label: "Media — los he hecho, con dudas" },
-  { value: "ALTA", label: "Alta — los domino" },
-];
-
-const DIAS_OPTIONS = [
-  { value: "1", label: "1 día" },
-  { value: "2", label: "2 días" },
-  { value: "3", label: "3 días" },
-  { value: "MAS_DE_3", label: "Más de 3 días" },
-];
-
-/** Escalas 1-5: el número solo no dice nada, la etiqueta sí. */
-const SCALE_1_5 = [
-  { value: "1", label: "1 — muy baja" },
-  { value: "2", label: "2 — baja" },
-  { value: "3", label: "3 — normal" },
-  { value: "4", label: "4 — alta" },
-  { value: "5", label: "5 — muy alta" },
-];
 
 function Shell({
   eyebrow,
@@ -64,6 +32,7 @@ function Shell({
   intro,
   orgLogoUrl,
   orgName,
+  centerPhone,
   children,
 }: {
   eyebrow: string;
@@ -71,6 +40,8 @@ function Shell({
   intro: string;
   orgLogoUrl: string;
   orgName: string;
+  /** E5-08: la salida que no es cerrar sesión — hablar con el centro. */
+  centerPhone?: string | null;
   children: React.ReactNode;
 }) {
   return (
@@ -97,11 +68,19 @@ function Shell({
           {children}
         </div>
 
-        {/* La única salida del muro. No es una escapatoria al portal —eso
-            volvería opcional lo que no lo es— pero tampoco se deja a nadie
-            encerrado en una pantalla sin puerta. */}
+        {/* E5-08: la salida que no es cerrar sesión. Si algo bloquea (no tiene a
+            quién poner de contacto de emergencia ahora mismo, por ejemplo), el
+            centro puede resolverlo por él sin dejarlo encerrado. */}
         <p className="text-center text-xs text-muted mt-4.5">
-          Solo te lo preguntamos una vez ·{" "}
+          {centerPhone ? (
+            <>
+              ¿Algo no encaja?{" "}
+              <a href={`tel:${centerPhone}`} className="text-faint underline">
+                Llama a tu centro
+              </a>{" "}
+              ·{" "}
+            </>
+          ) : null}
           <button type="button" onClick={() => signOut({ callbackUrl: "/login" })} className="text-faint underline">
             Cerrar sesión
           </button>
@@ -113,12 +92,16 @@ function Shell({
 
 function EssentialProfileStep({
   missing,
+  needsHealthDeclaration,
   orgLogoUrl,
   orgName,
+  centerPhone,
 }: {
   missing: EssentialProfileField[];
+  needsHealthDeclaration: boolean;
   orgLogoUrl: string;
   orgName: string;
+  centerPhone?: string | null;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -141,11 +124,12 @@ function EssentialProfileStep({
 
   return (
     <Shell
-      eyebrow="Tus datos"
-      title="Nos faltan un par de datos tuyos"
-      intro="Tu centro nos pasó tu ficha desde su sistema anterior y llegó incompleta. Con esto la dejamos al día."
+      eyebrow="Antes de tu primera sesión"
+      title="Nos faltan un par de datos"
+      intro="Solo lo justo para entrenar contigo con seguridad. El resto (dirección, código postal…) te lo pedimos luego, sin prisa, desde tu perfil."
       orgLogoUrl={orgLogoUrl}
       orgName={orgName}
+      centerPhone={centerPhone}
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-3.5">
         {fields.map((f) => (
@@ -155,17 +139,20 @@ function EssentialProfileStep({
                 se puede saltar. */}
             {f.key === "birthDate" ? (
               <Input aria-label={f.label} name={f.key} type="date" required max={new Date().toISOString().slice(0, 10)} />
-            ) : f.key === "phone" ? (
-              <Input aria-label={f.label} name={f.key} type="tel" required placeholder="+34 600 000 000" />
-            ) : f.key === "postalCode" ? (
-              <Input aria-label={f.label} name={f.key} required inputMode="numeric" maxLength={5} placeholder="50007" />
-            ) : f.key === "emergencyContact" ? (
-              <Input aria-label={f.label} name={f.key} required placeholder="Nombre y teléfono" />
             ) : (
-              <Input aria-label={f.label} name={f.key} required />
+              <Input aria-label={f.label} name={f.key} required placeholder="Nombre y teléfono" />
             )}
           </Field>
         ))}
+
+        {needsHealthDeclaration && (
+          <Field
+            label="¿Alguna lesión, patología o medicación que debamos conocer?"
+            hint='Si no tienes ninguna, escribe "Ninguna". Solo lo ve tu entrenador y queda protegido como dato de salud (Art. 9 RGPD).'
+          >
+            <Textarea aria-label="Declaración de salud" name="healthDeclaration" required rows={3} />
+          </Field>
+        )}
 
         {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
 
@@ -178,366 +165,26 @@ function EssentialProfileStep({
   );
 }
 
-function InitialAssessmentStep({
+export function FirstSessionWall({
+  missing,
+  needsHealthDeclaration,
   orgLogoUrl,
   orgName,
-  disabledQuestions,
+  centerPhone,
 }: {
+  missing: EssentialProfileField[];
+  needsHealthDeclaration: boolean;
   orgLogoUrl: string;
   orgName: string;
-  /**
-   * Preguntas que este centro ha quitado del cuestionario (F-VAL). El muro es
-   * la mitad de la valoración inicial que contesta el socio, así que tiene que
-   * preguntar lo mismo que el formulario del entrenador: si no, el socio
-   * respondería algo que su centro decidió no preguntar.
-   */
-  disabledQuestions: string[];
+  centerPhone?: string | null;
 }) {
-  const router = useRouter();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [perfil, setPerfil] = useState({
-    edad: "",
-    sexo: "MUJER",
-    alturaCm: "",
-    objetivoPrincipal: "",
-    objetivoSecundario: "",
-    motivacionReal: "",
-    queLeHariaAbandonar: "",
-  });
-  const [experiencia, setExperiencia] = useState({
-    nivelActividad: "MEDIO",
-    haEntrenadoAntes: false,
-    anosExperiencia: "0",
-    tecnicaBasicos: "MEDIA",
-    ejerciciosNoTolera: "",
-  });
-  const [vitals, setVitals] = useState({
-    pesoKg: "",
-    dolorActual: "0",
-    calidadSueno: "3",
-    estres: "3",
-    energia: "3",
-    diasPorSemana: "2",
-  });
-
-  const num = (v: string) => (v.trim() === "" ? NaN : Number(v));
-  const on = (key: string) => isQuestionEnabled({ ...DEFAULT_ASSESSMENT_CONFIG, disabledQuestions }, key);
-  const only = <T extends object>(key: string, value: T) => (on(key) ? value : {});
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setPending(true);
-    setError(null);
-    const result = await submitMemberInitialPartAction({
-      pesoKg: num(vitals.pesoKg),
-      dolorActual: num(vitals.dolorActual),
-      ...only("calidadSueno", { calidadSueno: num(vitals.calidadSueno) }),
-      ...only("estres", { estres: num(vitals.estres) }),
-      ...only("energia", { energia: num(vitals.energia) }),
-      ...only("diasPorSemana", { diasPorSemana: vitals.diasPorSemana }),
-      perfil: {
-        edad: num(perfil.edad),
-        sexo: perfil.sexo,
-        alturaCm: num(perfil.alturaCm),
-        objetivoPrincipal: perfil.objetivoPrincipal,
-        ...only("perfil.objetivoSecundario", { objetivoSecundario: perfil.objetivoSecundario }),
-        ...only("perfil.motivacionReal", { motivacionReal: perfil.motivacionReal }),
-        ...only("perfil.queLeHariaAbandonar", { queLeHariaAbandonar: perfil.queLeHariaAbandonar }),
-      },
-      experiencia: {
-        ...only("experiencia.nivelActividad", { nivelActividad: experiencia.nivelActividad }),
-        ...only("experiencia.haEntrenadoAntes", { haEntrenadoAntes: experiencia.haEntrenadoAntes }),
-        ...only("experiencia.anosExperiencia", { anosExperiencia: num(experiencia.anosExperiencia) }),
-        ...only("experiencia.tecnicaBasicos", { tecnicaBasicos: experiencia.tecnicaBasicos }),
-        ...only("experiencia.ejerciciosNoTolera", { ejerciciosNoTolera: experiencia.ejerciciosNoTolera }),
-      },
-    });
-    setPending(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    router.refresh();
-  }
-
   return (
-    <Shell
-      eyebrow="Valoración inicial"
-      title="Tu valoración inicial"
-      intro="Esta parte la contestas tú: de dónde partes y a dónde quieres llegar. Las pruebas físicas y el cuestionario de salud los haréis tu entrenador y tú en la primera sesión."
+    <EssentialProfileStep
+      missing={missing}
+      needsHealthDeclaration={needsHealthDeclaration}
       orgLogoUrl={orgLogoUrl}
       orgName={orgName}
-    >
-      <form onSubmit={onSubmit} className="flex flex-col gap-5">
-        <section className="flex flex-col gap-3.5">
-          <h2 className="font-display font-bold text-[11px] tracking-[.14em] uppercase text-muted">Sobre ti</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            <Field label="Edad">
-              <Input
-                aria-label="Edad"
-                type="number"
-                required
-                min={14}
-                max={100}
-                value={perfil.edad}
-                onChange={(e) => setPerfil((p) => ({ ...p, edad: e.target.value }))}
-              />
-            </Field>
-            <Field label="Sexo">
-              <Select value={perfil.sexo} onChange={(e) => setPerfil((p) => ({ ...p, sexo: e.target.value }))}>
-                {SEXO_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Altura (cm)">
-              <Input
-                aria-label="Altura en centímetros"
-                type="number"
-                required
-                min={120}
-                max={230}
-                value={perfil.alturaCm}
-                onChange={(e) => setPerfil((p) => ({ ...p, alturaCm: e.target.value }))}
-              />
-            </Field>
-          </div>
-
-          <Field label="Tu objetivo principal">
-            <Input
-              aria-label="Tu objetivo principal"
-              required
-              maxLength={200}
-              placeholder="Ej.: volver a correr 10 km sin dolor de rodilla"
-              value={perfil.objetivoPrincipal}
-              onChange={(e) => setPerfil((p) => ({ ...p, objetivoPrincipal: e.target.value }))}
-            />
-          </Field>
-          {on("perfil.objetivoSecundario") && (
-            <Field label="Objetivo secundario" hint="Opcional">
-              <Input
-                aria-label="Objetivo secundario"
-                maxLength={200}
-                value={perfil.objetivoSecundario}
-                onChange={(e) => setPerfil((p) => ({ ...p, objetivoSecundario: e.target.value }))}
-              />
-            </Field>
-          )}
-          {on("perfil.motivacionReal") && (
-            <Field label="¿Por qué ahora?" hint="Opcional — lo que hay detrás del objetivo ayuda a sostenerlo">
-              <Textarea
-                rows={2}
-                value={perfil.motivacionReal}
-                onChange={(e) => setPerfil((p) => ({ ...p, motivacionReal: e.target.value }))}
-              />
-            </Field>
-          )}
-          {on("perfil.queLeHariaAbandonar") && (
-            <Field label="¿Qué te haría abandonar?" hint="Opcional — saberlo por adelantado es lo que permite evitarlo">
-              <Textarea
-                rows={2}
-                value={perfil.queLeHariaAbandonar}
-                onChange={(e) => setPerfil((p) => ({ ...p, queLeHariaAbandonar: e.target.value }))}
-              />
-            </Field>
-          )}
-        </section>
-
-        <section className="flex flex-col gap-3.5 border-t border-brand-border pt-5">
-          <h2 className="font-display font-bold text-[11px] tracking-[.14em] uppercase text-muted">De dónde partes</h2>
-          {on("experiencia.nivelActividad") && (
-            <Field label="Nivel de actividad actual">
-              <Select
-                value={experiencia.nivelActividad}
-                onChange={(e) => setExperiencia((x) => ({ ...x, nivelActividad: e.target.value }))}
-              >
-                {NIVEL_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
-
-          {on("experiencia.haEntrenadoAntes") && (
-          <label className="flex gap-3 items-center rounded-xl border border-brand-border px-4 py-3 cursor-pointer hover:border-brand-border-hover transition-colors duration-200">
-            <input
-              type="checkbox"
-              checked={experiencia.haEntrenadoAntes}
-              onChange={() => setExperiencia((x) => ({ ...x, haEntrenadoAntes: !x.haEntrenadoAntes }))}
-              className="w-[18px] h-[18px] accent-tz-black cursor-pointer shrink-0"
-            />
-            <span className="text-sm font-bold text-tz-black">He entrenado antes en un gimnasio</span>
-          </label>
-          )}
-
-          {experiencia.haEntrenadoAntes && (on("experiencia.anosExperiencia") || on("experiencia.tecnicaBasicos")) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {on("experiencia.anosExperiencia") && (
-              <Field label="Años de experiencia">
-                <Input
-                  aria-label="Años de experiencia"
-                  type="number"
-                  min={0}
-                  max={70}
-                  step="0.5"
-                  value={experiencia.anosExperiencia}
-                  onChange={(e) => setExperiencia((x) => ({ ...x, anosExperiencia: e.target.value }))}
-                />
-              </Field>
-              )}
-              {on("experiencia.tecnicaBasicos") && (
-              <Field label="Técnica en los básicos" hint="Sentadilla, peso muerto, empuje">
-                <Select
-                  value={experiencia.tecnicaBasicos}
-                  onChange={(e) => setExperiencia((x) => ({ ...x, tecnicaBasicos: e.target.value }))}
-                >
-                  {TECNICA_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              )}
-            </div>
-          )}
-
-          {on("experiencia.ejerciciosNoTolera") && (
-            <Field
-              label="Ejercicios que no toleras"
-              hint="Opcional — si algo te da dolor, dilo aquí y no lo programamos"
-            >
-              <Textarea
-                rows={2}
-                value={experiencia.ejerciciosNoTolera}
-                onChange={(e) => setExperiencia((x) => ({ ...x, ejerciciosNoTolera: e.target.value }))}
-              />
-            </Field>
-          )}
-
-          {on("diasPorSemana") && (
-            <Field label="¿Cuántos días por semana puedes entrenar?">
-              <Select
-                value={vitals.diasPorSemana}
-                onChange={(e) => setVitals((v) => ({ ...v, diasPorSemana: e.target.value }))}
-              >
-                {DIAS_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
-        </section>
-
-        <section className="flex flex-col gap-3.5 border-t border-brand-border pt-5">
-          <h2 className="font-display font-bold text-[11px] tracking-[.14em] uppercase text-muted">Cómo llegas hoy</h2>
-          <p className="text-[12.5px] text-muted -mt-2">
-            Es tu punto de partida: dentro de un mes volveremos a preguntarte lo mismo para ver qué ha cambiado.
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <Field label="Peso (kg)">
-              <Input
-                aria-label="Peso en kilos"
-                type="number"
-                required
-                min={20}
-                max={400}
-                step="0.1"
-                value={vitals.pesoKg}
-                onChange={(e) => setVitals((v) => ({ ...v, pesoKg: e.target.value }))}
-              />
-            </Field>
-            <Field label="Dolor ahora mismo (0-10)" hint="0 = ninguno">
-              <Input
-                aria-label="Dolor ahora mismo, de 0 a 10"
-                type="number"
-                required
-                min={0}
-                max={10}
-                value={vitals.dolorActual}
-                onChange={(e) => setVitals((v) => ({ ...v, dolorActual: e.target.value }))}
-              />
-            </Field>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-            {on("calidadSueno") && (
-              <Field label="Calidad del sueño">
-                <Select
-                  value={vitals.calidadSueno}
-                  onChange={(e) => setVitals((v) => ({ ...v, calidadSueno: e.target.value }))}
-                >
-                  {SCALE_1_5.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-            {on("estres") && (
-              <Field label="Nivel de estrés">
-                <Select value={vitals.estres} onChange={(e) => setVitals((v) => ({ ...v, estres: e.target.value }))}>
-                  {SCALE_1_5.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-            {on("energia") && (
-              <Field label="Energía">
-                <Select value={vitals.energia} onChange={(e) => setVitals((v) => ({ ...v, energia: e.target.value }))}>
-                  {SCALE_1_5.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
-          </div>
-        </section>
-
-        {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">{error}</p>}
-
-        <Button type="submit" size="lg" disabled={pending}>
-          {pending && <ButtonSpinner />}
-          {pending ? "Guardando..." : "Guardar y entrar →"}
-        </Button>
-      </form>
-    </Shell>
+      centerPhone={centerPhone}
+    />
   );
-}
-
-export function FirstSessionWall({
-  step,
-  missing,
-  orgLogoUrl,
-  orgName,
-  disabledQuestions = [],
-}: {
-  step: "profile" | "assessment";
-  missing: EssentialProfileField[];
-  /** Preguntas que el centro ha quitado del cuestionario (F-VAL). */
-  disabledQuestions?: string[];
-  orgLogoUrl: string;
-  orgName: string;
-}) {
-  // Sin numerar los pasos a propósito. El muro no guarda por dónde iba: en
-  // cuanto el socio salva sus datos, `missing` queda vacío y un «paso 1 de 2»
-  // pintado desde ese estado diría que quedan dos pasos cuando ya solo queda
-  // uno. Cada pantalla se presenta por lo que es y ninguna miente.
-  if (step === "profile") {
-    return <EssentialProfileStep missing={missing} orgLogoUrl={orgLogoUrl} orgName={orgName} />;
-  }
-  return <InitialAssessmentStep orgLogoUrl={orgLogoUrl} orgName={orgName} disabledQuestions={disabledQuestions} />;
 }

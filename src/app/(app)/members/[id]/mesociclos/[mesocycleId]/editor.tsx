@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { EP_PROFILE_LABEL } from "@/lib/ai/ep-profile";
+import { aiGeneratedLabel } from "@/lib/ai/ai-act";
 import type { MesocycleDetail } from "@/lib/mesocycle-queries";
 import { MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "../panel";
+import { currentWeekLabel, currentWeekOf } from "@/lib/mesocycle-schedule";
 import {
   approveMesocycleAction,
   archiveMesocycleAction,
@@ -77,9 +79,12 @@ function totalWeeks(mesocycle: MesocycleDetail): number {
  */
 function metaOf(mesocycle: MesocycleDetail, memberName?: string): string {
   const weekly = strings(mesocycle.weeklyLayout).length;
+  // E3-12 · en qué semana del plan está el socio HOY: es lo que convierte la
+  // hoja de ruta en una periodización y no en un documento.
+  const current = currentWeekOf(mesocycle, mesocycle.phases);
   return [
     EP_PROFILE_LABEL[mesocycle.profile],
-    `${totalWeeks(mesocycle)} semanas`,
+    current ? currentWeekLabel(current) : `${totalWeeks(mesocycle)} semanas`,
     `${mesocycle.phases.length} fases`,
     weekly > 0 ? `${weekly} días/semana` : "",
     memberName ?? "",
@@ -205,6 +210,12 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
 const CrossIcon = () => (
   <Icon width={2.6} className="mt-[3px]">
     <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);
+/** Marca del art. 50 (E10-17): la chispa que dice "esto lo propuso una IA". */
+const SparkIcon = () => (
+  <Icon size={14} width={2.2}>
+    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
   </Icon>
 );
 
@@ -399,6 +410,14 @@ export function MesocycleEditor({
   );
 }
 
+/** "YYYY-MM-DD" en hora local: `toISOString()` en España adelantaría un día. */
+function localDay(date: Date): string {
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 /* ── 1. Cabecera ──────────────────────────────────────────────────────────── */
 
 function HeaderCard({
@@ -417,6 +436,10 @@ function HeaderCard({
   const { pending, run } = useAction();
   const [title, setTitle] = useState(mesocycle.title);
   const [objective, setObjective] = useState(mesocycle.objective);
+  // E3-12 · fecha de inicio, obligatoria al aprobar. Por defecto, hoy.
+  const [startDate, setStartDate] = useState(() =>
+    localDay(mesocycle.startDate ?? new Date())
+  );
   const [safety, setSafety] = useState(() => strings(mesocycle.safetyCriteria).join("\n"));
 
   const safetyCriteria = strings(mesocycle.safetyCriteria);
@@ -530,15 +553,28 @@ function HeaderCard({
         <div className="shrink-0 max-w-full flex flex-col items-end gap-2.5">
           <div className="flex gap-2 flex-wrap justify-end">
             {isDraft && (
-              <button
-                type="button"
-                disabled={pending}
-                className={INK_SOLID_BUTTON}
-                onClick={() => run(() => approveMesocycleAction(memberId, mesocycle.id), "Mesociclo aprobado.")}
-              >
-                <CheckIcon />
-                Aprobar mesociclo
-              </button>
+              <>
+                {/* E3-12: sin fecha de inicio, "semana 3" no se puede situar en el
+                    calendario y la hoja de ruta no dice nada. Es obligatoria al aprobar. */}
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  aria-label="Fecha de inicio del mesociclo"
+                  className="h-9 rounded-control border border-tz-bone/30 bg-tz-black/20 px-2.5 text-sm text-tz-bone"
+                />
+                <button
+                  type="button"
+                  disabled={pending}
+                  className={INK_SOLID_BUTTON}
+                  onClick={() =>
+                    run(() => approveMesocycleAction(memberId, mesocycle.id, startDate), "Mesociclo aprobado.")
+                  }
+                >
+                  <CheckIcon />
+                  Aprobar mesociclo
+                </button>
+              </>
             )}
             <button type="button" className={INK_GHOST_BUTTON} onClick={() => window.print()}>
               <DownloadIcon />
@@ -568,8 +604,16 @@ function HeaderCard({
         </div>
       </div>
 
+      {/* E10-17 · art. 50 del Reglamento de IA, en vigor desde el 2/8/2026.
+          Va aquí arriba, junto al título, y NO en un pie: la marca tiene que
+          verla quien lee el plan, no quien busca la letra pequeña. */}
+      <p className="mt-[18px] inline-flex items-center gap-2 rounded-pill bg-white/[.09] px-[13px] py-[7px] text-[12.5px] font-semibold text-tz-bone/80">
+        <SparkIcon />
+        {aiGeneratedLabel({ reviewerName: mesocycle.approvedBy?.name, approved: mesocycle.status === "APPROVED" })}
+      </p>
+
       {isDraft && (
-        <p className="mt-[18px] flex gap-[9px] text-[12.5px] leading-[1.5] text-tz-bone/50 max-w-[78ch]">
+        <p className="mt-[14px] flex gap-[9px] text-[12.5px] leading-[1.5] text-tz-bone/50 max-w-[78ch]">
           <span className="w-1.5 h-1.5 rounded-full bg-ink-warning shrink-0 mt-1.5" aria-hidden="true" />
           Borrador generado por IA: no es un plan válido hasta que lo apruebes. Cualquier cambio posterior devuelve el
           mesociclo a borrador y hay que volver a aprobarlo.
@@ -1213,6 +1257,12 @@ function PrintDocument({ mesocycle, memberName }: { mesocycle: MesocycleDetail; 
   return (
     <div className="tz-print-doc hidden print:block">
       {mesocycle.status === "DRAFT" && <div className="tz-print-watermark">Borrador</div>}
+
+      {/* La marca del art. 50 viaja también en el papel: el plan impreso sale
+          del centro y es donde más fácil se pierde de dónde salió. */}
+      <p className="text-[10pt] font-semibold text-brand-text-2 mb-3">
+        {aiGeneratedLabel({ reviewerName: mesocycle.approvedBy?.name, approved: mesocycle.status === "APPROVED" })}
+      </p>
 
       <div className="border-b-2 border-brand-text pb-3.5 mb-5">
         <div className="text-[10pt] font-bold uppercase tracking-[.16em] text-gold">Training Zone · Mesociclo</div>

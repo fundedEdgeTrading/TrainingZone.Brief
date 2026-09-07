@@ -4,7 +4,6 @@ import { requireRole } from "@/lib/guard";
 import {
   getMemberForUser,
   getBookableSessions,
-  getPendingSessionFeedback,
   getMemberUpcomingBookings,
   BOOKING_WINDOW_DAYS,
   CANCEL_WINDOW_HOURS,
@@ -15,10 +14,16 @@ import { getOnlineWorkouts } from "@/lib/online-queries";
 import { resolveTimezone } from "@/lib/timezone";
 import SessionCard from "./session-card";
 import UpcomingBookings from "./upcoming-bookings";
-import { PostSessionFeedbackPrompts } from "./post-session-feedback";
 import { OnlineWorkoutLibrary } from "./online-library";
+import { sessionServiceKind } from "@/lib/members-queries";
+import { AgendaFilterBar } from "./agenda-filter-bar";
+import { filterAgendaSessions, distinctAgendaDays, parseModality, type AgendaModality } from "./agenda-filters";
 
-export default async function PortalAgendaPage() {
+export default async function PortalAgendaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ dia?: string; modalidad?: string }>;
+}) {
   const session = await requireRole(["MEMBER"]);
   const member = await getMemberForUser(session.user.id);
   if (!member) redirect("/login");
@@ -39,9 +44,8 @@ export default async function PortalAgendaPage() {
   // cuentas atrás y la ventana de cancelación se miden con esa zona.
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
-  const [sessions, pendingFeedback, onlineWorkouts, upcomingBookings] = await Promise.all([
+  const [sessions, onlineWorkouts, upcomingBookings] = await Promise.all([
     getBookableSessions(session.user.orgId, member.id, activeBookingSubscriptions(member.subscriptions), timezone),
-    getPendingSessionFeedback(member.id, timezone),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
     getMemberUpcomingBookings(member.id, timezone),
   ]);
@@ -49,8 +53,16 @@ export default async function PortalAgendaPage() {
   // Saldo agotado en alguno de sus servicios: se avisa para renovar (RB-RES-006).
   const depleted = balances.filter((b) => !b.unlimited && (b.remaining ?? 0) <= 0);
 
+  // E5-07: filtro por día y modalidad, con el estado en la URL.
+  const { dia, modalidad: modalidadRaw } = await searchParams;
+  const modalidad = parseModality(modalidadRaw);
+  const availableModalities = [...new Set(sessions.map((s) => sessionServiceKind(s.classType)))] as AgendaModality[];
+  const byModalitySessions = filterAgendaSessions(sessions, { modality: modalidad });
+  const dayOptions = distinctAgendaDays(byModalitySessions);
+  const filteredSessions = filterAgendaSessions(sessions, { day: dia, modality: modalidad });
+
   const byDay = new Map<string, typeof sessions>();
-  for (const s of sessions) {
+  for (const s of filteredSessions) {
     const key = s.date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
     byDay.set(key, [...(byDay.get(key) ?? []), s]);
   }
@@ -150,19 +162,11 @@ export default async function PortalAgendaPage() {
 
       <UpcomingBookings bookings={upcomingBookings} cancelWindowHours={CANCEL_WINDOW_HOURS} />
 
-      {hasOnline && <OnlineWorkoutLibrary workouts={onlineWorkouts} />}
-
-      {pendingFeedback.length > 0 && (
-        <PostSessionFeedbackPrompts
-          items={pendingFeedback.map((p) => ({
-            bookingId: p.bookingId,
-            sessionName: p.sessionName,
-            startTime: p.time,
-            trainerName: p.trainerName,
-            sessionDate: p.sessionDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" }),
-          }))}
-        />
+      {hasPresencial && (
+        <AgendaFilterBar days={dayOptions} modalities={availableModalities} selectedDay={dia} selectedModality={modalidad} />
       )}
+
+      {hasOnline && <OnlineWorkoutLibrary workouts={onlineWorkouts} />}
 
       {Array.from(byDay.entries()).map(([day, daySessions], dayIdx) => (
         <div key={day} className="tz-fade-up" style={{ animationDelay: `${0.1 + dayIdx * 0.08}s` }}>
@@ -182,6 +186,19 @@ export default async function PortalAgendaPage() {
 
       {sessions.length === 0 && hasPresencial && (
         <p className="text-sm text-brand-muted">No hay sesiones disponibles en los próximos 7 días.</p>
+      )}
+
+      {/* E5-07: sin resultados con el filtro puesto — se ofrece quitarlo, no un vacío mudo. */}
+      {sessions.length > 0 && filteredSessions.length === 0 && (
+        <div className="bg-brand-card border border-dashed border-brand-border rounded-2xl px-6 py-8 text-center">
+          <p className="text-sm text-brand-muted">No hay sesiones con este filtro.</p>
+          <Link
+            href="/portal/agenda"
+            className="inline-block mt-2 text-[13px] font-semibold text-brand-text underline underline-offset-2 hover:text-brand-ink"
+          >
+            Quitar filtro →
+          </Link>
+        </div>
       )}
     </div>
   );

@@ -21,7 +21,13 @@ export function ScreenHeader({
     <View style={styles.row}>
       <View style={{ flex: 1, gap: 3 }}>
         {kicker ? <Text style={[typo.kicker, { color: theme.textMuted }]}>{kicker}</Text> : null}
-        <Text style={[tight ? typo.screenTitleTight : typo.screenTitle, { color: theme.text }]} numberOfLines={2}>
+        {/* E8-08: sin accessibilityRole="header" el rotor de VoiceOver no
+            encuentra dónde saltar — 0 apariciones en toda la app. */}
+        <Text
+          accessibilityRole="header"
+          style={[tight ? typo.screenTitleTight : typo.screenTitle, { color: theme.text }]}
+          numberOfLines={2}
+        >
           {title}
         </Text>
       </View>
@@ -35,7 +41,9 @@ export function SectionTitle({ label, right }: { label: string; right?: ReactNod
   const theme = useTheme();
   return (
     <View style={styles.sectionRow}>
-      <Text style={[typo.kicker, { color: theme.textMuted, flex: 1 }]}>{label}</Text>
+      <Text accessibilityRole="header" style={[typo.kicker, { color: theme.textMuted, flex: 1 }]}>
+        {label}
+      </Text>
       {right}
     </View>
   );

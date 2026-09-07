@@ -1,5 +1,6 @@
 import type { Prisma, SubscriptionStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { recordSessionsChange } from "@/lib/session-ledger";
 
 /**
  * E4-30 · La ÚNICA forma de crear un bono o una cuota.
@@ -91,6 +92,8 @@ export type CreateSubscriptionInput = SubscriptionTermOverrides & {
   status?: SubscriptionStatus;
   /** Suscripción recurrente en Stripe Billing. Null/ausente en los bonos puntuales. */
   stripeSubscriptionId?: string | null;
+  /** Quién da de alta el bono; firma el asiento del libro mayor (E2-15). */
+  actorUserId?: string | null;
 };
 
 /**
@@ -104,7 +107,7 @@ export async function createSubscriptionFromPlan(tx: Tx | typeof prisma, input: 
     sessionsRemaining: input.sessionsRemaining,
   });
 
-  return tx.subscription.create({
+  const subscription = await tx.subscription.create({
     data: {
       memberId: input.memberId,
       planId: input.plan.id,
@@ -118,4 +121,26 @@ export async function createSubscriptionFromPlan(tx: Tx | typeof prisma, input: 
       ...(input.stripeSubscriptionId ? { stripeSubscriptionId: input.stripeSubscriptionId } : {}),
     },
   });
+
+  // E2-15: el alta es el primer movimiento del bono, y sin él el libro no
+  // cuadra — la suma de deltas tiene que dar `sessionsRemaining`. Un bono
+  // ilimitado (`sessionsRemaining` null) no abre saldo y no deja asiento.
+  if (terms.sessionsRemaining != null && terms.sessionsRemaining !== 0) {
+    const center = await tx.center.findUnique({ where: { id: input.centerId }, select: { orgId: true } });
+    if (center) {
+      await recordSessionsChange(
+        tx as Prisma.TransactionClient,
+        {
+          orgId: center.orgId,
+          subscriptionId: subscription.id,
+          reason: "PURCHASE",
+          actorUserId: input.actorUserId ?? null,
+          note: "Alta del bono.",
+        },
+        terms.sessionsRemaining
+      );
+    }
+  }
+
+  return subscription;
 }

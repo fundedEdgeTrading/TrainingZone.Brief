@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Animated, RefreshControl, Text, View, StyleSheet } from "react-native";
+import { Alert, Animated, RefreshControl, Text, View, StyleSheet } from "react-native";
+import { router } from "expo-router";
 import { useAgenda, useBookSession, useCancelBooking } from "@/api/queries";
 import { useAuth } from "@/auth/auth-context";
+import { needsMembership } from "@/auth/routes";
 import { useTheme, radii } from "@/theme/theme";
 import { typo, fonts, tabular } from "@/theme/typography";
 import { barGrow, easeOutSoft, stagger, useReducedMotion } from "@/theme/motion";
@@ -76,6 +78,25 @@ export default function AgendaScreen() {
 
   const centerName = state.status === "signedIn" ? state.user.member?.centerName : undefined;
   const busy = bookSession.isPending || cancelBooking.isPending;
+  // E5-14 (D-M3): sin bono vivo se puede consultar la agenda, pero no
+  // reservar. Antes esto era inalcanzable: el muro de compra ni dejaba entrar
+  // a esta pantalla.
+  const blockedByMembership = state.status === "signedIn" && needsMembership(state.user);
+
+  function requestBooking(session: BookableSession) {
+    if (blockedByMembership) {
+      Alert.alert(
+        "Tu bono ha caducado",
+        "Renueva tu bono para volver a reservar sesiones.",
+        [
+          { text: "Ahora no", style: "cancel" },
+          { text: "Ver planes", onPress: () => router.push("/onboarding/planes") },
+        ]
+      );
+      return;
+    }
+    setConfirming(session);
+  }
 
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
@@ -133,7 +154,7 @@ export default function AgendaScreen() {
               <SessionRow
                 session={session}
                 busy={busy}
-                onBook={() => setConfirming(session)}
+                onBook={() => requestBooking(session)}
                 onCancel={session.myBookingId ? () => cancel(session.myBookingId as string) : undefined}
               />
             </FadeInUp>
@@ -352,11 +373,16 @@ function ConfirmSheet({
         <SheetRow
           label="Bono"
           value={
-            balance?.unlimited
-              ? "Sin consumo (bono ilimitado)"
-              : remainingAfter != null
-                ? `${kind === "EP" ? "Personal" : "Grupos"} · quedarán ${remainingAfter}`
-                : "Sin bono asociado"
+            // E2-11: con la sesión llena no se descuenta nada todavía —solo si
+            // se obtiene plaza—, así que anunciar "quedarán X" aquí es un
+            // descuento que nunca llega a pasar y que el socio se cree hecho.
+            full
+              ? "No se descuenta hasta obtener plaza"
+              : balance?.unlimited
+                ? "Sin consumo (bono ilimitado)"
+                : remainingAfter != null
+                  ? `${kind === "EP" ? "Personal" : "Grupos"} · quedarán ${remainingAfter}`
+                  : "Sin bono asociado"
           }
           accent
         />
@@ -366,8 +392,8 @@ function ConfirmSheet({
         <View style={[styles.noticeDot, { backgroundColor: theme.warning }]} />
         <Text style={[typo.rowMeta, { color: theme.textSecondary, flex: 1 }]}>
           {session.canCancelFreely
-            ? "Cancelación gratuita hasta 12 h antes. Después se consume la sesión del bono."
-            : "Estás dentro de las 12 h previas: si cancelas, la sesión se consume igualmente."}
+            ? `Cancelación gratuita hasta ${session.cancelWindowHours} h antes. Después se consume la sesión del bono.`
+            : `Estás dentro de las ${session.cancelWindowHours} h previas: si cancelas, la sesión se consume igualmente.`}
         </Text>
       </View>
     </Sheet>

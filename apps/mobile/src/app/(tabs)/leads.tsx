@@ -6,7 +6,7 @@ import { useLeads, useUpdateLead } from "@/api/queries";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular, typo } from "@/theme/typography";
 import { stagger } from "@/theme/motion";
-import { ScreenContainer } from "@/components/ScreenContainer";
+import { ScreenList, listItemEntry } from "@/components/ScreenContainer";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
 import { Badge } from "@/components/Badge";
@@ -92,99 +92,107 @@ export default function LeadsScreen() {
   }
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
-      <FadeInUp>
-        <ScreenHeader
-          kicker="EMBUDO COMERCIAL"
-          title="Leads"
-          tight
-          right={
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Volver"
-              onPress={() => goBack("/mas")}
-              style={[styles.iconButton, { borderColor: theme.border }]}
-            >
-              <Icon name="chevron-left" size={17} color={theme.text} />
-            </Pressable>
-          }
-        />
-      </FadeInUp>
-
-      <FadeInUp delay={stagger(1)}>
-        <View style={styles.funnel}>
-          {STAGES.map((item) => {
-            const active = stage === item.value;
-            return (
-              <Pressable
-                key={item.value}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => setStage(active ? null : item.value)}
-                style={[
-                  styles.funnelTile,
-                  { backgroundColor: theme.surface, borderColor: active ? theme.gold : theme.border },
-                ]}
-              >
-                <Text style={[styles.funnelValue, { color: active ? theme.goldText : theme.text }]}>
-                  {data?.counts[item.value as keyof typeof data.counts] ?? 0}
-                </Text>
-                <Text style={[typo.kpiLabel, { color: theme.textMuted }]} numberOfLines={1}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </FadeInUp>
-
-      {isLoading ? (
-        <SkeletonList rows={3} shape="avatarRow" note="Cargando el embudo…" />
-      ) : isError || !data ? (
-        <EmptyState icon="alert" title="No se pudieron cargar los leads" description="Desliza hacia abajo para reintentar." />
-      ) : data.leads.length === 0 ? (
-        <EmptyState icon="users" title="Sin leads en esta etapa" description="Los que entren por la web aparecerán aquí." />
-      ) : (
-        data.leads.map((lead, index) => (
-          <FadeInUp key={lead.id} delay={stagger(index)}>
-            <Card style={{ gap: 12 }} tone={lead.id === openId ? "accent" : "default"}>
-              <View style={styles.leadHeader}>
-                <Avatar name={lead.name} size={36} />
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
-                    {lead.name}
-                  </Text>
-                  <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={1}>
-                    {lead.channel} · {ageOf(lead.createdAt)}
-                  </Text>
-                </View>
-                <Badge label={labelFor(lead.status)} tone={STAGE_TONE[lead.status]} />
-              </View>
-
-              {lead.goals ? (
-                <Text style={[typo.rowMeta, { color: theme.textSecondary }]} numberOfLines={2}>
-                  {lead.goals}
-                </Text>
-              ) : null}
-
-              {lead.status !== "CERRADO" ? (
-                <View style={styles.leadActions}>
-                  <Button title="Llamar" variant="gold" size="sm" icon="user" style={{ flex: 1 }} onPress={() => call(lead)} />
-                  <Button
-                    title="Agendar prueba"
-                    variant="outline"
-                    size="sm"
-                    style={{ flex: 1 }}
-                    loading={updateLead.isPending && updateLead.variables?.id === lead.id}
-                    onPress={() => scheduleTrial(lead)}
-                  />
-                </View>
-              ) : null}
-            </Card>
+    <ScreenList
+      data={data?.leads ?? []}
+      keyExtractor={(lead) => lead.id}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}
+      ListHeaderComponent={
+        <>
+          <FadeInUp>
+            <ScreenHeader
+              kicker="EMBUDO COMERCIAL"
+              title="Leads"
+              tight
+              right={
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Volver"
+                  onPress={() => goBack("/mas")}
+                  style={[styles.iconButton, { borderColor: theme.border }]}
+                >
+                  <Icon name="chevron-left" size={17} color={theme.text} />
+                </Pressable>
+              }
+            />
           </FadeInUp>
-        ))
-      )}
-    </ScreenContainer>
+
+          <FadeInUp delay={stagger(1)}>
+            <View style={styles.funnel}>
+              {STAGES.map((item) => {
+                const active = stage === item.value;
+                return (
+                  <Pressable
+                    key={item.value}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => setStage(active ? null : item.value)}
+                    style={[
+                      styles.funnelTile,
+                      { backgroundColor: theme.surface, borderColor: active ? theme.gold : theme.border },
+                    ]}
+                  >
+                    <Text style={[styles.funnelValue, { color: active ? theme.goldText : theme.text }]}>
+                      {data?.counts[item.value as keyof typeof data.counts] ?? 0}
+                    </Text>
+                    <Text style={[typo.kpiLabel, { color: theme.textMuted }]} numberOfLines={1}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </FadeInUp>
+
+          {isLoading ? <SkeletonList rows={3} shape="avatarRow" note="Cargando el embudo…" /> : null}
+        </>
+      }
+      ListEmptyComponent={
+        isLoading ? null : isError || !data ? (
+          <EmptyState icon="alert" title="No se pudieron cargar los leads" description="Desliza hacia abajo para reintentar." />
+        ) : (
+          <EmptyState icon="users" title="Sin leads en esta etapa" description="Los que entren por la web aparecerán aquí." />
+        )
+      }
+      renderItem={({ item: lead, index }) =>
+        listItemEntry(
+          index,
+          <Card style={{ gap: 12 }} tone={lead.id === openId ? "accent" : "default"}>
+            <View style={styles.leadHeader}>
+              <Avatar name={lead.name} size={36} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
+                  {lead.name}
+                </Text>
+                <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={1}>
+                  {lead.channel} · {ageOf(lead.createdAt)}
+                </Text>
+              </View>
+              <Badge label={labelFor(lead.status)} tone={STAGE_TONE[lead.status]} />
+            </View>
+
+            {lead.goals ? (
+              <Text style={[typo.rowMeta, { color: theme.textSecondary }]} numberOfLines={2}>
+                {lead.goals}
+              </Text>
+            ) : null}
+
+            {lead.status !== "CERRADO" ? (
+              <View style={styles.leadActions}>
+                <Button title="Llamar" variant="gold" size="sm" icon="user" style={{ flex: 1 }} onPress={() => call(lead)} />
+                <Button
+                  title="Agendar prueba"
+                  variant="outline"
+                  size="sm"
+                  style={{ flex: 1 }}
+                  loading={updateLead.isPending && updateLead.variables?.id === lead.id}
+                  onPress={() => scheduleTrial(lead)}
+                />
+              </View>
+            ) : null}
+          </Card>,
+        )
+      }
+    />
   );
 }
 

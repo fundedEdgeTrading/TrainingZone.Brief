@@ -8,6 +8,7 @@ import { CONSENT_VERSION, CONSENT_FIELD, type ConsentKind } from "@/lib/consent"
 
 export type { ConsentKind };
 import type { MemberEmailKind } from "@/lib/email-preferences";
+import { setMemberSessionReminderPreference } from "@/lib/session-reminders";
 
 export type ProfileActionResult = { ok: true } | { ok: false; error: string };
 
@@ -191,6 +192,22 @@ export async function updateMyEmailPreferenceAction(
       metadata: { [kind]: enabled },
     },
   });
+
+  revalidatePath("/portal/perfil");
+  return { ok: true };
+}
+
+/**
+ * E5-03: preferencia de recordatorios de sesión (24h/2h) — independiente del
+ * resto de correo comercial, incluso de si el socio se dio de baja de todo lo
+ * demás (`emailOptOutAt`): son correo de servicio de su propia reserva.
+ */
+export async function updateMySessionReminderPreferenceAction(enabled: boolean): Promise<ProfileActionResult> {
+  const session = await requireRole(["MEMBER"]);
+  const member = await getMemberForUser(session.user.id);
+  if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+
+  await setMemberSessionReminderPreference(session.user.orgId, member.id, enabled);
 
   revalidatePath("/portal/perfil");
   return { ok: true };

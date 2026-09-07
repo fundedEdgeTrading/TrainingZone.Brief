@@ -21,8 +21,10 @@ export type OrgEntitlements = Pick<Organization, "platformPlan" | "platformStatu
  * prueba gratuita (D-10), pero dejar el estado fuera de la comprobación
  * significaría que una organización marcada así quedaría bloqueada sin motivo.
  */
+export const OPERATIONAL_PLATFORM_STATUSES: readonly PlatformStatus[] = ["ACTIVE", "TRIALING"];
+
 export function isPlatformOperational(status: PlatformStatus): boolean {
-  return status === "ACTIVE" || status === "TRIALING";
+  return OPERATIONAL_PLATFORM_STATUSES.includes(status);
 }
 
 /**

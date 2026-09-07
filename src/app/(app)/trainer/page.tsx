@@ -165,8 +165,7 @@ export default async function TrainerPanelPage({
             ) : (
               "no quedan sesiones hoy"
             )}{" "}
-            · {data.pendingDebriefs.length} debriefs, {data.pendingBriefs.length} briefs y{" "}
-            {data.pendingClientFeedback.length} feedback mensual pendientes.
+            · {data.pendingDebriefs.length} debriefs y {data.pendingBriefs.length} briefs pendientes.
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -469,13 +468,12 @@ export default async function TrainerPanelPage({
           {/* PENDIENTES */}
           <Card
             title="Pendientes"
-            meta={`${data.pendingDebriefs.length + data.pendingBriefs.length + data.pendingClientFeedback.length + data.aptitudeAlerts.length} acciones`}
+            meta={`${data.pendingDebriefs.length + data.pendingBriefs.length + data.aptitudeAlerts.length} acciones`}
             delay={0.4}
           >
             <PendingPanel
               debriefs={data.pendingDebriefs}
               briefs={data.pendingBriefs}
-              feedback={data.pendingClientFeedback}
               aptitude={data.aptitudeAlerts}
             />
           </Card>

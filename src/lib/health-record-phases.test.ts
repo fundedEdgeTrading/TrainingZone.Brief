@@ -137,7 +137,8 @@ test("alta con fecha de lesión aproximada: el transcurrido sale de ella", async
     actorRole: "TRAINER",
     input: {
       type: "INJURY",
-      zone: "zona lumbar",
+      zoneCode: "LUMBAR",
+      side: "NO_APLICA",
       description: "Lumbalgia recurrente",
       severity: "MEDIUM",
       injuryDate: new Date(2026, 4, 1),
@@ -147,7 +148,7 @@ test("alta con fecha de lesión aproximada: el transcurrido sale de ella", async
   assert.deepEqual(result, { ok: true });
 
   const record = await prisma.healthRecord.findFirstOrThrow({
-    where: { memberId: fx.memberId, zone: "zona lumbar" },
+    where: { memberId: fx.memberId, zoneCode: "LUMBAR" },
   });
   assert.equal(record.status, "ACTIVE", "toda alta entra como activa");
   assert.equal(record.injuryDateApprox, true);

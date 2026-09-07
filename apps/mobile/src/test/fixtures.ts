@@ -15,12 +15,19 @@ import type {
   AgendaResponse,
   BookableSession,
   BookingStatus,
+  BriefDetailResponse,
+  BriefRosterEntry,
+  CalendarEntry,
   LoginOrganization,
   LoginResponse,
   MeResponse,
+  MemberCalendarResponse,
+  MembershipItem,
   NotificationItem,
   NotificationsResponse,
   PendingFeedback,
+  ProductItem,
+  ProductsResponse,
   RefreshResponse,
   Role,
   ServiceKind,
@@ -41,6 +48,7 @@ export function meResponse(overrides: Partial<MeResponse> = {}): MeResponse {
     role,
     orgId: "org-1",
     centerId: "center-1",
+    theme: "LIGHT",
     member:
       role === "MEMBER"
         ? { id: "member-1", firstName: "Marina", centerName: "TRAINING ZONE La Jota", hasActiveMembership: true }
@@ -87,6 +95,7 @@ export function bookableSession(overrides: Partial<BookableSession> = {}): Booka
     startsAt: `${occurrenceDate}T19:00:00.000Z`,
     canBook: true,
     canCancelFreely: true,
+    cancelWindowHours: 24,
     myBookingId: null,
     myBookingStatus: null as BookingStatus | null,
     ...overrides,
@@ -130,6 +139,7 @@ export function upcomingBooking(overrides: Partial<UpcomingBooking> = {}): Upcom
     sessionCancelled: false,
     full: false,
     canCancelFreely: true,
+    cancelWindowHours: 24,
     ...overrides,
   };
 }
@@ -175,4 +185,111 @@ export function notificationItem(overrides: Partial<NotificationItem> = {}): Not
 
 export function notificationsResponse(overrides: Partial<NotificationsResponse> = {}): NotificationsResponse {
   return { notifications: [notificationItem()], ...overrides };
+}
+
+export function calendarEntry(overrides: Partial<CalendarEntry> = {}): CalendarEntry {
+  return {
+    bookingId: "booking-1",
+    day: TEST_TODAY,
+    sessionName: "Grupo reducido",
+    startTime: "19:00",
+    endTime: "20:00",
+    centerName: "TRAINING ZONE La Jota",
+    trainerName: "Marcos Iglesias",
+    serviceKind: "GROUP",
+    status: "BOOKED",
+    feedbackAvg: null,
+    ...overrides,
+  };
+}
+
+export function memberCalendarResponse(overrides: Partial<MemberCalendarResponse> = {}): MemberCalendarResponse {
+  return {
+    month: TEST_TODAY.slice(0, 7),
+    entries: [calendarEntry()],
+    summary: { attended: 0, booked: 1, noShow: 0 },
+    ...overrides,
+  };
+}
+
+export function membershipItem(overrides: Partial<MembershipItem> = {}): MembershipItem {
+  return {
+    id: "membership-1",
+    planName: "Bono 8 sesiones",
+    serviceKind: "GROUP",
+    status: "ACTIVE",
+    unlimited: false,
+    remaining: 5,
+    total: 8,
+    used: 3,
+    priceCents: 8000,
+    centerName: "TRAINING ZONE La Jota",
+    renewsAt: "2026-04-16",
+    cancelAt: null,
+    pauseUntil: null,
+    isRecurring: false,
+    ...overrides,
+  };
+}
+
+export function productItem(overrides: Partial<ProductItem> = {}): ProductItem {
+  return {
+    id: "product-1",
+    name: "Bono 8 sesiones",
+    description: null,
+    imageUrl: null,
+    priceCents: 8000,
+    sessionsIncluded: 8,
+    validityDays: 60,
+    planType: "SESSION_PACK",
+    serviceKind: "GROUP",
+    visible: true,
+    subscribersCount: null,
+    featured: false,
+    sellableInApp: true,
+    ...overrides,
+  };
+}
+
+export function productsResponse(overrides: Partial<ProductsResponse> = {}): ProductsResponse {
+  return {
+    canManage: false,
+    centerName: "TRAINING ZONE La Jota",
+    planTypes: [
+      { value: "SESSION_PACK", label: "Bono de sesiones" },
+      { value: "MONTHLY", label: "Cuota mensual" },
+    ],
+    products: [productItem()],
+    ...overrides,
+  };
+}
+
+export function briefRosterEntry(overrides: Partial<BriefRosterEntry> = {}): BriefRosterEntry {
+  return {
+    bookingId: "booking-1",
+    member: { id: "member-1", firstName: "Marina", lastName: "Castillo", state: "ACTIVE" },
+    isNew: false,
+    conditions: [],
+    unmatchedConditions: [],
+    matchedRules: [],
+    light: null,
+    debrief: null,
+    ...overrides,
+  };
+}
+
+export function briefDetailResponse(overrides: Partial<BriefDetailResponse> = {}): BriefDetailResponse {
+  return {
+    session: {
+      id: "session-1",
+      name: "Grupo reducido",
+      startTime: "19:00",
+      centerName: "TRAINING ZONE La Jota",
+      trainerName: "Marcos Iglesias",
+      occurrenceDate: TEST_TODAY,
+    },
+    canSeeHealth: true,
+    roster: [briefRosterEntry()],
+    ...overrides,
+  };
 }

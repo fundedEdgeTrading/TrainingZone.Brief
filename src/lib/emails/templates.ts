@@ -545,6 +545,62 @@ export function renderPaymentFailedEmail(opts: {
   });
 }
 
+/**
+ * E10-13 · Preaviso de cargo SEPA.
+ *
+ * Es un correo de SERVICIO, no comercial: se envía aunque el socio haya
+ * desactivado las comunicaciones prescindibles, porque el esquema SEPA Core
+ * obliga a pre-notificar el adeudo y sin él el socio se entera del cargo por
+ * el extracto. Por eso el pie no lleva el enlace de preferencias.
+ *
+ * Los cuatro datos que exige el preaviso van en la ficha —importe, fecha,
+ * mandato y plazo— y el derecho de devolución de 8 semanas va en el cuerpo,
+ * no en la letra pequeña.
+ */
+export function renderSepaPrenotificationEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  amountLabel: string;
+  chargeDateLabel: string;
+  mandateReference: string;
+  noticeDaysLabel: string;
+  planName?: string;
+  portalUrl: string;
+  postalAddress?: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Cuota",
+    preheader: `Cargo de ${opts.amountLabel} en tu cuenta el ${opts.chargeDateLabel}. Sin sorpresas en el extracto.`,
+    eyebrow: "Aviso previo de cargo",
+    title: `Hola, ${esc(opts.memberFirstName)}.<br>Te avisamos antes de cobrar.`,
+    bodyHtml:
+      p(`El ${strong(opts.chargeDateLabel)} cargaremos ${strong(opts.amountLabel)} en la cuenta que nos domiciliaste. Te lo decimos con antelación para que no te sorprenda en el extracto y puedas comprobar que tienes saldo.`, true) +
+      p(`Si algo no cuadra —el importe, la fecha o la cuenta— escríbenos antes de esa fecha y lo revisamos.`) +
+      p(`Como es un adeudo domiciliado, puedes ${strong(`pedir la devolución a tu banco durante las 8 semanas siguientes al cargo`)}, sin tener que dar ningún motivo.`),
+    rows: [
+      ...(opts.planName ? [{ label: "Concepto", value: opts.planName }] : []),
+      { label: "Importe", value: opts.amountLabel },
+      { label: "Fecha del cargo", value: opts.chargeDateLabel },
+      { label: "Referencia del mandato", value: opts.mandateReference },
+      { label: "Aviso previo", value: opts.noticeDaysLabel },
+      { label: "Plazo de devolución", value: "8 semanas desde el cargo" },
+    ],
+    ctaLabel: "Ver mi cuota",
+    ctaUrl: opts.portalUrl,
+    noteHtml: "Este aviso no es un cobro: es la notificación previa que te debemos antes de pasarlo al banco.",
+    signOff: `Cualquier duda, aquí estamos,<br>${strong(`El equipo de ${opts.brandName}`)}`,
+    senderName: opts.brandName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este aviso porque tienes una cuota domiciliada. Es un correo de servicio y no se puede desactivar.",
+    // Sin enlace de preferencias a propósito: ofrecer "darse de baja" de un
+    // aviso obligatorio sería prometer algo que no se puede cumplir.
+    footerLinksHtml: PRIVACY(),
+  });
+}
+
 export function renderOwnerActivationEmail(opts: {
   orgName: string;
   planName: string;
@@ -629,6 +685,69 @@ export function renderAssessmentDueEmail(opts: {
 // el token caducado pide uno nuevo desde /preferencias y le llega este. Lleva
 // el mismo shell y la misma ficha que el resto.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 09 · Recordatorio de sesión (E5-03/RB-RES-013) — a 24h y a 2h
+//
+// Correo de SERVICIO: se envía aunque el socio haya desactivado las
+// comunicaciones comerciales (`emailOptOutAt`) y no lleva enlace de baja
+// publicitaria — solo Privacidad. La única preferencia que lo desactiva es la
+// suya propia, específica de recordatorios, gestionable en su portal.
+// ---------------------------------------------------------------------------
+export function renderSessionReminderEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  variant: "24H" | "2H";
+  sessionName: string;
+  dateLabel: string;
+  startTime: string;
+  centerName: string;
+  agendaUrl: string;
+  room?: string;
+  trainerName?: string;
+  /** Ventana real de cancelación del centro (RB-RES-005), nunca un literal fijo. */
+  cancelWindowHours: number;
+  postalAddress?: string;
+}) {
+  const is24h = opts.variant === "24H";
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Agenda",
+    preheader: is24h
+      ? `Mañana entrenas: ${opts.sessionName} a las ${opts.startTime}.`
+      : `Tu sesión empieza en 2 horas: ${opts.sessionName} a las ${opts.startTime}.`,
+    eyebrow: is24h ? "Recordatorio · mañana" : "Recordatorio · en 2 horas",
+    title: is24h
+      ? `¡Hola, ${esc(opts.memberFirstName)}!<br>Mañana entrenas.`
+      : `¡Hola, ${esc(opts.memberFirstName)}!<br>Tu sesión es en 2 horas.`,
+    bodyHtml: is24h
+      ? p(
+          `Recuerda que mañana tienes ${strong(opts.sessionName)} a las ${strong(opts.startTime)}. Si no puedes ir, cancela con antelación para no perder la sesión de tu bono.`,
+          true
+        )
+      : p(`Tu sesión de ${strong(opts.sessionName)} empieza en 2 horas. Nos vemos en ${strong(opts.centerName)}.`, true),
+    rows: [
+      { label: "Sesión", value: opts.sessionName },
+      { label: "Fecha", value: opts.dateLabel },
+      { label: opts.room ? "Hora · Sala" : "Hora", value: opts.room ? `${opts.startTime} · ${opts.room}` : opts.startTime },
+      ...(opts.trainerName ? [{ label: "Entrenador", value: opts.trainerName }] : []),
+      { label: "Centro", value: opts.centerName },
+    ],
+    ctaLabel: is24h ? "Ver o cancelar mi reserva" : "Ver mi reserva",
+    ctaUrl: opts.agendaUrl,
+    noteHtml: is24h
+      ? `Puedes cancelar sin penalización hasta ${opts.cancelWindowHours}h antes de la clase. Pasado ese plazo, la sesión se da por empleada y no se devuelve a tu bono.`
+      : "Este es solo un recordatorio: no hace falta que confirmes nada.",
+    signOff: `Nos vemos en el centro,<br>${strong(`El equipo de ${opts.centerName}`)}`,
+    senderName: opts.centerName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason:
+      "Recibes este email porque tienes una reserva confirmada — es un correo de servicio de tu reserva. Puedes desactivar los recordatorios desde tu portal, en Perfil.",
+    footerLinksHtml: PRIVACY(),
+  });
+}
+
 export function renderEmailPreferencesLinkEmail(opts: {
   recipientFirstName: string;
   brandName: string;

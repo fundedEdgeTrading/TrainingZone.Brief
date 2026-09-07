@@ -21,6 +21,8 @@ export type MeResponse = {
   role: Role;
   orgId: string;
   centerId: string | null;
+  /** Preferencia explícita del socio/entrenador, fuente única con la web (D-M5, E13-02). */
+  theme: "LIGHT" | "DARK";
   /** Solo para MEMBER: resuelve el gate de compra del primer login (A2). */
   member: {
     id: string;
@@ -68,6 +70,8 @@ export type BookableSession = {
   canBook: boolean;
   /** Cancelación gratuita: fuera de esa ventana, cancelar consume la sesión del bono. */
   canCancelFreely: boolean;
+  /** Antelación de la ventana del centro, en horas (E2-06): la app ya no la escribe a pelo. */
+  cancelWindowHours: number;
   myBookingId: string | null;
   myBookingStatus: BookingStatus | null;
 };
@@ -111,6 +115,8 @@ export type UpcomingBooking = {
   sessionCancelled: boolean;
   full: boolean;
   canCancelFreely: boolean;
+  /** Antelación de la ventana del centro, en horas (E2-06). */
+  cancelWindowHours: number;
 };
 
 export type PendingFeedback = {
@@ -278,11 +284,24 @@ export type BriefListItem = {
 
 export type BriefListResponse = { sessions: BriefListItem[] };
 
+/** Zona del catálogo cerrado y lado, campos separados (E3-02). */
+export type BriefCondition = {
+  /** Rótulo heredado de texto libre; solo para pintar cuando no hay `zoneCode`. */
+  zone: string | null;
+  zoneCode: string | null;
+  side: "IZQUIERDA" | "DERECHA" | "BILATERAL" | "NO_APLICA" | null;
+  type: string;
+};
+
 export type BriefRosterEntry = {
   bookingId: string;
   member: { id: string; firstName: string; lastName: string; state: string };
   isNew: boolean;
-  conditions: { zone: string | null; description: string; type: string }[];
+  // E3-05: la descripción clínica YA NO viaja con el roster. El entrenador lee
+  // adaptaciones, no historiales; el detalle se pide aparte y deja AuditLog.
+  conditions: BriefCondition[];
+  /** Condiciones declaradas sin regla asignada: son las que encienden el ámbar (E3-03). */
+  unmatchedConditions: BriefCondition[];
   matchedRules: { injuryZone: string; blockArea: string; light: string; adaptation: string | null }[];
   light: "RED" | "AMBER" | "GREEN" | null;
   debrief: { feeling: "GREEN" | "AMBER" | "RED" } | null;
@@ -427,6 +446,14 @@ export type ProductItem = {
   planType: string;
   serviceKind: ServiceKind;
   visible: boolean;
+  /**
+   * HU-ST-10/D-S3: si este plan se puede comprar DESDE LA APP. El plan `ONLINE`
+   * es contenido digital consumido dentro de la app y cae bajo la compra dentro
+   * de la aplicación obligatoria de las tiendas, así que no se enlaza a su
+   * compra aquí — se vende en la web. Al socio no le llegan estos planes en el
+   * catálogo; dirección sí los ve, para poder gestionarlos.
+   */
+  sellableInApp: boolean;
   /** null para el socio: solo dirección ve cuánta gente tiene contratado el bono. */
   subscribersCount: number | null;
   featured: boolean;
@@ -457,7 +484,16 @@ export type SaveProductInput = {
 
 /** El cobro con tarjeta se abre SIEMPRE en el navegador del dispositivo, nunca en un WebView. */
 export type CheckoutResponse =
-  | { mode: "stripe"; url: string; planName: string; priceCents: number }
+  | {
+      mode: "stripe";
+      url: string;
+      planName: string;
+      priceCents: number;
+      /** Recurrente (MONTHLY/ONLINE) o bono puntual. La app ya no lo adivina por su cuenta (E5-12). */
+      isRecurring: boolean;
+      /** Fecha del próximo cobro, calculada por el servidor; `null` en un bono puntual. */
+      nextChargeAt: string | null;
+    }
   | { mode: "manual"; planName: string; priceCents: number; reason: string };
 
 // ---------- Mis bonos (B4) ----------
@@ -916,6 +952,25 @@ export type DiscardResult = { refunded: boolean; withinWindow: boolean; overridd
 
 export type DiscardInput = { reason?: string | null; forceRefund?: boolean; notifyMember?: boolean };
 
+// ---------- No-show desde la app (E2-14, RB-RES-009) ----------
+
+/** Motivos del enum `NoShowReason`, servidos por la API para no copiarlos aquí. */
+export type NoShowReasonOption = { value: string; help: string };
+
+export type NoShowOptions = { reasons: NoShowReasonOption[] };
+
+/**
+ * El motivo es obligatorio y la devolución es una decisión explícita: el
+ * servidor no devuelve nada si no se le pide (RB-RES-009).
+ */
+export type MarkNoShowInput = { bookingId: string; reason: string; refundSession: boolean };
+
+/** `refunded` es lo que REALMENTE pasó, no lo que se pidió: `noShowRefunded`
+ *  impide devolver dos veces la misma sesión. */
+export type MarkNoShowResult = { status: "NO_SHOW"; reason: string; refunded: boolean };
+
+export type ClearNoShowResult = { status: "BOOKED" | "ATTENDED" };
+
 // ---------- Hueco de EP ----------
 
 export type CreateEpSlotInput = {
@@ -936,6 +991,8 @@ export type ConsumptionMovement = {
   serviceKind: "EP" | "GROUP" | null;
   /** Signo del movimiento: −1 al gastar, +1 al devolver, +N en la renovación. */
   delta: number;
+  /** Saldo que quedó tras el asiento. `null` en un bono ilimitado. */
+  balanceAfter: number | null;
   tone: "neutral" | "critical" | "good";
 };
 
@@ -950,6 +1007,14 @@ export type ConsumptionResponse = {
     total: number | null;
     renewsAt: string | null;
   }[];
-  summary: { spent: number; returned: number; noShow: number };
+  /**
+   * E2-15: las dos cifras salen del MISMO libro mayor que el listado, así que
+   * no pueden contradecirlo. "No presentadas" ya no vive aquí: es una cuenta de
+   * asistencia, no un movimiento de saldo, y mezclarla era la mitad de la
+   * contradicción de esta pantalla.
+   */
+  summary: { spent: number; returned: number };
+  /** Día del asiento más antiguo: antes de esa fecha solo hay saldo de apertura. */
+  detailSince: string | null;
   movements: ConsumptionMovement[];
 };

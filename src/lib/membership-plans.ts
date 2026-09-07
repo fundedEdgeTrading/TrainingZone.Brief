@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import type { ServiceKind } from "@/lib/session-balance";
 import { PACK_TYPES, PLAN_TYPES, resolvePlanType } from "@/lib/membership-plan-types";
 import { hasOnlineContent } from "@/lib/online-queries";
+// HU-ST-08: la propagación a Stripe cuelga de aquí para que las dos superficies
+// la hereden. La lógica vive en `stripe-catalog.ts`.
+import { readPlanSnapshot, syncPlanToStripe, type PlanStripeSync } from "@/lib/stripe-catalog";
 
 /** E12-03: aviso cuando un plan ONLINE se guarda sin contenido que entregar. */
 export const ONLINE_PLAN_NO_CONTENT_WARNING =
@@ -50,7 +53,7 @@ export type SaveMembershipPlanInput = {
 };
 
 export type SaveMembershipPlanResult =
-  | { ok: true; id: string; priceChanged: boolean; warning?: string }
+  | { ok: true; id: string; priceChanged: boolean; stripe: PlanStripeSync; warning?: string }
   | { ok: false; error: string };
 
 /** Valida lo que no depende de la base de datos. Mismo mensaje en las dos superficies. */
@@ -83,7 +86,9 @@ export function validateMembershipPlan(input: SaveMembershipPlanInput, currentTy
  */
 export async function saveMembershipPlan(
   orgId: string,
-  input: SaveMembershipPlanInput
+  input: SaveMembershipPlanInput,
+  /** Quién guarda, para la traza del cambio de importe (HU-ST-08). */
+  actorUserId?: string | null
 ): Promise<SaveMembershipPlanResult> {
   const existing = input.planId
     ? await prisma.membershipPlan.findFirst({
@@ -140,7 +145,10 @@ export async function saveMembershipPlan(
 
   if (!existing) {
     const created = await prisma.membershipPlan.create({ data, select: { id: true } });
-    return { ok: true, id: created.id, priceChanged: false, warning };
+    // HU-ST-08: el alta crea Product y Price en la cuenta conectada. Sin Stripe
+    // conectado el producto se queda solo en Apta, "pendiente de sincronizar".
+    const stripe = await syncPlanToStripe(orgId, created.id, null, actorUserId);
+    return { ok: true, id: created.id, priceChanged: false, stripe, warning };
   }
 
   // F5/RB-VENTA-002: los precios de Stripe son inmutables — si cambia el
@@ -150,13 +158,20 @@ export async function saveMembershipPlan(
   // anterior, que nunca se borra. Esto valía solo para la web, y por eso desde
   // la app quedaba un cobro con precio obsoleto esperando a ocurrir.
   const priceChanged = input.priceCents !== existing.priceCents;
+  // El espejo ANTES de tocarlo: `syncPlanToStripe` necesita el `stripePriceId`
+  // viejo para archivarlo, y la línea de abajo lo pone a null.
+  const before = await readPlanSnapshot(orgId, existing.id);
   const { orgId: _unused, ...updatable } = data;
   void _unused; // el `orgId` ya está fijado por la fila: no se reescribe al editar.
   await prisma.membershipPlan.update({
     where: { id: existing.id },
     data: { ...updatable, ...(priceChanged ? { stripePriceId: null } : {}) },
   });
-  return { ok: true, id: existing.id, priceChanged, warning };
+  // HU-ST-08: nombre, descripción y foto se propagan al Product (sin generar
+  // precio nuevo); un cambio de importe crea un Price nuevo y archiva el
+  // anterior — nunca lo borra (RB-VENTA-007).
+  const stripe = await syncPlanToStripe(orgId, existing.id, before, actorUserId);
+  return { ok: true, id: existing.id, priceChanged, stripe, warning };
 }
 
 /**
@@ -175,6 +190,10 @@ export async function setMembershipPlanActive(
   if (active && plan.type === "ONLINE" && !(await hasOnlineContent(orgId))) {
     return { ok: false, error: ONLINE_PLAN_NO_CONTENT_WARNING };
   }
+  const before = await readPlanSnapshot(orgId, plan.id);
   await prisma.membershipPlan.update({ where: { id: plan.id }, data: { active } });
+  // HU-ST-08: ocultar en Apta oculta también en Stripe. Quien lo tiene
+  // contratado sigue igual — archivar un producto no cancela suscripciones.
+  await syncPlanToStripe(orgId, plan.id, before);
   return { ok: true };
 }
