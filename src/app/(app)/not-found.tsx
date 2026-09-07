@@ -19,9 +19,9 @@ export default function NotFound() {
     <div className="flex min-h-[60vh] items-center justify-center px-4 py-10">
       <div className="w-full max-w-md rounded-card border border-brand-border bg-brand-card p-8 text-center shadow-pop">
         <p className="font-display text-[40px] font-extrabold leading-none tracking-[-.02em] text-brand-border">404</p>
-        <h1 className="mt-3 font-display text-xl font-extrabold uppercase tracking-[-.01em] text-brand-text">
+        <h2 className="mt-3 font-display text-xl font-extrabold uppercase tracking-[-.01em] text-brand-text">
           Aquí no hay nada
-        </h1>
+        </h2>
         <p className="mt-2.5 text-sm text-brand-muted">
           Puede que el registro ya no exista, o que pertenezca a un centro que no tienes asignado.
         </p>

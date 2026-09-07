@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/ui/toast";
 import { resolveNotificationAction } from "./notifications-actions";
+import { notificationHref } from "@/lib/notification-routes";
 
 type NotificationItem = {
   id: string;
@@ -15,15 +16,13 @@ type NotificationItem = {
   createdAt: Date;
 };
 
-const ENTITY_HREF: Record<string, (id: string) => string> = {
-  Lead: (id) => `/leads/${id}`,
-  Member: (id) => `/members/${id}`,
-  // La alerta de faltas seguidas usa entidad propia para no deduplicarse contra
-  // el resto de tareas del socio (no-show-alerts.ts), pero apunta a su ficha.
-  MemberNoShowStreak: (id) => `/members/${id}`,
-};
-
-export function NotificationBell({ notifications }: { notifications: NotificationItem[] }) {
+export function NotificationBell({
+  notifications,
+  isMember = false,
+}: {
+  notifications: NotificationItem[];
+  isMember?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
@@ -67,7 +66,7 @@ export function NotificationBell({ notifications }: { notifications: Notificatio
             ) : (
               <ul>
                 {items.map((n) => {
-                  const href = n.entityType && n.entityId ? ENTITY_HREF[n.entityType]?.(n.entityId) : undefined;
+                  const href = notificationHref(n.entityType, n.entityId, isMember) ?? undefined;
                   const content = (
                     <div className="px-4 py-3 border-b border-tz-sand last:border-0 hover:bg-tz-bone/50 transition-colors">
                       <p className="text-sm font-semibold text-brand-text">{n.title}</p>

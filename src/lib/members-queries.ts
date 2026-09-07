@@ -59,7 +59,10 @@ export async function listMembers(
     },
     orderBy: [{ state: "asc" }, { lastName: "asc" }],
     skip: opts.skip,
-    take: opts.take ?? 300,
+    // E12-10: sin tope por defecto. Un `take` fijo aquí descartaba filas de un
+    // centro grande SIN AVISAR (320 socios → 20 perdidos en silencio). Quien
+    // quiera un tope real lo pide explícitamente (scroll infinito de la app).
+    take: opts.take,
   });
 }
 

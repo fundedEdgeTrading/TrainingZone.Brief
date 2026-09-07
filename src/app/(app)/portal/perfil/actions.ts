@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { CONSENT_VERSION } from "@/lib/consent";
+import { CONSENT_VERSION, CONSENT_FIELD, type ConsentKind } from "@/lib/consent";
+
+export type { ConsentKind };
 import type { MemberEmailKind } from "@/lib/email-preferences";
 import { setMemberSessionReminderPreference } from "@/lib/session-reminders";
 
@@ -60,15 +62,6 @@ export async function updateMyProfileAction(formData: FormData): Promise<Profile
   revalidatePath("/portal/perfil");
   return { ok: true };
 }
-
-const CONSENT_FIELD = {
-  health: { flag: "consentHealth", at: "consentHealthAt" },
-  images: { flag: "consentImages", at: "consentImagesAt" },
-  marketing: { flag: "consentMarketing", at: "consentMarketingAt" },
-  ai: { flag: "consentAI", at: "consentAIAt" },
-} as const;
-
-export type ConsentKind = keyof typeof CONSENT_FIELD;
 
 /**
  * Retirar/dar consentimiento (RGPD, tan fácil como se dio). Revocar salud o

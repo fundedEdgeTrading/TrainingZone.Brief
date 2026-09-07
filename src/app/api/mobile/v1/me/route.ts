@@ -1,12 +1,13 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireApiSession } from "../_lib/api-session";
+import { requireApiActiveSession } from "../_lib/api-session";
 import { memberSummaryFor } from "../_lib/session-user";
 import { apiOk, apiError } from "../_lib/response";
 
 export async function GET(req: NextRequest) {
-  const claims = await requireApiSession(req);
-  if (!claims) return apiError("No autenticado.", 401);
+  const auth = await requireApiActiveSession(req);
+  if (!auth.ok) return auth.response;
+  const { claims } = auth;
 
   const user = await prisma.user.findUnique({
     where: { id: claims.sub },

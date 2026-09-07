@@ -37,7 +37,6 @@
     "prisma": "^7.9.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",
     "stripe": "^22.3.2",
     "topojson-client": "^3.1.0",
@@ -62,6 +61,7 @@
   },
   "overrides": {
     "deepmerge-ts": "^8.0.2",
-    "nodemailer": "^9.0.5"
+    "nodemailer": "^9.0.5",
+    "mysql2": "^3.24.3"
   }
 }

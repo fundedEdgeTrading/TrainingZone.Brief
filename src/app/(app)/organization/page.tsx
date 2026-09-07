@@ -109,6 +109,20 @@ export default async function OrganizationPage({
         description="Marca, estructura de la empresa (centros), alta de personal e imputación de cada persona a uno o varios centros con su rol y dedicación. El modelo ya es multi-tenant (orgId en cada tabla); aquí se gestiona el ámbito dentro de la organización (F7)."
       />
 
+      {/* E6-08: PLATFORM_ADMIN no tiene todavía entrada de menú a /apta —
+          NAV_BY_ROLE vive en rbac.ts, congelado este trimestre—, así que esta
+          es su única puerta de entrada hasta la ventana de merge (ver
+          docs/hu/patches-rbac/E6-08-nav-apta.md). */}
+      {session.user.role === "PLATFORM_ADMIN" && (
+        <a
+          href="/apta"
+          className="flex items-center justify-between gap-3 rounded-card border border-brand-border bg-tz-sand px-5 py-4 text-sm font-semibold text-brand-text hover:border-brand-border-hover"
+        >
+          Back-office de Apta: organizaciones, plan, estado de cobro y alta asistida
+          <span aria-hidden="true">→</span>
+        </a>
+      )}
+
       {/* ---------- Marca de la organización ---------- */}
       {canOrg && org && (
         <section className="space-y-3">

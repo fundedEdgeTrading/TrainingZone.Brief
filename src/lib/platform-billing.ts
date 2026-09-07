@@ -15,6 +15,18 @@ import { publicOrigin } from "@/lib/site";
 export type PlatformCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
 /**
+ * E6-04: "el contador de plazas restantes es real, no decorativo" — se cuenta
+ * contra la base, igual que el cupo se comprueba en `createLicenseCheckoutSession`
+ * antes de cobrar. `null` = sin cupo configurado (oferta desactivada o sin límite).
+ */
+export async function remainingFundadorSeats(): Promise<number | null> {
+  const maxSeats = fundadorMaxSeats();
+  if (maxSeats <= 0) return null;
+  const sold = await prisma.organization.count({ where: { platformPlan: "fundador" } });
+  return Math.max(0, maxSeats - sold);
+}
+
+/**
  * Checkout de la licencia SIN organización previa (alta pago-primero). No lleva
  * `orgId` en los metadatos: es justo eso lo que distingue un alta nueva de una
  * renovación cuando llega el webhook. La organización se crea al confirmarse el

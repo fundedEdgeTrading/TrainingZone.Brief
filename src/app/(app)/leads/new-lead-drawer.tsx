@@ -94,6 +94,9 @@ export function NewLeadDrawer({
             }
             className="flex flex-col gap-5 p-6 sm:p-7"
           >
+            {/* E8-15: paso 1, lo que hace falta para no dejar a nadie esperando
+                de pie — cuatro campos. Todo lo demás es diferible y se puede
+                completar después desde la ficha del lead. */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <Field label="Nombre">
                 <Input name="firstName" required placeholder="Nombre" />
@@ -103,12 +106,6 @@ export function NewLeadDrawer({
               </Field>
               <Field label="Teléfono">
                 <Input name="phone" required placeholder="600 000 000" />
-              </Field>
-              <Field label={mode === "directo" ? "Email" : "Email (opcional)"}>
-                <Input name="email" type="email" required={mode === "directo"} placeholder="lead@email.es" />
-              </Field>
-              <Field label="Código postal">
-                <Input name="postalCode" required pattern="\d{5}" maxLength={5} placeholder="28001" />
               </Field>
               <Field label="Centro">
                 <Select name="centerId" required defaultValue="">
@@ -122,8 +119,32 @@ export function NewLeadDrawer({
                   ))}
                 </Select>
               </Field>
-              <Field label="Ocupación">
-                <Input name="occupation" required placeholder="A qué se dedica" />
+              <Field label="Canal de origen">
+                <Select name="channel" required defaultValue="">
+                  <option value="" disabled>
+                    Seleccionar...
+                  </option>
+                  {channels.map((c) => (
+                    <option key={c.id} value={c.label}>
+                      {c.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted -mb-1.5">
+              Paso 2 · opcional, puedes completarlo después
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <Field label={mode === "directo" ? "Email" : "Email (opcional)"}>
+                <Input name="email" type="email" required={mode === "directo"} placeholder="lead@email.es" />
+              </Field>
+              <Field label="Código postal (opcional)">
+                <Input name="postalCode" pattern="\d{5}" maxLength={5} placeholder="28001" />
+              </Field>
+              <Field label="Ocupación (opcional)">
+                <Input name="occupation" placeholder="A qué se dedica" />
               </Field>
               <Field label="¿Tiene hijos? (opcional)">
                 <Select name="hasChildren" defaultValue="">
@@ -140,27 +161,15 @@ export function NewLeadDrawer({
                   <option value="OTHER">Otro</option>
                 </Select>
               </Field>
-              <Field label="Canal de origen">
-                <Select name="channel" required defaultValue="">
-                  <option value="" disabled>
-                    Seleccionar...
-                  </option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.label}>
-                      {c.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="¿Ha entrenado antes?">
+              <Field label="¿Ha entrenado antes? (opcional)">
                 <Select name="hasTrainedBefore" defaultValue="no">
                   <option value="no">No</option>
                   <option value="yes">Sí</option>
                 </Select>
               </Field>
             </div>
-            <Field label="Objetivos">
-              <textarea name="goals" required rows={2} className="w-full rounded-control border border-brand-border bg-white px-3.5 py-2.5 text-sm" />
+            <Field label="Objetivos (opcional)">
+              <textarea name="goals" rows={2} className="w-full rounded-control border border-brand-border bg-white px-3.5 py-2.5 text-sm" />
             </Field>
             {/* E10-01: deja de ser obligatorio y deja de guardarse sin
                 consentimiento. En recepción la persona está delante, así que

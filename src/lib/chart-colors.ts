@@ -100,6 +100,13 @@ export const MEMBER_STATE_LABEL: Record<string, string> = {
   PROSPECT: "Prospecto",
 };
 
+export const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  PAID: "Pagado",
+  PENDING: "Pendiente",
+  FAILED: "Fallido",
+  REFUNDED: "Devuelto",
+};
+
 export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   CARD: "Tarjeta",
   BIZUM: "Bizum",

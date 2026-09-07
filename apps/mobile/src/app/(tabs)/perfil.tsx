@@ -23,15 +23,21 @@ import type { Role } from "@/api/types";
  * Cerrar sesión vive AQUÍ y no en la pestaña: es la acción menos frecuente y
  * la más costosa de deshacer, así que no debe estar a un toque de la barra.
  */
+// E8-18: mismos textos que `ROLE_LABEL` en `src/lib/rbac.ts` — la app tenía su
+// propia copia con textos distintos ("Dirección"/"Administración" aquí,
+// "Dirección de organización"/"Admin plataforma" en la web) para el mismo
+// rol. Sin un módulo compartible entre los dos toolchains, esta copia es la
+// fuente única de facto: `role-label-parity.test.ts` la protege de volver a
+// divergir de rbac.ts.
 const ROLE_LABEL: Record<Role, string> = {
-  OWNER: "Dirección",
+  OWNER: "Dirección de organización",
   CENTER_DIRECTOR: "Dirección de centro",
   TRAINER: "Entrenador",
   TRAINER_ADMIN: "Entrenador Admin",
   RECEPTION: "Recepción",
   MEMBER: "Socio",
   HR_MANAGER: "RRHH",
-  PLATFORM_ADMIN: "Administración",
+  PLATFORM_ADMIN: "Admin plataforma",
 };
 
 export default function AccountScreen() {

@@ -19,24 +19,32 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
     </>
   ),
   feedback: <path d="M4 5.5h16v10H10l-4.5 3.5v-3.5H4z" />,
+  // E8-18: geometría idéntica al icono "users" de la app móvil
+  // (`apps/mobile/src/components/Icon.tsx`) — se conserva el de la app porque
+  // está mejor construido; antes web dibujaba su propio trazo de dos personas
+  // con proporciones distintas para el mismo concepto.
   socios: (
     <>
-      <circle cx="9" cy="8.6" r="3.6" />
-      <path d="M2.5 20.2c0-3.4 2.9-5.6 6.5-5.6s6.5 2.2 6.5 5.6" />
-      <path d="M16.2 5.4a3.3 3.3 0 0 1 0 6.4" />
-      <path d="M18 15c2 .8 3.5 2.6 3.5 5.2" />
+      <circle cx="8.5" cy="8.5" r="3.4" />
+      <circle cx="16.5" cy="9.5" r="2.6" />
+      <path d="M2.5 20c0-3 2.6-4.6 6-4.6s6 1.6 6 4.6" />
+      <path d="M16.5 15.8c2.7.4 4.5 2 4.5 4.2" />
     </>
   ),
+  // E8-18: geometría idéntica al icono "calendar" de la app móvil — antes cada
+  // superficie dibujaba su propia "Agenda" con un trazo distinto.
   agenda: (
     <>
-      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
-      <path d="M3.5 10h17M8.5 3.5v3.5M15.5 3.5v3.5" />
+      <path d="M4 6.5h16v14H4z" />
+      <path d="M4 10.5h16M8.5 3.5v4M15.5 3.5v4" />
     </>
   ),
+  // E8-18: geometría idéntica al icono "wallet" de la app móvil.
   cobros: (
     <>
-      <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
-      <circle cx="12" cy="12" r="2.6" />
+      <path d="M3.5 7.5h14A2.5 2.5 0 0 1 20 10v8.5H6a2.5 2.5 0 0 1-2.5-2.5z" />
+      <path d="M3.5 7.5A2 2 0 0 1 5.5 5.5H16" />
+      <path d="M15.5 13h4.5" />
     </>
   ),
   aforo: (
@@ -61,11 +69,14 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
     </>
   ),
   rangos: <path d="M5 20V11M12 20V4.5M19 20v-6" />,
+  // E8-18: geometría idéntica al icono "building" de la app móvil — antes web
+  // dibujaba un tejado a dos aguas y la app un bloque rectangular para la
+  // misma sección "Organización".
   organizacion: (
     <>
-      <path d="M4 20.5V6.2l8-3 8 3v14.3" />
-      <path d="M2.5 20.5h19" />
-      <path d="M9.5 20.5V15h5v5.5" />
+      <path d="M5 21V4.5h14V21" />
+      <path d="M9 8.5h2M13 8.5h2M9 12.5h2M13 12.5h2" />
+      <path d="M10 21v-4.5h4V21" />
     </>
   ),
   rrhh: (
@@ -94,7 +105,8 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
       <path d="M9 13h7M9 16.5h4.5" />
     </>
   ),
-  actividad: <path d="M3 12.5h4l2.2-5.5 3.4 10.5 2.4-5h6" />,
+  // E8-18: geometría idéntica al icono "activity" de la app móvil.
+  actividad: <path d="M3 12h4l2.5-7 4 14 2.5-7H21" />,
   reservar: (
     <>
       <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />

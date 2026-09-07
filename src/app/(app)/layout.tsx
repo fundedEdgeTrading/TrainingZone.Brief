@@ -138,6 +138,15 @@ export default async function AppLayout({
     <MobileNavProvider>
       <AccountMenuProvider>
         <TimezoneSync current={timezone} />
+        {/* E8-06: primer elemento tabulable, invisible hasta que recibe foco —
+            sin esto, llegar al contenido tabulando pasa por los quince items
+            del sidebar en cada carga. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-control focus:bg-tz-black focus:px-4 focus:py-2.5 focus:text-sm focus:font-bold focus:text-tz-bone"
+        >
+          Saltar al contenido
+        </a>
         <div className="flex min-h-screen bg-brand-bg">
           <Sidebar
             nav={nav}
@@ -158,7 +167,7 @@ export default async function AppLayout({
               activeOrgId={session.user.orgId}
               isMember={role === "MEMBER"}
             />
-            <main className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
+            <main id="main-content" className="flex-1 overflow-y-auto p-4 pb-10 sm:p-6 lg:p-7 lg:px-8 lg:pb-12 bg-brand-bg">
               <RouteProgress />
               {/* El `error.tsx` de segmento se pinta aquí dentro, así que llega
                   a la ruta de inicio del rol sin tener que resolver la sesión. */}

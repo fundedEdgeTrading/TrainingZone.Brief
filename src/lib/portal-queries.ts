@@ -436,11 +436,13 @@ export async function getBookableSessions(
       };
     })
     .filter((s) => s.canBook || s.myBookingId)
-    // Solo días que el centro opera (`isOperatingDay`): ofrecer un día que la
-    // agenda del entrenador no pinta vendía una sesión que luego nadie podía
-    // gestionar. Se mantienen, eso sí, las que el socio YA tuviera reservadas
-    // de antes, o se quedaría con una reserva que no puede cancelar.
-    .filter((s) => isOperatingDay(s.date) || s.myBookingId)
+    // Solo días que el centro opera (`isOperatingDay`, RB-RES-008): hoy son
+    // los siete, así que este filtro no descarta nada — se conserva como el
+    // punto por el que un centro que cierre un día concreto volvería a
+    // entrar. El respaldo `|| s.myBookingId` que aquí había (para no perder
+    // una reserva de domingo ya hecha) se ha retirado por inalcanzable
+    // (E12-13): con isOperatingDay siempre true, esa rama nunca corría.
+    .filter((s) => isOperatingDay(s.date))
     .filter((s) => s.startsAt.getTime() <= windowEndMs);
 }
 

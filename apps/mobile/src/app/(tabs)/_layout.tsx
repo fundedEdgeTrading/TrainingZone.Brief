@@ -69,7 +69,9 @@ const TAB_META: Record<TabName, { label: string; icon: IconName }> = {
   socios: { label: "Socios", icon: "users" },
   productos: { label: "Productos", icon: "box" },
   anuncios: { label: "Anuncios", icon: "bell" },
-  organizacion: { label: "Equipo", icon: "building" },
+  // E8-18: "Organización", igual que la web (`rbac.ts`) — antes decía "Equipo",
+  // un nombre distinto para la misma sección.
+  organizacion: { label: "Organización", icon: "building" },
   notificaciones: { label: "Avisos", icon: "bell" },
   mas: { label: "Más", icon: "grid" },
   perfil: { label: "Perfil", icon: "user" },
@@ -105,6 +107,13 @@ export default function TabsLayout() {
     );
   }
   if (state.status === "signedOut") return <Redirect href="/login" />;
+  // E12-08: una organización suspendida (402 de /me) no debería llegar aquí
+  // dentro —`index.tsx` la intercepta antes y pinta "Servicio suspendido"—,
+  // pero el tipo de `state` lo permite y sin esta guarda `state.user` de más
+  // abajo no compila. Si ocurre igualmente (p. ej. la sesión se suspende
+  // mientras ya se estaba dentro de las pestañas), se rebota a `/` para que
+  // pinte esa pantalla en vez de reventar leyendo un `user` que no existe.
+  if (state.status === "suspended") return <Redirect href="/" />;
   // Recorte a dos roles (D-M4, E13-01): antes de repartir pestañas, ni
   // siquiera se pregunta por ellas si el rol no es de los que la app
   // conserva — así no queda ni una pestaña ni una rejilla vacía para el resto.

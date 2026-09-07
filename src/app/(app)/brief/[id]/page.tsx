@@ -61,9 +61,9 @@ export default async function SessionBriefPage({
           >
             ← Volver al detalle de sesión
           </Link>
-          <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
+          <h2 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-tz-black">
             Session Brief · {cls.name}
-          </h1>
+          </h2>
           <p className="text-sm text-muted">
             {occurrenceDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })} ·{" "}
             {cls.startTime} · {cls.center.name} · {cls.trainer?.name ?? "Sin entrenador"}

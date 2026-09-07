@@ -13,7 +13,17 @@ import type { LoginOrganization, LoginResponse, MeResponse } from "@/api/types";
 type AuthState =
   | { status: "loading" }
   | { status: "signedOut" }
-  | { status: "signedIn"; user: MeResponse };
+  | { status: "signedIn"; user: MeResponse }
+  /**
+   * E12-08: la organización tiene el servicio suspendido (402 de `/me`,
+   * `assertPlatformOperational`). Antes esto se trataba como una sesión
+   * inválida más: se borraban los tokens y se mandaba a login sin explicar
+   * nada, así que quien volvía a intentarlo veía "credenciales incorrectas"
+   * con una contraseña que seguía siendo correcta. Los tokens se conservan
+   * a propósito: en cuanto la organización se reactive, `refresh()` vuelve
+   * a `signedIn` sin pedir la contraseña otra vez.
+   */
+  | { status: "suspended"; message: string };
 
 type LoginOutcome =
   | { ok: true; user: MeResponse }
@@ -60,7 +70,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
       try {
         const me = await apiRequest<MeResponse>("/me");
         setState({ status: "signedIn", user: me });
-      } catch {
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 402) {
+          setState({ status: "suspended", message: err.message });
+          return;
+        }
         await clearTokens();
         setState({ status: "signedOut" });
       }
@@ -97,10 +111,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     try {
       const me = await apiRequest<MeResponse>("/me");
       setState({ status: "signedIn", user: me });
-    } catch {
-      // Un fallo puntual de red no debe echar al usuario de la app: se
-      // conserva el estado actual y el siguiente 401 real ya lo resolverá
-      // el refresh de token del cliente de API.
+    } catch (err) {
+      // E12-08: un 402 sí es una respuesta real (organización suspendida), a
+      // diferencia de un fallo puntual de red — que conserva el estado
+      // actual y deja que el siguiente 401 real lo resuelva el refresh de
+      // token del cliente de API.
+      if (err instanceof ApiError && err.status === 402) {
+        setState({ status: "suspended", message: err.message });
+      }
     }
   }
 

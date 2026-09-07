@@ -33,6 +33,12 @@ export default function Hero() {
           portal del socio y app móvil incluidos desde el primer día.
         </p>
 
+        {/* E6-05: el mejor argumento contra MindBody y Glofox, dicho en grande
+            y con las mismas palabras en todo /planes (ver ComparisonTable). */}
+        <p className="inline-flex items-center gap-2 mt-5 text-[13px] font-bold uppercase tracking-[0.06em] text-apta-gold bg-brand-ink-soft border border-brand-border-dark rounded-pill px-4 py-2">
+          <span aria-hidden="true">✓</span> Cero comisión sobre tus cobros
+        </p>
+
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
           <a
             href="#planes"

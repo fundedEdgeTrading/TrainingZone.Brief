@@ -88,6 +88,53 @@ export async function getLeadDetail(orgId: string, leadId: string) {
   });
 }
 
+/**
+ * E8-15: "la ficha señala qué falta, sin bloquear la gestión comercial". Un
+ * lead capturado en el paso 1 (nombre, teléfono, centro, canal) llega aquí
+ * con estos campos en blanco; la ficha los lista para que se completen
+ * cuando haya tiempo, sin impedir moverlo de etapa mientras tanto.
+ */
+export function missingLeadFields(lead: { postalCode: string; occupation: string; goals: string }): string[] {
+  const missing: string[] = [];
+  if (!lead.postalCode.trim()) missing.push("Código postal");
+  if (!lead.occupation.trim()) missing.push("Ocupación");
+  if (!lead.goals.trim()) missing.push("Objetivos");
+  return missing;
+}
+
+export type UpdateLeadDetailsInput = {
+  postalCode?: string;
+  occupation?: string;
+  goals?: string;
+  email?: string | null;
+};
+
+/** Completar los datos diferibles del paso 2, desde la ficha del lead. */
+export async function updateLeadDetails(
+  orgId: string,
+  leadId: string,
+  input: UpdateLeadDetailsInput
+): Promise<LeadWriteResult> {
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
+  if (!lead) return { ok: false, error: "Lead no encontrado." };
+
+  const postalCode = input.postalCode?.trim();
+  if (postalCode && !POSTAL_CODE_RE.test(postalCode)) {
+    return { ok: false, error: "El código postal debe tener 5 dígitos (RB-LEAD-010)." };
+  }
+
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: {
+      ...(input.postalCode !== undefined ? { postalCode: postalCode ?? "" } : {}),
+      ...(input.occupation !== undefined ? { occupation: input.occupation.trim() } : {}),
+      ...(input.goals !== undefined ? { goals: input.goals.trim() } : {}),
+      ...(input.email !== undefined ? { email: input.email?.trim() || null } : {}),
+    },
+  });
+  return { ok: true, leadId: lead.id };
+}
+
 export type CreateLeadInput = {
   orgId: string;
   centerId: string;
@@ -139,9 +186,13 @@ export type LeadWriteResult = { ok: true; leadId: string } | { ok: false; error:
 export async function createLead(input: CreateLeadInput): Promise<LeadWriteResult> {
   if (!input.firstName.trim() || !input.lastName.trim()) return { ok: false, error: "Nombre y apellidos son obligatorios." };
   if (!input.phone.trim()) return { ok: false, error: "El teléfono es obligatorio (RB-LEAD-002)." };
-  if (!POSTAL_CODE_RE.test(input.postalCode.trim())) return { ok: false, error: "El código postal debe tener 5 dígitos (RB-LEAD-010)." };
-  if (!input.occupation.trim()) return { ok: false, error: "Indica a qué se dedica el lead." };
-  if (!input.goals.trim()) return { ok: false, error: "Indica los objetivos del lead." };
+  // E8-15: captura en dos pasos — solo nombre, teléfono, centro y canal son
+  // obligatorios. El código postal, si se da, sigue teniendo que ser válido;
+  // el resto (ocupación, objetivos) se puede dejar en blanco y completar
+  // después desde la ficha del lead, sin bloquear la gestión comercial.
+  if (input.postalCode.trim() && !POSTAL_CODE_RE.test(input.postalCode.trim())) {
+    return { ok: false, error: "El código postal debe tener 5 dígitos (RB-LEAD-010)." };
+  }
   if (!input.channel.trim()) return { ok: false, error: "Selecciona el canal de origen." };
 
   const lead = await prisma.lead.create({

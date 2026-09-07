@@ -2,8 +2,16 @@ import { Suspense } from "react";
 import Link from "next/link";
 import LoginForm from "./login-form";
 import AptaLogo from "@/components/apta-logo";
+import { isDemoModeActive } from "@/lib/platform-plans";
 
 export default function LoginPage() {
+  // E8-16: el panel de acceso demo (usuarios sembrados, contraseña
+  // compartida a la vista) es la primera pantalla de un producto que se
+  // vende como premium — no puede salir en producción. Usa la misma
+  // bandera que el resto del modo demo (sin Stripe configurado no hay pago
+  // real posible, así que tampoco hay nada que "vender como premium" a
+  // proteger: es entorno de demostración).
+  const demoModeActive = isDemoModeActive();
   return (
     <div className="h-dvh flex bg-tz-bone overflow-hidden">
       <div className="hidden lg:flex relative w-[42%] shrink-0 bg-tz-black overflow-hidden flex-col justify-between p-12">
@@ -53,7 +61,7 @@ export default function LoginPage() {
 
             <div className="bg-white border border-tz-linen rounded-card shadow-pop tz-card-sheen p-6 lg:p-8 short:lg:p-5">
               <Suspense>
-                <LoginForm />
+                <LoginForm demoModeActive={demoModeActive} />
               </Suspense>
             </div>
 

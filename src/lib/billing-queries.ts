@@ -9,21 +9,55 @@ import type { PaymentStatus } from "@prisma/client";
  * cobrar/congelar/cancelar la cuota de socios de otros centros de la misma
  * organización.
  */
+export type PaymentSort = "date_desc" | "date_asc" | "amount_desc" | "amount_asc";
+
+const PAYMENT_ORDER_BY: Record<PaymentSort, { date?: "asc" | "desc"; amountCents?: "asc" | "desc" }> = {
+  date_desc: { date: "desc" },
+  date_asc: { date: "asc" },
+  amount_desc: { amountCents: "desc" },
+  amount_asc: { amountCents: "asc" },
+};
+
+function paymentsWhere(orgId: string, opts: { status?: PaymentStatus; statuses?: PaymentStatus[]; centerIds?: string[] }) {
+  return {
+    orgId,
+    // `statuses`: eje multi-valor de la píldora de estado (dentro del eje, OR).
+    ...(opts.statuses?.length ? { status: { in: opts.statuses } } : { status: opts.status || undefined }),
+    ...(opts.centerIds !== undefined ? { member: { primaryCenterId: { in: opts.centerIds } } } : {}),
+  };
+}
+
+/**
+ * E8-13: paginación y orden en servidor, con el estado en la URL
+ * (`/billing?page=&sort=`) — antes `take: 100` era un tope silencioso sin
+ * ningún control de orden, y la única forma de "ordenar" era client-side
+ * sobre esas 100 filas ya recortadas.
+ */
 export async function listPayments(
+  orgId: string,
+  opts: {
+    status?: PaymentStatus;
+    statuses?: PaymentStatus[];
+    centerIds?: string[];
+    sort?: PaymentSort;
+    skip?: number;
+    take?: number;
+  } = {}
+) {
+  return prisma.payment.findMany({
+    where: paymentsWhere(orgId, opts),
+    include: { member: { select: { id: true, firstName: true, lastName: true, phone: true } } },
+    orderBy: PAYMENT_ORDER_BY[opts.sort ?? "date_desc"],
+    skip: opts.skip,
+    take: opts.take,
+  });
+}
+
+export async function countPayments(
   orgId: string,
   opts: { status?: PaymentStatus; statuses?: PaymentStatus[]; centerIds?: string[] } = {}
 ) {
-  return prisma.payment.findMany({
-    // `statuses`: eje multi-valor de la píldora de estado (dentro del eje, OR).
-    where: {
-      orgId,
-      ...(opts.statuses?.length ? { status: { in: opts.statuses } } : { status: opts.status || undefined }),
-      ...(opts.centerIds !== undefined ? { member: { primaryCenterId: { in: opts.centerIds } } } : {}),
-    },
-    include: { member: { select: { id: true, firstName: true, lastName: true } } },
-    orderBy: { date: "desc" },
-    take: 100,
-  });
+  return prisma.payment.count({ where: paymentsWhere(orgId, opts) });
 }
 
 export async function getBillingKpis(orgId: string, centerIds?: string[]) {

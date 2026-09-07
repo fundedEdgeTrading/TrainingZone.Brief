@@ -2,9 +2,14 @@ import type { PlanType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { ServiceKind } from "@/lib/session-balance";
 import { PACK_TYPES, PLAN_TYPES, resolvePlanType } from "@/lib/membership-plan-types";
+import { hasOnlineContent } from "@/lib/online-queries";
 // HU-ST-08: la propagación a Stripe cuelga de aquí para que las dos superficies
 // la hereden. La lógica vive en `stripe-catalog.ts`.
 import { readPlanSnapshot, syncPlanToStripe, type PlanStripeSync } from "@/lib/stripe-catalog";
+
+/** E12-03: aviso cuando un plan ONLINE se guarda sin contenido que entregar. */
+export const ONLINE_PLAN_NO_CONTENT_WARNING =
+  "Este plan ONLINE se ha guardado oculto: hace falta subir al menos un vídeo antes de poder activarlo.";
 
 export {
   PACK_TYPES,
@@ -48,7 +53,7 @@ export type SaveMembershipPlanInput = {
 };
 
 export type SaveMembershipPlanResult =
-  | { ok: true; id: string; priceChanged: boolean; stripe: PlanStripeSync }
+  | { ok: true; id: string; priceChanged: boolean; stripe: PlanStripeSync; warning?: string }
   | { ok: false; error: string };
 
 /** Valida lo que no depende de la base de datos. Mismo mensaje en las dos superficies. */
@@ -116,6 +121,16 @@ export async function saveMembershipPlan(
   });
   if (duplicate) return { ok: false, error: "Ya tienes un producto activo con ese nombre." };
 
+  // E12-03: el plan ONLINE se sigue vendiendo (D-P6), pero no es vendible de
+  // verdad sin contenido que entregar (RB pendiente). Si pide quedar visible
+  // y no hay ni un vídeo publicado, se guarda oculto y se avisa.
+  let active = input.active;
+  let warning: string | undefined;
+  if (type === "ONLINE" && active !== false && !(await hasOnlineContent(orgId))) {
+    active = false;
+    warning = ONLINE_PLAN_NO_CONTENT_WARNING;
+  }
+
   const data: Prisma.MembershipPlanUncheckedCreateInput = {
     orgId,
     name,
@@ -125,7 +140,7 @@ export async function saveMembershipPlan(
     validityDays,
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
-    ...(input.active !== undefined ? { active: input.active } : {}),
+    ...(active !== undefined ? { active } : {}),
   };
 
   if (!existing) {
@@ -133,7 +148,7 @@ export async function saveMembershipPlan(
     // HU-ST-08: el alta crea Product y Price en la cuenta conectada. Sin Stripe
     // conectado el producto se queda solo en Apta, "pendiente de sincronizar".
     const stripe = await syncPlanToStripe(orgId, created.id, null, actorUserId);
-    return { ok: true, id: created.id, priceChanged: false, stripe };
+    return { ok: true, id: created.id, priceChanged: false, stripe, warning };
   }
 
   // F5/RB-VENTA-002: los precios de Stripe son inmutables — si cambia el
@@ -156,7 +171,7 @@ export async function saveMembershipPlan(
   // precio nuevo); un cambio de importe crea un Price nuevo y archiva el
   // anterior — nunca lo borra (RB-VENTA-007).
   const stripe = await syncPlanToStripe(orgId, existing.id, before, actorUserId);
-  return { ok: true, id: existing.id, priceChanged, stripe };
+  return { ok: true, id: existing.id, priceChanged, stripe, warning };
 }
 
 /**
@@ -170,8 +185,11 @@ export async function setMembershipPlanActive(
   planId: string,
   active: boolean
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId }, select: { id: true } });
+  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId }, select: { id: true, type: true } });
   if (!plan) return { ok: false, error: "Producto no encontrado." };
+  if (active && plan.type === "ONLINE" && !(await hasOnlineContent(orgId))) {
+    return { ok: false, error: ONLINE_PLAN_NO_CONTENT_WARNING };
+  }
   const before = await readPlanSnapshot(orgId, plan.id);
   await prisma.membershipPlan.update({ where: { id: plan.id }, data: { active } });
   // HU-ST-08: ocultar en Apta oculta también en Stripe. Quien lo tiene

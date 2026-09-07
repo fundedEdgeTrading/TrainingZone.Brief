@@ -261,7 +261,16 @@ export function Select({
   "aria-label": ariaLabel,
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { searchable?: boolean; placeholder?: string }) {
   const options = useMemo(() => optionsFromChildren(children), [children]);
-  const invalid = ariaInvalid === true || ariaInvalid === "true";
+  // E8-14: el input oculto de más abajo lleva `required`, pero un
+  // `type="hidden"` queda excluido de la validación de restricciones del
+  // navegador pase lo que pase (así lo dice la propia spec de HTML) — el
+  // formulario se enviaba vacío sin bloquear nada ni marcar el campo
+  // culpable. `selfInvalid` es la validación de cliente que faltaba; la de
+  // servidor (que ya existía) no se toca.
+  const [selfInvalid, setSelfInvalid] = useState(false);
+  const [missingLabel, setMissingLabel] = useState("");
+  const requiredErrorId = `${useId()}-required-error`;
+  const invalid = ariaInvalid === true || ariaInvalid === "true" || selfInvalid;
   // Id del nodo que pinta el valor elegido: entra en el `aria-labelledby` junto
   // a la etiqueta del campo, para que el nombre accesible del disparador sea
   // "<etiqueta> <valor>" y no solo la etiqueta.
@@ -367,9 +376,39 @@ export function Select({
   function selectOption(opt: Option) {
     if (opt.disabled) return;
     if (!isControlled) setInternalValue(opt.value);
+    setSelfInvalid(false);
     close();
     onChange?.({ target: { value: opt.value, name } } as unknown as React.ChangeEvent<HTMLSelectElement>);
   }
+
+  // El mensaje nombra el campo concreto ("Falta seleccionar «Centro»"), no un
+  // genérico "campo obligatorio": se lee de la etiqueta de `<Field>` (a la que
+  // apunta `aria-labelledby`) o, en su defecto, de `aria-label`.
+  function resolveMissingLabel(): string {
+    if (ariaLabel) return ariaLabel;
+    const firstId = ariaLabelledBy?.split(" ")[0];
+    const labelEl = firstId ? document.getElementById(firstId) : null;
+    return labelEl?.textContent?.trim() || placeholderText;
+  }
+
+  useEffect(() => {
+    if (!required) return;
+    const form = rootRef.current?.closest("form");
+    if (!form) return;
+    // Captura: se adelanta a cualquier `submit` handler del formulario para
+    // poder bloquear el envío antes de que llegue al servidor.
+    const onFormSubmit = (e: Event) => {
+      if (currentValue.trim() !== "") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setSelfInvalid(true);
+      setMissingLabel(resolveMissingLabel());
+      triggerRef.current?.focus();
+    };
+    form.addEventListener("submit", onFormSubmit, true);
+    return () => form.removeEventListener("submit", onFormSubmit, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [required, currentValue, ariaLabel, ariaLabelledBy]);
 
   const hasWidthOverride = /(^|\s)w-/.test(className ?? "");
 
@@ -493,7 +532,7 @@ export function Select({
         // disparador (cuya etiqueta es el valor elegido) como a cada opción.
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-describedby={ariaDescribedBy}
+        aria-describedby={mergeIds(ariaDescribedBy, selfInvalid ? requiredErrorId : undefined)}
         // Sin etiqueta que componer se deja tal cual: el nombre sale del
         // contenido, que es el comportamiento que este disparador tenía y que
         // los `<label>` envolventes (p. ej. el diálogo de falta) siguen usando.
@@ -550,6 +589,11 @@ export function Select({
       </button>
 
       {mounted && menu ? createPortal(menu, document.body) : null}
+      {selfInvalid && (
+        <p id={requiredErrorId} role="alert" className="text-xs text-critical mt-1">
+          Falta seleccionar «{missingLabel || "este campo"}».
+        </p>
+      )}
     </div>
   );
 }

@@ -13,10 +13,12 @@ import {
   addLeadChannel,
   addNoCloseReason,
   leadIsInScope,
+  updateLeadDetails,
   type CreateLeadInput,
   type LeadWriteResult,
 } from "@/lib/leads-queries";
 import { CENTER_OUT_OF_SCOPE, centerIsInScope } from "@/lib/guard";
+import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
 
 export type LeadActionResult = { ok: true } | { ok: false; error: string };
 
@@ -140,4 +142,34 @@ export async function addNoCloseReasonAction(formData: FormData): Promise<LeadAc
   if (!result.ok) return result;
   revalidatePath("/leads");
   return { ok: true };
+}
+
+/** E8-15: completar desde la ficha lo que quedó en blanco en la captura rápida. */
+export async function updateLeadDetailsAction(leadId: string, formData: FormData): Promise<LeadActionResult> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!canManageLeads(session.user.role)) return { ok: false, error: "No tienes permiso." };
+  if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
+
+  const result = await updateLeadDetails(session.user.orgId, leadId, {
+    postalCode: String(formData.get("postalCode") ?? ""),
+    occupation: String(formData.get("occupation") ?? ""),
+    goals: String(formData.get("goals") ?? ""),
+  });
+  if (!result.ok) return result;
+  revalidatePath(`/leads/${leadId}`);
+  return { ok: true };
+}
+
+/** E12-17: traza de "se abrió WhatsApp" desde un lead sin contactar. */
+export async function logLeadWhatsappContactAction(leadId: string): Promise<void> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!canManageLeads(session.user.role)) return;
+  if (!(await leadIsInScope(session.user, leadId))) return;
+  await logWhatsappContactOpened({
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    entityType: "Lead",
+    entityId: leadId,
+    reason: "lead_sin_responder",
+  });
 }

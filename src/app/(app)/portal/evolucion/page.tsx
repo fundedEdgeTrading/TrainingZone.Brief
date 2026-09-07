@@ -1,39 +1,30 @@
 import { redirect } from "next/navigation";
-import { resolveTimezone } from "@/lib/timezone";
-import { formatInstantDate } from "@/lib/date-utils";
 import { requireRole } from "@/lib/guard";
 import { getMemberForUser, getMemberEvolution, getMemberGoals, getMemberRatingSummary } from "@/lib/portal-queries";
 import { CelebrateOnce } from "@/components/ui/celebrate";
-import { listWorkoutPrograms } from "@/lib/workout-programs";
 import { CompositionSummary } from "@/app/(app)/members/[id]/composition-summary";
 import { BodyCompositionChart } from "@/app/(app)/members/[id]/composition-chart";
 import { ProgressComparator } from "@/app/(app)/members/[id]/progress-forms";
 import { SingleMetricChart } from "@/components/single-metric-chart";
 import { Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
-import { RequestWorkoutButton } from "./workout-request-button";
-
-const STATUS_LABEL: Record<string, string> = { DRAFT: "Por confirmar", PENDING_TRAINER: "Por confirmar", ACTIVE: "Activa", COMPLETED: "Completada" };
 
 // RB-PERFIL-004: el socio ve su propio seguimiento de fotos y evolución de composición
 // corporal — la misma información que consulta su entrenador en su ficha, en modo lectura.
 export default async function PortalEvolutionPage() {
   const session = await requireRole(["MEMBER"]);
   const member = await getMemberForUser(session.user.id);
-  const timeZone = await resolveTimezone();
   if (!member) redirect("/login");
 
-  const [evolution, goals, programs, ratings] = await Promise.all([
+  const [evolution, goals, ratings] = await Promise.all([
     getMemberEvolution(member.id, session.user.orgId),
     getMemberGoals(member.id),
-    listWorkoutPrograms(session.user.orgId, member.id),
     getMemberRatingSummary(member.id),
   ]);
   if (!evolution) redirect("/portal");
 
   const { consentHealth, consentImages, progressEntries, compositionTiles, compositionChartPoints, bodyFatChartPoints, measuredAt } =
     evolution;
-  const hasPendingProgram = programs.some((p) => p.status === "DRAFT" || p.status === "PENDING_TRAINER");
   // Objetivo conseguido más reciente: es lo que decide si hay hito que celebrar.
   const lastAchievedGoalId = goals
     .filter((g) => g.achievedAt)
@@ -54,9 +45,9 @@ export default async function PortalEvolutionPage() {
   return (
     <div className="max-w-[1100px] mx-auto flex flex-col gap-5">
       <div>
-        <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text leading-none">
+        <h2 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-brand-text leading-none">
           Mi evolución
-        </h1>
+        </h2>
         <p className="text-sm text-brand-muted mt-1.5">Tu seguimiento de fotos y composición corporal, tal y como lo ve tu entrenador.</p>
       </div>
 
@@ -187,24 +178,6 @@ export default async function PortalEvolutionPage() {
             ))}
           </ul>
         )}
-      </Card>
-
-      <Card title="Tu rutina para casa" meta="generada con ayuda de IA, confirmada por tu entrenador">
-        <div className="space-y-3">
-          <RequestWorkoutButton hasPending={hasPendingProgram} />
-          {programs.length === 0 ? (
-            <p className="text-sm text-brand-muted">Todavía no has solicitado ninguna rutina.</p>
-          ) : (
-            <ul className="space-y-2">
-              {programs.map((p) => (
-                <li key={p.id} className="border border-brand-border rounded-lg p-3 text-sm flex items-center justify-between">
-                  <span className="text-brand-text-2">{formatInstantDate(p.createdAt, timeZone)}</span>
-                  <Badge tone={p.status === "ACTIVE" ? "good" : "neutral"}>{STATUS_LABEL[p.status]}</Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
       </Card>
     </div>
   );

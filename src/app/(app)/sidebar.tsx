@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
@@ -8,6 +8,7 @@ import NavIconSvg from "@/components/nav-icons";
 import { activeNavHref, groupNav, NAV_SECTIONS_COLLAPSED_BY_DEFAULT, type NavItem, type NavSection } from "@/lib/rbac";
 import { bonoUsage } from "@/lib/session-balance";
 import { useMobileNav } from "./mobile-nav";
+import { FOCUSABLE_SELECTOR } from "@/components/ui/drawer";
 import { AccountMenuTrigger, initials } from "./account-menu";
 
 export type MemberBonoCard = {
@@ -67,6 +68,23 @@ function writePref(key: string, value: string) {
 }
 
 const NO_PREF = () => null;
+
+// El breakpoint `lg` de Tailwind (1024px): a partir de ahí el `<aside>` es el
+// raíl fijo del escritorio (siempre visible, `open` deja de significar nada);
+// por debajo es el cajón móvil, donde si está cerrado no puede ser alcanzable.
+const DESKTOP_QUERY = "(min-width: 1024px)";
+function useIsDesktop() {
+  const subscribe = useCallback((onChange: () => void) => {
+    const mql = window.matchMedia(DESKTOP_QUERY);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+  return useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia(DESKTOP_QUERY).matches,
+    () => false,
+  );
+}
 
 const GOLD_BAR = "linear-gradient(180deg,#e3cfa2,#b58e52)";
 const GOLD_DOT = "linear-gradient(135deg,#e3cfa2,#b58e52)";
@@ -154,6 +172,12 @@ export default function Sidebar({
 }) {
   const pathname = usePathname();
   const { open, setOpen } = useMobileNav();
+  const isDesktop = useIsDesktop();
+  // E8-05: en escritorio el <aside> es el raíl fijo — siempre visible, `open`
+  // no significa nada ahí. Por debajo de `lg` es el cajón móvil: cerrado, no
+  // puede quedar alcanzable con tabulador ni por lector de pantalla (antes
+  // solo se apartaba con -translate-x-full).
+  const mobileClosed = !isDesktop && !open;
   const activeHref = activeNavHref(nav, pathname);
   const groups = groupNav(nav);
   // Un solo grupo no necesita cabecera: por debajo de 7 items (entrenador,
@@ -197,6 +221,50 @@ export default function Sidebar({
   // Tooltip del rail: cuelga del <aside> (el <nav> recorta en horizontal), así
   // que se guarda el centro de la fila relativo al propio <aside>.
   const asideRef = useRef<HTMLElement>(null);
+  // E8-05: quién tenía el foco antes de abrir el cajón móvil, para
+  // devolvérselo al cerrar.
+  const openerRef = useRef<Element | null>(null);
+
+  useEffect(() => {
+    if (isDesktop || !open || !asideRef.current) return;
+    const panel = asideRef.current;
+    openerRef.current = document.activeElement;
+    const focusables = panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    (focusables[0] ?? panel)?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (!panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      const opener = openerRef.current;
+      if (opener instanceof HTMLElement && document.contains(opener)) opener.focus();
+    };
+  }, [isDesktop, open, setOpen]);
+
   const [tip, setTip] = useState<{ label: string; top: number } | null>(null);
   const showTip = (label: string) => (e: React.MouseEvent<HTMLElement> | React.FocusEvent<HTMLElement>) => {
     if (!rail || !asideRef.current) return;
@@ -217,6 +285,7 @@ export default function Sidebar({
       />
       <aside
         ref={asideRef}
+        inert={mobileClosed}
         className={`fixed inset-y-0 left-0 z-50 w-[304px] bg-sidebar text-text-2 border-r border-tz-linen flex flex-col h-dvh transition-transform duration-300 ease-[cubic-bezier(.2,.8,.2,1)] ${
           open ? "translate-x-0" : "-translate-x-full"
         } lg:sticky lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0 lg:shrink-0 lg:transition-[width] lg:duration-[260ms] lg:ease-[cubic-bezier(.2,.8,.2,1)] ${

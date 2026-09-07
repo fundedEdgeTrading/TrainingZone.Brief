@@ -42,7 +42,7 @@ import { EditMemberDataButton, NewNoteButton } from "./member-header-actions";
 import { ActivityThread, type ActivityEntry } from "./activity-thread";
 import { ArchivedNotes, MemberNoteHighlights, type NoteView } from "./note-highlights";
 import { AddHealthRecordForm, HealthStatusSelect, HealthStatusLegend, AddNoteForm, ResendWelcomeButton } from "./member-forms";
-import { MemberDataPanel, DeleteMemberSection } from "./member-data-panel";
+import { MemberDataPanel, DeleteMemberSection, ConsentRevokePanel } from "./member-data-panel";
 import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
 import { BodyCompositionChart } from "./composition-chart";
@@ -69,6 +69,10 @@ import { aiGenerationGate } from "@/lib/ai/dpa";
 import { prisma } from "@/lib/prisma";
 import { NO_SHOW_REASON_LABEL } from "@/lib/no-show";
 import { MesocyclePanel, MESOCYCLE_STATUS_LABEL, MESOCYCLE_STATUS_TONE } from "./mesociclos/panel";
+import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/lib/chat";
+import { StaffChatThread } from "./staff-chat-thread";
+import { WhatsAppButton } from "@/components/ui/whatsapp-button";
+import { logMemberWhatsappContactAction } from "./actions";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -301,6 +305,15 @@ export default async function MemberDetailPage({
     canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
     openRetentionAlertsByMember([member.id]),
   ]);
+
+  // E12-02: el chat del socio se remonta en el lado del personal. El acceso ya
+  // lo decide canAccessMemberChat (dirección siempre, entrenador si lo ha
+  // entrenado, recepción solo mientras haya un mensaje del socio sin
+  // responder); aquí solo se decide si hay algo que pintar.
+  const canSeeChat = await canAccessMemberChat(session.user.orgId, member.id, session.user.id, session.user.role);
+  const chatMessages = canSeeChat
+    ? await listMessages((await getOrCreateConversation(session.user.orgId, member.id)).id)
+    : [];
 
   // Caída de frecuencia respecto a SU línea base (G.3). El motor
   // (`src/lib/retention.ts`) la recalcula en cada pasada del cron y la cierra
@@ -704,9 +717,18 @@ export default async function MemberDetailPage({
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
               <ConsentTile label="Contrato" at={member.consentContractAt} pending="Sin contrato firmado" />
               <ConsentTile label="Salud" at={member.consentHealthAt} pending="Sin registros de salud" />
-              <ConsentTile label="Imágenes" at={member.consentImagesAt} pending="Sin fotos de evolución" />
-              <ConsentTile label="Marketing" at={member.consentMarketingAt} pending="Sin comunicaciones" />
             </div>
+            {/* E12-12: los accesorios se pueden retirar a petición del socio
+                (p. ej. por teléfono) — la declaración de salud, de arriba, no
+                se toca por esta vía: es condición del servicio (E10-03). */}
+            <ConsentRevokePanel
+              memberId={member.id}
+              consents={{
+                consentImagesAt: member.consentImagesAt ? member.consentImagesAt.toISOString() : null,
+                consentMarketingAt: member.consentMarketingAt ? member.consentMarketingAt.toISOString() : null,
+                consentAIAt: member.consentAIAt ? member.consentAIAt.toISOString() : null,
+              }}
+            />
           </div>
 
           {canDelete && (
@@ -863,6 +885,13 @@ export default async function MemberDetailPage({
                 Venía {retentionRisk.baselineFreq.toFixed(1)} veces por semana (media de las 12 semanas previas) y en
                 las últimas 2 semanas lleva {retentionRisk.recentFreq.toFixed(1)}.
               </p>
+              <div className="mt-3">
+                <WhatsAppButton
+                  phone={member.phone}
+                  message={`Hola ${member.firstName}, hemos visto que últimamente vienes menos por el centro. ¿Va todo bien? Si necesitas cambiar algo de tu plan, dínoslo.`}
+                  logAction={logMemberWhatsappContactAction.bind(null, member.id)}
+                />
+              </div>
             </div>
           )}
 
@@ -888,6 +917,22 @@ export default async function MemberDetailPage({
           <ActivityThread entries={threadEntries} />
 
           <ArchivedNotes notes={filedNotes.map(noteView)} />
+
+          {canSeeChat && (
+            <>
+              <SectionHead title="Chat" description="La conversación que el socio tiene abierta en su portal." />
+              <StaffChatThread
+                memberId={member.id}
+                messages={chatMessages.map((m) => ({
+                  id: m.id,
+                  senderKind: m.senderKind,
+                  senderName: m.sender?.name ?? null,
+                  body: m.body,
+                  createdAt: m.createdAt,
+                }))}
+              />
+            </>
+          )}
         </>
       ),
     },
@@ -1198,9 +1243,9 @@ export default async function MemberDetailPage({
               initials={initials(member.firstName, member.lastName)}
             />
             <div className="min-w-0">
-              <h1 className="font-display font-extrabold text-[27px] uppercase tracking-[-.015em] text-brand-text leading-none">
+              <h2 className="font-display font-extrabold text-[27px] uppercase tracking-[-.015em] text-brand-text leading-none">
                 {member.firstName} {member.lastName}
-              </h1>
+              </h2>
               <p className="text-[13px] text-brand-muted mt-2">
                 {member.email} · {member.primaryCenter.name} · Alta {fmtDay(member.joinedAt)}
               </p>

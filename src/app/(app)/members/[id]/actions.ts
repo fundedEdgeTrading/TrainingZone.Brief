@@ -15,6 +15,9 @@ import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type InjuryZone, type Laterality, type Role, type Sex } from "@prisma/client";
 import { INJURY_ZONES, LATERALITIES, defaultSideFor } from "@/lib/injury-zones";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
+import type { ConsentKind } from "@/lib/consent";
+import { revokeMemberConsent } from "@/lib/consent-access";
 import { ensureSuppressedMemberBucket, getSuppressionPlan } from "@/lib/member-suppression";
 import {
   deletePhotosOfEntries,
@@ -802,4 +805,36 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
 
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
+}
+
+/**
+ * E12-12: consentimientos revocables desde el panel de staff. Un socio que
+ * llama por teléfono tiene que poder retirar el consentimiento de imágenes
+ * por ese canal, no solo desde su portal. Solo los TRES accesorios
+ * (imágenes, marketing, IA): la declaración de salud es condición del
+ * servicio (E10-03) y su retirada implica la baja, no un botón de aquí.
+ */
+export async function revokeMemberConsentAction(memberId: string, kind: ConsentKind): Promise<{ ok: true } | { ok: false; error: string }> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "RECEPTION", "TRAINER", "TRAINER_ADMIN"]);
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
+
+  const result = await revokeMemberConsent(session.user.orgId, session.user.id, memberId, kind);
+  if (!result.ok) return result;
+
+  revalidatePath(`/members/${memberId}`);
+  return { ok: true };
+}
+
+/** E12-17: traza de "se abrió WhatsApp" desde la alerta de retención de la ficha. */
+export async function logMemberWhatsappContactAction(memberId: string): Promise<void> {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
+  if (!(await memberIsInScope(session.user, memberId))) return;
+  await logWhatsappContactOpened({
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    entityType: "Member",
+    entityId: memberId,
+    memberId,
+    reason: "retention_alert",
+  });
 }

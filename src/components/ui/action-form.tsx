@@ -4,7 +4,7 @@ import { useRef, useTransition, type ReactNode } from "react";
 import { useToast } from "./toast";
 import { useCelebrate } from "./celebrate";
 
-type ActionResult = { ok: true } | { ok: false; error: string };
+type ActionResult = { ok: true; warning?: string } | { ok: false; error: string };
 
 export function ActionForm({
   action,
@@ -39,7 +39,8 @@ export function ActionForm({
         startTransition(async () => {
           const result = await action(fd);
           if (result.ok) {
-            toast.success(successMessage);
+            if (result.warning) toast.warning(result.warning);
+            else toast.success(successMessage);
             if (celebrateOnSuccess) {
               const r = formRef.current?.getBoundingClientRect();
               celebrate(r ? { x: r.left + r.width / 2, y: r.top + r.height / 3 } : undefined);
