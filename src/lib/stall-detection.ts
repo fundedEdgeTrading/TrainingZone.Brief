@@ -58,6 +58,10 @@ export async function getStallSignals(memberId: string): Promise<StallSignals> {
       where: { memberId, isTemplate: false, achievedAt: null, createdAt: { lte: since } },
       select: { id: true },
     }),
+    // E10-02: excepción deliberada al punto único de `health-access.ts`. Aquí
+    // no hay nadie mirando: el motor deriva una señal (¿se ha estancado?) y
+    // nunca devuelve las medidas. `AuditLog` responde a "quién ha accedido a
+    // los datos de este socio", y un cron no es un quién.
     prisma.memberProgressEntry.findMany({
       where: { memberId, date: { gte: since }, OR: [{ bodyFatPct: { not: null } }, { muscleMassKg: { not: null } }] },
       orderBy: { date: "asc" },

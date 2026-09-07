@@ -31,9 +31,11 @@ export default async function DebriefsSemanalesPage({
   const nextWeek = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const [weeklyReport, ratingSummary, clientFeedback] = await Promise.all([
-    getWeeklyDebriefReport(orgId, weekStart),
+    // E1-03: el informe agrega solo las sesiones del ámbito de centro de quien
+    // lo abre, para que el total coincida con el de su agenda de esa semana.
+    getWeeklyDebriefReport(session.user, weekStart),
     getTrainerRatingSummary(orgId, session.user.role),
-    getWeeklyClientFeedback(orgId, weekStart),
+    getWeeklyClientFeedback(session.user, weekStart),
   ]);
 
   const trainers = (ratingSummary ?? []).map((r) => ({ trainerId: r.trainerUserId, trainerName: r.name }));
@@ -169,6 +171,12 @@ export default async function DebriefsSemanalesPage({
                             </div>
                             <div className="text-xs text-muted mt-0.5">
                               Debrief: {FEELING_ICON.green} {s.greenCount} · {FEELING_ICON.yellow} {s.yellowCount} · {FEELING_ICON.red} {s.redCount}
+                              {/* E3-07: los debriefs viejos derivaban el color de una media de ocho ejes.
+                                  Se conservan, pero marcados: mezclar los dos criterios sin decirlo hace
+                                  ilegible el informe. */}
+                              {s.derivedCount > 0 && (
+                                <span className="text-warning-text"> · {s.derivedCount} de criterio antiguo (derivado)</span>
+                              )}
                             </div>
                             {s.notes.length > 0 && <div className="text-xs text-brand-muted-2 mt-1">{s.notes.join(" · ")}</div>}
                             {feedback.length > 0 && (

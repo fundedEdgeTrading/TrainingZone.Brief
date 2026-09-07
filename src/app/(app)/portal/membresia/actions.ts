@@ -39,11 +39,20 @@ export type SessionRatingInput = {
   rpe: number;
   discomfort: string | null;
   completed: string | null;
+  /** E5-10: fusionado aquí desde el antiguo formulario de /portal/agenda — un solo sitio, una sola pregunta. */
+  feeling: "GREEN" | "AMBER" | "RED";
+  comment: string | null;
 };
 
 const clampScale = (n: number) => Math.min(10, Math.max(1, Math.round(n)));
 
-/** Valoración de sesión (F16): puntuación 1-10 al entrenador + autoevaluación de energía/RPE. */
+/**
+ * Valoración de sesión (F16 + E5-10): puntuación 1-10 al entrenador,
+ * autoevaluación de energía/RPE y el feeling/comentario que antes se pedía
+ * por separado en /portal/agenda (`getPendingSessionFeedback` los trata como
+ * la misma pendiente, y `brief-queries.ts` sigue leyendo `structured.feeling`
+ * y `text` exactamente igual).
+ */
 export async function submitSessionRatingAction(bookingId: string, input: SessionRatingInput): Promise<PortalMembresiaResult> {
   const ctx = await currentMember();
   if (!ctx) return { ok: false, error: "Socio no encontrado." };
@@ -58,6 +67,7 @@ export async function submitSessionRatingAction(bookingId: string, input: Sessio
       orgId: ctx.session.user.orgId,
       memberId: ctx.member.id,
       kind: "post-sesion",
+      text: input.comment,
       structured: {
         bookingId,
         trainerScore,
@@ -66,6 +76,7 @@ export async function submitSessionRatingAction(bookingId: string, input: Sessio
         rpe: clampScale(input.rpe),
         discomfort: input.discomfort,
         completed: input.completed,
+        feeling: input.feeling,
       },
     },
   });

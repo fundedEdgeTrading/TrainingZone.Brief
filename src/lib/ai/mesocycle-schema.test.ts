@@ -22,7 +22,9 @@ const BASE = {
       name: "Fase 1",
       weekFrom: 1,
       weekTo: 4,
-      notes: null,
+      // E3-12: la fase declara si es descarga y cómo progresa.
+      deload: false,
+      notes: "Semana a semana: +1 serie en el básico, RIR 3→1.",
       days: [
         {
           label: "A",

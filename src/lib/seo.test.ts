@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
 import { PUBLIC_PATHS } from "@/lib/public-paths";
+import { SIGNED_TOKEN_ROUTES } from "@/lib/security-headers";
 import {
   INDEXABLE_PATHS,
   NOINDEX,
@@ -76,5 +77,27 @@ test("las 39 privadas se excluyen de una vez desde (app)/layout.tsx", () => {
 test("demo-checkout y hazte-socio/gracias también llevan noindex", () => {
   for (const page of ["src/app/demo-checkout/page.tsx", "src/app/hazte-socio/gracias/page.tsx"]) {
     assert.match(readFileSync(page, "utf8"), /robots: NOINDEX/, `${page} no lleva noindex`);
+  }
+});
+
+test("/cookies es pública y es indexable: una política que no se encuentra no cumple", () => {
+  // Llegó de E10-22 como página pública y sin entrada en PUBLIC_PATHS: el proxy
+  // la rebotaba a /login, así que el enlace del pie de los correos y el de la
+  // propia landing no llevaban a ninguna parte.
+  assert.ok(PUBLIC_PATHS.includes("/cookies"));
+  assert.ok(INDEXABLE_PATHS.includes("/cookies"));
+});
+
+test("toda ruta con token firmado de las cabeceras está también en Disallow", () => {
+  // `SIGNED_TOKEN_ROUTES` (E1-09) y `TOKEN_PATHS` (E9-02) son dos listas de la
+  // misma cosa vistas desde dos capas: la cabecera HTTP y el robots.txt. Si una
+  // crece y la otra no, una URL con token queda rastreable.
+  const disallow = robotsRules().disallow;
+  for (const route of SIGNED_TOKEN_ROUTES) {
+    const base = route.replace(/\/:token\*$/, "");
+    assert.ok(
+      disallow.some((rule) => base.startsWith(rule)),
+      `${route} lleva un token firmado y no lo cubre ningún Disallow`
+    );
   }
 });

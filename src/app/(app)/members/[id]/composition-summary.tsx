@@ -7,7 +7,7 @@ const STATUS_DOT: Record<RangeStatus, string> = {
   unknown: "bg-faint",
 };
 
-type Tile = { label: string; value: string | null; status?: RangeStatus };
+type Tile = { label: string; value: string | null; status?: RangeStatus; foot?: string | null };
 
 // CC1.4/CC2 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): tarjetas de la última toma con
 // semáforo contra el rango de referencia (docs/COMPOSICION_CORPORAL_TANITA.md §3).
@@ -27,10 +27,15 @@ export function CompositionSummary({ tiles, measuredAt }: { tiles: Tile[]; measu
         {withValue.map((t) => (
           <div key={t.label} className="rounded-lg bg-tz-bone border border-tz-linen p-3.5">
             <div className="flex items-center gap-1.5 mb-1">
-              {t.status && <span className={`w-2 h-2 rounded-full ${STATUS_DOT[t.status]}`} />}
+              {/* E3-09: sin fila de referencia para su sexo y edad no hay semáforo.
+                  Se pinta el número, sin color — nunca rojo por defecto. */}
+              {t.status && t.status !== "unknown" && (
+                <span className={`w-2 h-2 rounded-full ${STATUS_DOT[t.status]}`} />
+              )}
               <span className="text-[10px] font-bold uppercase tracking-[0.06em] text-brand-muted">{t.label}</span>
             </div>
             <div className="font-display font-extrabold text-lg text-tz-black tz-nums">{t.value}</div>
+            {t.foot && <div className="text-[11px] text-brand-muted mt-0.5">{t.foot}</div>}
           </div>
         ))}
       </div>

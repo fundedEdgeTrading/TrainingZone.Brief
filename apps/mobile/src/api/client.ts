@@ -19,6 +19,9 @@ import type { RefreshResponse } from "./types";
 // fallback de desarrollo, derivamos el host del propio Metro bundler
 // (Constants.expoConfig.hostUri, p.ej. "192.168.1.23:8081"), que sí es
 // alcanzable desde el dispositivo.
+// E10-18: este fallback SOLO vale para desarrollo local. Si un build de
+// producción llegara aquí con la variable mal configurada, la app mandaría
+// credenciales y datos de salud en claro (http://) sin que nadie se enterase.
 function devApiUrlFallback(): string {
   const hostUri = Constants.expoConfig?.hostUri;
   const lanHost = hostUri?.split(":")[0];
@@ -28,10 +31,36 @@ function devApiUrlFallback(): string {
   return "http://localhost:3000/api/mobile/v1";
 }
 
-const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ??
-  (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ??
-  devApiUrlFallback();
+const configuredApiUrl =
+  process.env.EXPO_PUBLIC_API_URL ?? (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ?? null;
+
+// E10-18: fuera de __DEV__, sin `EXPO_PUBLIC_API_URL`/`extra.apiUrl` el build
+// FALLA en vez de caer a `http://localhost` — un fallback silencioso ahí es
+// justo el que expondría un despliegue mal configurado. Y aunque la variable
+// SÍ esté puesta, si no es `https://` la app se niega a arrancar: los datos de
+// salud del socio no viajan en claro por un despiste de configuración.
+if (!__DEV__) {
+  if (!configuredApiUrl) {
+    throw new Error(
+      "Falta EXPO_PUBLIC_API_URL (o extra.apiUrl) en este build de producción. La app no puede arrancar sin saber a qué servidor hablar."
+    );
+  }
+  if (!configuredApiUrl.startsWith("https://")) {
+    throw new Error(
+      `EXPO_PUBLIC_API_URL debe empezar por https:// en producción (llegó "${configuredApiUrl}"). ` +
+        "Los datos de salud del socio no pueden viajar en claro."
+    );
+  }
+}
+
+const API_URL = configuredApiUrl ?? devApiUrlFallback();
+
+/**
+ * Origen de la web, derivado del mismo `API_URL` (quitando `/api/mobile/v1`):
+ * un solo valor que configurar, no dos. La usa E13-01 para enlazar a la web
+ * desde la pantalla de rol no soportado en la app.
+ */
+export const WEB_APP_URL = API_URL.replace(/\/api\/mobile\/v1\/?$/, "");
 
 // Sin esto, un servidor inalcanzable (p.ej. el caso de "localhost" de arriba)
 // deja el fetch colgado decenas de segundos con el spinner de "Entrar" antes
@@ -94,10 +123,17 @@ export async function getStoredTokens() {
   return { accessToken, refreshToken };
 }
 
+// E10-18: sin `keychainAccessible`, en iOS la entrada puede incluirse en
+// copias de seguridad y sincronizarse entre dispositivos — un token de sesión
+// no debería sobrevivir a un restore en un teléfono distinto.
+const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
+
 export async function storeTokens(tokens: { accessToken: string; refreshToken: string }) {
   await Promise.all([
-    SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken),
-    SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken),
+    SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken, SECURE_STORE_OPTIONS),
+    SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken, SECURE_STORE_OPTIONS),
   ]);
   accessTokenCache = tokens.accessToken;
 }

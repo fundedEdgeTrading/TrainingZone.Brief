@@ -25,6 +25,10 @@ export const PUBLIC_PATHS = [
   "/preferencias",
   "/baja",
   "/privacidad",
+  // E10-22 · La política de cookies llegó de otra pista como página pública y
+  // sin entrada aquí: el proxy la rebotaba a /login, así que el enlace del pie
+  // de los correos y el de la propia landing no llevaban a ninguna parte.
+  "/cookies",
   // E9-11 · Páginas de captación e índice de centros. Son la respuesta a que el
   // inventario indexable fueran cuatro URLs contra competidores con blogs de
   // cientos de artículos.

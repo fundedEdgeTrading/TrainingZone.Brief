@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { fundadorEnabled, fundadorMaxSeats, getPlatformPlan } from "@/lib/platform-plans";
+import { fundadorEnabled, fundadorMaxSeats, getPlatformPlan, isDemoModeActive } from "@/lib/platform-plans";
 import { provisionDemoOrganization } from "@/lib/provisioning";
 
 export type DemoCheckoutResult = { ok: true; activationUrl: string } | { ok: false; error: string };
@@ -19,6 +19,16 @@ const schema = z.object({
  * nada, para poder enseñar el resto del alta (activación + puesta en marcha).
  */
 export async function confirmDemoCheckoutAction(planCode: string, formData: FormData): Promise<DemoCheckoutResult> {
+  // E1-11: la PÁGINA redirige a `/planes` si Stripe está configurado, pero una
+  // server action es un endpoint por sí misma —queda registrada en el build
+  // aunque la página redirija—, así que la comprobación tiene que repetirse
+  // aquí. Sin ella, con Stripe activo se podía invocar directamente y
+  // `provisionDemoOrganization` daba de alta una `Organization` con
+  // `platformStatus: "ACTIVE"` sin pagar.
+  //
+  // Va la primera: el cupo Fundador se sigue comprobando, pero después.
+  if (!isDemoModeActive()) return { ok: false, error: "El pago de demostración no está disponible." };
+
   const plan = getPlatformPlan(planCode);
   if (!plan) return { ok: false, error: "Ese plan no está disponible." };
   // Defensa en profundidad: la pantalla ya bloquea esto, pero la action es

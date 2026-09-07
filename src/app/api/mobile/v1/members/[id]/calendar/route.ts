@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canManageMembers } from "@/lib/rbac";
+import { canManageMembers, canViewHealthData } from "@/lib/rbac";
 import { isMemberInScope } from "@/lib/center-scope";
-import { getMemberCalendar } from "../../../_lib/calendar";
+import { getMemberCalendar, getMemberCalendarWithDebrief } from "../../../_lib/calendar";
+import { auditSessionPainRead } from "@/lib/health-access";
 import { requireApiRole } from "../../../_lib/api-session";
 import { apiOk, apiError } from "../../../_lib/response";
 
@@ -27,6 +28,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   );
   if (!inScope) return apiError("No se ha encontrado el socio.", 404);
 
-  const calendar = await getMemberCalendar(member.id, req.nextUrl.searchParams.get("month"), true);
+  // E1-06 (RB-SEG-004): la media del debrief promedia movilidad y dolor
+  // invertido, así que es dato de salud y va por `canViewHealthData` — el mismo
+  // predicado que deja fuera a recepción en el resto de la aplicación. Para esos
+  // roles el payload no lleva la clave: ni con valor ni como `null`.
+  const month = req.nextUrl.searchParams.get("month");
+  if (!canViewHealthData(claims.role)) {
+    return apiOk(await getMemberCalendar(member.id, month));
+  }
+
+  const calendar = await getMemberCalendarWithDebrief(member.id, month);
+
+  // E3-18 · esa media lleva dentro `SessionDebrief.pain`. Quien la mira aquí no
+  // es el entrenador de la sesión sino dirección sobre la ficha de un socio:
+  // deja traza, igual que el resto de las lecturas de salud.
+  await auditSessionPainRead({
+    memberId: member.id,
+    orgId: claims.orgId,
+    actorUserId: claims.sub,
+    source: "MEMBER_CALENDAR",
+    debriefCount: calendar.entries.filter((e) => e.feedbackAvg != null).length,
+  });
+
   return apiOk(calendar);
 }

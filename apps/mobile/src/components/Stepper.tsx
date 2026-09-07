@@ -50,7 +50,7 @@ export function Stepper({
 }
 
 const styles = StyleSheet.create({
-  label: { fontFamily: fonts.semibold, fontSize: 10.5, letterSpacing: 0.95, textTransform: "uppercase" },
+  label: { fontFamily: fonts.semibold, fontSize: 11, letterSpacing: 0.95, textTransform: "uppercase" },
   row: { height: 50, borderWidth: 1, borderRadius: radii.control, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 6 },
   control: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   value: { fontFamily: fonts.bold, fontSize: 16, ...tabular },

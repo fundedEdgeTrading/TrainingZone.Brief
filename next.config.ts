@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 
+import { NO_REFERRER_HEADER, SIGNED_TOKEN_ROUTES, securityHeaders } from "./src/lib/security-headers";
 import { logoRemotePatterns } from "./src/lib/logo-image";
 
 const nextConfig: NextConfig = {
@@ -10,6 +11,23 @@ const nextConfig: NextConfig = {
     return [
       { source: "/portal/plan", destination: "/portal/membresia", permanent: true },
       { source: "/portal/comprar", destination: "/portal/membresia", permanent: true },
+    ];
+  },
+
+  // E1-09. La política vive en `src/lib/security-headers.ts`, donde se puede
+  // leer el porqué de cada directiva y donde la fija un test.
+  async headers() {
+    return [
+      { source: "/:path*", headers: securityHeaders(process.env.NODE_ENV === "production") },
+      // Van después para que su `Referrer-Policy` gane a la general: cuando dos
+      // reglas coinciden en la misma clave, Next se queda con la última.
+      //
+      // E9-02 lo dice además en la propia página, con `referrer: "no-referrer"`
+      // en su metadata. No es duplicado: la cabecera protege la respuesta que
+      // sirve el servidor y la meta viaja con el documento, así que la URL con
+      // token sigue sin filtrarse si alguien guarda la página o la abre desde
+      // una caché.
+      ...SIGNED_TOKEN_ROUTES.map((source) => ({ source, headers: [NO_REFERRER_HEADER] })),
     ];
   },
 

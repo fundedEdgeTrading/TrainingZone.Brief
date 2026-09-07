@@ -28,6 +28,8 @@ import { PUBLIC_PATHS } from "@/lib/public-paths";
 export const INDEXABLE_PATHS: readonly string[] = [
   "/planes",
   "/privacidad",
+  // Una política de cookies que no se puede encontrar no cumple su función.
+  "/cookies",
   "/hazte-socio",
   // E9-11
   "/funcionalidades",

@@ -23,7 +23,7 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
-import { buildConnectOAuthUrl, isStripeConnectConfigured } from "@/lib/stripe-connect";
+import { StripeConnectCard } from "./stripe-connect-card";
 import { prisma } from "@/lib/prisma";
 import { ProductsSection } from "./products-section";
 
@@ -149,38 +149,16 @@ export default async function OrganizationPage({
       {canOrg && org && (
         <section className="space-y-3">
           <h2 className={SECTION_TITLE}>Cobros a socios</h2>
-          <div className={CARD}>
-            {params.stripe_connect === "success" && (
-              <p className="text-sm text-good bg-good-bg rounded-control px-3 py-2 mb-3">Cuenta de Stripe conectada correctamente.</p>
-            )}
-            {params.stripe_connect === "error" && (
-              <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2 mb-3">
-                No se pudo conectar la cuenta de Stripe. Inténtalo de nuevo.
-              </p>
-            )}
-            {org.stripeAccount?.chargesEnabled ? (
-              <div className="flex items-center gap-2">
-                <Badge tone="good">Conectado</Badge>
-                <p className="text-sm text-brand-muted">
-                  Tu gimnasio ya puede cobrar a sus socios online. {org.stripeAccount.payoutsEnabled ? "Los pagos se transfieren a tu cuenta bancaria." : "Los payouts todavía están pendientes de verificación en Stripe."}
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-                <p className="text-sm text-brand-muted max-w-lg">
-                  Conecta tu propia cuenta de Stripe para cobrar a tus socios. Apta nunca guarda una clave secreta tuya
-                  — solo el identificador de tu cuenta conectada, vía OAuth de un botón.
-                </p>
-                {isStripeConnectConfigured() ? (
-                  <a href={buildConnectOAuthUrl(session.user.orgId)}>
-                    <Button variant="secondary">Conectar cobros con Stripe →</Button>
-                  </a>
-                ) : (
-                  <Badge tone="warning">En espera de credenciales</Badge>
-                )}
-              </div>
-            )}
-          </div>
+          {params.stripe_connect === "success" && (
+            <p className="text-sm text-good bg-good-bg rounded-control px-3 py-2">Cuenta de Stripe conectada correctamente.</p>
+          )}
+          {params.stripe_connect === "error" && (
+            <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">
+              No se pudo conectar la cuenta de Stripe. Inténtalo de nuevo.
+            </p>
+          )}
+          {/* HU-ST-07: el estado real del KYC, no solo conectado/no conectado. */}
+          <StripeConnectCard orgId={session.user.orgId} />
         </section>
       )}
 

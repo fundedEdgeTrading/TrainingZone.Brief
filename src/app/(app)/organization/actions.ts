@@ -570,7 +570,8 @@ export async function createMembershipPlan(formData: FormData): Promise<OrgActio
   const parsed = planFormInput(formData);
   if (!parsed.ok) return parsed;
 
-  const result = await saveMembershipPlan(session.user.orgId, parsed.input);
+  // HU-ST-08: el autor va a la traza del cambio de importe (AuditLog).
+  const result = await saveMembershipPlan(session.user.orgId, parsed.input, session.user.id);
   if (!result.ok) return result;
   revalidatePath("/organization");
   await invalidateOrgCatalog(session.user.orgId);
@@ -583,7 +584,7 @@ export async function updateMembershipPlan(formData: FormData): Promise<OrgActio
   if (!parsed.ok) return parsed;
   if (!parsed.input.planId) return { ok: false, error: "Producto no encontrado." };
 
-  const result = await saveMembershipPlan(session.user.orgId, parsed.input);
+  const result = await saveMembershipPlan(session.user.orgId, parsed.input, session.user.id);
   if (!result.ok) return result;
   revalidatePath("/organization");
   await invalidateOrgCatalog(session.user.orgId);

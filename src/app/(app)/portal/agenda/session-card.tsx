@@ -1,5 +1,6 @@
 import { sessionServiceKind } from "@/lib/members-queries";
 import BookingButton from "./booking-button";
+import { cancellationPolicyLabel } from "./cancellation-policy";
 
 type BookableSession = {
   id: string;
@@ -86,7 +87,13 @@ export default function SessionCard({ session: s, cancelWindowHours }: { session
         </div>
       )}
 
-      <div className="flex items-center gap-2.5 mt-4">
+      {/* E5-05: la política de cancelación se ve ANTES de reservar, no solo al
+          intentar cancelar — con el número real de horas del centro. */}
+      {!booked && (
+        <p className="text-[11.5px] text-brand-muted mt-3.5">{cancellationPolicyLabel(cancelWindowHours)}</p>
+      )}
+
+      <div className={`flex items-center gap-2.5 ${booked ? "mt-4" : "mt-2"}`}>
         {booked && (
           <span className="inline-flex items-center bg-good-bg text-good rounded-full px-[11px] py-1.5 text-xs font-bold">
             Reservada

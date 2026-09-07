@@ -9,6 +9,13 @@ import { useToast } from "@/components/ui/toast";
 import { useFocusRequest } from "./section-rail";
 import { NOTE_SCOPE_HINT } from "./note-highlights";
 import { HEALTH_STATUSES, HEALTH_STATUS_HINT, HEALTH_STATUS_LABEL } from "@/lib/health-status";
+import {
+  INJURY_ZONES,
+  INJURY_ZONE_LABEL,
+  LATERALITY_LABEL,
+  defaultSideFor,
+  type ZonedRecord,
+} from "@/lib/injury-zones";
 
 // Mismas clases que el control de field.tsx, para los <textarea> multilínea.
 const CONTROL =
@@ -22,7 +29,11 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
   // del formulario: casi nadie recuerda el día exacto de una molestia que
   // arrastra, y forzar un día inventado envenena el "hace X" de la ficha.
   const [precision, setPrecision] = useState("UNKNOWN");
+  // E3-02: la zona es de lista cerrada y el lado va aparte. Las zonas axiales
+  // (cervicales, dorsal, lumbar) no tienen lado, así que tampoco lo preguntan.
+  const [zoneCode, setZoneCode] = useState<ZonedRecord["zoneCode"]>("HOMBRO");
   const toast = useToast();
+  const asksSide = type === "INJURY" && !!zoneCode && defaultSideFor(zoneCode) === null;
 
   return (
     <form
@@ -33,6 +44,7 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
           if (result.ok) {
             formRef.current?.reset();
             setType("INJURY");
+            setZoneCode("HOMBRO");
             setPrecision("UNKNOWN");
             toast.success("Registro de salud guardado.");
           } else {
@@ -55,10 +67,31 @@ export function AddHealthRecordForm({ memberId }: { memberId: string }) {
       </Field>
       <Field
         label="Zona"
-        hint={type === "INJURY" ? "Coincide con las reglas de aptitud (p.ej. hombro derecho)" : "Solo para lesiones"}
+        hint={type === "INJURY" ? "Catálogo cerrado: es lo que empareja con las reglas de aptitud" : "Solo para lesiones"}
       >
-        <Input name="zone" placeholder="p.ej. hombro derecho" disabled={type !== "INJURY"} />
+        <Select
+          name="zoneCode"
+          value={zoneCode ?? ""}
+          onChange={(e) => setZoneCode(e.target.value as ZonedRecord["zoneCode"])}
+          disabled={type !== "INJURY"}
+        >
+          {INJURY_ZONES.map((z) => (
+            <option key={z} value={z}>
+              {INJURY_ZONE_LABEL[z]}
+            </option>
+          ))}
+        </Select>
       </Field>
+      {asksSide && (
+        <Field label="Lado" hint="Dato del socio, no de la regla: una regla sin lado vale para los dos.">
+          <Select name="side" defaultValue="">
+            <option value="">No consta</option>
+            <option value="IZQUIERDA">{LATERALITY_LABEL.IZQUIERDA}</option>
+            <option value="DERECHA">{LATERALITY_LABEL.DERECHA}</option>
+            <option value="BILATERAL">{LATERALITY_LABEL.BILATERAL}</option>
+          </Select>
+        </Field>
+      )}
       <Field label="Descripción" className="sm:col-span-2">
         <textarea
           name="description"

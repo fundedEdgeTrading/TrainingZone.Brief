@@ -10,6 +10,7 @@
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
+    "db:migrate-injury-zones": "tsx prisma/migrate-injury-zones.ts",
     "db:studio": "prisma studio",
     "test:unit": "tsx --test $(find src -name '*.test.ts')",
     "test:e2e": "playwright test"

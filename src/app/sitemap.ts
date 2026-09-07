@@ -32,6 +32,7 @@ const PRIORITY: Record<string, number> = {
   "/centros": 0.8,
   "/funcionalidades": 0.8,
   "/privacidad": 0.3,
+  "/cookies": 0.3,
 };
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

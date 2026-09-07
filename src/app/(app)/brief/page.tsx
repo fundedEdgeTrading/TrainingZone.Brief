@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/guard";
 import { requireFeature } from "@/lib/entitlements";
+import { briefScopeWhere } from "@/lib/brief-queries";
 import { prisma } from "@/lib/prisma";
 import { formatDateParam, zonedToday } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
@@ -24,6 +25,10 @@ export default async function BriefIndexPage() {
     where: {
       orgId: session.user.orgId,
       status: "SCHEDULED",
+      // E1-01: la frontera de centro, para que el recuento del índice coincida
+      // con el de la agenda. Sin esto, dirección de La Jota listaba las
+      // sesiones de los tres centros de la organización.
+      ...(await briefScopeWhere(session.user)),
       ...sessionsInRangeWhere(today, endRange),
       // El entrenador ve también las que dirigió sin tenerlas asignadas: es el
       // mismo criterio con el que `canViewSessionDebrief` le deja abrirlas.

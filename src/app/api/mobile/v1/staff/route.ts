@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canManageStaff, canManageOrg, ROLE_LABEL } from "@/lib/rbac";
+import { staffScopeFilter } from "@/lib/staff-queries";
+import { centerScopeFor } from "@/lib/center-scope";
 import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
@@ -27,11 +29,26 @@ export async function GET(req: NextRequest) {
   if (!auth.ok) return auth.response;
   const { claims } = auth;
 
+  // E1-04 (RB-SEG-002): el MISMO ámbito que la web (`staffScopeFilter`), no uno
+  // escrito otra vez aquí. Verificado antes del arreglo: dirección de La Jota
+  // recibía 28 personas, las 8 de Santander incluidas, con email, rol e
+  // imputaciones. Las escrituras ya estaban acotadas (`findStaffInScope` en
+  // `[id]/route.ts`): era fuga de lectura, y solo en la app.
+  const scopedUser = { id: claims.sub, role: claims.role, orgId: claims.orgId, centerId: claims.centerId };
+  const [scope, staffScope] = await Promise.all([centerScopeFor(scopedUser), staffScopeFilter(scopedUser)]);
+
   const [staff, centers] = await Promise.all([
     prisma.user.findMany({
       // La app nativa no tiene pantalla de reincorporación: enseña la plantilla
       // viva y nada más (RB-RRHH-014).
-      where: { orgId: claims.orgId, role: { not: "MEMBER" }, deactivatedAt: null },
+      where: {
+        orgId: claims.orgId,
+        role: { not: "MEMBER" },
+        deactivatedAt: null,
+        // Bajo `AND`, no esparcido: el ámbito trae su propio filtro de `role`
+        // (excluye los de organización) y fusionarlo pisaba al de aquí.
+        AND: [staffScope],
+      },
       orderBy: [{ role: "asc" }, { name: "asc" }],
       select: {
         id: true,
@@ -49,7 +66,16 @@ export async function GET(req: NextRequest) {
         invitation: { select: { usedAt: true } },
       },
     }),
-    prisma.center.findMany({ where: { orgId: claims.orgId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    // Los selectores de centro no ofrecen más de lo que quien mira gestiona,
+    // igual que en `/organization`.
+    prisma.center.findMany({
+      where: {
+        orgId: claims.orgId,
+        ...(canManageStaff(claims.role) || scope === null ? {} : { id: { in: scope } }),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
 
   return apiOk({

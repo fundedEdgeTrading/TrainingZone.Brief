@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { bookSession, cancelMyBooking } from "./actions";
+import { cancellationPolicyShortLabel } from "./cancellation-policy";
 import { ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useCelebrate } from "@/components/ui/celebrate";
@@ -206,6 +207,10 @@ export default function BookingButton({
         {pending && <ButtonSpinner />}
         {confirmed ? ConfirmedCheck : pending ? "Reservando…" : "Reservar"}
       </button>
+      {/* E5-05: la condición se repite justo antes de confirmar, no solo arriba en la tarjeta. */}
+      {!confirmed && !needsTopUp && (
+        <p className="text-[10.5px] text-brand-muted-2 text-center">{cancellationPolicyShortLabel(cancelWindowHours)}</p>
+      )}
       {needsTopUp && (
         <Link
           href="/portal/membresia"
