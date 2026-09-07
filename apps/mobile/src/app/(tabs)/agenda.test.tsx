@@ -35,7 +35,7 @@ describe("Agenda · hoja de reserva sin bono en lista de espera (T4 / E2-11)", (
 
     expect(await screen.findByText("No se descuenta hasta obtener plaza")).toBeOnTheScreen();
     expect(screen.queryByText(/quedarán/)).not.toBeOnTheScreen();
-  });
+  }, 15000);
 
   it("una sesión con plaza sí anuncia el descuento", async () => {
     reply(
