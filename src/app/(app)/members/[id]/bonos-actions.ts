@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { canAdjustSessionBalance } from "@/lib/rbac";
+import { recordSessionsChange } from "@/lib/session-ledger";
 import { getMemberSessionCalendar, type MemberCalendarEvent } from "@/lib/members-queries";
 import { parseDateParam } from "@/lib/date-utils";
 
@@ -34,6 +35,10 @@ const adjustSchema = z.object({
     .int()
     .refine((d) => d !== 0)
     .refine((d) => Math.abs(d) <= MAX_SESSIONS_REMAINING),
+  // E2-15: la nota es OBLIGATORIA. Un ajuste a mano es el movimiento que un
+  // socio va a discutir —"me falta una sesión"—, y sin el porqué el libro mayor
+  // solo dice que alguien tocó el contador.
+  note: z.string().trim().min(3).max(500),
 });
 
 /**
@@ -52,7 +57,8 @@ const adjustSchema = z.object({
  */
 export async function adjustSubscriptionSessions(
   subscriptionId: string,
-  delta: number
+  delta: number,
+  note: string
 ): Promise<AdjustSessionsResult> {
   const session = await requireRole([...STAFF]);
   // Doble cinturón (mismo patrón que deleteMember): el rol abre la página, el
@@ -61,8 +67,15 @@ export async function adjustSubscriptionSessions(
     return { ok: false, error: "No tienes permiso para ajustar el saldo de sesiones." };
   }
 
-  const parsed = adjustSchema.safeParse({ subscriptionId, delta });
-  if (!parsed.success) return { ok: false, error: "El ajuste indicado no es válido." };
+  const parsed = adjustSchema.safeParse({ subscriptionId, delta, note });
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues.some((i) => i.path[0] === "note")
+        ? "Escribe el motivo del ajuste: queda en el libro mayor del bono."
+        : "El ajuste indicado no es válido.",
+    };
+  }
 
   // Aislamiento multi-tenant: Subscription NO tiene columna orgId, solo se
   // llega a ella a través del socio.
@@ -115,27 +128,45 @@ export async function adjustSubscriptionSessions(
   // es como se corrige a mano un consumo que la agenda no ha descontado
   // (ej. una sesión presencial sin reserva), y ahí lo que debe subir es lo
   // gastado, no encoger el bono contratado.
-  const applied = await prisma.subscription.updateMany({
-    where: {
-      id: sub.id,
-      member: { orgId: session.user.orgId },
-      status: { in: ["ACTIVE", "FROZEN"] },
-      sessionsRemaining: delta < 0 ? { gte: -delta } : { lte: MAX_SESSIONS_REMAINING - delta },
-    },
-    data: {
-      sessionsRemaining: { increment: delta },
-      ...(delta > 0 ? { sessionsIncluded: { increment: delta } } : {}),
-    },
+  // E2-15: el ajuste y su asiento van en la MISMA transacción — el invariante
+  // del trimestre es que nada mueva `sessionsRemaining` sin dejar rastro, y un
+  // ajuste a mano es justamente el movimiento que un socio va a discutir.
+  const after = await prisma.$transaction(async (tx) => {
+    const applied = await tx.subscription.updateMany({
+      where: {
+        id: sub.id,
+        member: { orgId: session.user.orgId },
+        status: { in: ["ACTIVE", "FROZEN"] },
+        sessionsRemaining: delta < 0 ? { gte: -delta } : { lte: MAX_SESSIONS_REMAINING - delta },
+      },
+      data: {
+        sessionsRemaining: { increment: delta },
+        ...(delta > 0 ? { sessionsIncluded: { increment: delta } } : {}),
+      },
+    });
+    if (applied.count === 0) return null;
+
+    await recordSessionsChange(
+      tx,
+      {
+        orgId: session.user.orgId,
+        subscriptionId: sub.id,
+        reason: "MANUAL_ADJUSTMENT",
+        actorUserId: session.user.id,
+        note: parsed.data.note,
+      },
+      delta
+    );
+
+    // `updateMany` no devuelve la fila: se relee para auditar el valor real.
+    return tx.subscription.findUniqueOrThrow({
+      where: { id: sub.id },
+      select: { sessionsRemaining: true, sessionsIncluded: true },
+    });
   });
-  if (applied.count === 0) {
+  if (!after) {
     return { ok: false, error: "El saldo ha cambiado mientras editabas. Vuelve a intentarlo." };
   }
-
-  // `updateMany` no devuelve la fila: se relee para auditar el valor real.
-  const after = await prisma.subscription.findUniqueOrThrow({
-    where: { id: sub.id },
-    select: { sessionsRemaining: true, sessionsIncluded: true },
-  });
 
   await prisma.auditLog.create({
     data: {
@@ -155,6 +186,7 @@ export async function adjustSubscriptionSessions(
         planName: sub.plan.name,
         centerId: sub.centerId,
         subscriptionStatus: sub.status,
+        note: parsed.data.note,
       },
     },
   });

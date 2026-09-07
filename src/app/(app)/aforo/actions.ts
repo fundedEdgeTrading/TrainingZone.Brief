@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole, requireCenterRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { checkCenterDefaultCapacity } from "@/lib/group-capacity";
 
 export type AforoActionResult = { ok: true } | { ok: false; error: string };
 
@@ -20,10 +21,12 @@ export async function updateCenterCapacity(formData: FormData): Promise<AforoAct
   // centro y Entrenador Admin, solo en aquellos a los que están imputados.
   const session = await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER_ADMIN"]);
 
-  const capacity = raw === "" ? null : Math.round(Number(raw));
-  if (capacity !== null && (!Number.isFinite(capacity) || capacity < 1)) {
-    return { ok: false, error: "El aforo debe ser un número entero mayor que 0 (o vacío para no fijar ninguno)." };
-  }
+  // E2-13: solo se validaba `>= 1`, así que fijar 500 aquí convertía 500 en el
+  // techo del centro (`saveSession` lo lee como `groupCapacityCeiling`) y el
+  // tope global de 30 dejaba de existir para ese centro.
+  const parsed = checkCenterDefaultCapacity(raw);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+  const capacity = parsed.value;
 
   const center = await prisma.center.findFirst({
     where: { id: centerId, orgId: session.user.orgId },

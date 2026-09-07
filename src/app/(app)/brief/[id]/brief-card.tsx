@@ -3,10 +3,12 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import clsx from "clsx";
-import { setDebrief } from "./actions";
+import { setDebrief, loadClinicalDetail, type ClinicalDetailEntry } from "./actions";
 import type { DebriefFeeling } from "@prisma/client";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
+import { conditionLabel } from "@/lib/aptitude-light";
+import type { BriefCondition, BriefRule } from "@/lib/brief-queries";
 
 const LIGHT_STYLE: Record<string, { label: string; tone: BadgeTone; classes: string; dot: string }> = {
   RED: { label: "Evitar bloques marcados", tone: "critical", classes: "bg-critical-bg border-tz-linen", dot: "bg-critical" },
@@ -24,10 +26,12 @@ type RosterEntry = {
   bookingId: string;
   member: { id: string; firstName: string; lastName: string; state: string };
   isNew: boolean;
-  conditions: { zone: string | null; description: string; type: string }[];
-  matchedRules: { injuryZone: string; blockArea: string; light: string; adaptation: string | null }[];
+  conditions: BriefCondition[];
+  matchedRules: BriefRule[];
+  /** Declarado sin regla que lo traduzca: es lo que enciende el ámbar (E3-03). */
+  unmatchedConditions: BriefCondition[];
   light: string | null;
-  debrief: { feeling: DebriefFeeling } | null;
+  debrief: { feeling: DebriefFeeling; note: string | null } | null;
 };
 
 export default function BriefCard({
@@ -43,20 +47,48 @@ export default function BriefCard({
 }) {
   const [pending, startTransition] = useTransition();
   const [feeling, setFeeling] = useState<DebriefFeeling | null>(entry.debrief?.feeling ?? null);
+  // E3-07: el debrief es color MÁS una frase opcional. La frase no bloquea el
+  // flujo de sala: se guarda al salir del campo, y el color va por su cuenta.
+  const [note, setNote] = useState(entry.debrief?.note ?? "");
+  // E3-05: el detalle clínico no viene con la tarjeta. Se pide, y pedirlo deja
+  // rastro en AuditLog.
+  const [detail, setDetail] = useState<ClinicalDetailEntry[] | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const toast = useToast();
 
   const style = entry.light ? LIGHT_STYLE[entry.light] : null;
-  const otherConditions = entry.conditions.filter((c) => !c.zone);
+
+  function openDetail() {
+    setLoadingDetail(true);
+    startTransition(async () => {
+      const result = await loadClinicalDetail(entry.bookingId, sessionId);
+      setLoadingDetail(false);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setDetail(result.entries);
+    });
+  }
 
   function tap(f: DebriefFeeling) {
     const previous = feeling;
     setFeeling(f);
     startTransition(async () => {
-      const result = await setDebrief(entry.bookingId, sessionId, f);
+      const result = await setDebrief(entry.bookingId, sessionId, f, note);
       if (!result.ok) {
         setFeeling(previous);
         toast.error(result.error);
       }
+    });
+  }
+
+  function saveNote() {
+    // Sin color todavía no hay debrief que anotar: la frase espera al toque.
+    if (!feeling || note === (entry.debrief?.note ?? "")) return;
+    startTransition(async () => {
+      const result = await setDebrief(entry.bookingId, sessionId, feeling, note);
+      if (!result.ok) toast.error(result.error);
     });
   }
 
@@ -83,9 +115,11 @@ export default function BriefCard({
           {style ? (
             <Badge tone={style.tone}>{style.label}</Badge>
           ) : (
+            // E3-03: a partir de ahora significa lo que dice — no hay NADA
+            // declarado. Una condición sin regla enciende ámbar, no esto.
             <Badge tone="neutral">Sin restricciones</Badge>
           )}
-          {(entry.matchedRules.length > 0 || otherConditions.length > 0) && (
+          {(entry.matchedRules.length > 0 || entry.unmatchedConditions.length > 0) && (
             <div className="text-xs text-text-2 space-y-1">
               {entry.matchedRules.map((r, i) => (
                 <p key={i} className="flex items-center gap-1.5">
@@ -96,11 +130,40 @@ export default function BriefCard({
                   </span>
                 </p>
               ))}
-              {otherConditions.map((c, i) => (
-                <p key={`c-${i}`}>{c.description}</p>
+              {entry.unmatchedConditions.map((c, i) => (
+                <p key={`c-${i}`} className="flex items-center gap-1.5">
+                  <span className={clsx("w-1.5 h-1.5 rounded-full shrink-0", LIGHT_STYLE.AMBER.dot)} />
+                  <span>
+                    <strong>{conditionLabel(c)}</strong> — condición declarada sin regla asignada
+                  </span>
+                </p>
               ))}
             </div>
           )}
+          {entry.light !== null &&
+            (detail ? (
+              <div className="text-xs text-text-2 space-y-1 border-t border-black/5 pt-1.5">
+                {detail.length === 0 ? (
+                  <p className="text-faint">Sin detalle registrado.</p>
+                ) : (
+                  detail.map((d, i) => (
+                    <p key={`d-${i}`}>
+                      <strong>{d.label}</strong> — {d.description}{" "}
+                      <span className="text-faint">({d.status})</span>
+                    </p>
+                  ))
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={openDetail}
+                disabled={loadingDetail}
+                className="text-xs underline text-muted hover:text-tz-black disabled:opacity-60"
+              >
+                {loadingDetail ? "Abriendo…" : "Ver detalle clínico"}
+              </button>
+            ))}
         </div>
       )}
 
@@ -129,6 +192,16 @@ export default function BriefCard({
             );
           })}
         </div>
+        <input
+          type="text"
+          value={note}
+          maxLength={600}
+          onChange={(e) => setNote(e.target.value)}
+          onBlur={saveNote}
+          placeholder="Una frase, si hace falta (opcional)"
+          aria-label={`Nota del debrief de ${entry.member.firstName} ${entry.member.lastName}`}
+          className="w-full h-8 rounded-control border border-tz-linen bg-white/70 px-2.5 text-xs text-brand-text placeholder:text-faint focus:border-brand-ink focus:outline-none"
+        />
         <p className="text-[11px] text-faint" aria-live="polite">
           {pending
             ? "Guardando…"

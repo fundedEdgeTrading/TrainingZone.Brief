@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getMesocycleDetail, conversationOf } from "@/lib/mesocycle-queries";
 import { parseRefineRequest } from "@/lib/ai/mesocycle-prompt";
 import { isAiConfigured } from "@/lib/ai/anthropic";
+import { auditMesocycleOpened } from "@/lib/health-access";
 import { MesocycleEditor, type RefineRequest } from "./editor";
 import type { MesocycleDetail } from "@/lib/mesocycle-queries";
 
@@ -49,6 +50,18 @@ export default async function MesocycleEditorPage({
   const mesocycle = await getMesocycleDetail(session.user.orgId, mesocycleId);
   if (!mesocycle || mesocycle.memberId !== memberId) notFound();
   if (!(await memberIsInScope(session.user, memberId))) notFound();
+
+  // E3-18 · abrir un mesociclo con criterios clínicos deja traza. Los permisos
+  // no cambian: los aplica `requireRole` + `memberIsInScope` de arriba, como
+  // siempre. Lo que se añade es el rastro que el resto del sistema sí tenía.
+  await auditMesocycleOpened({
+    mesocycleId: mesocycle.id,
+    memberId,
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    clinicalCriteria: Array.isArray(mesocycle.safetyCriteria) ? mesocycle.safetyCriteria.length : 0,
+    hasAiConversation: conversationOf(mesocycle).length > 0,
+  });
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId: session.user.orgId },

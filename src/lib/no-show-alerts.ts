@@ -33,11 +33,51 @@ async function recentAttendance(memberId: string, take = 10): Promise<Attendance
   });
 }
 
-async function orgDirectors(orgId: string) {
-  // Misma dirección que el resto de alertas automáticas (trainer-alerts.ts): la
-  // organización ya no tiene entrenador fijo por socio al que avisar.
+/**
+ * E1-07: los centros de un socio. Su centro base (`primaryCenterId`) y, además,
+ * aquellos donde de hecho entrena — un socio puede tener sesiones en más de un
+ * centro aunque su ficha cuelgue de uno solo, y la falta ocurrió en la sala de
+ * alguien.
+ */
+async function memberCenterIds(orgId: string, memberId: string, primaryCenterId: string): Promise<string[]> {
+  const centers = await prisma.center.findMany({
+    where: {
+      orgId,
+      OR: [{ id: primaryCenterId }, { sessions: { some: { bookings: { some: { memberId } } } } }],
+    },
+    select: { id: true },
+  });
+  return centers.map((c) => c.id);
+}
+
+/**
+ * Quién recibe la alerta (E1-07). La documentación dice "dirección **del
+ * centro**" (CRM_REGLAS_NEGOCIO.md, RB-RES-009) y el código seleccionaba
+ * `role in [OWNER, CENTER_DIRECTOR]` de toda la organización: con eso, el
+ * nombre y apellidos de un socio de La Jota cruzaban la frontera hasta la
+ * bandeja de Santander.
+ *
+ * La dirección de organización sí la recibe siempre: manda en toda su
+ * organización y esto es una señal comercial, no un incidente de sala.
+ */
+async function alertRecipients(orgId: string, centerIds: string[]) {
   return prisma.user.findMany({
-    where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] }, deactivatedAt: null },
+    where: {
+      orgId,
+      deactivatedAt: null,
+      OR: [
+        { role: "OWNER" },
+        {
+          role: "CENTER_DIRECTOR",
+          // Su imputación real, igual que `centerScopeFor`: centro base más las
+          // filas de `CenterMembership`.
+          OR: [
+            { centerId: { in: centerIds } },
+            { centerMemberships: { some: { centerId: { in: centerIds } } } },
+          ],
+        },
+      ],
+    },
     select: { id: true },
   });
 }
@@ -54,7 +94,7 @@ async function orgDirectors(orgId: string) {
 export async function notifyConsecutiveNoShows(orgId: string, memberId: string): Promise<number> {
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId },
-    select: { id: true, firstName: true, lastName: true },
+    select: { id: true, firstName: true, lastName: true, primaryCenterId: true },
   });
   if (!member) return 0;
 
@@ -62,7 +102,8 @@ export async function notifyConsecutiveNoShows(orgId: string, memberId: string):
   const streak = consecutiveNoShowsWithoutNotice(history);
   if (streak < CONSECUTIVE_NO_SHOW_THRESHOLD) return 0;
 
-  const directors = await orgDirectors(orgId);
+  const centerIds = await memberCenterIds(orgId, member.id, member.primaryCenterId);
+  const directors = await alertRecipients(orgId, centerIds);
   let created = 0;
   for (const director of directors) {
     await createNotificationOnce({
@@ -100,5 +141,43 @@ export async function runConsecutiveNoShowsRule(orgId: string): Promise<number> 
   for (const { memberId } of candidates) {
     created += await notifyConsecutiveNoShows(orgId, memberId);
   }
+
+  await closeStaleNoShowStreaks(orgId);
   return created;
+}
+
+/**
+ * E12-14: las rachas ya formadas se recalculan.
+ *
+ * La racha se deriva del histórico en cada lectura, así que sacar `OUR_ERROR`
+ * de los motivos que cuentan basta para que deje de sumar de aquí en adelante.
+ * Lo que no se arregla solo es la tarea que YA está abierta: dirección sigue
+ * viendo "3 faltas seguidas sin avisar" de un socio al que citó mal el centro.
+ * Esta pasada recorre las alertas abiertas y cierra las que, con la regla de
+ * ahora, no llegan al umbral.
+ */
+async function closeStaleNoShowStreaks(orgId: string): Promise<number> {
+  const rows = await prisma.notification.findMany({
+    where: { orgId, entityType: NO_SHOW_STREAK_ENTITY, resolvedAt: null, entityId: { not: null } },
+    select: { id: true, entityId: true },
+  });
+  const open = rows.filter((n): n is { id: string; entityId: string } => n.entityId != null);
+  if (open.length === 0) return 0;
+
+  // Una racha por socio, aunque la alerta esté abierta para varias personas de
+  // dirección: `entityId` es el id del socio.
+  const streaks = new Map<string, number>();
+  for (const notification of open) {
+    if (streaks.has(notification.entityId)) continue;
+    streaks.set(notification.entityId, consecutiveNoShowsWithoutNotice(await recentAttendance(notification.entityId)));
+  }
+
+  const stale = open.filter((n) => (streaks.get(n.entityId) ?? 0) < CONSECUTIVE_NO_SHOW_THRESHOLD);
+  if (stale.length === 0) return 0;
+
+  await prisma.notification.updateMany({
+    where: { id: { in: stale.map((n) => n.id) } },
+    data: { resolvedAt: new Date() },
+  });
+  return stale.length;
 }

@@ -15,6 +15,17 @@ Cada fase tiene un rango de semanas propio, sin solapes ni huecos: la fase 1
 empieza en la semana 1 y la última termina en la semana final del mesociclo.
 Cada fase describe la semana TIPO de ese tramo, no cada semana por separado.
 
+## Descarga y progresión (obligatorio)
+
+Una fase describe la semana tipo, así que toda fase de MÁS DE TRES SEMANAS
+tiene que decir además cómo progresa de una semana a la siguiente —series,
+RIR/RPE objetivo, carga— en su campo \`notes\`. Sin eso, una fase de 4 semanas es
+cuatro veces la misma semana, que no es una periodización.
+
+Marca \`deload: true\` en las fases de descarga (baja de volumen deliberada) y
+\`false\` en el resto. Un mesociclo de 8 semanas o más lleva descarga; dónde va lo
+decides tú, pero va declarada en el campo, no insinuada en el nombre de la fase.
+
 ## Reglas de seguridad — mandan sobre todo lo demás
 
 - El screening clínico es una restricción dura. Si una zona aparece limitada,

@@ -14,8 +14,13 @@ import {
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
-import { zonedTimeToInstant } from "@/lib/date-utils";
-import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
+import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
+import { checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
+import { coversSessionKind } from "@/lib/member-session-scope";
+import { resequenceWaitlist } from "@/lib/waitlist";
+import { chargeSession, refundSession } from "@/lib/session-ledger";
+import { enforcementStartsAt } from "@/lib/portal-queries";
+import { sessionServiceKind } from "@/lib/members-queries";
 import {
   chargeSessionToSubscription,
   claimWaitlistedBooking,
@@ -23,7 +28,8 @@ import {
   pickBookingSubscription,
   shouldNotifyVacancy,
 } from "@/lib/session-booking";
-import { addDays, DEFAULT_GROUP_CAPACITY, MAX_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
+import { addDays, DEFAULT_GROUP_CAPACITY } from "@/app/(app)/agenda/agenda-utils";
+import { centerCapacityCeiling } from "@/lib/group-capacity";
 
 /**
  * Centros visibles para un usuario según su imputación real:
@@ -195,9 +201,18 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
   if (!center) return { ok: false as const, error: "Centro no encontrado." };
   if (!trainer) return { ok: false as const, error: "Ese entrenador no está imputado a este centro." };
 
+  // RB-SEG-003: no basta con que el socio sea de la organización. El campo
+  // "Socio" del diálogo crea una reserva a su nombre, así que tiene que poder
+  // ocupar plaza AQUÍ: bono activo de esta modalidad en este centro, el mismo
+  // criterio que ofrece el selector y que ya exigía la reserva desde el roster.
   if (input.memberId) {
-    const member = await prisma.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
-    if (!member) return { ok: false as const, error: "Socio no encontrado." };
+    const bookable = await isMemberBookableInCenter(
+      orgId,
+      input.memberId,
+      input.centerId,
+      sessionServiceKind(input.type === "personal" ? "Personal Training" : "Grupo reducido")
+    );
+    if (!bookable) return { ok: false as const, error: "Ese socio no tiene bono de esta modalidad en este centro." };
   }
 
   const existing = input.id ? await prisma.classSession.findFirst({ where: { id: input.id, orgId } }) : null;
@@ -205,7 +220,9 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
 
   const isPersonal = input.type === "personal";
   const classType = isPersonal ? "Personal Training" : "Grupo reducido";
-  const groupCapacityCeiling = center.defaultGroupCapacity ?? MAX_GROUP_CAPACITY;
+  // E2-13: el tope del centro nunca por encima del global — un
+  // `defaultGroupCapacity` absurdo guardado de antes deja de ser el techo.
+  const groupCapacityCeiling = centerCapacityCeiling(center.defaultGroupCapacity);
   if (!isPersonal && input.capacity && input.capacity > groupCapacityCeiling) {
     return {
       ok: false as const,
@@ -368,7 +385,16 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
       subscriptionId: true,
       sessionId: true,
       occurrenceDate: true,
-      session: { select: { capacity: true, bookings: { select: { status: true, occurrenceDate: true } } } },
+      session: {
+        select: {
+          capacity: true,
+          // E2-09: hace falta la hora real de comienzo para no anunciar la
+          // plaza de una clase que ya ocurrió.
+          startTime: true,
+          center: { select: { timezone: true } },
+          bookings: { select: { status: true, occurrenceDate: true } },
+        },
+      },
     },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
@@ -395,16 +421,24 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
 
     // RB-RES-006: la lista de espera nunca descontó bono, así que no se devuelve.
     if (booking.status === "BOOKED" && booking.subscriptionId) {
-      await tx.subscription.update({
-        where: { id: booking.subscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
+      await refundSession(tx, {
+        orgId,
+        subscriptionId: booking.subscriptionId,
+        bookingId: booking.id,
+        reason: "CANCELLATION",
       });
     }
+    // E2-08: si quien sale estaba en la cola, la numeración se compacta aquí
+    // mismo — un hueco convierte la posición de los de detrás en un número que
+    // no se corresponde con nadie.
+    await resequenceWaitlist(tx, booking.sessionId, booking.occurrenceDate);
     return true;
   });
   if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+  // E2-09: solo se anuncia el hueco de una clase que todavía no ha empezado.
+  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
 
@@ -427,25 +461,60 @@ export async function listMembersBookableForSession(orgId: string, sessionId: st
     select: { centerId: true, classType: true },
   });
   if (!session) return [];
-  const kind = sessionServiceKind(session.classType);
+  return listMembersBookableInCenter(orgId, session.centerId, sessionServiceKind(session.classType));
+}
 
+/**
+ * RB-SEG-003 (E1-05): el mismo criterio, sin necesidad de una sesión que
+ * todavía no existe.
+ *
+ * El selector "Socio" de la agenda usaba `listActiveMembersForSelect(orgId)`,
+ * que devuelve la organización ENTERA. Verificado: un entrenador imputado a La
+ * Jota y Puerta del Carmen recibía los 49 socios de la organización, los 34 de
+ * Santander incluidos — y reservarle plaza a cualquiera de ellos funcionaba.
+ * El criterio correcto ya vivía justo al lado, en la variante por sesión.
+ */
+export async function listMembersBookableInCenter(orgId: string, centerId: string, kind: "EP" | "GROUP" | null) {
   const members = await prisma.member.findMany({
-    where: { orgId, subscriptions: { some: { status: "ACTIVE", centerId: session.centerId } } },
+    where: { orgId, subscriptions: { some: { status: "ACTIVE", centerId } } },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
     select: {
       id: true,
       firstName: true,
       lastName: true,
       subscriptions: {
-        where: { status: "ACTIVE", centerId: session.centerId },
+        where: { status: "ACTIVE", centerId },
         select: { plan: { select: { type: true } } },
       },
     },
   });
 
   return members
-    .filter((m) => m.subscriptions.some((s) => planServiceKind(s.plan.type) === kind))
+    .filter((m) => coversSessionKind(m.subscriptions, kind))
     .map(({ id, firstName, lastName }) => ({ id, firstName, lastName }));
+}
+
+/**
+ * ¿Puede este socio ocupar una plaza en una sesión de esta modalidad en este
+ * centro? Es la comprobación de ESCRITURA que acompaña al selector: sin ella
+ * bastaba con conocer el id de un socio ajeno para agendarle una franja de EP
+ * desde el formulario (`saveSession`) o desde el endpoint móvil de huecos
+ * (`createEpSlot`), que no contrastaba el socio contra nada en absoluto.
+ */
+export async function isMemberBookableInCenter(
+  orgId: string,
+  memberId: string,
+  centerId: string,
+  kind: "EP" | "GROUP" | null
+): Promise<boolean> {
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: {
+      subscriptions: { where: { status: "ACTIVE", centerId }, select: { plan: { select: { type: true } } } },
+    },
+  });
+  if (!member) return false;
+  return coversSessionKind(member.subscriptions, kind);
 }
 
 /**
@@ -550,7 +619,10 @@ export async function bookSessionForMemberAsStaff(
       const chargeSubscriptionId = choice.subscriptionId;
 
       // Antes de escribir la reserva, para no dejarla creada sin cobrar.
-      if (chargeSubscriptionId && !(await chargeSessionToSubscription(tx, chargeSubscriptionId))) {
+      if (
+        chargeSubscriptionId &&
+        !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId, reason: "BOOKING" }))
+      ) {
         throw new StaffBookingError("A ese socio no le quedan sesiones en su bono.");
       }
 
@@ -561,6 +633,9 @@ export async function bookSessionForMemberAsStaff(
           // paga una plaza que se quedó otro.
           throw new StaffBookingError("Esa plaza ya la ha reclamado otra persona.");
         }
+        // E2-08: quien pasa a tener plaza sale de la cola, así que la cola se
+        // recoloca.
+        await resequenceWaitlist(tx, cls.id, day);
         return { ok: true as const, claimedFromWaitlist: true };
       }
 
@@ -598,31 +673,48 @@ export async function bookSessionForMemberAsStaff(
  * la bandera pase de false a true es lo que impide devolver dos veces la misma
  * sesión si se marca dos veces (o dos personas a la vez).
  */
+export type NoShowResult =
+  | { ok: true; memberId: string; sessionId: string; refunded: boolean }
+  | { ok: false; error: string; conflict?: true };
+
 export async function markBookingNoShow(
   orgId: string,
   bookingId: string,
-  opts: { sessionId: string; reason: NoShowReason; refundSession: boolean }
-) {
+  opts: {
+    /**
+     * Acota además a una sesión concreta. Lo manda la web, donde el id sale de
+     * la página de la sesión; la app llega solo con el `bookingId` y el ámbito
+     * se lo da la guarda de centro.
+     */
+    sessionId?: string;
+    reason: NoShowReason;
+    refundSession: boolean;
+    /** Quién marca la falta: firma el asiento de la devolución (E2-15). */
+    actorUserId?: string | null;
+  }
+): Promise<NoShowResult> {
   const booking = await prisma.booking.findFirst({
-    // Acotado a la sesión Y a la organización, igual que el check-in: el id de
-    // la reserva viaja desde el cliente y por sí solo no dice de quién es.
-    //
-    // WAITLISTED y CANCELLED quedan fuera: no hay asistencia que registrar en
-    // una reserva que nunca ocupó plaza. ATTENDED sí entra, porque marcar la
-    // falta es también rectificar un check-in dado por error.
+    // Acotado a la organización (y a la sesión, si viene): el id de la reserva
+    // viaja desde el cliente y por sí solo no dice de quién es.
     where: {
       id: bookingId,
-      sessionId: opts.sessionId,
       session: { orgId },
-      status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] },
+      ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
     },
-    select: { id: true, memberId: true, subscriptionId: true, noShowRefunded: true },
+    select: { id: true, sessionId: true, status: true, memberId: true, subscriptionId: true, noShowRefunded: true },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
 
+  // RB-RES-010: WAITLISTED y CANCELLED quedan fuera —no hay asistencia que
+  // registrar en una reserva que nunca ocupó plaza—, y la razón se cuenta en
+  // vez de esconderse detrás de un "no encontrada". ATTENDED sí entra: marcar
+  // la falta es también rectificar un check-in dado por error.
+  const transition = checkBookingTransition(booking.status, "NO_SHOW");
+  if (!transition.ok) return { ok: false as const, error: transition.error, conflict: true as const };
+
   const refunded = await prisma.$transaction(async (tx) => {
     const applied = await tx.booking.updateMany({
-      where: { id: booking.id, status: { in: ["BOOKED", "ATTENDED", "NO_SHOW"] } },
+      where: { id: booking.id, status: { in: statusesEndingAt("NO_SHOW") } },
       data: { status: "NO_SHOW", checkedInAt: null, noShowReason: opts.reason },
     });
     if (applied.count === 0) return null;
@@ -636,16 +728,19 @@ export async function markBookingNoShow(
       data: { noShowRefunded: true },
     });
     if (claimed.count > 0) {
-      await tx.subscription.update({
-        where: { id: booking.subscriptionId },
-        data: { sessionsRemaining: { increment: 1 } },
+      await refundSession(tx, {
+        orgId,
+        subscriptionId: booking.subscriptionId,
+        bookingId: booking.id,
+        reason: "NO_SHOW_REFUND",
+        actorUserId: opts.actorUserId ?? null,
       });
     }
     return true;
   });
   if (refunded === null) return { ok: false as const, error: "No se ha encontrado esa reserva." };
 
-  return { ok: true as const, memberId: booking.memberId, refunded };
+  return { ok: true as const, memberId: booking.memberId, sessionId: booking.sessionId, refunded };
 }
 
 /**
@@ -654,12 +749,27 @@ export async function markBookingNoShow(
  * sesión al bono, se vuelve a descontar — si no, rectificar un "No asistió"
  * marcado por error regalaría una sesión cada vez.
  */
-export async function clearBookingNoShow(orgId: string, bookingId: string, nextStatus: "BOOKED" | "ATTENDED") {
+export async function clearBookingNoShow(
+  orgId: string,
+  bookingId: string,
+  nextStatus: "BOOKED" | "ATTENDED",
+  /** Quién rectifica: firma el asiento de la corrección (E2-15). */
+  actorUserId?: string | null
+): Promise<NoShowResult> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, session: { orgId } },
-    select: { id: true, subscriptionId: true, noShowRefunded: true },
+    select: { id: true, sessionId: true, status: true, memberId: true, subscriptionId: true, noShowRefunded: true },
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva." };
+
+  // RB-RES-010: deshacer una falta parte de una falta. Sin acotar el estado,
+  // este mismo `bookingId` servía para llevar a ATTENDED una reserva CANCELLED
+  // o WAITLISTED — la misma vía que se cerró en los otros cuatro puntos.
+  if (booking.status !== "NO_SHOW") {
+    return { ok: false as const, error: "Esa reserva no está marcada como falta.", conflict: true as const };
+  }
+  const transition = checkBookingTransition(booking.status, nextStatus);
+  if (!transition.ok) return { ok: false as const, error: transition.error, conflict: true as const };
 
   await prisma.$transaction(async (tx) => {
     // La bandera es también aquí el cierre de la operación, en el mismo UPDATE
@@ -682,24 +792,154 @@ export async function clearBookingNoShow(orgId: string, bookingId: string, nextS
     // Solo se descuenta si el bono tiene saldo: dejarlo en negativo rompería
     // las cuentas de `bonoUsage` (session-balance.ts). Un bono ilimitado
     // (`sessionsRemaining` null) no se toca: NULL - 1 sigue siendo NULL.
-    await tx.subscription.updateMany({
-      where: { id: booking.subscriptionId, sessionsRemaining: { gt: 0 } },
-      data: { sessionsRemaining: { decrement: 1 } },
+    // La rectificación vuelve a descontar la sesión devuelta. Es un asiento
+    // nuevo (`CORRECTION`), nunca la edición del anterior: el libro es
+    // inmutable.
+    await chargeSession(tx, {
+      orgId,
+      subscriptionId: booking.subscriptionId,
+      bookingId: booking.id,
+      reason: "CORRECTION",
+      actorUserId: actorUserId ?? null,
+      note: "Falta rectificada: la sesión devuelta se vuelve a descontar.",
     });
   });
 
-  return { ok: true as const };
+  return { ok: true as const, memberId: booking.memberId, sessionId: booking.sessionId, refunded: false };
 }
 
-export async function deleteSession(orgId: string, sessionId: string) {
-  const session = await prisma.classSession.findFirst({ where: { id: sessionId, orgId }, select: { id: true } });
+export type DeleteSessionResult =
+  | { ok: true; refunded: number; notified: number }
+  | { ok: false; error: string; needsConfirmation?: true; settledCount?: number };
+
+/**
+ * RB-AGENDA-010: borrar una sesión devuelve el bono a cada socio apuntado, lo
+ * audita y se lo cuenta.
+ *
+ * Antes esto eran tres `deleteMany` sueltos: la reserva desaparecía, el bono NO
+ * volvía y no quedaba ni una línea de `AuditLog` —a diferencia de
+ * `discardAttendeeAsStaff`, que audita cada descarte—. Borrar una clase entera
+ * era quedarse con la sesión de todos los apuntados a la vez.
+ *
+ * Todo va en UNA transacción a propósito (escenario "atomicidad"): si falla la
+ * devolución de un solo bono, no se borra la sesión y no se devuelve ninguno.
+ * Los avisos salen después, fuera de la transacción y best-effort, como el
+ * resto de notificaciones del módulo.
+ */
+export async function deleteSession(
+  orgId: string,
+  sessionId: string,
+  opts: {
+    /** Quién borra: firma cada devolución en `AuditLog`. */
+    actorUserId: string;
+    /** El usuario ya ha confirmado que quiere borrar asistencias registradas. */
+    confirmSettled?: boolean;
+    /** Avisar a los socios apuntados de que la clase se ha cancelado. */
+    notifyMembers?: boolean;
+  }
+): Promise<DeleteSessionResult> {
+  const session = await prisma.classSession.findFirst({
+    where: { id: sessionId, orgId },
+    select: {
+      id: true,
+      name: true,
+      startTime: true,
+      bookings: {
+        select: {
+          id: true,
+          memberId: true,
+          status: true,
+          subscriptionId: true,
+          occurrenceDate: true,
+          member: { select: { userId: true } },
+        },
+      },
+    },
+  });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };
-  // Borrar la sesión implica borrar también sus reservas y, si las hay,
-  // los debriefs asociados (FK RESTRICT: Booking <- SessionDebrief).
-  await prisma.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
-  await prisma.booking.deleteMany({ where: { sessionId } });
-  await prisma.classSession.delete({ where: { id: sessionId } });
-  return { ok: true as const };
+
+  const plan = planSessionDeletion(session.bookings);
+
+  // Una asistencia ya registrada es histórico: borrarla lo destruye y no
+  // devuelve nada. Quien borra tiene que decirlo expresamente.
+  if (plan.settled.length > 0 && !opts.confirmSettled) {
+    return {
+      ok: false as const,
+      error: describeSettledAttendance(plan.settled.length),
+      needsConfirmation: true as const,
+      settledCount: plan.settled.length,
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const booking of plan.refunds) {
+      // E2-15: la devolución por borrado de sesión también es un movimiento del
+      // bono, así que deja asiento — y el `bookingId` sobrevive al borrado de
+      // la reserva porque la FK es `SetNull`.
+      await refundSession(tx, {
+        orgId,
+        subscriptionId: booking.subscriptionId!,
+        bookingId: booking.id,
+        reason: "CANCELLATION",
+        note: `Sesión borrada: ${session.name}.`,
+      });
+      // Una entrada por devolución, no una por borrado: quien revise el saldo
+      // de un socio tiene que poder cuadrar sesión a sesión.
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId: opts.actorUserId,
+          action: SESSION_DELETED_AUDIT_ACTION,
+          entityType: "Booking",
+          entityId: booking.id,
+          memberId: booking.memberId,
+          metadata: {
+            sessionId,
+            sessionName: session.name,
+            occurrenceDate: booking.occurrenceDate.toISOString(),
+            subscriptionId: booking.subscriptionId,
+            refunded: true,
+          },
+        },
+      });
+    }
+
+    // Las reservas se borran con la sesión, así que hay que soltar antes los
+    // debriefs (FK RESTRICT: Booking <- SessionDebrief).
+    await tx.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
+    await tx.booking.deleteMany({ where: { sessionId } });
+    await tx.classSession.delete({ where: { id: sessionId } });
+  });
+
+  let notified = 0;
+  if (opts.notifyMembers !== false) {
+    for (const booking of plan.notify) {
+      if (!booking.member.userId) continue;
+      notified++;
+      const refunded = plan.refunds.some((r) => r.id === booking.id);
+      void createNotification({
+        orgId,
+        recipientUserId: booking.member.userId,
+        kind: "INFO",
+        title: `Se ha cancelado ${session.name}`,
+        body: [
+          `${formatOccurrenceLabel(booking.occurrenceDate)} · ${session.startTime}`,
+          refunded ? "La sesión vuelve a tu bono." : null,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        entityType: "ClassSession",
+        entityId: sessionId,
+      }).catch(() => {});
+    }
+  }
+
+  return { ok: true as const, refunded: plan.refunds.length, notified };
+}
+
+/** Día de la ocurrencia en castellano, para el aviso de clase cancelada. */
+function formatOccurrenceLabel(day: Date) {
+  return day.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
 }
 
 /** Arrastrar y soltar: reprograma día/hora conservando la duración original. */
@@ -746,6 +986,16 @@ export async function createEpSlot(
   orgId: string,
   input: { centerId: string; trainerId: string; date: Date; startTime: string; durationMin: number; selfBookable: boolean; memberId?: string | null }
 ) {
+  // RB-SEG-003: el espejo móvil del campo "Socio". Aquí no se contrastaba el
+  // socio contra NADA —ni contra la organización—, así que con un id ajeno se
+  // le agendaba una franja de EP en un centro que no es el suyo.
+  if (
+    input.memberId &&
+    !(await isMemberBookableInCenter(orgId, input.memberId, input.centerId, sessionServiceKind("Personal Training")))
+  ) {
+    return { ok: false as const, error: "Ese socio no tiene bono de entrenamiento personal en este centro." };
+  }
+
   const endTime = addMinutesToTime(input.startTime, input.durationMin);
   const session = await prisma.classSession.create({
     data: {
@@ -768,7 +1018,7 @@ export async function createEpSlot(
     });
   }
 
-  return session;
+  return { ok: true as const, session };
 }
 
 /** RB-AGENDA-004: entrenador que dirigió realmente la sesión (puede diferir del asignado). */
@@ -890,7 +1140,9 @@ export async function discardAttendeeAsStaff(
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
-  const startsAt = zonedTimeToInstant(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+  // RB-RES-012: misma puerta que el portal — la zona del centro decide, y un
+  // centro sin zona configurada cae al valor por defecto en vez de romper.
+  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
   const effect = trainerDiscardEffect({
     startsAt,
     now: opts.now ?? new Date(),
@@ -916,8 +1168,20 @@ export async function discardAttendeeAsStaff(
     if (updated.count === 0) return false;
 
     if (effect.refunds && subscriptionId) {
-      await tx.subscription.update({ where: { id: subscriptionId }, data: { sessionsRemaining: { increment: 1 } } });
+      await refundSession(tx, {
+        orgId,
+        subscriptionId,
+        bookingId: booking.id,
+        // Dentro de la ventana solo se devuelve forzándolo: eso es un ajuste
+        // manual del saldo (RB-RES-006), no una cancelación normal.
+        reason: effect.overridden ? "MANUAL_ADJUSTMENT" : "CANCELLATION",
+        actorUserId: opts.actorUserId,
+        note: opts.reason?.trim() || null,
+      });
     }
+
+    // E2-08: si el descartado estaba esperando, la cola se compacta.
+    await resequenceWaitlist(tx, booking.sessionId, booking.occurrenceDate);
 
     // Todo descarte deja traza, no solo el que fuerza la devolución: quien
     // revise el saldo de un socio necesita saber quién le quitó la plaza y con
@@ -957,7 +1221,9 @@ export async function discardAttendeeAsStaff(
     }).catch(() => {});
   }
 
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist })) {
+  // E2-09: el mismo corte que en `cancelSessionBooking` — `startsAt` ya está
+  // calculado aquí arriba para la ventana de descarte.
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
 

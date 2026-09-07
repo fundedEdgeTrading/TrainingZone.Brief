@@ -141,18 +141,36 @@ export default async function PortalProfilePage() {
         )}
       </Card>
 
+      {/* E10-11 · son dos derechos distintos y por eso hay dos descargas: la de
+          portabilidad (art. 20) se puede llevar a otro sitio; la de acceso
+          (art. 15) alcanza además a las notas internas y al registro de quién ha
+          consultado sus datos. Cada descarga queda registrada. */}
       <Card title="Tus datos" meta="RGPD">
         <p className="text-[13px] text-brand-muted -mt-3 mb-3">
-          Descarga una copia de los datos que nos has aportado: perfil, suscripciones, pagos, reservas, progreso y
-          más — en un archivo que puedes guardar o llevarte a otro sitio.
+          Descarga una copia de tus datos: perfil, consentimientos, suscripciones, pagos, reservas, salud,
+          progreso, valoraciones, marcas, mesociclos y debriefs de tus sesiones.
         </p>
-        <a
-          href="/api/portal/export-data"
-          download
-          className="inline-flex items-center gap-2 bg-white text-brand-text border border-brand-border rounded-[11px] px-5 py-3 font-display font-bold text-sm hover:bg-tz-bone transition-colors duration-150"
-        >
-          Descargar mis datos →
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a
+            href="/api/portal/export-data"
+            download
+            className="inline-flex items-center gap-2 bg-white text-brand-text border border-brand-border rounded-[11px] px-5 py-3 font-display font-bold text-sm hover:bg-tz-bone transition-colors duration-150"
+          >
+            Descargar mis datos →
+          </a>
+          <a
+            href="/api/portal/export-data?alcance=acceso"
+            download
+            className="inline-flex items-center gap-2 bg-white text-brand-text border border-brand-border rounded-[11px] px-5 py-3 font-display font-bold text-sm hover:bg-tz-bone transition-colors duration-150"
+          >
+            Descargar todo, con accesos y notas (art. 15) →
+          </a>
+        </div>
+        <p className="text-[12px] text-brand-muted mt-3">
+          La primera es la copia portable de lo que has aportado y generado (art. 20). La segunda añade las notas
+          internas del equipo sobre ti y el registro de quién ha consultado tus datos (art. 15). La entrega es
+          inmediata; el plazo legal es de un mes (art. 12.3).
+        </p>
       </Card>
     </div>
   );

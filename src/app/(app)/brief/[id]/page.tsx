@@ -30,6 +30,7 @@ export default async function SessionBriefPage({
     sessionId: id,
     actorUserId: session.user.id,
     actorRole: session.user.role,
+    actorCenterId: session.user.centerId,
     d,
   });
   if (!brief) notFound();

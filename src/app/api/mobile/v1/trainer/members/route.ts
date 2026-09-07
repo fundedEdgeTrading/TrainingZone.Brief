@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { Role } from "@prisma/client";
 import { listTrainerMembers, type TrainerMemberFilter } from "@/lib/trainer-members-queries";
-import { requireApiRole } from "../../_lib/api-session";
+import { requireApiRoute } from "../../_lib/api-session";
 import { apiOk } from "../../_lib/response";
 
 // Pestaña «Socios» del entrenador (rediseño de la app móvil). NO es el listado
@@ -14,7 +14,7 @@ const TRAINER_ROLES: Role[] = ["TRAINER", "TRAINER_ADMIN", "OWNER", "CENTER_DIRE
 const FILTERS: TrainerMemberFilter[] = ["all", "ep", "group", "alerts"];
 
 export async function GET(req: NextRequest) {
-  const auth = await requireApiRole(req, TRAINER_ROLES);
+  const auth = await requireApiRoute(req, TRAINER_ROLES, "/trainer/members");
   if (!auth.ok) return auth.response;
   const { claims } = auth;
 

@@ -4,9 +4,17 @@ import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
 import { requireRole, memberIsInScope } from "@/lib/guard";
 import { getAssessment, getAssessmentConfig, parseAnswers } from "@/lib/assessments/queries";
+import { getScreeningDraftForMember } from "@/lib/health-access";
 import { milestoneLabelOf } from "@/lib/assessments/config";
 import {
   DAYS_PER_WEEK_LABEL,
+  EJE_KEYS,
+  EJE_LABEL,
+  MOBILITY_CHECKS,
+  MOBILITY_CHECK_LABEL,
+  MOVEMENT_PATTERNS,
+  MOVEMENT_PATTERN_LABEL,
+  PATTERN_EXECUTION_LABEL,
   PAIN_ZONE_LABEL,
   PERFORMANCE_MARKS,
   isInitialAnswers,
@@ -42,9 +50,17 @@ export default async function AssessmentDetailPage({
   const { id, assessmentId } = await params;
   const timeZone = await resolveTimezone();
 
-  const [assessment, config] = await Promise.all([
+  const [assessment, config, screeningDraft] = await Promise.all([
     getAssessment(session.user.orgId, assessmentId),
     getAssessmentConfig(session.user.orgId),
+    // E3-06: la revisión llega precargada con lo que ya consta declarado, para
+    // que el entrenador confirme o desmarque en vez de teclearlo otra vez.
+    getScreeningDraftForMember({
+      memberId: id,
+      orgId: session.user.orgId,
+      actorUserId: session.user.id,
+      actorRole: session.user.role,
+    }),
   ]);
   if (!assessment || assessment.memberId !== id) notFound();
   if (!(await memberIsInScope(session.user, id))) notFound();
@@ -102,6 +118,7 @@ export default async function AssessmentDetailPage({
             kind={assessment.kind}
             config={config}
             draft={memberDraft}
+            screeningDraft={screeningDraft}
           />
         </>
       ) : !answers ? (
@@ -188,6 +205,37 @@ export default async function AssessmentDetailPage({
                   <Row label="Objetivo del próximo periodo" value={answers.seguimiento.objetivoProximoPeriodo} />
                 </ul>
               </Card>
+              {/* E3-07: los ocho ejes, fuera del debrief de sesión. */}
+              {answers.ejes && EJE_KEYS.some((k) => answers.ejes?.[k] !== undefined) && (
+                <Card title="Ejes del entrenador" meta="1-10">
+                  <ul className="list-none">
+                    {EJE_KEYS.map((key) => (
+                      <Row
+                        key={key}
+                        label={EJE_LABEL[key]}
+                        value={answers.ejes?.[key] === undefined ? undefined : `${answers.ejes[key]}/10`}
+                      />
+                    ))}
+                  </ul>
+                </Card>
+              )}
+              {/* E3-06: las revisiones anteriores a esta historia no llevan screening. */}
+              {answers.screening && (
+                <Card title="Screening de salud" meta="Reconciliado con la ficha de salud">
+                  <ul className="list-none">
+                    <Row label="Cardiovascular" value={yesNo(answers.screening.cardiovascular)} />
+                    <Row label="Hipertensión" value={yesNo(answers.screening.hipertension)} />
+                    <Row label="Diabetes" value={yesNo(answers.screening.diabetes)} />
+                    <Row label="Medicación" value={answers.screening.medicacion} />
+                    <Row label="Cirugías" value={answers.screening.cirugias} />
+                    <Row label="Lesiones actuales" value={answers.screening.lesionesActuales} />
+                    <Row
+                      label="Zonas de dolor"
+                      value={answers.screening.zonasDolor.map((z: PainZone) => PAIN_ZONE_LABEL[z]).join(", ")}
+                    />
+                  </ul>
+                </Card>
+              )}
               <Card title="Cierre">
                 <ul className="list-none">
                   <Row label="Notas del entrenador" value={answers.cierre.notasEntrenador} />
@@ -195,6 +243,34 @@ export default async function AssessmentDetailPage({
               </Card>
             </>
           )}
+
+          {/* E3-11 · patrones, movilidad y cargas de referencia. */}
+          {answers.movimiento &&
+            (MOVEMENT_PATTERNS.some((p) => answers.movimiento?.patrones?.[p]) ||
+              MOBILITY_CHECKS.some((c) => answers.movimiento?.movilidad?.[c] !== undefined)) && (
+              <Card title="Movimiento" meta="Siete patrones · movilidad · cargas">
+                <ul className="list-none">
+                  {MOVEMENT_PATTERNS.map((pattern) => {
+                    const result = answers.movimiento?.patrones?.[pattern];
+                    const carga = answers.movimiento?.cargas?.[pattern];
+                    if (!result && carga == null) return null;
+                    const parts = [
+                      result ? PATTERN_EXECUTION_LABEL[result.nivel] : null,
+                      carga != null ? `${carga} kg` : null,
+                      result?.nota || null,
+                    ].filter(Boolean);
+                    return <Row key={pattern} label={MOVEMENT_PATTERN_LABEL[pattern]} value={parts.join(" · ")} />;
+                  })}
+                  {MOBILITY_CHECKS.map((check) => (
+                    <Row
+                      key={check}
+                      label={MOBILITY_CHECK_LABEL[check]}
+                      value={yesNo(answers.movimiento?.movilidad?.[check])?.replace("Sí", "Pasa").replace("No", "No pasa")}
+                    />
+                  ))}
+                </ul>
+              </Card>
+            )}
 
           {customAnswers.length > 0 && (
             <Card title="Preguntas del centro">

@@ -6,6 +6,7 @@ import { runLeadOwnerAlertRule } from "@/lib/leads-queries";
 import { runFewSessionsScheduledRule, runLowPackBalanceRule } from "@/lib/trainer-alerts";
 import { runStallDetectionRule } from "@/lib/stall-detection";
 import { runConsecutiveNoShowsRule } from "@/lib/no-show-alerts";
+import { backfillOpeningEntries } from "@/lib/session-ledger";
 import { runPeriodicCheckinRule } from "@/lib/checkin-schedule";
 import { runScheduledCancellationsRule } from "@/lib/subscription-jobs";
 import { runFeedbackCycleRule } from "@/lib/feedback-capture";
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
     assessmentsDue: 0,
     birthdayGreetings: 0,
     sessionReminders: 0,
+    ledgerOpeningEntries: 0,
   };
 
 
@@ -87,6 +89,13 @@ export async function GET(req: NextRequest) {
     summary.assessmentsDue += await run(org.id, "assessmentsDue", () => runAssessmentDueRule(org.id));
     summary.birthdayGreetings += await run(org.id, "birthdayGreetings", () => runBirthdayRule(org.id));
     summary.sessionReminders += await run(org.id, "sessionReminders", () => runSessionReminderRule(org.id));
+    // E2-15: fila de apertura del libro mayor para los bonos anteriores a él.
+    // Es idempotente (solo entra el bono que no tiene ningún asiento), así que
+    // pasar por aquí en cada ejecución no cuesta nada y no hace falta un
+    // despliegue especial para el histórico.
+    summary.ledgerOpeningEntries += await run(org.id, "ledgerOpeningEntries", () =>
+      prisma.$transaction((tx) => backfillOpeningEntries(tx, org.id))
+    );
   }
 
   // El array de fallos no puede quedarse solo en la respuesta del cron: se
