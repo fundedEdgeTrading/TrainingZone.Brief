@@ -29,4 +29,8 @@ module.exports = {
     "!src/**/*.d.ts",
   ],
   clearMocks: true,
+  // Los 5000ms por defecto se quedan cortos en el runner de CI compartido
+  // entre las nueve pistas del trimestre: ahí un test que en local tarda
+  // 1-2s puede tardar el triple por contención de CPU, no por regresión.
+  testTimeout: 15000,
 };
