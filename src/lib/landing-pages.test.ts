@@ -35,17 +35,11 @@ before(async () => {
     data: { name: "Directorio", slug: `${PREFIX}-org`, platformStatus: "ACTIVE" },
   });
   await prisma.center.createMany({
+    // Se insertan al revés del orden que el índice tiene que mostrar, y la
+    // grafía en minúscula va primero: así el test falla si alguien devuelve el
+    // orden físico de la tabla o vuelve a ordenar y rotular en el `ORDER BY`,
+    // sin depender de qué intercalación tenga la base donde se ejecute.
     data: [
-      {
-        orgId: org.id,
-        name: "Centro Zaragoza",
-        slug: `${PREFIX}-zgz`,
-        publicPage: true,
-        address: "Av. de Cataluña 42",
-        description: "Grupos reducidos junto al Ebro.",
-        city: "Zaragoza",
-        neighborhood: "La Jota",
-      },
       {
         orgId: org.id,
         // Misma ciudad, escrita distinto: tiene que caer en el mismo grupo.
@@ -55,6 +49,16 @@ before(async () => {
         address: "Calle Mayor 1",
         description: "Entrenamiento personal.",
         city: "zaragoza",
+      },
+      {
+        orgId: org.id,
+        name: "Centro Zaragoza",
+        slug: `${PREFIX}-zgz`,
+        publicPage: true,
+        address: "Av. de Cataluña 42",
+        description: "Grupos reducidos junto al Ebro.",
+        city: "Zaragoza",
+        neighborhood: "La Jota",
       },
       {
         orgId: org.id,
@@ -148,10 +152,16 @@ test("cada página de centro se alcanza desde su índice, sin escribir la URL a 
   assert.equal(mios.length, 2);
 
   // Y el enlace del índice es exactamente la URL canónica de la ficha.
-  assert.equal(
-    membershipPath(mios[0].orgSlug, mios[0].centerSlug),
-    `/hazte-socio/${PREFIX}-org/${PREFIX}-zgz`
+  assert.deepEqual(
+    mios.map((c) => membershipPath(c.orgSlug, c.centerSlug)),
+    [`/hazte-socio/${PREFIX}-org/${PREFIX}-zgz`, `/hazte-socio/${PREFIX}-org/${PREFIX}-zgz-sur`]
   );
+
+  // El orden de los centros y el rótulo de la ciudad se deciden en JS, no en el
+  // `ORDER BY`: con la intercalación de Postgres decidiendo, "Centro Zaragoza
+  // Sur" adelantaba a "Centro Zaragoza" en `en_US.UTF-8` y no en `C.UTF-8`, y
+  // el `<h1>` de la ciudad salía "zaragoza" en una base y "Zaragoza" en otra.
+  assert.equal(zaragoza.label, "Zaragoza");
 
   // Sin ciudad no hay grupo bajo el que colocarlo, y un cajón de "otros" sería
   // inventar una categoría.
