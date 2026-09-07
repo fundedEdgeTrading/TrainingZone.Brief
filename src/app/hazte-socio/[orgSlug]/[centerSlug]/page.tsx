@@ -21,28 +21,25 @@ import { CheckoutNotice } from "./checkout-notice";
 import { SERVICE_LABEL } from "@/lib/service-labels";
 
 /**
- * E9-14 · La ficha se sirve cacheada durante diez minutos.
+ * E9-14 · La ficha se sirve con sus consultas cacheadas durante diez minutos.
  *
- * Antes no tenía ni `revalidate` ni `generateStaticParams`: dos consultas
- * secuenciales más el catálogo más la comprobación de Stripe **en cada visita**,
- * para una página que cambia cuando el gimnasio edita su ficha, es decir casi
- * nunca. La invalidación no espera a los diez minutos: editar el centro o su
- * catálogo llama a `updateTag` (ver `organization/actions.ts`).
+ * Antes eran dos consultas secuenciales más el catálogo más la comprobación de
+ * Stripe **en cada visita**, para una página que cambia cuando el gimnasio edita
+ * su ficha, es decir casi nunca. La caché vive en la capa de datos
+ * (`getCachedPublicMembershipContext`, con `unstable_cache` y etiqueta por
+ * centro), no en la ruta, y la invalidación no espera a los diez minutos:
+ * editar el centro o su catálogo llama a `updateTag` (ver
+ * `organization/actions.ts`).
  *
- * `/planes` NO entra aquí: conserva su `force-dynamic`, que está justificado
- * porque sus precios se resuelven del entorno en cada petición.
+ * Aquí NO se declara `revalidate`, y es deliberado: el layout raíz lee `auth()`
+ * y `headers()`, así que pedir renderizado incremental hace que Next intente
+ * prerrenderizar y la petición muera con `DYNAMIC_SERVER_USAGE` —un 500 en la
+ * página de alta, no una página lenta—. Cachear la consulta da la mejora que
+ * buscaba la historia sin pelearse con el layout.
+ *
+ * `/planes` tampoco entra: conserva su `force-dynamic`, justificado porque sus
+ * precios se resuelven del entorno en cada petición.
  */
-export const revalidate = 600;
-
-/**
- * No se prerrenderiza ninguna ficha en compilación: qué centros existen y
- * cuáles han publicado su página cambia sin desplegar. Declararlo vacío es lo
- * que convierte la ruta en incremental —se cachea la primera vez que alguien la
- * pide— en vez de dinámica pura.
- */
-export function generateStaticParams() {
-  return [];
-}
 
 /**
  * E9-04 · Título, descripción, OpenGraph y canónica PROPIOS de este centro.

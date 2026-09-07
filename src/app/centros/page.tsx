@@ -19,10 +19,10 @@ export const metadata: Metadata = {
  * el gimnasio publicaba la URL en su propia web. Una página que solo se alcanza
  * escribiendo su dirección exacta no es pública, es un enlace privado.
  *
- * Dinámico: el juego de centros publicados cambia sin desplegar. La caché la
- * pone E9-14 con `revalidate`.
+ * Dinámico: el juego de centros publicados cambia sin desplegar. Sin
+ * `revalidate`, por lo mismo que sus hermanas: el layout raíz lee `auth()` y
+ * `headers()`, y el renderizado incremental acaba en `DYNAMIC_SERVER_USAGE`.
  */
-export const revalidate = 600;
 
 export default async function CentrosPage() {
   const cities = await listDirectoryCities();

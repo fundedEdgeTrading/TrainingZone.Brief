@@ -13,14 +13,13 @@ import { CenterCard } from "../page";
  * una sola ficha. Además es el nodo que enlaza cada centro de la ciudad, así que
  * ninguna ficha depende de que alguien escriba su URL a mano.
  */
-export const revalidate = 600;
-
-export function generateStaticParams() {
-  // No se prerrenderiza nada en build a propósito: el juego de ciudades depende
-  // de qué centros hayan publicado su página, que cambia sin desplegar. Con
-  // `revalidate` cada ciudad se cachea la primera vez que alguien la pide.
-  return [];
-}
+/**
+ * Sin `revalidate` ni `generateStaticParams`: el juego de ciudades depende de
+ * qué centros hayan publicado su página, que cambia sin desplegar, y el layout
+ * raíz lee `auth()` y `headers()`, así que pedir renderizado incremental hace
+ * que Next intente prerrenderizar y devuelva un 500 (`DYNAMIC_SERVER_USAGE`)
+ * en vez de una página cacheada.
+ */
 
 export async function generateMetadata({ params }: { params: Promise<{ ciudad: string }> }): Promise<Metadata> {
   const { ciudad } = await params;

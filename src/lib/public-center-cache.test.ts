@@ -17,10 +17,36 @@ const LEAD_PAGE = "src/app/lead-form/[orgSlug]/[centerSlug]/page.tsx";
 const PLANES_PAGE = "src/app/planes/page.tsx";
 const ORG_ACTIONS = "src/app/(app)/organization/actions.ts";
 
-test("las páginas de centro declaran revalidate = 600", () => {
+test("la caché de diez minutos está en la consulta, no en la ruta", () => {
   assert.equal(PUBLIC_CENTER_REVALIDATE, 600);
-  for (const page of [MEMBERSHIP_PAGE, LEAD_PAGE]) {
-    assert.match(readFileSync(page, "utf8"), /export const revalidate = 600;/, `${page} no declara revalidate`);
+  // Los diez minutos los aplica `unstable_cache`, que es lo que de verdad
+  // ahorra las consultas.
+  for (const queries of ["src/lib/public-membership-queries.ts", "src/lib/public-lead-queries.ts"]) {
+    assert.match(
+      readFileSync(queries, "utf8"),
+      /revalidate: PUBLIC_CENTER_REVALIDATE/,
+      `${queries} no aplica los diez minutos a la consulta`
+    );
+  }
+});
+
+test("ninguna página pública declara revalidate: con este layout eso es un 500", () => {
+  // La primera versión de E9-14 puso `export const revalidate = 600` en la
+  // ruta. El layout raíz lee `auth()` y `headers()`, así que Next intentaba
+  // prerrenderizar y la petición moría con `DYNAMIC_SERVER_USAGE`: /lead-form,
+  // /hazte-socio y /centros/[ciudad] devolvían 500 en producción — el
+  // formulario de captación y la página de alta, caídos. Lo cazó Playwright en
+  // CI; este test lo fija para que no vuelva por otra ruta.
+  for (const page of [
+    MEMBERSHIP_PAGE,
+    LEAD_PAGE,
+    "src/app/centros/page.tsx",
+    "src/app/centros/[ciudad]/page.tsx",
+  ]) {
+    assert.ok(
+      !/export const revalidate/.test(readFileSync(page, "utf8")),
+      `${page} declara revalidate y el layout raíz lo convierte en un 500`
+    );
   }
 });
 

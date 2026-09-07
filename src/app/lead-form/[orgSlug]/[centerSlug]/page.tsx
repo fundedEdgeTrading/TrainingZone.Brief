@@ -5,12 +5,12 @@ import { getCachedPublicLeadFormContext } from "@/lib/public-lead-queries";
 import { GENERIC_CENTER_METADATA, centerLeadFormMetadata } from "@/lib/public-center-seo";
 import { PublicLeadForm } from "./public-lead-form";
 
-/** E9-14 · Mismo criterio que la ficha de alta: diez minutos, con invalidación por etiqueta al editar el centro. */
-export const revalidate = 600;
-
-export function generateStaticParams() {
-  return [];
-}
+/**
+ * E9-14 · Mismo criterio que la ficha de alta: la consulta se cachea diez
+ * minutos con etiqueta por centro y se invalida al editarlo. Sin `revalidate`
+ * en la ruta: el layout raíz lee `auth()` y `headers()`, y pedir renderizado
+ * incremental convierte este formulario en un 500 (`DYNAMIC_SERVER_USAGE`).
+ */
 
 /**
  * E9-04 · `/lead-form` y `/hazte-socio` compiten por la misma intención.
