@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { tessellate } from "@/lib/barrio-geometry";
-import type { BarrioCenter, BarrioStat } from "@/lib/barrio-map";
+import { tessellate, type Ring } from "@/lib/barrio-geometry";
+import { coversCity, ringsFromTopology } from "@/lib/barrio-geojson";
+import { INK_DARK, haloForInk, type BarrioCenter, type BarrioStat } from "@/lib/barrio-map";
 
 /** Metros que se andan en un minuto (≈4,7 km/h): el radio del anillo de cada centro. */
 const WALK_METERS_PER_MINUTE = 78;
@@ -14,12 +15,45 @@ const CELL_EDGE = "#f7f4ed";
 const CELL_EDGE_ACTIVE = "#1d1d1c";
 const RING_STROKE = "#8a8574";
 
+/** Trazo de los barrios con valor negativo (E11-06). */
+const NEGATIVE_DASH = "3 3";
+
+
+/**
+ * E11-10 · `prefers-reduced-motion`, de verdad.
+ *
+ * El bloque de `globals.css` anula las animaciones **CSS**, pero `panTo` y
+ * `flyTo` son animación JS de Leaflet: se seguían ejecutando enteras. Para quien
+ * marca esa preferencia porque el movimiento le marea, el mapa era justo lo que
+ * había pedido que no pasara.
+ *
+ * Se consulta en cada uso y no una vez al montar: la preferencia se puede
+ * cambiar con la pestaña abierta.
+ */
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+}
+
+/**
+ * E11-10 · En táctil, `mouseover` dispara al tocar y `mouseout` **no llega
+ * nunca**: el barrio se quedaba señalado indefinidamente, y el siguiente toque
+ * en otro sitio dejaba dos señalados a la vez. Con puntero grueso se usa solo
+ * `click`.
+ */
+function isCoarsePointer(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
+}
+
 export type BarrioMapProps = {
   /** Barrios de la ciudad activa; al cambiar de ciudad se reconstruye la geometría. */
   points: BarrioStat[];
   centers: BarrioCenter[];
   /** CP → color de relleno de la métrica activa (el mismo que su fila del ranking). */
   colors: Record<string, string>;
+  /** CP → tinta del rótulo, elegida por contraste contra ese relleno (E11-06). */
+  inks: Record<string, string>;
+  /** CP → `true` si el valor es negativo: trazo discontinuo como redundancia no cromática (E11-06). */
+  dashed: Record<string, boolean>;
   /** CP → cifra ya formateada que acompaña al nombre en la etiqueta. */
   values: Record<string, string>;
   /** CP en orden de colocación de etiquetas: primero el de más peso en la métrica. */
@@ -38,6 +72,10 @@ export type BarrioMapProps = {
   showCenters?: boolean;
   /** Opacidad del relleno de las celdas; bájese para que se vea más callejero debajo. */
   cellOpacity?: number;
+  /** Clave de la ciudad activa: es la que se pide a `/api/geo/[ciudad]` (E11-08). */
+  cityKey: string;
+  /** Avisa de qué geometría se está pintando, para que la leyenda no mienta (E11-08). */
+  onGeometry?: (realGeometry: boolean) => void;
 };
 
 type Box = { l: number; r: number; t: number; b: number };
@@ -58,6 +96,8 @@ export function BarrioMap({
   points,
   centers,
   colors,
+  inks,
+  dashed,
   values,
   priority,
   hovered,
@@ -70,6 +110,8 @@ export function BarrioMap({
   walkMinutes = 15,
   showCenters = true,
   cellOpacity = 0.86,
+  cityKey,
+  onGeometry,
 }: BarrioMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -90,13 +132,27 @@ export function BarrioMap({
   // por qué asomarse primero al Ebro.
   const initialCenterRef = useRef<[number, number]>([points[0]?.lat ?? 40.4168, points[0]?.lng ?? -3.7038]);
 
+  /**
+   * E11-08 · Los contornos reales de la ciudad activa, si están publicados.
+   *
+   * `null` mientras se piden y cuando no los hay: en los dos casos se pinta la
+   * teselación, así que el mapa nunca se queda en blanco esperando una descarga.
+   * Se pide SOLO la ciudad que se está mirando — servir el país entero para
+   * pintar Zaragoza sería mandar noventa y nueve ciudades que nadie va a ver.
+   */
+  const [geo, setGeo] = useState<{ city: string; byCode: Record<string, Ring> } | null>(null);
+  // La geometría lleva pegada la ciudad para la que se descargó: así, al cambiar
+  // de ciudad, el valor viejo deja de aplicar SOLO y no hace falta ponerlo a
+  // null desde el efecto (que además sería un repintado en cascada).
+  const realRings = geo?.city === cityKey ? geo.byCode : null;
+
   // Última foto de lo que pinta el mapa. Los manejadores de Leaflet y los
   // temporizadores viven fuera del ciclo de render: leen de aquí en vez de
   // capturar props de un render viejo.
-  const viewRef = useRef({ colors, values, priority, hovered, focus, showLabels, cellOpacity });
+  const viewRef = useRef({ colors, inks, dashed, values, priority, hovered, focus, showLabels, cellOpacity });
   const handlersRef = useRef({ onHover, onSelect });
   useEffect(() => {
-    viewRef.current = { colors, values, priority, hovered, focus, showLabels, cellOpacity };
+    viewRef.current = { colors, inks, dashed, values, priority, hovered, focus, showLabels, cellOpacity };
     handlersRef.current = { onHover, onSelect };
   });
 
@@ -193,7 +249,7 @@ export function BarrioMap({
 
   /** Recolorea celdas y etiquetas sin tocar la geometría. */
   const paint = useCallback(() => {
-    const { colors: fill, hovered: hot, focus: pinned, cellOpacity: base } = viewRef.current;
+    const { colors: fill, inks: ink, dashed: dash, hovered: hot, focus: pinned, cellOpacity: base } = viewRef.current;
     polysRef.current.forEach((layer, code) => {
       const active = code === hot || code === pinned;
       layer.setStyle({
@@ -201,13 +257,27 @@ export function BarrioMap({
         fillOpacity: active ? Math.min(1, base + 0.1) : base,
         color: active ? CELL_EDGE_ACTIVE : CELL_EDGE,
         weight: active ? 2.6 : 1.6,
+        // E11-06 · Redundancia no cromática: los barrios que CAEN llevan borde
+        // discontinuo. La claridad de la rampa ya lleva el signo; esto lo dice
+        // además sin depender de ver ningún color.
+        dashArray: dash[code] ? NEGATIVE_DASH : undefined,
       });
       if (active) layer.bringToFront();
+      // El globo enseña la métrica ACTIVA: si no se actualizara aquí, seguiría
+      // contando la anterior.
+      const point = points.find((p) => p.code === code);
+      if (point) layer.setTooltipContent(tooltipHtml(point.name, viewRef.current.values[code] ?? ""));
       const el = labelMarkersRef.current.get(code)?.getElement();
-      if (el) el.classList.toggle("hi", active);
+      if (el) {
+        el.classList.toggle("hi", active);
+        // La tinta del rótulo se elige por contraste contra su propia celda: con
+        // tinta fija, sobre el escalón más oscuro la cifra daba 1,12:1.
+        el.style.setProperty("--tz-lbl-ink", ink[code] ?? INK_DARK);
+        el.style.setProperty("--tz-lbl-halo", haloForInk(ink[code] ?? INK_DARK));
+      }
     });
     layoutLabels();
-  }, [layoutLabels]);
+  }, [layoutLabels, points]);
 
   // --- Ciclo de vida del mapa ------------------------------------------------
 
@@ -268,13 +338,46 @@ export function BarrioMap({
     };
   }, [frame, layoutLabels]);
 
+  // E11-08 · Descarga de la geometría publicada. Un 404 es un estado normal
+  // ("esta ciudad no la tiene"), no una avería: se cae a la teselación.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(`/api/geo/${encodeURIComponent(cityKey)}`);
+        if (!response.ok) return;
+        const rings = ringsFromTopology(await response.json());
+        // Media ciudad con contorno real y media con teselación es peor que la
+        // ciudad entera aproximada: o cubre todos los barrios, o no se usa.
+        if (!cancelled && coversCity(rings, points.map((p) => p.code))) {
+          setGeo({ city: cityKey, byCode: rings.byCode });
+        }
+      } catch {
+        // Sin red, o JSON corrupto: la teselación sigue ahí.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cityKey, points]);
+
   // Geometría: se reconstruye al cambiar de ciudad, nunca al cambiar de métrica.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const { colors: fill, values: text, cellOpacity: base } = viewRef.current;
 
-    const rings = tessellate(points);
+    /**
+     * E11-08 · `topojson-client` sustituye a `tessellate()` cuando hay
+     * geometría. La vista ya trabajaba sobre anillos, así que color, etiquetas,
+     * foco y encuadre no se enteran de cuál es cuál — y con contornos publicados
+     * desaparece de golpe el acantilado de `tessellate()`, que es O(n²) y
+     * síncrono en el hilo principal.
+     */
+    const rings = realRings ? points.map((p) => realRings[p.code]) : tessellate(points);
+    onGeometry?.(realRings !== null);
     // El encuadre va ANTES de crear geometría: un `path` añadido mientras la
     // vista aún apunta a la otra ciudad se dibuja contra unos límites de
     // renderer que todavía no existen y sale vacío.
@@ -297,9 +400,23 @@ export function BarrioMap({
         fillColor: fill[point.code],
         fillOpacity: base,
       });
-      cell.on("mouseover", () => handlersRef.current.onHover(point.code));
-      cell.on("mouseout", () => handlersRef.current.onHover(null));
+      // En táctil no se cuelgan los manejadores de ratón: `mouseout` no llega
+      // nunca y el barrio se queda señalado para siempre.
+      if (!isCoarsePointer()) {
+        cell.on("mouseover", () => handlersRef.current.onHover(point.code));
+        cell.on("mouseout", () => handlersRef.current.onHover(null));
+      }
       cell.on("click", () => handlersRef.current.onSelect(point.code));
+
+      // E11-10 · El polígono cuenta lo suyo sin depender de la tarjeta de foco,
+      // que bajo 1024 px no está. `sticky:false` para que el globo no persiga al
+      // dedo en táctil.
+      cell.bindTooltip(tooltipHtml(point.name, text[point.code] ?? ""), {
+        className: "tz-map-tip",
+        direction: "top",
+        sticky: false,
+        opacity: 1,
+      });
       cellsRef.current?.addLayer(cell);
       polysRef.current.set(point.code, cell);
 
@@ -349,12 +466,12 @@ export function BarrioMap({
     frame();
     // El juego de puntos y de centros cambia con la ciudad: es lo que dispara la
     // reconstrucción, junto a los parámetros que redibujan los anillos.
-  }, [points, centers, showCenters, walkMinutes, frame, paint]);
+  }, [points, centers, showCenters, walkMinutes, frame, paint, realRings, onGeometry]);
 
   // Cambio de métrica, resalte o foco: solo relleno, sin tocar geometría.
   useEffect(() => {
     paint();
-  }, [colors, values, hovered, focus, cellOpacity, paint]);
+  }, [colors, inks, dashed, values, hovered, focus, cellOpacity, paint]);
 
   // Las etiquetas también se recolocan al ocultarlas/enseñarlas y al reordenar
   // la prioridad (cambia con la métrica).
@@ -383,10 +500,29 @@ export function BarrioMap({
     const map = mapRef.current;
     if (!map || !panTo) return;
     const point = points.find((p) => p.code === panTo.code);
-    if (point) map.panTo([point.lat, point.lng], { duration: 0.6 });
+    if (!point) return;
+    // E11-10 · Con movimiento reducido se llega igual, pero de un salto.
+    if (prefersReducedMotion()) map.setView([point.lat, point.lng], map.getZoom(), { animate: false });
+    else map.panTo([point.lat, point.lng], { duration: 0.6 });
   }, [panTo, points]);
 
-  return <div ref={containerRef} className="tz-map tz-barrio-map absolute inset-0 bg-tz-sand" />;
+  return (
+    <div
+      ref={containerRef}
+      className="tz-map tz-barrio-map absolute inset-0 bg-tz-sand"
+      // E11-04 · Los polígonos son `<path>` con manejadores de ratón: no son
+      // focusables ni tienen rol, así que para un lector de pantalla esto es un
+      // rectángulo mudo. `role="application"` es lo honesto —hay interacción
+      // propia dentro— y la etiqueta dice qué es y dónde está la alternativa.
+      role="application"
+      aria-label={`Mapa de barrios por coropletas. La misma información, ordenable y con las seis métricas a la vez, está en la tabla «Ranking» junto al mapa. ${points.length} barrios.`}
+    />
+  );
+}
+
+/** Contenido del globo: nombre y cifra de la métrica activa. */
+function tooltipHtml(name: string, value: string): string {
+  return `<b>${escapeHtml(name)}</b>${value ? ` · ${escapeHtml(value)}` : ""}`;
 }
 
 /** Los nombres de barrio y de centro entran en `innerHTML` del `divIcon`. */

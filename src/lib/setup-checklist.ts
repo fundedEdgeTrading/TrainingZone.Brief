@@ -18,8 +18,29 @@ export type SetupStep = {
   blocking: boolean;
 };
 
+/**
+ * E9-15 · Los centros de la organización con sus dos URLs públicas.
+ *
+ * `grep -rn "hazte-socio\|lead-form"` fuera de sus propias carpetas devolvía
+ * solo el allowlist del proxy y dos comentarios: la puesta en marcha tenía siete
+ * pasos y ninguno enseñaba la URL pública, y `/organization` recogía el `slug`
+ * sin devolverlo jamás como enlace. **El embudo comercial completo solo era
+ * alcanzable si el gimnasio construía la dirección a mano.**
+ */
+export async function getPublicCenterLinks(orgId: string) {
+  const [org, centers] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: orgId }, select: { slug: true } }),
+    prisma.center.findMany({
+      where: { orgId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, slug: true, publicPage: true },
+    }),
+  ]);
+  return { orgSlug: org?.slug ?? "", centers };
+}
+
 export async function getSetupChecklist(orgId: string): Promise<SetupStep[]> {
-  const [org, centers, plans, staff, members, stripeAccount] = await Promise.all([
+  const [org, centers, plans, staff, members, stripeAccount, publishedCenters] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: orgId },
       select: { taxId: true, billingName: true, logoUrl: true },
@@ -29,6 +50,7 @@ export async function getSetupChecklist(orgId: string): Promise<SetupStep[]> {
     prisma.user.count({ where: { orgId, role: { not: "OWNER" } } }),
     prisma.member.count({ where: { orgId } }),
     prisma.stripeAccount.findUnique({ where: { orgId }, select: { chargesEnabled: true } }),
+    prisma.center.count({ where: { orgId, publicPage: true } }),
   ]);
 
   return [
@@ -78,6 +100,17 @@ export async function getSetupChecklist(orgId: string): Promise<SetupStep[]> {
       hint: "Para cobrar a tus socios online. El dinero va a tu cuenta, no a la nuestra.",
       done: !!stripeAccount?.chargesEnabled,
       href: "/organization",
+      blocking: false,
+    },
+    {
+      // E9-15 · El paso que faltaba. Es una línea de interfaz que desbloquea el
+      // embudo comercial entero: sin ella, la URL de captación de cada centro
+      // solo existía en la cabeza de quien leyera el código del proxy.
+      id: "enlaces",
+      label: "Tus enlaces públicos",
+      hint: "La URL donde tus socios se dan de alta y la del formulario que embebes en tu web.",
+      done: publishedCenters > 0,
+      href: "/puesta-en-marcha#enlaces-publicos",
       blocking: false,
     },
     {

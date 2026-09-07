@@ -1,5 +1,5 @@
 import { CORE_FEATURES, FEATURE_LABEL, type PlatformFeature } from "@/lib/platform-plans";
-import TourStage from "./tour-stage";
+import TourStage from "./tour-stage-loader";
 import { CAPTIONS, MODULES, SCENES } from "./tour-script";
 
 // Las mismas cuatro capacidades diferenciales que enseña el hero: la tarjeta de
@@ -43,6 +43,9 @@ export default function Tour() {
         </ul>
       </div>
 
+      {/* E9-08 · La animación entra por `tour-stage-loader`: no se descarga
+          hasta que la sección se acerca a la ventana. El hueco ya tiene su
+          altura definitiva, así que el relevo no mueve nada. */}
       <div className="rounded-card border border-brand-border overflow-hidden bg-tz-bone shadow-card">
         <TourStage core={CORE_FEATURES} premium={HIGHLIGHT_FEATURES.map((f) => FEATURE_LABEL[f])} />
       </div>

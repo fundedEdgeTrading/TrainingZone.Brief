@@ -13,6 +13,7 @@ import {
 } from "./actions";
 import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
+import { CenterPublicCard } from "./center-public-card";
 import { StaffDrawer } from "./staff-drawer";
 import { StaffRowActions, StaffActionsProvider } from "./staff-row-actions";
 import AptaLogo from "@/components/apta-logo";
@@ -225,6 +226,10 @@ export default async function OrganizationPage({
                   </Button>
                 </ActionForm>
               )}
+              {/* E9-05 + E9-15 · NAP editable y, sobre todo, las dos URLs
+                  públicas del centro: hasta aquí el embudo comercial entero
+                  solo era alcanzable escribiendo la dirección a mano. */}
+              {canOrg && org && <CenterPublicCard center={c} orgSlug={org.slug} />}
             </div>
           ))}
           {centers.length === 0 && <p className="text-sm text-muted">Todavía no hay centros.</p>}
@@ -256,6 +261,13 @@ export default async function OrganizationPage({
             <Field label="Longitud" hint="Opcional — para el mapa de barrios">
               <Input name="lng" placeholder="-0.8815" inputMode="decimal" />
             </Field>
+            {/* E11-03 · Solo hace falta si el aviso salta: un signo cambiado en
+                la latitud mueve el centro de continente, y sin esto se quedaba
+                así para siempre porque no había pantalla para corregirlo. */}
+            <label className="md:col-span-2 flex items-center gap-2 text-[12px] text-brand-muted">
+              <input type="checkbox" name="confirmFarCoordinates" className="h-4 w-4 accent-tz-black" />
+              Sé que este centro está lejos de los demás
+            </label>
             <Button type="submit">Añadir centro</Button>
           </ActionForm>
         )}

@@ -25,6 +25,16 @@ export const PUBLIC_PATHS = [
   "/preferencias",
   "/baja",
   "/privacidad",
+  // E10-22 · La política de cookies llegó de otra pista como página pública y
+  // sin entrada aquí: el proxy la rebotaba a /login, así que el enlace del pie
+  // de los correos y el de la propia landing no llevaban a ninguna parte.
+  "/cookies",
+  // E9-11 · Páginas de captación e índice de centros. Son la respuesta a que el
+  // inventario indexable fueran cuatro URLs contra competidores con blogs de
+  // cientos de artículos.
+  "/funcionalidades",
+  "/para",
+  "/centros",
   "/api/email",
   "/servicio-no-disponible",
   "/api/jobs",
@@ -36,6 +46,15 @@ export const PUBLIC_PATHS = [
   // chequeo de cookie de aquí la rebotaba entera a /login — incluido su
   // propio endpoint de login, con lo que la app no podía autenticarse nunca.
   "/api/mobile",
+  // E9-01 · Rastreo. El matcher del proxy ya los excluye por extensión y por
+  // prefijo, así que en condiciones normales no llegan hasta aquí; se listan
+  // igualmente para que el día que alguien reescriba el matcher la respuesta
+  // siga siendo la correcta y no un rebote a /login. `/.well-known` cubre
+  // `assetlinks.json` (Android) y `apple-app-site-association` (iOS), que no
+  // lleva extensión.
+  "/robots.txt",
+  "/sitemap.xml",
+  "/.well-known",
 ];
 
 /**

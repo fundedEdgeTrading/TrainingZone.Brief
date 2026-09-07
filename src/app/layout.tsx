@@ -8,6 +8,10 @@ import { isThemedPath, themeAttribute, themeForUser } from "@/lib/theme";
 import { ToastProvider } from "@/components/ui/toast";
 import { CelebrateProvider } from "@/components/ui/celebrate";
 import { BRAND, publicOrigin } from "@/lib/site";
+import { analyticsConfig, googleSiteVerification } from "@/lib/analytics";
+import { Analytics } from "@/components/analytics";
+import { JsonLd } from "@/components/json-ld";
+import { organizationJsonLd } from "@/lib/json-ld";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -48,6 +52,10 @@ export const metadata: Metadata = {
     title: BRAND.title,
     description: BRAND.description,
   },
+  // E9-09 · Search Console. La verificación buena es la de DNS —cubre el
+  // dominio entero y no se pierde al redesplegar—; esta meta es la segunda vía,
+  // la que sobrevive a un cambio de proveedor de DNS.
+  verification: { google: googleSiteVerification() },
 };
 
 export default async function RootLayout({
@@ -71,10 +79,16 @@ export default async function RootLayout({
       className={`h-full antialiased ${poppins.variable}`}
     >
       <body className="min-h-full flex flex-col bg-brand-bg text-brand-text">
+        {/* E9-07 · `Organization` en la raíz: es lo que hace que el nombre de
+            marca se resuelva a una entidad y no a una cadena suelta. */}
+        <JsonLd node={organizationJsonLd()} />
         <SessionProvider session={session}>
           <ToastProvider>
             <CelebrateProvider>{children}</CelebrateProvider>
           </ToastProvider>
+          {/* E9-09 · Analítica sin cookies (no arrastra banner) y los tres
+              eventos de conversión, escuchados en un solo sitio. */}
+          <Analytics config={analyticsConfig()} />
         </SessionProvider>
       </body>
     </html>

@@ -14,11 +14,19 @@ export default function Hero() {
       </div>
 
       <div className="relative max-w-3xl mx-auto text-center tz-fade-up">
+        {/* E9-10 · El eyebrow decía casi literalmente lo mismo que el h1 de
+            abajo. Repetir la consulta principal dos veces seguidas no refuerza
+            nada: reparte la señal y deja al visitante leyendo dos veces la
+            misma frase antes de llegar al botón. Aquí va lo que el h1 no cabe:
+            de qué se compone el producto. */}
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-apta-gold mb-3">
-          Software de gestión para centros de entrenamiento
+          Socios, agenda, cobros y leads en un solo sitio
         </p>
+        {/* El único h1 de la página, y lleva la consulta principal delante:
+            "software de gestión" + "gimnasio". El anterior —"El software que
+            pone en orden tu gimnasio"— la describía sin nombrarla. */}
         <h1 className="font-display font-extrabold text-3xl sm:text-5xl uppercase leading-[1.05] tracking-[-.01em] text-tz-bone">
-          El software que pone en orden tu gimnasio, tu box o tu estudio
+          Software de gestión para tu gimnasio, tu box o tu estudio
         </h1>
         <p className="text-sm sm:text-base text-brand-muted-2 mt-5 max-w-xl mx-auto">
           Socios, agenda y reservas, cobros y CRM de leads en el núcleo de cualquier plan — con
