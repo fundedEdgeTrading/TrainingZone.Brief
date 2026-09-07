@@ -1,11 +1,13 @@
 import { requireRole } from "@/lib/guard";
 import { canViewTrainerRatings, canManageOrg } from "@/lib/rbac";
-import { getTrainerRatingSummary } from "@/lib/trainer-rating-access";
+import { getTrainerRatingSummary, listOpenSubjectAccessRequests, RLT_NOTICE } from "@/lib/trainer-rating-access";
 import { getSalesRanking, currentMonthRange } from "@/lib/sales-ranking";
 import { getCheckinConfigs } from "@/lib/checkin-schedule";
 import { Card } from "@/components/kpi-card";
 import { PageHeader } from "@/components/ui/page-header";
+import { NO_TIME_TRACKING_NOTICE } from "@/lib/service-terms";
 import { CheckinConfigForm } from "./rrhh-client";
+import { SubjectAccessRequests } from "./subject-access";
 
 function fmtEuros(cents: number) {
   return (cents / 100).toLocaleString("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -19,8 +21,10 @@ export default async function RrhhPage() {
   const isDirection = canManageOrg(session.user.role) || session.user.role === "CENTER_DIRECTOR";
 
   const monthRange = currentMonthRange();
-  const [ratingSummary, checkinConfigs, salesRanking] = await Promise.all([
+  const [ratingSummary, accessRequests, checkinConfigs, salesRanking] = await Promise.all([
     canViewTrainerRatings(session.user.role) ? getTrainerRatingSummary(session.user.orgId, session.user.role) : Promise.resolve(null),
+    // E10-16: las solicitudes del art. 15 de los propios entrenadores.
+    listOpenSubjectAccessRequests(session.user.orgId, session.user.role),
     isDirection ? getCheckinConfigs(session.user.orgId) : Promise.resolve([]),
     isDirection ? getSalesRanking(session.user.orgId, monthRange) : Promise.resolve([]),
   ]);
@@ -51,6 +55,32 @@ export default async function RrhhPage() {
               </tbody>
             </table>
           </div>
+          {/* E10-16 · art. 64.4.d ET: quien decide sobre un puesto tiene que
+              ver esto escrito en la pantalla donde lo decide. */}
+          <p className="text-[12.5px] text-brand-muted border-t border-tz-sand mt-3 pt-3">{RLT_NOTICE}</p>
+        </Card>
+      )}
+
+      {/* E10-21 · el módulo de fichajes se apagó. La declaración va aquí, donde
+          estaba el widget: quien venga a buscar el fichaje tiene que encontrar
+          la respuesta, no un hueco. */}
+      {isDirection && (
+        <Card title={NO_TIME_TRACKING_NOTICE.title} meta="E10-21 — art. 34.9 ET / RDL 8/2019">
+          <p className="text-sm text-brand-muted">{NO_TIME_TRACKING_NOTICE.body}</p>
+        </Card>
+      )}
+
+      {accessRequests && accessRequests.length > 0 && (
+        <Card
+          title="Derecho de acceso de entrenadores"
+          meta={`E10-16 — art. 15 RGPD, plazo de un mes (art. 12.3)`}
+        >
+          <p className="text-sm text-brand-muted mb-3">
+            Un entrenador ha pedido las valoraciones que se han hecho de él. Hay que entregárselas: el art. 15.4
+            permite proteger la identidad de quien las escribió, no negar el contenido. La pantalla sigue siendo
+            tuya — lo que se le entrega es lo que sale abajo, ya sin autor.
+          </p>
+          <SubjectAccessRequests requests={accessRequests} />
         </Card>
       )}
 

@@ -273,6 +273,8 @@ test.describe("Alta pago-primero completa: compra → puesta en marcha de la org
     await drawer.locator('input[name="firstName"]').fill("Playwright");
     await drawer.locator('input[name="lastName"]').fill(`Completo ${TAG}`);
     await drawer.locator('input[name="email"]').fill(email);
+    // E10-12: el alta pide fecha de nacimiento y la valida (control de edad).
+    await drawer.locator('input[name="birthDate"]').fill("1992-04-11");
     await chooseInField(page, fieldByLabel(drawer, "Centro"), CENTER_1);
     await drawer.getByRole("button", { name: "+ Añadir bono" }).click();
     await chooseInField(page, fieldByLabel(drawer, "Plan", 0), PRODUCT_NAME);

@@ -15,6 +15,13 @@ import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type InjuryZone, type Laterality, type Role, type Sex } from "@prisma/client";
 import { INJURY_ZONES, LATERALITIES, defaultSideFor } from "@/lib/injury-zones";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { ensureSuppressedMemberBucket, getSuppressionPlan } from "@/lib/member-suppression";
+import {
+  deletePhotosOfEntries,
+  deleteProgressPhoto,
+  isPhotoStoreConfigured,
+  putProgressPhoto,
+} from "@/lib/progress-photos";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -393,14 +400,32 @@ export async function addSubscription(formData: FormData): Promise<MemberActionR
   return { ok: true };
 }
 
+/**
+ * Vista previa de la supresión (E10-09). El diálogo la pide al abrirse y pinta
+ * lo que devuelve: así el texto que lee dirección no puede describir un
+ * tratamiento distinto del que va a ocurrir, porque sale de la misma función
+ * que ejecuta el borrado.
+ */
+export async function previewMemberSuppression(memberId: string) {
+  const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  if (!canDeleteMembers(session.user.role)) return null;
+  if (!(await memberIsInScope(session.user, memberId))) return null;
+  return getSuppressionPlan(memberId, session.user.orgId);
+}
+
 // Baja definitiva del socio (C4 — derecho de supresión del RGPD). Reglas:
 //  · solo dirección (canDeleteMembers);
 //  · nunca con una suscripción viva (ACTIVE o FROZEN, que es una activa en
 //    pausa): primero hay que cancelarla desde "Plan y pagos";
 //  · borra en cascada manual todo lo que cuelga del socio — el esquema no
 //    declara onDelete, así que el orden importa (hijos antes que padres);
+//  · E10-09: los Payment NO se borran. Se disocian —pasan a la ficha contable
+//    «Socios suprimidos»— porque borrarlos es destruir justificantes dentro
+//    del plazo de prescripción fiscal (art. 200 LGT). Los datos de salud van
+//    según la tabla de plazos (E10-08): vencidos se borran, dentro de plazo se
+//    desligan de la persona;
 //  · el AuditLog no tiene FK a Member: se conserva como registro append-only
-//    (ADR-008) y se le añade la entrada MEMBER_DELETED.
+//    (ADR-008) y se le añade la entrada MEMBER_DELETED con el alcance.
 export async function deleteMember(memberId: string): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
   if (!canDeleteMembers(session.user.role)) return { ok: false, error: "No tienes permiso para eliminar socios." };
@@ -413,6 +438,7 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       firstName: true,
       lastName: true,
       email: true,
+      primaryCenterId: true,
       subscriptions: { where: { status: { in: ["ACTIVE", "FROZEN"] } }, select: { id: true } },
     },
   });
@@ -425,11 +451,44 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
     };
   }
 
+  // El plan se calcula ANTES de borrar nada: después las cuentas ya no existen,
+  // y es el mismo plan que el diálogo acaba de enseñar.
+  const plan = await getSuppressionPlan(memberId, session.user.orgId);
+  if (!plan) return { ok: false, error: "No se ha encontrado ese socio." };
+  // Las referencias de foto se leen ANTES de borrar las filas: después ya no
+  // habría desde dónde saber qué ficheros quedan huérfanos en disco.
+  const photoEntries = await prisma.memberProgressEntry.findMany({
+    where: { memberId },
+    select: { photoFrontUrl: true, photoSideUrl: true, photoBackUrl: true },
+  });
+  const healthAction = plan.effects.find((e) => e.key === "healthRecords")?.action ?? "ANONYMIZE";
+
   try {
     await prisma.$transaction(async (tx) => {
+      // E10-09 · los cobros se disocian antes de tocar nada más: si la
+      // transacción se cae después, no se ha destruido ningún justificante.
+      const bucketId = await ensureSuppressedMemberBucket(tx, session.user.orgId, member.primaryCenterId);
+      await tx.payment.updateMany({
+        where: { memberId },
+        // `subscriptionId` se suelta porque la suscripción sí se borra: sin
+        // esto el cobro quedaría apuntando a una fila que va a desaparecer.
+        data: { memberId: bucketId, subscriptionId: null },
+      });
+
+      // E10-09 · salud según la tabla de plazos. Dentro de plazo el registro se
+      // desliga de la persona (`memberId: null`, sin lead detrás: deja de ser
+      // recuperable desde ninguna ficha); vencido el plazo, se borra.
+      if (healthAction === "DELETE") {
+        await tx.healthRecord.deleteMany({ where: { memberId } });
+      } else {
+        await tx.healthRecord.updateMany({
+          where: { memberId },
+          data: { memberId: null, reportedByUserId: null },
+        });
+      }
+
       await tx.sessionDebrief.deleteMany({ where: { booking: { memberId } } });
       await tx.booking.deleteMany({ where: { memberId } });
-      await tx.payment.deleteMany({ where: { memberId } });
       await tx.chatMessage.deleteMany({ where: { conversation: { memberId } } });
       await tx.conversation.deleteMany({ where: { memberId } });
       await tx.announcementView.deleteMany({ where: { memberId } });
@@ -437,12 +496,15 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       await tx.selfAssessment.deleteMany({ where: { memberId } });
       await tx.workoutProgram.deleteMany({ where: { memberId } });
       await tx.retentionAlert.deleteMany({ where: { memberId } });
-      await tx.healthRecord.deleteMany({ where: { memberId } });
       await tx.clientFeedback.deleteMany({ where: { memberId } });
       await tx.trainerDebrief.deleteMany({ where: { memberId } });
       await tx.clientGoal.deleteMany({ where: { memberId } });
       await tx.memberNote.deleteMany({ where: { memberId } });
       await tx.memberProgressEntry.deleteMany({ where: { memberId } });
+      // E10-20 · borrar la fila no basta: la foto vive fuera de la base de
+      // datos, así que hay que borrar también el fichero. Se hace con las
+      // referencias leídas antes de la transacción.
+      await deletePhotosOfEntries(photoEntries);
       // F1/F6: `Assessment`, `PerformanceMetric` y `Mesocycle` tienen FK a
       // `Member` sin cascada (`ON DELETE RESTRICT`, ver la migración de F1) y
       // faltaban aquí — el borrado reventaba con P2003 para cualquier socio con
@@ -493,7 +555,13 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
           entityType: "Member",
           entityId: memberId,
           memberId,
-          metadata: { name: `${member.firstName} ${member.lastName}`.trim(), email: member.email },
+          // El alcance entra en la traza: qué se disoció, qué se borró y qué se
+          // anonimizó. Sin esto, "queda registrado en Auditoría" no dice nada.
+          metadata: {
+            name: `${member.firstName} ${member.lastName}`.trim(),
+            email: member.email,
+            scope: plan.effects.map((e) => ({ key: e.key, action: e.action, count: e.count })),
+          },
         },
       });
     });
@@ -562,10 +630,14 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
 
   const numValues = Object.fromEntries(COMPOSITION_NUM_FIELDS.map((k) => [k, num(k)]));
   const intValues = Object.fromEntries(COMPOSITION_INT_FIELDS.map((k) => [k, int(k)]));
-  const photos = { photoFrontUrl: str("photoFrontUrl"), photoSideUrl: str("photoSideUrl"), photoBackUrl: str("photoBackUrl") };
+  const rawPhotos = {
+    photoFrontUrl: str("photoFrontUrl"),
+    photoSideUrl: str("photoSideUrl"),
+    photoBackUrl: str("photoBackUrl"),
+  };
 
   const hasMetrics = Object.values(numValues).some((v) => v != null) || Object.values(intValues).some((v) => v != null);
-  const hasPhotos = Object.values(photos).some((v) => v != null);
+  const hasPhotos = Object.values(rawPhotos).some((v) => v != null);
   if (!hasMetrics && !hasPhotos) return { ok: false, error: "Introduce al menos un dato." };
   if (hasPhotos && !member.consentImages) {
     return { ok: false, error: "Este socio no ha firmado el consentimiento de uso de imágenes." };
@@ -574,9 +646,54 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
     return { ok: false, error: "Este socio no ha firmado el consentimiento de datos de salud (Art. 9 RGPD)." };
   }
 
+  // E10-20 · la foto sale de la base de datos ANTES de crear la fila: lo que se
+  // guarda en la columna es la referencia al fichero cifrado, nunca los bytes.
+  // Si el almacén no está configurado se dice, en vez de caer al camino de
+  // antes y volver a meter un `data:` URL en Postgres sin que nadie se entere.
+  if (hasPhotos && !isPhotoStoreConfigured()) {
+    return {
+      ok: false,
+      error:
+        "El almacén de fotos no está configurado (PROGRESS_PHOTO_KEY). Las fotos de composición corporal no se " +
+        "guardan en la base de datos, así que hasta configurarlo solo se pueden registrar las métricas.",
+    };
+  }
+
+  const photos: Record<string, string | null> = {};
+  const storedRefs: string[] = [];
+  for (const [field, value] of Object.entries(rawPhotos)) {
+    if (!value) {
+      photos[field] = null;
+      continue;
+    }
+    const stored = await putProgressPhoto(value);
+    if (!stored) {
+      // Se limpia lo ya guardado: media entrada con dos fotos huérfanas en
+      // disco es peor que ninguna.
+      for (const ref of storedRefs) await deleteProgressPhoto(ref);
+      return { ok: false, error: "Alguna de las fotos no es una imagen válida (JPEG, PNG o WebP)." };
+    }
+    photos[field] = stored.ref;
+    storedRefs.push(stored.ref);
+  }
+
   const entry = await prisma.memberProgressEntry.create({
     data: { memberId, ...numValues, ...intValues, ...photos, source: "MANUAL" },
   });
+
+  if (storedRefs.length > 0) {
+    await prisma.auditLog.create({
+      data: {
+        orgId: session.user.orgId,
+        actorUserId: session.user.id,
+        action: "PROGRESS_PHOTO_STORED",
+        entityType: "MemberProgressEntry",
+        entityId: entry.id,
+        memberId,
+        metadata: { photos: storedRefs.length, encrypted: true, inDatabase: false },
+      },
+    });
+  }
 
   if (hasMetrics) {
     await prisma.auditLog.create({

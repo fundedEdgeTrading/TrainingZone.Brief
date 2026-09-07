@@ -46,6 +46,8 @@ test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
     await drawer.locator('input[name="firstName"]').fill("Playwright");
     await drawer.locator('input[name="lastName"]').fill(`MultiBono ${Date.now()}`);
     await drawer.locator('input[name="email"]').fill(email);
+    // E10-12: el alta pide fecha de nacimiento y la valida (control de edad).
+    await drawer.locator('input[name="birthDate"]').fill("1992-04-11");
 
     await chooseInField(page, fieldByLabel(drawer, "Centro"), CENTER_A);
 
@@ -88,6 +90,8 @@ test.describe("Alta de socio con varios bonos (RB-AGENDA-003)", () => {
     await drawer.locator('input[name="firstName"]').fill("Playwright");
     await drawer.locator('input[name="lastName"]').fill(`AddBono ${Date.now()}`);
     await drawer.locator('input[name="email"]').fill(email);
+    // E10-12: el alta pide fecha de nacimiento y la valida (control de edad).
+    await drawer.locator('input[name="birthDate"]').fill("1992-04-11");
     await chooseInField(page, fieldByLabel(drawer, "Centro"), CENTER_A);
     await drawer.getByRole("button", { name: "+ Añadir bono" }).click();
     await chooseInField(page, fieldByLabel(drawer, "Plan", 0), EP_PLAN);

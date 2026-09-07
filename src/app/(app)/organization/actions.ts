@@ -14,6 +14,7 @@ import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { canAddCenter } from "@/lib/entitlements";
+import { ADULT_AGE, LOPDGDD_CONSENT_AGE } from "@/lib/minors";
 import type { PlanType, Role } from "@prisma/client";
 import {
   PLAN_TYPES,
@@ -55,6 +56,40 @@ export async function updateOrganization(formData: FormData): Promise<OrgActionR
   await prisma.organization.update({
     where: { id: session.user.orgId },
     data: { name, logoUrl },
+  });
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
+/**
+ * E10-12 · Política de edad de la organización (decisión D-P8). Va aparte de la
+ * marca a propósito: activar menores no es un cambio cosmético, obliga al
+ * circuito completo de consentimiento de tutores en cada alta.
+ */
+export async function updateAgePolicy(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const allowsMinors = formData.get("allowsMinors") === "yes";
+  const raw = Number(String(formData.get("minimumAgeYears") ?? ""));
+
+  if (!allowsMinors) {
+    await prisma.organization.update({
+      where: { id: session.user.orgId },
+      data: { allowsMinors: false, minimumAgeYears: ADULT_AGE },
+    });
+    revalidatePath("/organization");
+    return { ok: true };
+  }
+
+  if (!Number.isFinite(raw) || raw < LOPDGDD_CONSENT_AGE || raw > ADULT_AGE) {
+    return {
+      ok: false,
+      error: `La edad mínima tiene que estar entre ${LOPDGDD_CONSENT_AGE} y ${ADULT_AGE} años: por debajo de ${LOPDGDD_CONSENT_AGE} el consentimiento de datos de salud es nulo (art. 7 LOPDGDD).`,
+    };
+  }
+
+  await prisma.organization.update({
+    where: { id: session.user.orgId },
+    data: { allowsMinors: true, minimumAgeYears: Math.floor(raw) },
   });
   revalidatePath("/organization");
   return { ok: true };

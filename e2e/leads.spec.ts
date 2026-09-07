@@ -14,12 +14,25 @@ test.describe("F8 — Embudo de leads", () => {
     await page.locator('input[name="phone"]').fill(uniquePhone);
     await page.locator('input[name="postalCode"]').fill("28010");
     await page.locator('input[name="occupation"]').fill("QA automatizado");
+    // E10-12: la fecha de nacimiento es obligatoria en el formulario público —
+    // sin ella no se sabe si quien lo rellena es menor.
+    await page.locator('input[name="birthDate"]').fill("1990-05-14");
     await page.locator('textarea[name="goals"]').fill("Probar el flujo de leads de principio a fin");
     // `Select` de este repo no es un <select> nativo: es un desplegable propio
     // (botón + input oculto), así que se abre con click y se elige por texto.
     await page.getByRole("button", { name: "Selecciona..." }).first().click();
     await page.locator(".tz-select-pop button:not([disabled])").first().click();
-    await page.locator('input[name="healthNote"]').fill("Ninguna");
+
+    // E10-01 · capa informativa del art. 13, sobre el formulario.
+    await expect(page.getByText(/responsable del tratamiento/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /Política de privacidad/i })).toBeVisible();
+
+    // E10-01 · escenario "sin casilla marcada": se declara una condición de
+    // salud pero NO se consiente su tratamiento. El lead tiene que crearse
+    // igualmente con los datos de contacto.
+    await page.getByRole("button", { name: /¿Tienes alguna lesión o condición/ }).click();
+    await page.locator(".tz-select-pop button", { hasText: "Sí" }).first().click();
+    await expect(page.locator('input[name="healthConsent"]')).not.toBeChecked();
     await page.getByRole("button", { name: "Enviar solicitud" }).click();
 
     await expect(page.getByText("¡Gracias!")).toBeVisible({ timeout: 10_000 });

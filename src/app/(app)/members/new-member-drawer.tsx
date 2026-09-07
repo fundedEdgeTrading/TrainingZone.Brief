@@ -6,6 +6,7 @@ import { ImageDropzone } from "@/components/ui/dropzone";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { ADULT_AGE, ageOn, agePolicyLabel, type AgePolicy } from "@/lib/minors";
 import { createMember } from "./actions";
 
 // Fila del bloque "Bonos": solo necesitamos una key estable para React, el
@@ -16,13 +17,22 @@ type BonoRow = { key: string };
 export function NewMemberDrawer({
   centers,
   plans,
+  agePolicy,
 }: {
   centers: { id: string; name: string }[];
   plans: { id: string; name: string }[];
+  /** E10-12: política de edad declarada por la organización (D-P8). */
+  agePolicy: AgePolicy;
 }) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [bonoRows, setBonoRows] = useState<BonoRow[]>([]);
+  // E10-12: el bloque de tutor aparece en cuanto la fecha indica que es menor.
+  // Es una ayuda de la interfaz, no el control: el que manda está en el
+  // servidor, que no se fía de un formulario que viaja por la red.
+  const [birthDate, setBirthDate] = useState("");
+  const age = birthDate ? ageOn(new Date(`${birthDate}T00:00:00.000Z`), new Date()) : null;
+  const isMinor = age != null && Number.isFinite(age) && age >= 0 && age < ADULT_AGE;
   const bonoCounter = useRef(0);
   const formRef = useRef<HTMLFormElement>(null);
   const toast = useToast();
@@ -77,8 +87,14 @@ export function NewMemberDrawer({
             <Field label="Teléfono">
               <Input name="phone" placeholder="+34 600 000 000" />
             </Field>
-            <Field label="Fecha de nacimiento">
-              <Input name="birthDate" type="date" />
+            <Field label="Fecha de nacimiento" hint={agePolicyLabel(agePolicy)}>
+              <Input
+                name="birthDate"
+                type="date"
+                required
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+              />
             </Field>
             <Field label="Centro">
               <Select name="centerId" required defaultValue="">
@@ -93,6 +109,44 @@ export function NewMemberDrawer({
               </Select>
             </Field>
           </div>
+
+          {isMinor && !agePolicy.allowsMinors && (
+            <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2">
+              Este centro solo admite socios mayores de {ADULT_AGE} años. Cambia la política en Organización → Menores
+              si quieres admitir menores.
+            </p>
+          )}
+
+          {isMinor && agePolicy.allowsMinors && (
+            <div className="border border-tz-sand rounded-[14px] bg-tz-bone/40 p-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">Tutor legal</div>
+              <p className="text-xs text-muted mt-0.5 mb-3">
+                Socio menor de edad: el art. 7.2 LOPDGDD exige poder acreditar que el consentimiento lo prestó quien
+                tiene la patria potestad. Sin las cuatro casillas, el alta no se completa.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <Field label="Nombre del tutor">
+                  <Input name="guardianName" placeholder="Nombre y apellidos" />
+                </Field>
+                <Field label="Documento de identidad del tutor">
+                  <Input name="guardianIdDocument" placeholder="DNI / NIE" />
+                </Field>
+                <Field label="Email del tutor">
+                  <Input name="guardianEmail" type="email" placeholder="tutor@email.es" />
+                </Field>
+                <Field label="Teléfono del tutor">
+                  <Input name="guardianPhone" placeholder="+34 600 000 000" />
+                </Field>
+                <Field
+                  label="Justificante del consentimiento"
+                  className="sm:col-span-2"
+                  hint="Referencia verificable: nº de documento firmado, expediente o enlace al archivo."
+                >
+                  <Input name="guardianEvidence" placeholder="p.ej. Consentimiento firmado 2026-09-06, exp. 118" />
+                </Field>
+              </div>
+            </div>
+          )}
 
           <div className="border border-tz-sand rounded-[14px] bg-tz-bone/40 p-4">
             <div className="flex items-center justify-between gap-3 mb-3">

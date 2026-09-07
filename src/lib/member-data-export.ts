@@ -144,6 +144,20 @@ export async function getMemberDataExport(
       // tratamiento por IA —justo el que más gente pregunta— se quedaba fuera.
       tratamientoPorIA: { aceptado: member.consentAI, fecha: member.consentAIAt },
     },
+    // E10-12: cuando el socio es menor, quien consintió —y quien ejerce sus
+    // derechos— es el tutor legal. Sale en la copia porque forma parte del
+    // tratamiento: omitirlo dejaría un consentimiento sin dueño.
+    tutorLegal: member.guardianConsentAt
+      ? {
+          nombre: member.guardianName,
+          email: member.guardianEmail,
+          telefono: member.guardianPhone,
+          documento: member.guardianIdDocument,
+          consintioEl: member.guardianConsentAt,
+          justificante: member.guardianEvidence,
+          nota: "Siendo el socio menor de edad, los derechos de acceso, rectificación, supresión, oposición, limitación y portabilidad los ejerce su tutor legal (art. 7 LOPDGDD).",
+        }
+      : null,
     suscripciones: member.subscriptions.map((s) => ({
       plan: s.plan.name,
       tipo: s.plan.type,

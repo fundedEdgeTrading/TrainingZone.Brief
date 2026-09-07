@@ -36,6 +36,8 @@ export async function getMemberEvolution(memberId: string, orgId: string) {
   return {
     consentHealth: member.consentHealth,
     consentImages: member.consentImages,
+    // E10-20: las URL de foto ya vienen firmadas y caducadas de
+    // `getOwnProgressEntries`, que es el punto único de lectura (E10-02).
     progressEntries,
     ...view,
   };

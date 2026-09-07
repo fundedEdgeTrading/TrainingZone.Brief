@@ -14,6 +14,8 @@ import { runAssessmentDueRule } from "@/lib/assessment-jobs";
 import { runBirthdayRule } from "@/lib/birthday-jobs";
 import { runSessionReminderRule } from "@/lib/session-reminders";
 import { runRetentionAlertRule } from "@/lib/retention";
+import { runSepaPrenotificationRule } from "@/lib/sepa-prenotification-job";
+import { purgeAuditLog, purgePendingPaymentOrganizations, runDataRetention, type RetentionRunReport } from "@/lib/data-retention";
 import { reportJobFailures } from "@/lib/job-failure-report";
 
 /**
@@ -53,7 +55,15 @@ export async function GET(req: NextRequest) {
     birthdayGreetings: 0,
     sessionReminders: 0,
     ledgerOpeningEntries: 0,
+    sepaPrenotifications: 0,
+    dataRetention: 0,
+    auditLogPurged: 0,
+    pendingPaymentOrgsPurged: 0,
   };
+  // E10-08 · el detalle por regla del motor de conservación. Va aparte del
+  // resumen numérico porque el escenario "traza" pide saber cuántas filas
+  // afectó Y a qué regla, no solo un total.
+  const retention: (RetentionRunReport & { orgId: string })[] = [];
 
 
   // Cada regla se aísla: antes las ocho corrían sueltas dentro del bucle, así
@@ -96,7 +106,33 @@ export async function GET(req: NextRequest) {
     summary.ledgerOpeningEntries += await run(org.id, "ledgerOpeningEntries", () =>
       prisma.$transaction((tx) => backfillOpeningEntries(tx, org.id))
     );
+    // E10-13: el preaviso de cargo SEPA es correo de servicio y va con el resto
+    // de reglas temporales. Sin él, el socio domiciliado se entera del cargo
+    // por el extracto y el esquema SEPA Core queda incumplido.
+    summary.sepaPrenotifications += await run(org.id, "sepaPrenotifications", () => runSepaPrenotificationRule(org.id));
+    // E10-08 · motor de conservación. Va el ÚLTIMO de la organización: purga y
+    // anonimiza, y TODAS las reglas anteriores —recordatorios y libro mayor
+    // incluidos— todavía quieren leer lo que borra.
+    summary.dataRetention += await run(org.id, "dataRetention", async () => {
+      const reports = await runDataRetention(org.id);
+      retention.push(...reports.map((r) => ({ ...r, orgId: org.id })));
+      return reports.reduce((sum, r) => sum + r.affected, 0);
+    });
+    summary.auditLogPurged += await run(org.id, "auditLogPurge", async () => {
+      const report = await purgeAuditLog(org.id);
+      retention.push({ ...report, orgId: org.id });
+      return report.affected;
+    });
   }
+
+  // La purga de organizaciones sin pagar no es de una organización concreta:
+  // corre una vez por pasada, fuera del bucle.
+  const pendingOrgs = await run("*", "pendingPaymentOrgsPurge", async () => {
+    const report = await purgePendingPaymentOrganizations();
+    retention.push({ ...report, orgId: "*" });
+    return report.affected;
+  });
+  summary.pendingPaymentOrgsPurged += pendingOrgs;
 
   // El array de fallos no puede quedarse solo en la respuesta del cron: se
   // convierte en tarea para la dirección de la organización afectada.
@@ -106,7 +142,7 @@ export async function GET(req: NextRequest) {
   // sentido reintentar las reglas que sí pasaron) pero el fallo queda visible
   // en la respuesta en vez de perderse en los logs.
   return NextResponse.json(
-    { ok: failures.length === 0, ranAt: new Date().toISOString(), summary, failures },
+    { ok: failures.length === 0, ranAt: new Date().toISOString(), summary, retention, failures },
     { status: failures.length === 0 ? 200 : 207 }
   );
 }

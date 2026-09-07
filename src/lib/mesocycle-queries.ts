@@ -15,6 +15,9 @@ const ARCHIVED_ERROR = "Este mesociclo está archivado y no se puede editar.";
 
 /** Árbol completo tal y como lo pinta el editor. */
 const detailInclude = {
+  // E10-17 · quién revisó la propuesta. Va en la marca del art. 50, que dice
+  // las dos cosas a la vez: que lo generó una IA y quién responde de ello.
+  approvedBy: { select: { name: true } },
   phases: {
     orderBy: { order: "asc" },
     include: {
