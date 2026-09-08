@@ -36,6 +36,47 @@ npm run dev
 
 Abrir `http://localhost:3000` — redirige a `/login`.
 
+## Despliegue
+
+`.env.example` es la lista completa de variables y está escrita para el
+portátil (`cp .env.example .env`). En un despliegue nadie copia ese fichero: las
+variables se rellenan a mano en el panel del proveedor, y las que se añaden
+después de configurar el servicio no aparecen solas.
+
+**`DATA_REGION` es obligatoria en producción y su ausencia tumba el despliegue
+entero.** La comprobación de arranque de E10-07 (`src/instrumentation.ts` →
+`assertEuDataRegion`) falla cerrado a propósito, y el síntoma no se parece a un
+problema de configuración:
+
+- el proceso **sigue vivo**, así que el proveedor da el despliegue por bueno y
+  el healthcheck de TCP pasa;
+- **todas** las rutas —públicas incluidas— responden `500` con el cuerpo en
+  texto plano `Internal Server Error`: el fallo ocurre antes de que exista la
+  aplicación, así que no llega a pintarse ni `global-error.tsx`;
+- el motivo solo está en el log del servicio:
+
+```
+Failed to prepare server Error: An error occurred while loading instrumentation hook:
+[E10-07] Región de datos no conforme: DATA_REGION no está definida.
+Declara la región donde vive la base de datos (la documentada es "frankfurt") antes de arrancar.
+```
+
+La misma pantalla sale con `DATA_REGION` puesta pero fuera del EEE, desconocida,
+o distinta de `DECLARED_DATA_REGION` (`src/lib/data-region.ts`). El valor de hoy
+es `frankfurt`; moverlo exige tocar ese fichero, que es lo que publica
+`/privacidad`.
+
+Que CI esté en verde no dice nada sobre esto: `.github/workflows/e2e.yml` define
+`DATA_REGION: frankfurt` en su propio bloque `env`, así que el servidor arranca
+en el runner mientras el despliegue real está caído.
+
+Comprobación mínima antes de dar un despliegue por bueno, contra el dominio de
+verdad y sin sesión:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://<dominio>/planes   # 200, no 500
+```
+
 ## Autenticación
 
 - **Login demo (activo):** Credentials provider validado contra la tabla
