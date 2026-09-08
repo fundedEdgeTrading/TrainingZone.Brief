@@ -21,7 +21,15 @@ module.exports = {
     "^@/(.*)$": "<rootDir>/src/$1",
   },
   // Los tests viven junto a lo que prueban: `src/api/client.test.ts` al lado de
-  // `client.ts`. En `src/test/` solo hay andamiaje y sus propias pruebas.
+  // `client.ts`. La excepción es `src/app/`, que NO es una carpeta de código
+  // normal: es la raíz de expo-router, y su `require.context` mete en el bundle
+  // TODO fichero `.ts`/`.tsx` que cuelgue de ahí (ver
+  // `node_modules/expo-router/_ctx.ios.js`). Un test colocado dentro se
+  // empaqueta con la app y la revienta al arrancar con "Unable to resolve
+  // module @testing-library/react-native". Por eso las pruebas de pantalla
+  // viven en `src/test/app/`, con la misma estructura de rutas, e importan la
+  // pantalla por alias (`@/app/(tabs)/agenda`). El resto de `src/test/` es
+  // andamiaje y sus propias pruebas.
   testMatch: ["<rootDir>/src/**/*.test.ts", "<rootDir>/src/**/*.test.tsx"],
   // E7-04 · qué se mide.
   //

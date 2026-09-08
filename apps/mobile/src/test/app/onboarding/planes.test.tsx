@@ -6,7 +6,7 @@ import { productItem, productsResponse } from "@/test/fixtures";
 import { renderWithProviders, screen } from "@/test/render";
 import { reply } from "@/test/server";
 
-import PlansScreen from "./planes";
+import PlansScreen from "@/app/onboarding/planes";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn(), back: jest.fn(), canGoBack: () => false, replace: jest.fn() } }));
 

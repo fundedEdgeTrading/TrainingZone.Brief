@@ -6,7 +6,7 @@ import { renderWithProviders, screen } from "@/test/render";
 import { reply } from "@/test/server";
 import type { TrainerMembersResponse, TrainerMemberRow } from "@/api/types";
 
-import TrainerMembersScreen from "./index";
+import TrainerMembersScreen from "@/app/(tabs)/mis-socios/index";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn(), back: jest.fn(), canGoBack: () => false, replace: jest.fn() } }));
 

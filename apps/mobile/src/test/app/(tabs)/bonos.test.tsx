@@ -6,7 +6,7 @@ import { membershipItem } from "@/test/fixtures";
 import { renderWithProviders, screen } from "@/test/render";
 import { reply } from "@/test/server";
 
-import MembershipsScreen from "./bonos";
+import MembershipsScreen from "@/app/(tabs)/bonos";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn(), back: jest.fn(), canGoBack: () => false, replace: jest.fn() } }));
 
