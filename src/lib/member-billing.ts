@@ -13,7 +13,9 @@ import { absoluteUrl, publicOrigin } from "@/lib/site";
 // HU-ST-02: la resolución del id de suscripción de una factura es la misma para
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
 // shape legado.
-import { resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
+import { resolveInvoiceChargeId, resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
+// HU-ST-23 (P4): punto de enganche del desglose del cobro. Hoy no hace nada.
+import { recordBalanceBreakdown } from "@/lib/stripe-balance";
 import { isDemoModeActive } from "@/lib/platform-plans";
 import { demoMemberCheckoutUrl } from "@/lib/demo-member-checkout";
 import { isRecurring } from "@/lib/plan-recurrence";
@@ -543,6 +545,10 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
 
   const periodEnd = resolveInvoicePeriodEnd(invoice);
 
+  // HU-ST-23: el desglose necesita saber SOBRE QUÉ cobro se apunta, y las dos
+  // ramas de abajo lo conocen por vías distintas.
+  let paymentId: string | undefined = already?.id;
+
   if (already) {
     // El recibo ya existe del intento fallido: se actualiza en vez de crear un
     // segundo, que además chocaría con la unicidad de `stripeInvoiceId`.
@@ -556,18 +562,26 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
       },
     });
   } else {
-    await createPaymentWithReceipt({
-      orgId,
-      memberId: subscription.memberId,
-      subscriptionId: subscription.id,
-      amountCents: invoice.amount_paid,
-      method: "STRIPE",
-      status: "PAID",
-      date: new Date(),
-      stripeInvoiceId: invoice.id,
-      notes: "Factura recurrente Stripe",
-    });
+    paymentId = (
+      await createPaymentWithReceipt({
+        orgId,
+        memberId: subscription.memberId,
+        subscriptionId: subscription.id,
+        amountCents: invoice.amount_paid,
+        method: "STRIPE",
+        status: "PAID",
+        date: new Date(),
+        stripeInvoiceId: invoice.id,
+        notes: "Factura recurrente Stripe",
+      })
+    ).id;
   }
+
+  // HU-ST-23 (P4) · Punto de enganche del desglose bruto/comisión/neto. Hoy no
+  // hace nada y NO puede lanzar: es un apunte contable colgado del camino del
+  // cobro, y tumbar aquí haría que Stripe reintentase un `invoice.paid` que ya
+  // estaba bien. El desglose se reconstruye después; el cobro no.
+  if (paymentId) await recordBalanceBreakdown(paymentId, resolveInvoiceChargeId(invoice));
 
   await prisma.subscription.update({
     where: { id: subscription.id },

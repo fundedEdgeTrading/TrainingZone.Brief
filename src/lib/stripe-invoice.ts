@@ -44,3 +44,27 @@ export function resolveInvoicePeriodEnd(invoice: Stripe.Invoice): Date | null {
   if (ends.length === 0) return null;
   return new Date(Math.max(...ends) * 1000);
 }
+
+/**
+ * HU-ST-23 · Referencia del CARGO de una factura, para poder pedir su balance
+ * transaction (bruto/comisión/neto).
+ *
+ * En la versión de API que tipa el SDK instalado, `Invoice` **ya no tiene
+ * `charge` de primer nivel**: el cargo se alcanza por
+ * `invoice.payments[].payment.payment_intent` → `latest_charge`, que es una
+ * llamada de red y no una lectura. Por eso esta función devuelve `null` en ese
+ * caso en vez de fingir que lo sabe.
+ *
+ * Se mantiene la lectura del campo LEGADO por el mismo motivo que
+ * `resolveInvoiceSubscriptionId`: una cuenta conectada pinneada a una versión
+ * antigua de la API lo sigue entregando, y ahí sí se ahorra la llamada.
+ *
+ * Quien necesite el cargo sí o sí (P4) resuelve el `null` con el cliente de
+ * solo lectura de la cuenta conectada; este helper es el atajo, no el camino.
+ */
+export function resolveInvoiceChargeId(invoice: Stripe.Invoice): string | null {
+  const legacy = (invoice as unknown as { charge?: string | Stripe.Charge | null }).charge;
+  if (typeof legacy === "string") return legacy;
+  if (legacy && typeof legacy === "object") return legacy.id;
+  return null;
+}
