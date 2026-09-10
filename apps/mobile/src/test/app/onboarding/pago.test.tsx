@@ -6,7 +6,7 @@ import { productItem, productsResponse } from "@/test/fixtures";
 import { renderWithProviders, screen } from "@/test/render";
 import { reply } from "@/test/server";
 
-import CheckoutScreen from "./pago";
+import CheckoutScreen from "@/app/onboarding/pago";
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ planId: "p1" }),

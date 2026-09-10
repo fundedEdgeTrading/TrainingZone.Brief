@@ -8,7 +8,7 @@ import { briefDetailResponse, briefRosterEntry } from "@/test/fixtures";
 import { renderWithProviders, screen, waitFor } from "@/test/render";
 import { lastRequest, reply } from "@/test/server";
 
-import BriefDetailScreen from "./[id]";
+import BriefDetailScreen from "@/app/(tabs)/brief/[id]";
 
 jest.mock("expo-router", () => ({
   useLocalSearchParams: () => ({ id: "session-1" }),
