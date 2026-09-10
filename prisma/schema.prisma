@@ -59,6 +59,16 @@ model Organization {
   allowsMinors    Boolean @default(false)
   minimumAgeYears Int     @default(18)
 
+  // ---------- Morosidad (HU-ST-18, decisión D-S5) ----------
+  /// Días naturales de gracia desde el primer impago antes de cortar la reserva
+  /// de nuevas sesiones. 7 por defecto (D-S5); cada organización fija el suyo.
+  /// El rango 0-60 lo garantiza un CHECK en la base de datos, no solo el
+  /// formulario: `Member.state = DELINQUENT` corta acceso, y un valor absurdo
+  /// aquí (o negativo) dejaba a un socio fuera sin periodo de gracia ninguno.
+  /// Se lee SIEMPRE del servidor vía `graceWindowFor()` — cero literales de
+  /// días en el cliente, ni en la web ni en la app.
+  dunningGraceDays Int @default(7)
+
   stripeAccount StripeAccount?
 
   centers           Center[]
@@ -97,6 +107,12 @@ model Organization {
   mesocycles                Mesocycle[]
   sessionLedger             SessionLedger[]
   retentionPolicies         RetentionPolicy[]
+
+  sepaMandates            SepaMandate[]
+  paymentDisputes         PaymentDispute[]
+  stripePayouts           StripePayout[]
+  stripeCoupons           StripeCoupon[]
+  accountDeletionRequests AccountDeletionRequest[]
 }
 
 model Center {
@@ -250,24 +266,26 @@ model User {
   memberNotesAuthored   MemberNote[]       @relation("MemberNoteAuthor")
   invitation            Invitation?
 
-  leadsOwned               Lead[]               @relation("LeadOwner")
-  leadNotesAuthored        LeadNote[]           @relation("LeadNoteAuthor")
-  directedSessions         ClassSession[]       @relation("DirectedSessions")
-  workoutProgramsConfirmed WorkoutProgram[]     @relation("WorkoutConfirmedBy")
+  leadsOwned               Lead[]                   @relation("LeadOwner")
+  leadNotesAuthored        LeadNote[]               @relation("LeadNoteAuthor")
+  directedSessions         ClassSession[]           @relation("DirectedSessions")
+  workoutProgramsConfirmed WorkoutProgram[]         @relation("WorkoutConfirmedBy")
   mobileRefreshTokens      MobileRefreshToken[]
-  notifications            Notification[]       @relation("NotificationRecipient")
-  notificationsCreated     Notification[]       @relation("NotificationCreator")
+  notifications            Notification[]           @relation("NotificationRecipient")
+  notificationsCreated     Notification[]           @relation("NotificationCreator")
   timeClockEntries         TimeClockEntry[]
-  trainerRatingsReceived   TrainerRating[]      @relation("TrainerRatingSubject")
-  paymentsSold             Payment[]            @relation("SoldBy")
+  trainerRatingsReceived   TrainerRating[]          @relation("TrainerRatingSubject")
+  paymentsSold             Payment[]                @relation("SoldBy")
   chatMessagesSent         ChatMessage[]
-  announcementsAuthored    Announcement[]       @relation("AnnouncementAuthor")
+  announcementsAuthored    Announcement[]           @relation("AnnouncementAuthor")
   trainerDebriefsGiven     TrainerDebrief[]
-  assessmentsFilled        Assessment[]         @relation("AssessmentFilledBy")
-  mesocyclesCreated        Mesocycle[]          @relation("MesocycleCreatedBy")
-  mesocyclesApproved       Mesocycle[]          @relation("MesocycleApprovedBy")
-  sessionLedgerEntries     SessionLedger[]      @relation("SessionLedgerActor")
-  retentionPoliciesEdited  RetentionPolicy[]    @relation("RetentionPolicyEditor")
+  assessmentsFilled        Assessment[]             @relation("AssessmentFilledBy")
+  mesocyclesCreated        Mesocycle[]              @relation("MesocycleCreatedBy")
+  mesocyclesApproved       Mesocycle[]              @relation("MesocycleApprovedBy")
+  sessionLedgerEntries     SessionLedger[]          @relation("SessionLedgerActor")
+  retentionPoliciesEdited  RetentionPolicy[]        @relation("RetentionPolicyEditor")
+  paymentsRefunded         Payment[]                @relation("RefundedBy")
+  deletionRequestsResolved AccountDeletionRequest[] @relation("DeletionRequestResolver")
 
   // Sustituye al @unique global de email: el mismo email puede tener membresía
   // en varias organizaciones, pero solo una dentro de cada una.
@@ -415,6 +433,14 @@ model Member {
   notes             String?
   createdAt         DateTime  @default(now())
 
+  /// HU-ST-18 · Momento del PRIMER impago del ciclo de dunning en curso, que es
+  /// desde donde cuenta el periodo de gracia de la organización
+  /// (`Organization.dunningGraceDays`). Va aquí y no en `Payment` porque los
+  /// reintentos de Stripe generan varias filas de cobro fallido sobre la misma
+  /// factura y ninguna sirve de "cuándo empezó esto". Se pone al pasar a
+  /// DELINQUENT y se limpia al recuperar el cobro: null = no hay impago abierto.
+  delinquentSince DateTime?
+
   // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen.
   // Ya no hay entrenador responsable fijo: el socio puede hacer EP con distintos
   // entrenadores según la sesión (ver ClassSession.trainerId/SessionTemplate.trainerId).
@@ -449,10 +475,10 @@ model Member {
   externalSource      String? // procedencia del registro ("mywellness" | ...)
   externalRef         String? // "Identificador de la nube" — clave de idempotencia de la importación
 
-  organization        Organization          @relation(fields: [orgId], references: [id])
-  primaryCenter       Center                @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
-  user                User?                 @relation("MemberUser", fields: [userId], references: [id])
-  originLead          Lead?                 @relation("MemberOriginLead", fields: [originLeadId], references: [id])
+  organization        Organization             @relation(fields: [orgId], references: [id])
+  primaryCenter       Center                   @relation("PrimaryCenter", fields: [primaryCenterId], references: [id])
+  user                User?                    @relation("MemberUser", fields: [userId], references: [id])
+  originLead          Lead?                    @relation("MemberOriginLead", fields: [originLeadId], references: [id])
   subscriptions       Subscription[]
   bookings            Booking[]
   payments            Payment[]
@@ -461,7 +487,7 @@ model Member {
   noteEntries         MemberNote[]
   progressEntries     MemberProgressEntry[]
   invitation          Invitation?
-  convertedFromLead   Lead?                 @relation("LeadConvertedMember")
+  convertedFromLead   Lead?                    @relation("LeadConvertedMember")
   clientGoals         ClientGoal[]
   workoutPrograms     WorkoutProgram[]
   selfAssessments     SelfAssessment[]
@@ -473,6 +499,8 @@ model Member {
   assessments         Assessment[]
   performanceMetrics  PerformanceMetric[]
   mesocycles          Mesocycle[]
+  sepaMandates        SepaMandate[]
+  deletionRequests    AccountDeletionRequest[]
 
   @@unique([orgId, externalRef]) // idempotencia de la importación por socio del origen
   @@index([orgId])
@@ -637,6 +665,13 @@ model MembershipPlan {
 
 enum SubscriptionStatus {
   ACTIVE
+  /// HU-ST-12/RB-PAGO-025 · Primer cobro ASÍNCRONO aún sin liquidar (SEPA
+  /// Direct Debit tarda días en confirmarse). No es ACTIVE a propósito: el
+  /// motor de reservas filtra por `status === "ACTIVE"`, así que un socio con
+  /// el débito en vuelo NO abre acceso hasta que llega
+  /// `checkout.session.async_payment_succeeded` / `invoice.paid`. Tampoco es
+  /// FROZEN: no ha impagado nada, todavía no se sabe.
+  PENDING_CONFIRMATION
   /// Congelación VOLUNTARIA del socio (agosto, lesión, viaje). En Stripe es un
   /// `pause_collection`. Un socio PAUSED no es un moroso (HU-ST-14).
   PAUSED
@@ -687,15 +722,24 @@ model Subscription {
   // (cuenta conectada del gimnasio). Null para bonos puntuales (no recurrentes).
   stripeSubscriptionId String? @unique
 
-  member   Member          @relation(fields: [memberId], references: [id])
-  plan     MembershipPlan  @relation(fields: [planId], references: [id])
-  center   Center          @relation(fields: [centerId], references: [id])
-  payments Payment[]
-  bookings Booking[]
-  ledger   SessionLedger[]
+  /// HU-ST-12 · Mandato SEPA que autoriza a domiciliar ESTA suscripción. Null
+  /// en todo lo que no se cobra por adeudo directo (tarjeta, Bizum, efectivo).
+  /// Un socio puede firmar un mandato nuevo (cambio de cuenta) sin que los
+  /// cobros ya conciliados pierdan el que los autorizó, así que la referencia
+  /// vive en la suscripción y no solo en el socio.
+  sepaMandateId String?
+
+  member      Member          @relation(fields: [memberId], references: [id])
+  plan        MembershipPlan  @relation(fields: [planId], references: [id])
+  center      Center          @relation(fields: [centerId], references: [id])
+  sepaMandate SepaMandate?    @relation(fields: [sepaMandateId], references: [id])
+  payments    Payment[]
+  bookings    Booking[]
+  ledger      SessionLedger[]
 
   @@index([memberId])
   @@index([centerId])
+  @@index([sepaMandateId])
 }
 
 // ---------- Feedback (cliente vs. debrief del entrenador) ----------
@@ -951,17 +995,59 @@ model Payment {
   dueDate        DateTime? // aplazamiento: fecha límite futura que excluye el pago de morosidad
   refundReason   String?
   refundedAt     DateTime?
-  stripeRefundId String?   @unique // permanece NULL hasta PAGO-2b
+  stripeRefundId String?   @unique // HU-ST-20: lo escribe `charge.refunded`
 
-  organization Organization  @relation(fields: [orgId], references: [id])
-  member       Member        @relation(fields: [memberId], references: [id])
-  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
-  soldBy       User?         @relation("SoldBy", fields: [soldByUserId], references: [id])
+  // ---------- Reembolsos y notas de crédito (HU-ST-20, decisión D-S7) ----------
+  /// Importe efectivamente devuelto, en céntimos. Es un campo PROPIO y no
+  /// `amountCents`: una devolución PARCIAL deja el cobro original intacto y solo
+  /// devuelve una parte, y sin esta columna "REFUNDED" no distinguía haber
+  /// devuelto 10 € de haber devuelto los 60 € completos. Null = no devuelto.
+  refundedAmountCents Int?
+  /// Quién autorizó la devolución. El AuditLog guarda la traza inmutable; esto
+  /// es lo que permite enseñarlo en la ficha del cobro sin releer el log.
+  refundedByUserId    String?
+  /// Nota de crédito emitida sobre la factura de suscripción (`cn_…`), cuando la
+  /// devolución va contra una factura de Stripe Billing en vez de contra el cargo.
+  stripeCreditNoteId  String?
+
+  // ---------- Desglose del cobro (HU-ST-23) ----------
+  /// Bruto, comisión de Stripe y neto liquidado, tomados del balance
+  /// transaction del cargo. `amountCents` sigue siendo lo que pagó el socio; el
+  /// neto es lo que de verdad llega a la cuenta del gimnasio, y sin él ningún
+  /// informe contable cuadraba contra los payouts.
+  grossAmountCents           Int?
+  feeAmountCents             Int?
+  netAmountCents             Int?
+  stripeBalanceTransactionId String?
+  /// Payout en el que Stripe liquidó este cobro. La suma de netos de los cobros
+  /// de un payout tiene que dar su importe (escenario "cuadre" de HU-ST-23).
+  payoutId                   String?
+
+  // ---------- Cupones (HU-ST-27) ----------
+  /// Descuento aplicado en el checkout, en céntimos. Es lo que permite medir
+  /// cuánto importe ha traído cada código, no solo cuántas ventas.
+  discountAmountCents Int?
+  couponId            String?
+
+  organization Organization     @relation(fields: [orgId], references: [id])
+  member       Member           @relation(fields: [memberId], references: [id])
+  subscription Subscription?    @relation(fields: [subscriptionId], references: [id])
+  soldBy       User?            @relation("SoldBy", fields: [soldByUserId], references: [id])
+  refundedBy   User?            @relation("RefundedBy", fields: [refundedByUserId], references: [id])
+  payout       StripePayout?    @relation(fields: [payoutId], references: [id])
+  coupon       StripeCoupon?    @relation(fields: [couponId], references: [id])
+  disputes     PaymentDispute[]
 
   @@unique([orgId, receiptNumber])
+  /// Idempotencia del desglose: el mismo balance transaction no se concilia dos
+  /// veces. Compuesta con `orgId` porque los identificadores de Stripe son
+  /// únicos DENTRO de una cuenta conectada, no entre cuentas distintas.
+  @@unique([orgId, stripeBalanceTransactionId])
   @@index([orgId])
   @@index([memberId])
   @@index([date])
+  @@index([payoutId])
+  @@index([couponId])
 }
 
 // ---------- Salud (A.2.4) — datos Art. 9 RGPD ----------
@@ -2005,6 +2091,274 @@ model StripeWebhookEvent {
 
   @@index([type])
   @@index([processedAt])
+}
+
+// ---------- Mandatos SEPA (HU-ST-12) ----------
+
+enum SepaMandateStatus {
+  /// Firmado en el checkout, todavía sin confirmar por el banco.
+  PENDING
+  /// En vigor: se puede domiciliar contra él.
+  ACTIVE
+  /// Revocado por el socio o caducado por desuso (18 meses del esquema SEPA).
+  INACTIVE
+}
+
+/// HU-ST-12/RB-PAGO-009 · El mandato es la autorización que el socio da para
+/// que se le domicilie el recibo, y el esquema SEPA obliga a poder enseñarlo.
+///
+/// De la cuenta bancaria se guardan SOLO los cuatro últimos dígitos: es lo que
+/// permite al socio reconocer su cuenta ("···· 4321") sin que Apta almacene un
+/// IBAN completo que no necesita para nada — el que cobra es Stripe.
+model SepaMandate {
+  id       String @id @default(cuid())
+  orgId    String
+  memberId String
+
+  /// `mandate_…` de Stripe. Es lo que resuelve `mandate.updated` a esta fila.
+  stripeMandateId String
+  /// Referencia del mandato (UMR): la que el socio ve en el extracto de su banco
+  /// y por la que pregunta cuando llama.
+  reference       String
+  /// Últimos 4 del IBAN. NUNCA el IBAN completo.
+  ibanLast4       String
+
+  status     SepaMandateStatus @default(PENDING)
+  /// Momento de la aceptación del mandato por el socio (la que exige el esquema).
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  organization  Organization   @relation(fields: [orgId], references: [id])
+  member        Member         @relation(fields: [memberId], references: [id])
+  subscriptions Subscription[]
+
+  /// Compuesta con `orgId`: los ids de Stripe son únicos dentro de una cuenta
+  /// conectada, no entre las cuentas de dos gimnasios distintos.
+  @@unique([orgId, stripeMandateId])
+  @@index([orgId])
+  @@index([memberId])
+}
+
+// ---------- Disputas y contracargos (HU-ST-21, decisión D-S7) ----------
+
+enum DisputeStatus {
+  /// Abierta y esperando evidencia: corre el reloj de `evidenceDueBy`.
+  NEEDS_RESPONSE
+  /// Evidencia aportada, en manos del banco emisor.
+  UNDER_REVIEW
+  WON
+  LOST
+}
+
+/// HU-ST-21 · Una disputa es dinero que ya salió y que el banco reclama, con
+/// una fecha límite dura para responder. Tabla propia y no columnas en
+/// `Payment` porque tiene ciclo de vida propio (created → updated → closed) y
+/// porque un mismo cargo puede acumular más de una a lo largo del tiempo.
+model PaymentDispute {
+  id        String @id @default(cuid())
+  orgId     String
+  paymentId String
+
+  /// `dp_…` de Stripe: hace idempotentes los tres eventos del ciclo.
+  stripeDisputeId String
+  amountCents     Int
+  /// Motivo declarado por el banco (`fraudulent`, `product_not_received`, …).
+  /// Texto libre a propósito: la lista de Stripe cambia y no la controlamos.
+  reason          String?
+  status          DisputeStatus @default(NEEDS_RESPONSE)
+  /// `evidence_details.due_by`: si se pasa sin responder, la disputa se pierde
+  /// automáticamente. Es la fecha que hace urgente la tarea de dirección.
+  evidenceDueBy   DateTime?
+  openedAt        DateTime      @default(now())
+  closedAt        DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  payment      Payment      @relation(fields: [paymentId], references: [id])
+
+  @@unique([orgId, stripeDisputeId])
+  @@index([orgId])
+  @@index([paymentId])
+  @@index([evidenceDueBy])
+}
+
+// ---------- Payouts (HU-ST-23) ----------
+
+enum PayoutStatus {
+  PENDING
+  IN_TRANSIT
+  PAID
+  FAILED
+  CANCELED
+}
+
+/// HU-ST-23 · La liquidación de Stripe a la cuenta bancaria del gimnasio.
+/// `arrivalDate` es la fecha por la que pregunta dirección ("¿cuándo entra el
+/// dinero?"), y los `Payment` que cuelgan de aquí son los que lo componen: su
+/// suma de netos tiene que dar `amountCents`.
+model StripePayout {
+  id    String @id @default(cuid())
+  orgId String
+
+  /// `po_…` de Stripe.
+  stripePayoutId String
+  amountCents    Int
+  currency       String       @default("eur")
+  status         PayoutStatus @default(PENDING)
+  arrivalDate    DateTime?
+  /// Motivo del fallo cuando `payout.failed` (cuenta cerrada, IBAN erróneo…).
+  failureMessage String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  payments     Payment[]
+
+  @@unique([orgId, stripePayoutId])
+  @@index([orgId])
+  @@index([arrivalDate])
+}
+
+// ---------- Cupones y códigos promocionales (HU-ST-27) ----------
+
+/// HU-ST-27 · Espejo local del cupón creado en la cuenta CONECTADA del
+/// gimnasio. Se espeja para poder medir sin llamar a Stripe en cada informe:
+/// cuántas ventas y cuánto importe ha traído cada código sale de los `Payment`
+/// que apuntan aquí.
+///
+/// Igual que con los `Price` (RB-VENTA-002), un cupón NO se borra nunca: se
+/// archiva con `active = false`. Borrarlo dejaría huérfanos los cobros que ya
+/// lo aplicaron y falsearía la medición hacia atrás.
+model StripeCoupon {
+  id    String @id @default(cuid())
+  orgId String
+
+  /// `coupon_…` en la cuenta conectada.
+  stripeCouponId        String
+  /// `promo_…`: el código que el socio teclea vive en el PromotionCode, no en el
+  /// Coupon. Null si el cupón se aplica sin código (descuento automático).
+  stripePromotionCodeId String?
+  /// El código tal y como se teclea ("VERANO25"). Se guarda aparte porque es lo
+  /// que aparece en los listados y por lo que se busca.
+  code                  String?
+  name                  String?
+
+  /// Uno de los dos, nunca los dos: Stripe no admite cupón porcentual e importe
+  /// fijo a la vez.
+  percentOff     Float?
+  amountOffCents Int?
+  currency       String?
+
+  active    Boolean   @default(true)
+  redeemBy  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  payments     Payment[]
+
+  @@unique([orgId, stripeCouponId])
+  @@index([orgId])
+  @@index([orgId, code])
+}
+
+// ---------- Intentos de acceso (E1-10) ----------
+
+enum AccessAttemptScope {
+  /// Contador por identidad: frena el probar contraseñas contra un email.
+  EMAIL
+  /// Contador por origen: frena el barrido de muchos emails desde una IP.
+  IP
+}
+
+enum AccessAttemptPurpose {
+  LOGIN
+  PASSWORD_RESET
+}
+
+/// E1-10/RB-SEG-005 · Contador de intentos fallidos, con su ventana.
+///
+/// Tabla de ESTADO, deliberadamente separada de `AuditLog`: el log es
+/// append-only (trigger `auditlog_append_only`, E10-14) y no se puede usar como
+/// contador —un contador se actualiza, y ahí actualizar está prohibido a
+/// propósito—. La traza de cada bloqueo sí va a `AuditLog`, que es lo que pide
+/// el escenario de trazabilidad; lo que se cuenta, va aquí.
+///
+/// SIN `orgId`, y no es un descuido: el login ocurre ANTES de saber a qué
+/// organización pertenece nadie, y un atacante que barre emails cruza
+/// organizaciones por definición. Un contador por org sería un contador que se
+/// puede esquivar cambiando de tenant. La tabla no guarda ningún dato de
+/// negocio: solo la clave, el recuento y la ventana.
+model AccessAttempt {
+  id      String               @id @default(cuid())
+  purpose AccessAttemptPurpose
+  scope   AccessAttemptScope
+  /// El email normalizado en minúsculas, o la IP de origen.
+  key     String
+
+  failedCount     Int       @default(0)
+  /// Inicio de la ventana en curso. Cuando expira, el recuento arranca de cero
+  /// y el usuario legítimo entra sin fricción (escenario "acceso legítimo tras
+  /// el bloqueo").
+  windowStartedAt DateTime  @default(now())
+  lastFailedAt    DateTime  @default(now())
+  /// Hasta cuándo se rechaza. Null = contando, todavía sin bloquear.
+  blockedUntil    DateTime?
+
+  @@unique([purpose, scope, key])
+  @@index([blockedUntil])
+  @@index([windowStartedAt])
+}
+
+// ---------- Borrado de cuenta a petición del socio (E5-15) ----------
+
+enum AccountDeletionStatus {
+  /// Recibida y dentro de plazo.
+  PENDING
+  /// Atendida: los datos se han borrado o disociado según corresponda.
+  COMPLETED
+  /// Denegada con motivo (p. ej. no se pudo verificar la identidad).
+  REJECTED
+}
+
+enum AccountDeletionSource {
+  /// Ruta in-app, la que exige App Store 5.1.1(v).
+  MOBILE_APP
+  /// Portal web del socio, la que exige Google Play que sea accesible por URL.
+  WEB_PORTAL
+}
+
+/// E5-15 · Solicitud de borrado de cuenta del socio.
+///
+/// Se resuelve como SOLICITUD VERIFICADA al centro, no como borrado inmediato:
+/// los cobros no se pueden borrar (conservación obligatoria, art. 30 CCom /
+/// art. 66 LGT), se DISOCIAN — ver el motor de retención (E10-08/E10-09). Lo
+/// que esta tabla garantiza es el plazo: `dueAt` es el mes del art. 12.3 RGPD,
+/// y sin una fila con fecha límite nadie podía demostrar que se cumplió.
+model AccountDeletionRequest {
+  id       String @id @default(cuid())
+  orgId    String
+  memberId String
+
+  source      AccountDeletionSource
+  requestedAt DateTime              @default(now())
+  /// Fecha límite de resolución: un mes desde la solicitud (art. 12.3 RGPD).
+  dueAt       DateTime
+
+  status           AccountDeletionStatus @default(PENDING)
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  /// Qué se hizo, o por qué se denegó. Es el acuse que se le debe al socio.
+  resolutionNotes  String?
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id])
+  resolvedBy   User?        @relation("DeletionRequestResolver", fields: [resolvedByUserId], references: [id])
+
+  @@index([orgId])
+  @@index([memberId])
+  @@index([status, dueAt])
 }
 
 // ---------- Plazos de conservación (E10-08, decisión D-C3) ----------
