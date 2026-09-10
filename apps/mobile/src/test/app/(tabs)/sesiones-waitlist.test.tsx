@@ -8,7 +8,7 @@ import { agendaResponse, calendarEntry, memberCalendarResponse } from "@/test/fi
 import { renderWithProviders, screen } from "@/test/render";
 import { reply } from "@/test/server";
 
-import SesionesScreen from "./sesiones";
+import SesionesScreen from "@/app/(tabs)/sesiones";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn(), back: jest.fn(), canGoBack: () => false, replace: jest.fn() } }));
 
