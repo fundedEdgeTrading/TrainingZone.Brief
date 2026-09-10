@@ -15,6 +15,15 @@ import { deauthorizeStripeAccount, refreshStripeAccountStatus } from "@/lib/stri
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
 import { reconcilePlatformInvoicePaid, reconcilePlatformInvoicePaymentFailed } from "@/lib/platform-billing";
 import { claimStripeEvent, markStripeEventFailed, markStripeEventProcessed } from "@/lib/stripe-webhook-events";
+// Lote 2 · Los seis módulos de abajo los cablea S1 de una vez y los rellena
+// cada pista por separado (P1, P2, P4). Hoy registran el evento y devuelven ok:
+// el `switch` ya no hay que volver a tocarlo.
+import { reconcileChargeRefunded, reconcileCreditNote } from "@/lib/stripe-refunds";
+import { reconcileDispute } from "@/lib/stripe-disputes";
+import { reconcilePayout } from "@/lib/stripe-balance";
+import { reconcileAsyncPayment, reconcileMandateUpdated } from "@/lib/stripe-mandate";
+import { sendSepaPrenotification } from "@/lib/sepa-prenotification";
+import { reconcileCardExpiry } from "@/lib/stripe-card-expiry";
 
 /**
  * F12/RB-PAGO-002 + Parte A.4/C.4. Un único endpoint para los dos planos de
@@ -139,6 +148,108 @@ async function handleConnectEvent(event: Stripe.Event): Promise<ConnectEventResu
       if (!result.ok) return { ok: false, error: result.error };
       break;
     }
+
+    // ----------------------------------------------------------------------
+    // Lote 2 · Casos cableados por S1 de una sola vez.
+    //
+    // Cinco pistas distintas necesitaban añadir casos a este `switch`, y si lo
+    // tocaban las cinco chocaban las cinco. Así que están todos aquí desde ya,
+    // cada uno delegando en el módulo de su pista. Para rellenar el suyo, una
+    // pista abre SU módulo: este fichero no se vuelve a tocar.
+    //
+    // Todos quedan dentro de lo que ya funciona: la deduplicación por
+    // `event.id` de HU-ST-05 los envuelve igual que a los de arriba (el
+    // `claimStripeEvent` del POST es anterior a este `switch`), y la
+    // verificación de las dos firmas de HU-ST-01 no cambia.
+    //
+    // El patrón es el de `invoice.paid`: un `{ ok: false }` sube y la ruta
+    // responde 500 para que Stripe reintente con backoff, en vez de dar el
+    // evento por consumido. Es lo que salva el caso real de esta familia de
+    // eventos — Stripe no garantiza el orden, y un `charge.refunded` puede
+    // adelantar al `invoice.paid` que crea el `Payment` que hay que actualizar.
+    // ----------------------------------------------------------------------
+
+    // HU-ST-20 · Reembolsos y notas de crédito → P2
+    case "charge.refunded": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await reconcileChargeRefunded(orgId, event.data.object as Stripe.Charge);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+    case "credit_note.created":
+    case "credit_note.updated":
+    case "credit_note.voided": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await reconcileCreditNote(orgId, event.data.object as Stripe.CreditNote, event.type);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+
+    // HU-ST-21 · Disputas y contracargos → P2
+    case "charge.dispute.created":
+    case "charge.dispute.updated":
+    case "charge.dispute.closed": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await reconcileDispute(orgId, event.data.object as Stripe.Dispute, event.type);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+
+    // HU-ST-23 · Payouts y desglose del cobro → P4
+    case "payout.paid":
+    case "payout.failed": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await reconcilePayout(orgId, event.data.object as Stripe.Payout, event.type);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+
+    // HU-ST-12 · Mandato SEPA y primer cobro asíncrono → P1
+    case "mandate.updated": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await reconcileMandateUpdated(orgId, event.data.object as Stripe.Mandate);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+    case "checkout.session.async_payment_succeeded":
+    case "checkout.session.async_payment_failed": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await reconcileAsyncPayment(
+        orgId,
+        event.data.object as Stripe.Checkout.Session,
+        event.type
+      );
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+
+    // HU-ST-16 · Preaviso de cobro (SEPA: 14 días naturales) → P1
+    case "invoice.upcoming": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      const result = await sendSepaPrenotification(orgId, event.data.object as Stripe.Invoice);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+
+    // HU-ST-22 · Tarjetas por caducar → P1
+    case "customer.source.expiring":
+    case "payment_method.automatically_updated": {
+      const orgId = await resolveConnectOrgId(event.account);
+      if (!orgId) break;
+      // Se pasa el evento entero: los dos casos traen objetos de tipos
+      // distintos (Card/Source frente a PaymentMethod).
+      const result = await reconcileCardExpiry(orgId, event);
+      if (!result.ok) return { ok: false, error: result.error };
+      break;
+    }
+
     default:
       break;
   }

@@ -7,7 +7,7 @@ import { meResponse } from "@/test/fixtures";
 import { renderWithProviders, screen, waitFor } from "@/test/render";
 import { reply, replyDelayed } from "@/test/server";
 
-import MoreScreen from "./mas";
+import MoreScreen from "@/app/(tabs)/mas";
 
 jest.mock("expo-router", () => ({ router: { push: jest.fn(), back: jest.fn(), canGoBack: () => false, replace: jest.fn() } }));
 

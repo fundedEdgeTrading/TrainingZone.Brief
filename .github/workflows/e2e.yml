@@ -48,6 +48,14 @@ jobs:
       # Las claves de Stripe se dejan SIN definir a propósito: /planes debe
       # arrancar en modo demo, que es lo que verifica planes-gateo.spec.ts.
       #
+      # Eso es verdad pero incompleta: alta-comercial.spec.ts (4 tests) y
+      # alta-completa-gimnasio.spec.ts (9 tests) necesitan justo lo contrario,
+      # STRIPE_SECRET_KEY y STRIPE_WEBHOOK_SECRET presentes, para probar el
+      # alta pago-primero (compra → webhook firmado → activación). Las dos
+      # condiciones no caben en el mismo job, así que esos 13 tests se
+      # saltaban enteros aquí y nadie lo veía. El job `e2e-pago`, más abajo,
+      # corre esos specs con sus propias claves de usar y tirar.
+      #
       # E10-07: la comprobación de arranque exige declarar la región de la base
       # de datos y que coincida con la documentada. `npm run start` corre en
       # modo producción, así que sin esto el servidor no arranca en CI — y ese
@@ -106,6 +114,100 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+  # El punto ciego de CI · el alta pago-primero (compra → webhook firmado →
+  # activación de contraseña → puesta en marcha completa) no cabía en `verify`:
+  # planes-gateo.spec.ts exige que STRIPE_SECRET_KEY esté AUSENTE para probar
+  # el modo demo de /planes, y alta-comercial.spec.ts / alta-completa-gimnasio.spec.ts
+  # exigen que esté PRESENTE junto con STRIPE_WEBHOOK_SECRET para probar el
+  # camino real. Metidos en el mismo job, una de las dos condiciones pierde y
+  # los 13 tests del alta pago-primero se saltaban enteros sin que ningún job
+  # se pusiera en rojo por ello. Job aparte, con sus propias claves.
+  #
+  # No hacen falta credenciales reales de Stripe: los specs firman sus propios
+  # eventos de webhook con el mismo secreto que el endpoint usa para
+  # verificarlos, y verificar una firma es criptografía local, no una llamada
+  # a la API de Stripe.
+  #
+  # Paralelo a `verify` y sin `needs:`, igual que `mobile`: un fallo del camino
+  # de pago no debe ocultar el resultado de la web ni al revés.
+  e2e-pago:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: trainingzone
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trainingzone?schema=public
+      AUTH_SECRET: ci-secret-no-usar-en-produccion
+      NEXTAUTH_URL: http://localhost:3000
+      # RB-RES-005: fijada explícitamente para que la ventana de cancelación no
+      # dependa del entorno del runner.
+      CANCELLATION_WINDOW_HOURS: "24"
+      # E10-07: la comprobación de arranque exige declarar la región de la base
+      # de datos y que coincida con la documentada. `npm run start` corre en
+      # modo producción, así que sin esto el servidor no arranca en CI — y ese
+      # es justamente el comportamiento que la historia pide. Se declara aquí
+      # para que CI ejercite el camino real en vez de una excepción.
+      DATA_REGION: frankfurt
+      # E10-20: las fotos de composición corporal viven fuera de la base de
+      # datos, cifradas. Clave de usar y tirar del runner: en producción se
+      # genera con `openssl rand -base64 32` y perderla es perder las fotos.
+      PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
+      # De usar y tirar, solo para este job: es justo lo que `verify` omite a
+      # propósito. Sin llamada real a Stripe — ver el comentario del job.
+      STRIPE_SECRET_KEY: sk_test_solo_para_ci_0000
+      STRIPE_WEBHOOK_SECRET: whsec_solo_para_ci_0000
+      JOBS_CRON_SECRET: cron-solo-para-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Migraciones y datos de demo
+        run: |
+          npx prisma migrate deploy
+          npm run db:seed
+
+      - name: Build
+        run: npm run build
+
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+
+      # `npm run start` lo arranca el propio webServer de playwright.config.ts.
+      # Solo los tres specs del alta pago-primero: el resto ya corre en `verify`.
+      - name: Tests e2e — alta pago-primero
+        run: npx playwright test e2e/alta-comercial.spec.ts e2e/alta-completa-gimnasio.spec.ts e2e/notifications.spec.ts
+
+      - name: Guardar informe de fallos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pago
           path: |
             playwright-report/
             test-results/

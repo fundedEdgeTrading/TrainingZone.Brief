@@ -11,7 +11,7 @@ import { renderWithProviders, screen } from "@/test/render";
 import { reply } from "@/test/server";
 import { todayIso } from "@/utils/format";
 
-import AgendaScreen from "./agenda";
+import AgendaScreen from "@/app/(tabs)/agenda";
 
 const today = todayIso();
 
