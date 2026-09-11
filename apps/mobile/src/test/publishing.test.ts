@@ -48,3 +48,25 @@ test("PUBLISHING.md documenta el bloqueo y cómo resolverlo", () => {
   expect(doc).toMatch(/android\.package/);
   expect(doc).toMatch(/no se sabe/);
 });
+
+/**
+ * E9-16 · OTA. La historia pide una decisión por escrito, no la dependencia:
+ * lo que se comprueba es que la decisión existe, tiene un motivo, y que
+ * `expo-updates` sigue sin instalarse — instalarlo sin la política de canal
+ * y rollback que PUBLISHING.md exige sería justo el riesgo que la decisión
+ * señala.
+ */
+test("la decisión de OTA está tomada y por escrito, con el porqué", () => {
+  const doc = readFileSync(join(ROOT, "PUBLISHING.md"), "utf8");
+  expect(doc).toMatch(/OTA.*expo-updates.*decisión/is);
+  expect(doc).toMatch(/No entra todavía/);
+});
+
+test("expo-updates no está instalado: coherente con la decisión de no entrar todavía", () => {
+  const pkg = readJson("package.json") as {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  expect(pkg.dependencies?.["expo-updates"]).toBeUndefined();
+  expect(pkg.devDependencies?.["expo-updates"]).toBeUndefined();
+});
