@@ -31,7 +31,7 @@ Una vez decididos, hay que rellenarlos en:
 2. Las variables de entorno de este documento (§3), que alimentan
    `apple-app-site-association` y `assetlinks.json`.
 
-## 2. Bloqueado: dominio público de producción
+## 2. Pendiente de confirmar (no bloqueante): dominio público de producción
 
 Ningún fichero del repositorio fija hoy el dominio de producción real:
 `src/lib/site.ts` lo resuelve en tiempo de ejecución desde
@@ -40,13 +40,23 @@ de despliegue, no en el código. La página `/app` y el JSON-LD `MobileApplicati
 usan esa misma función (`publicOrigin()`), así que no dependen de un dominio
 escrito a mano — funcionan igual en local, en preview y en producción.
 
-Donde SÍ hace falta un dominio literal (fuera del runtime de Next.js) es en
-`store.config.js` (URL de política de privacidad para App Store Connect /
-Play Console) y en `ios.associatedDomains` / `android.intentFilters` de
-`app.json` para los App Links. Esas dos piezas quedan pendientes junto con el
-dominio: `store.config.js` lee `EXPO_PUBLIC_SITE_URL` y falla de forma audible
-(lanza un error al construir el paquete de metadatos) si no está definida, en
-vez de publicar una URL de privacidad que apunte a ningún sitio.
+A diferencia de `bundleIdentifier`/`package` (§1), un dominio **no es
+irreversible**: cambiarlo es editar una URL, no recementar un identificador
+de tienda. Por eso `apps/mobile/app.json` → `expo.extra.privacyPolicyUrl` SÍ
+lleva un valor hoy: `https://apta.app/privacidad`. No es una decisión nueva —
+es el dominio que ya aparece como ejemplo de trabajo en `src/lib/json-ld.test.ts`
+y en `docs/ARQUITECTURA_IDENTIDAD_VENTA_MULTITENANT.md` — pero **sigue sin estar
+confirmado como el dominio real de producción**. `apps/mobile/src/store/metadata.ts`
+lee ese mismo valor de `app.json` (una sola fuente), así que confirmarlo es
+editar una línea en un sitio, no perseguirlo por el repositorio.
+
+**Antes de enviar la ficha a revisión**, confirmar o corregir esa URL.
+
+Donde todavía SÍ falta el dominio, porque además hace falta el dueño real del
+DNS para verificarlo, es en `ios.associatedDomains` / `android.intentFilters`
+de `app.json` para los App Links (ver §3): eso no se puede rellenar con el
+mismo placeholder porque una verificación de dominio fallida sobre un dominio
+que no se controla es peor que no declararla.
 
 ## 3. App Links — qué falta y dónde
 

@@ -41,6 +41,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "privacyPolicyUrl": "https://apta.app/privacidad"
     }
   }
 }
