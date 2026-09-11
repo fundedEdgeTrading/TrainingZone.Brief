@@ -80,6 +80,9 @@ export function LandingFooter() {
         <Link href="/centros" className="underline">
           Centros
         </Link>
+        <Link href="/app" className="underline">
+          La app
+        </Link>
         <Link href="/privacidad" className="underline">
           Privacidad
         </Link>

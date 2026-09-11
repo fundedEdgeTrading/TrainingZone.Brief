@@ -35,6 +35,8 @@ export const INDEXABLE_PATHS: readonly string[] = [
   "/funcionalidades",
   "/para",
   "/centros",
+  // E9-16 · Ficha pública de la app nativa.
+  "/app",
 ];
 
 /**

@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import {
   centerJsonLd,
   faqPageJsonLd,
+  mobileApplicationJsonLd,
   organizationJsonLd,
   platformOffersJsonLd,
   serializeJsonLd,
@@ -133,8 +134,23 @@ test("un nombre de centro con </script> no puede cerrar la etiqueta", () => {
   assert.equal((JSON.parse(json) as { name: string }).name, '</script><img src=x onerror=alert(1)>');
 });
 
+test("MobileApplication: nombre de ficha, categoría de salud, y sin enlaces de tienda inventados", () => {
+  const node = mobileApplicationJsonLd();
+  assert.equal(node["@type"], "MobileApplication");
+  assert.equal(node.name, "Apta · Tu gimnasio");
+  assert.equal(node.applicationCategory, "HealthApplication");
+  // La app no está publicada: un downloadUrl que no resuelve es peor que omitirlo.
+  assert.ok(!("downloadUrl" in node));
+  assert.ok(!("installUrl" in node));
+});
+
 test("todo nodo lleva su @context y su @type: es lo que valida el Rich Results Test", () => {
-  const nodes = [organizationJsonLd(), faqPageJsonLd([{ q: "a", a: "b" }]), centerJsonLd(center())];
+  const nodes = [
+    organizationJsonLd(),
+    faqPageJsonLd([{ q: "a", a: "b" }]),
+    centerJsonLd(center()),
+    mobileApplicationJsonLd(),
+  ];
   for (const node of nodes) {
     assert.ok(node);
     assert.equal(node["@context"], "https://schema.org");

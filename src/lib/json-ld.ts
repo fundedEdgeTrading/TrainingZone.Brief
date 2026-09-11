@@ -151,6 +151,32 @@ export function platformOffersJsonLd(plans: readonly { name: string; code: strin
 }
 
 /**
+ * `MobileApplication` de la ficha de tienda (E9-16), emitido en `/app`.
+ *
+ * Sin `applicationCategory` de schema.org para "salud y ejercicio" existe una
+ * enumeración cerrada (`HealthApplication`), así que se usa esa y no una
+ * cadena libre. `downloadUrl`/`installUrl` se omiten a propósito: la app no
+ * está publicada todavía (`apps/mobile/PUBLISHING.md` §1) y un enlace de
+ * tienda que no resuelve a nada es peor que no anunciarlo — mismo criterio
+ * que `centerJsonLd` con el precio.
+ */
+export function mobileApplicationJsonLd(): JsonLdNode {
+  return {
+    "@context": "https://schema.org",
+    "@type": "MobileApplication",
+    name: STORE_LISTING_NAME,
+    operatingSystem: "iOS, Android",
+    applicationCategory: "HealthApplication",
+    description: BRAND.description,
+    url: absoluteUrl("/app"),
+    author: { "@type": "Organization", name: BRAND.name, url: absoluteUrl("/") },
+  };
+}
+
+/** Mismo nombre de ficha que `apps/mobile/src/store/metadata.ts` — decisión cerrada, no se reabre. */
+const STORE_LISTING_NAME = "Apta · Tu gimnasio";
+
+/**
  * Serializa para meter en un `<script type="application/ld+json">`.
  *
  * `<` se escapa: un `</script>` dentro de cualquier cadena —el nombre de un
