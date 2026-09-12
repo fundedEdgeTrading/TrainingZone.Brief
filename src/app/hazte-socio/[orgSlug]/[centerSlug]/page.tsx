@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { PlanType } from "@prisma/client";
@@ -207,6 +208,11 @@ export default async function PublicMembershipPage({
             Gestiona tu suscripción — cambia tu método de pago o cancela tu cuota sin contraseña.
           </p>
           <MemberBillingLinkForm orgSlug={orgSlug} centerSlug={centerSlug} />
+          {/* E9-16 · El socio real reserva desde el móvil, no desde esta página:
+              este enlace es el puente hacia la ficha de tienda. */}
+          <Link href="/app" className="inline-block text-xs font-semibold text-brand-text underline mt-3">
+            Descarga la app para reservar y ver tu progreso
+          </Link>
         </div>
 
         {/* E9-05 · Dirección, teléfono, horario y mapa: sin esto la página no

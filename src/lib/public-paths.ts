@@ -35,6 +35,10 @@ export const PUBLIC_PATHS = [
   "/funcionalidades",
   "/para",
   "/centros",
+  // E9-16 · Ficha pública de la app nativa. Sin relación con el grupo de rutas
+  // `(app)` de la aplicación autenticada: los grupos entre paréntesis no
+  // aparecen en la URL, así que no hay colisión con `/portal/*`.
+  "/app",
   "/api/email",
   "/servicio-no-disponible",
   "/api/jobs",
