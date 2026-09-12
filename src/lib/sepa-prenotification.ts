@@ -1,6 +1,10 @@
+import type Stripe from "stripe";
 import type { PaymentMethod } from "@prisma/client";
 
 import { addMonthsClamped } from "@/lib/date-utils";
+// HU-ST-16: solo el TIPO. Este módulo sigue sin importar nada con efectos en
+// tiempo de ejecución, que es lo que permite probarlo sin base de datos.
+import type { ReconcileResult } from "@/lib/member-billing";
 
 /**
  * E10-13 · Preaviso de cargo SEPA.
@@ -165,4 +169,52 @@ export function prenotificationKey(subscriptionId: string, chargeDate: Date): st
 /** Referencia del mandato que se enseña al socio. Nunca el IBAN completo. */
 export function mandateReference(subscriptionId: string): string {
   return `TZ-${subscriptionId.slice(-8).toUpperCase()}`;
+}
+
+// ---------------------------------------------------------------------------
+// HU-ST-16 · Preaviso disparado por `invoice.upcoming`. **PISTA P1.**
+//
+// VACÍO A PROPÓSITO. S1 lo deja cableado al despachador de webhook para que P1
+// no tenga que tocar el `switch` compartido: cinco pistas necesitaban añadirle
+// casos y se habrían pisado las cinco. Firma decidida, evento registrado; el
+// cuerpo lo escribe P1.
+//
+// AVISO IMPORTANTE PARA P1 — esto NO se construye desde cero, y sobre todo NO
+// se duplica. Ya existe el preaviso de E10-13:
+//   · La mitad pura (plazos, fechas, decisión) es todo lo de arriba en este
+//     mismo fichero: `sepaNoticeFromEnv()`, `decidePrenotification()`,
+//     `prenotificationKey()`.
+//   · El envío por CRON vive en `sepa-prenotification-job.ts`
+//     (`runSepaPrenotificationRule`), que deduce la fecha de cargo del
+//     aniversario del alta y sella el envío en `AuditLog` con la acción
+//     `SEPA_PRENOTIFICATION_SENT`.
+//
+// Lo que aporta `invoice.upcoming` es la fecha de cargo REAL de Stripe en vez
+// de una deducida. Las dos vías tienen que compartir el MISMO sello de
+// "ya enviado" en `AuditLog`, o el socio recibe el aviso dos veces: una del
+// cron y otra del webhook.
+//
+// Y ojo: una `invoice.upcoming` **no tiene `id`** —todavía no existe como
+// factura—, así que la clave de idempotencia sale de la suscripción y del
+// periodo, que es justo lo que ya hace `prenotificationKey()`.
+// ---------------------------------------------------------------------------
+
+/**
+ * `invoice.upcoming` · Stripe avisa X días antes del cargo. Es el único evento
+ * que llega ANTES de mover dinero, y por eso es el que sirve de preaviso.
+ *
+ * Recordatorio de la historia: es correo de SERVICIO. Se envía aunque el socio
+ * haya desactivado los avisos comerciales, y no lleva enlace de baja.
+ */
+export async function sendSepaPrenotification(
+  orgId: string,
+  invoice: Stripe.Invoice
+): Promise<ReconcileResult> {
+  console.info("[sepa-prenotification] invoice.upcoming pendiente de implementar (HU-ST-16, P1)", {
+    orgId,
+    amountDue: invoice.amount_due,
+    periodEnd: invoice.period_end,
+    customer: typeof invoice.customer === "string" ? invoice.customer : (invoice.customer?.id ?? null),
+  });
+  return { ok: true };
 }
