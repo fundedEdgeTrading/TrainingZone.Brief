@@ -95,24 +95,35 @@ test("U7 · una serie semanal de 8 semanas con aforo 10 no pasa del 100 % de ocu
     }
   }
 
-  const [center] = await getOccupancyByCenter(org.orgId);
+  // E14-06: el panel ya no tiene una ventana fija de 30 días, así que la
+  // ventana se pide explícita. Se elige la que cubre la serie entera para que
+  // la prueba no dependa del día del mes en que se ejecute.
+  const laSerieEntera = { from: base, to: new Date(recUntil.getTime() + 86_400_000) };
+  const [center] = await getOccupancyByCenter(org.orgId, { range: "custom", custom: laSerieEntera });
   assert.ok(center, "el centro del fixture tiene que aparecer en el panel");
-  assert.ok(center.occupancyPct <= 100, `ocupación imposible: ${center.occupancyPct} %`);
-  assert.equal(center.occupancyPct, 60, "6 de 10 plazas en cada ocurrencia, no 48 en una");
+  assert.ok(center.soldPct <= 100, `ocupación imposible: ${center.soldPct} %`);
+  assert.equal(center.soldPct, 60, "6 de 10 plazas en cada ocurrencia, no 48 en una");
   assert.equal(
     center.sessions,
-    4,
-    "la ventana de 30 días cubre cuatro ocurrencias de la serie: se cuentan clases dadas, no filas ni reservas"
+    8,
+    "las ocho ocurrencias de la serie: se cuentan clases dadas, no filas ni reservas"
   );
+  // E14-02: todas se celebraron y todo el que reservó vino.
+  assert.equal(center.attendancePct, 100, "de lo vendido, se presentó todo el mundo");
+  assert.equal(center.heldSessions, 8);
 });
 
 test("U7 · una sesión suelta sin asistencia no inventa ocupación", async () => {
   const solo = await createRegressionOrg(`${TAG}-vacio`);
   await createRegressionSession(solo, "clase-vacia", { capacity: 10, startsInHours: -48 });
 
-  const [center] = await getOccupancyByCenter(solo.orgId);
-  assert.equal(center.occupancyPct, 0);
+  const ayerYHoy = { from: new Date(Date.now() - 3 * 86_400_000), to: new Date() };
+  const [center] = await getOccupancyByCenter(solo.orgId, { range: "custom", custom: ayerYHoy });
+  assert.equal(center.soldPct, 0);
   assert.equal(center.sessions, 1, "la ocurrencia existe aunque no fuera nadie");
+  // Se celebró hace 48 h y nadie reservó: no hay nada vendido de lo que medir
+  // asistencia, y eso es un 0 honesto, no un NaN ni un 100 %.
+  assert.equal(center.attendancePct, 0);
 });
 
 // --- U8 · posiciones de la lista de espera ------------------------------------

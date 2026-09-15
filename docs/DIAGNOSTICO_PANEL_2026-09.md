@@ -408,3 +408,106 @@ en el esquema y el CSV de importación las rellena (`docs/IMPORTACION_SOCIOS_CSV
 **no tengo un solo caso real que medir**. La decisión sobre su `joinedAt` se tomará y se
 documentará en E14-05 como lo que es —una regla, no una conclusión de datos— y quedará
 dicho en la card que esos socios llevan una antigüedad heredada de otra plataforma.
+
+---
+
+## Cierre · qué quedó implementado, y qué enseña ahora el panel
+
+Añadido el 15 de septiembre, después de aplicar E14-02 a E14-07 sobre este mismo
+diagnóstico. Mismas consultas, misma base de demo, mismo instante.
+
+### Las cuatro cifras, antes y después
+
+| | antes | después |
+|---|---|---|
+| **Ingresos del mes** | `561 €` · `↓ 82,5 %` | igual — **no se tocó ninguna fórmula**, y el pie dice ahora que la cifra es solo lo cobrado y cuánto hay en vuelo (hoy, 0 €) |
+| **Ocupación** | una cifra, `7 %` en el tile y `8 %` en la card | **dos**: `8 %` de plazas vendidas y `86 %` de asistencia real, con grupo (`6 %`) y EP (`47 %`) separados |
+| **Comparativa** | `↓ 82,5 %` vs. agosto a esta fecha | igual — verificada y **no se tocó** |
+| **Insight** | «Los ingresos van un 82,5 % abajo respecto a agosto» | «Llevas 561 € cobrados del mes, en 5 recibos: son pocos para sacar un porcentaje» |
+
+La ocupación es el cambio que más mueve la lectura, y merece leerse entero:
+
+```
+soldPct 8 % · attendancePct 86 % · grupo 6 % · EP 47 %
+206 clases celebradas de 216 · 2 con la lista sin pasar (6 reservas)
+```
+
+Dicho en cristiano, y es una frase que antes el panel no podía decir: **el centro
+está muy vacío pero funciona muy bien**. De cada diez plazas solo se venden una,
+y de las que se venden viene casi todo el mundo. El problema es comercial, no de
+operación, y con un solo número era imposible saberlo.
+
+Y la nota al pie no es decorativa: esa asistencia del 86 % está calculada sobre
+un mes con **dos clases sin lista pasar**. Con la lista al día significaría lo
+mismo; con la mitad del mes sin resolver, no — y ahora la card lo dice.
+
+### El mapa, que era el P0
+
+De devolver **lo mismo con los cuatro periodos** —27 barrios, 19 leads, 71 socios,
+siempre— a moverse:
+
+| periodo | barrios | leads | socios | bajas |
+|---|---|---|---|---|
+| Hoy | 11 | 18 | 0 | 0 |
+| Mes | 12 | 18 | 4 | 0 |
+| 3 meses | 19 | 18 | 14 | 2 |
+| Año | 23 | 18 | 30 | 6 |
+
+Los 71 socios de antes incluían los 8 cancelados; de los 19 leads, uno estaba
+convertido y se contaba también como socio. Y la columna de bajas no existía.
+
+### La permanencia, medida
+
+```
+permanencia (Kaplan-Meier, hasta el horizonte) ...... 20,6 meses
+horizonte de observación ............................ 23,6 meses
+media simple de los 8 que se fueron ..................  7,3 meses
+socios vivos (censurados) ............................ 63
+referencia de organización .......................... 25 meses  → belowHorizon
+```
+
+Los 20,6 y los 7,3 miden cosas distintas y la diferencia es el diagnóstico
+entero: **la media simple no mide la lealtad del socio, mide la edad del
+negocio.** Y el `belowHorizon` es el titular de la card, no una nota al pie:
+nadie ha podido quedarse 25 meses porque el negocio no lleva 25 meses abierto.
+
+### Un artefacto que apareció al implementar, y cómo se cerró
+
+El LTV es ritmo por duración, y el ritmo (ingreso por socio y mes) salía
+disparado al calcularlo sobre una ventana a medias: **290 €/socio/mes** con el
+selector en «Mes», cuando la cuota real de la organización son ~160 €. Dos
+causas, las dos arregladas:
+
+1. Se dividía por la duración de la ventana en vez de por **meses-socio de
+   exposición**. Un socio de alta a mitad del periodo no ha tenido ocasión de
+   pagarlo entero, y meterlo completo en el denominador hundía el ritmo de todos
+   (con el selector en «Año» daba 72 €/mes).
+2. Medio mes transcurrido tiene medio mes de exposición pero **todavía no ha
+   entrado ni la mitad de los recibos**, así que la división sale disparada o
+   hundida según de qué lado caiga el calendario de cobros.
+
+Lo segundo no se arregla con una fórmula mejor: se arregla con el mismo suelo
+del insight (E14-04, 10 cobros / 1.500 €) y por el mismo motivo. Hoy el panel
+enseña:
+
+```
+range=mes  → LTV «—» · «solo 5 cobros del mes: elige un periodo más largo»
+range=ano  → 83,41 €/mes × 20,6 meses = 1.718 €
+```
+
+Que el mes en curso no dé LTV **es la respuesta correcta**, y es coherente con
+la cifra 1 de este mismo documento: no hay cobros suficientes porque los cobros
+del mes no han entrado.
+
+Los 83 €/mes tampoco son un error: quedan por debajo de la cuota de 160 € porque
+el ARPU cuenta a **todos** los socios, y en esta base hay 35 suscripciones
+activas sin cobro reciente. Es exactamente lo que encontró la cifra 1, ahora
+visible en la card de valor.
+
+### El barrido, repetido
+
+De **4 de 25 consultas usando el rango** a **16 de 25**, y las 9 restantes con su
+motivo escrito y rotulado en la pantalla (6 son stock —«cuántos socios hay
+ahora»— y 3 tienen ventana propia por definición). `src/lib/dashboard-scope.test.ts`
+lo comprueba en cada ejecución: una consulta nueva que no declare qué hace con
+el periodo rompe el test en vez de romper la lectura del panel en producción.
