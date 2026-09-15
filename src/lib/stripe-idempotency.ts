@@ -38,6 +38,8 @@
  * | `checkout:platform:<orgId>_<planCode>_<ventana>:v1` | `createPlatformCheckoutSession` | un solo checkout de licencia |
  * | `refund:<orgId>:<paymentId>_<importe>_<yaDevuelto>:v1` | `issueRefund` (HU-ST-20) | un solo refund por doble clic |
  * | `credit_note:<orgId>:<invoiceId>_<importe>_<yaDevuelto>:v1` | `issueRefund` (HU-ST-20) | una sola nota de crédito por doble clic |
+ * | `coupon:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo Coupon por código |
+ * | `promocode:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo PromotionCode por código |
  *
  * Cuando se añada una creación nueva, se añade su fila aquí. Una creación sin
  * clave es un duplicado esperando a un reintento de red.
@@ -158,5 +160,28 @@ export function refundKey(orgId: string, paymentId: string, amountCents: number,
  */
 export function creditNoteKey(orgId: string, invoiceId: string, amountCents: number, alreadyRefundedCents = 0) {
   return idempotencyKey("credit_note", orgId, [invoiceId, String(amountCents), String(alreadyRefundedCents)]);
+}
+
+/**
+ * HU-ST-27 · `coupon:<orgId>:<código>:v1` y `promocode:<orgId>:<código>:v1`.
+ *
+ * La entidad es el CÓDIGO ("VERANO25"), no un identificador de fila: cuando se
+ * crea el cupón todavía no hay fila local, y el código es lo único estable que
+ * identifica esa creación desde cualquier proceso. Sin ventana temporal a
+ * propósito —a diferencia de los checkouts—: dar de alta dos veces "VERANO25"
+ * nunca es una venta nueva, es un doble clic o un reintento de red, y el
+ * segundo intento tiene que devolver el MISMO cupón media hora después
+ * igualmente.
+ *
+ * Las dos claves van separadas porque son dos objetos de Stripe: si el
+ * `PromotionCode` falla tras crearse el `Coupon`, el reintento recupera el
+ * mismo `Coupon` en vez de crear un segundo descuento idéntico.
+ */
+export function couponKey(orgId: string, code: string) {
+  return idempotencyKey("coupon", orgId, code);
+}
+
+export function promotionCodeKey(orgId: string, code: string) {
+  return idempotencyKey("promocode", orgId, code);
 }
 

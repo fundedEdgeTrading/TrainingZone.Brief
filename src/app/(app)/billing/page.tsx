@@ -71,6 +71,8 @@ export default async function BillingPage({
   });
 
   // E6-06: exportar es cosa de dirección, igual que en /api/export/payments.
+  // HU-ST-27: y la pantalla de cupones exige exactamente los mismos dos roles,
+  // así que las dos acciones de cabecera comparten la condición.
   const canExport = session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR";
 
   return (
@@ -80,11 +82,14 @@ export default async function BillingPage({
         actions={
           canExport ? (
             <>
-              {/* HU-ST-20 / HU-ST-21 (D-S7): devoluciones y disputas se
-                  gestionan desde Apta, y son de dirección — la misma frontera
-                  que la exportación. `rbac.ts` está congelado este trimestre,
-                  así que su entrada al menú no puede declararse allí todavía y
-                  la puerta es esta. */}
+              {/* Las subpantallas de facturación NO llevan item de menú propio:
+                  `rbac.ts` está congelado este trimestre, y un item por
+                  subpantalla es justo lo que el rediseño del NavBar quitó. Se
+                  entra desde aquí, que es de donde cuelgan, y con el mismo
+                  criterio de rol que cada una aplica por su cuenta — dirección.
+                  Devoluciones y disputas (HU-ST-20 / HU-ST-21, D-S7) mueven
+                  dinero; un código promocional (HU-ST-27) es una decisión
+                  comercial. Ninguna de las tres es de mostrador. */}
               <Link
                 href="/billing/reembolsos"
                 className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
@@ -96,6 +101,12 @@ export default async function BillingPage({
                 className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
               >
                 Disputas
+              </Link>
+              <Link
+                href="/billing/cupones"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Cupones
               </Link>
               <a
                 href="/api/export/payments"
