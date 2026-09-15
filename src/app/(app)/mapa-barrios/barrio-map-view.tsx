@@ -326,11 +326,27 @@ export function BarrioMapView({
    * como su alternativa accesible. Aquí arriba, al lado del selector de ciudad,
    * es una de las dos formas de leer esta pantalla y no el plan B de la otra.
    */
+  /**
+   * E14-10 · El conmutador de vista.
+   *
+   * **No va en el header, y eso costó un CI en rojo.** La columna derecha del
+   * header es `shrink-0` y la del título `min-w-0`, así que todo lo que se
+   * mete arriba se lo quita al título: con el conmutador ahí, a 1280 px el
+   * subtítulo «… · Zaragoza · 2 centros» se quedaba a cero de ancho y el e2e
+   * del selector de ciudad lo cazó. Es exactamente lo que ya advertía el
+   * comentario de esta pantalla sobre los filtros de periodo, escrito por el
+   * mismo motivo.
+   *
+   * Vive con las pastillas de métrica, que es lo primero que se mira al entrar
+   * y donde ya se decide qué se está leyendo. La historia pide que la tabla se
+   * ENCUENTRE, no que esté en un sitio concreto.
+   */
   const viewSwitch = (
     <div
+      data-tz-overlay
       role="group"
       aria-label="Vista"
-      className="flex gap-[3px] bg-brand-bg border border-brand-border rounded-full p-[3px]"
+      className={`self-start flex gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
     >
       {BARRIO_VIEWS.map((v) => (
         <button
@@ -338,14 +354,8 @@ export function BarrioMapView({
           type="button"
           onClick={() => selectView(v)}
           aria-pressed={v === view}
-          // Más compacto que las pastillas de ciudad y sin `min-h-[44px]`: la
-          // columna de la derecha del header es `shrink-0`, así que cada píxel
-          // que ocupa aquí se lo quita al título, que se trunca —el mismo
-          // problema que ya cazaron los e2e cuando se metieron aquí arriba los
-          // filtros de periodo—. La superficie táctil sigue por encima de los
-          // 40 px de alto y 64 de ancho, que es lo que pide el gesto.
-          className={`px-3.5 py-2.5 rounded-full text-[12.5px] font-semibold transition-all duration-150 ${
-            v === view ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
+          className={`px-[15px] min-h-[44px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] transition-colors duration-150 ${
+            v === view ? "bg-tz-black text-tz-bone" : "text-brand-text-2 hover:bg-brand-bg"
           }`}
         >
           {BARRIO_VIEW_LABEL[v]}
@@ -354,41 +364,33 @@ export function BarrioMapView({
     </div>
   );
 
-  const header = (
+  // El header se queda EXACTAMENTE como estaba: solo el selector de ciudad.
+  const header = cities.length > 1 && (
     <HeaderActions>
-      <div className="flex items-center gap-1.5">
-        {viewSwitch}
-        {cities.length > 1 && (
-          // A partir de `xl`: por debajo de ese ancho el conmutador de vista y
-          // el selector de ciudad juntos dejaban el título del header en tres
-          // letras. La ciudad sigue estando en el subtítulo, y la vista de
-          // tabla la ofrece además en su propia barra.
-          <div className="hidden xl:flex gap-[3px] bg-brand-bg border border-brand-border rounded-full p-[3px]">
-            {cities.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                onClick={() => selectCity(c.key)}
-                className={`px-3.5 py-2.5 rounded-full text-[12.5px] font-semibold transition-all duration-150 ${
-                  c.key === city.key ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="hidden md:flex gap-[5px] bg-brand-bg border border-brand-border rounded-full p-1">
+        {cities.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => selectCity(c.key)}
+            className={`px-4 min-h-[44px] rounded-full text-[12.5px] font-semibold transition-all duration-150 ${
+              c.key === city.key ? "bg-tz-black text-tz-bone" : "text-brand-muted hover:text-brand-text"
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
       </div>
     </HeaderActions>
   );
 
   /**
-   * El selector de ciudad de la barra de la tabla. En la vista de tabla hay
-   * sitio de sobra aquí abajo, y así la ciudad se puede cambiar también por
-   * debajo de `xl`, que antes no se podía en ningún ancho.
+   * El selector de ciudad de la barra de la tabla, para el hueco que el header
+   * deja por debajo de `md`: ahí sus pastillas se ocultan y hasta ahora no
+   * había forma de cambiar de ciudad en ningún ancho de móvil.
    */
   const citySelect = cities.length > 1 && (
-    <div className={`xl:hidden flex items-center gap-1 ${GLASS} rounded-[14px] p-[5px]`}>
+    <div className={`md:hidden flex items-center gap-1 ${GLASS} rounded-[14px] p-[5px]`}>
       <label className="sr-only" htmlFor="tz-barrio-ciudad">
         Ciudad
       </label>
@@ -423,6 +425,7 @@ export function BarrioMapView({
         {header}
 
         <div className="flex flex-wrap items-start gap-2.5">
+          {viewSwitch}
           {metricPills}
           {periodFilters}
           {citySelect}
@@ -460,10 +463,11 @@ export function BarrioMapView({
 
   return (
     <div data-full-bleed className="absolute inset-0">
-      {/* El header lleva el conmutador de vista y el selector de ciudad. Los
-          filtros de periodo y estado viven en el panel del mapa: metidos aquí
-          arriba estrujaban la columna del título hasta dejarla a cero de ancho
-          —los e2e lo cazaron— y el header no es de esta pantalla. */}
+      {/* El header solo lleva el selector de ciudad, como siempre. Los filtros
+          de periodo y estado —y el conmutador de vista de E14-10— viven en el
+          panel del mapa: metidos aquí arriba estrujaban la columna del título
+          hasta dejarla a cero de ancho —los e2e lo cazaron, dos veces— y el
+          header no es de esta pantalla. */}
       {header}
 
       <BarrioMap
@@ -493,6 +497,7 @@ export function BarrioMapView({
           al ratón en el hueco entre tarjetas. */}
       <div className="absolute top-5 left-5 right-5 bottom-[76px] z-[500] flex items-start justify-between gap-4 pointer-events-none">
         <div className="flex flex-col gap-2.5 min-w-0 pointer-events-auto">
+          {viewSwitch}
           {metricPills}
           <div
             data-tz-overlay
