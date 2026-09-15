@@ -76,6 +76,8 @@ export default async function BillingPage({
   });
 
   // E6-06: exportar es cosa de dirección, igual que en /api/export/payments.
+  // HU-ST-27: y la pantalla de cupones exige exactamente los mismos dos roles,
+  // así que las dos acciones de cabecera comparten la condición.
   const canExport = session.user.role === "OWNER" || session.user.role === "CENTER_DIRECTOR";
 
   return (
@@ -84,12 +86,26 @@ export default async function BillingPage({
         description="Cero dudas sobre quién está al corriente (F3). El cobro online con Stripe está aquí mismo, debajo; la facturación certificada (VERI*FACTU) queda fuera de esta entrega."
         actions={
           canExport ? (
-            <a
-              href="/api/export/payments"
-              className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
-            >
-              Exportar cobros
-            </a>
+            <>
+              {/* HU-ST-27: `/billing/cupones` no lleva item de menú propio
+                  (`rbac.ts` está congelado, y un item por subpantalla de
+                  facturación es lo que el rediseño del NavBar quitó). Se entra
+                  desde aquí, que es de donde cuelga. Mismo criterio de rol que
+                  la propia pantalla: un código promocional es una decisión
+                  comercial, no de mostrador. */}
+              <Link
+                href="/billing/cupones"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Cupones
+              </Link>
+              <a
+                href="/api/export/payments"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Exportar cobros
+              </a>
+            </>
           ) : undefined
         }
       />

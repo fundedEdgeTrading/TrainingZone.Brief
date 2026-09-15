@@ -37,6 +37,8 @@
  * | `customer:platform:<orgId>:v1` | `createPlatformCheckoutSession` | un solo cliente de licencia por org |
  * | `checkout:platform:<orgId>_<planCode>_<ventana>:v1` | `createPlatformCheckoutSession` | un solo checkout de licencia |
  * | `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` | `retryOpenInvoice` (HU-ST-19) | un solo intento de cobro por "Pagar ahora" |
+ * | `coupon:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo Coupon por código |
+ * | `promocode:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo PromotionCode por código |
  *
  * Cuando se añada una creación nueva, se añade su fila aquí. Una creación sin
  * clave es un duplicado esperando a un reintento de red.
@@ -127,7 +129,6 @@ export function platformCheckoutKey(orgId: string, planCode: string, at?: Date) 
   return idempotencyKey("checkout", "platform", [orgId, planCode, checkoutWindow(at)]);
 }
 
-
 /**
  * `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` — HU-ST-19, "Pagar ahora".
  *
@@ -139,4 +140,27 @@ export function platformCheckoutKey(orgId: string, planCode: string, at?: Date) 
  */
 export function invoicePayKey(orgId: string, invoiceId: string, at?: Date) {
   return idempotencyKey("invoicepay", orgId, [invoiceId, checkoutWindow(at)]);
+}
+
+/**
+ * HU-ST-27 · `coupon:<orgId>:<código>:v1` y `promocode:<orgId>:<código>:v1`.
+ *
+ * La entidad es el CÓDIGO ("VERANO25"), no un identificador de fila: cuando se
+ * crea el cupón todavía no hay fila local, y el código es lo único estable que
+ * identifica esa creación desde cualquier proceso. Sin ventana temporal a
+ * propósito —a diferencia de los checkouts—: dar de alta dos veces "VERANO25"
+ * nunca es una venta nueva, es un doble clic o un reintento de red, y el
+ * segundo intento tiene que devolver el MISMO cupón media hora después
+ * igualmente.
+ *
+ * Las dos claves van separadas porque son dos objetos de Stripe: si el
+ * `PromotionCode` falla tras crearse el `Coupon`, el reintento recupera el
+ * mismo `Coupon` en vez de crear un segundo descuento idéntico.
+ */
+export function couponKey(orgId: string, code: string) {
+  return idempotencyKey("coupon", orgId, code);
+}
+
+export function promotionCodeKey(orgId: string, code: string) {
+  return idempotencyKey("promocode", orgId, code);
 }
