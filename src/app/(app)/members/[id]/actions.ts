@@ -6,13 +6,20 @@ import { requireRole, memberIsInScope, centerIsInScope, OUT_OF_CENTER_SCOPE, CEN
 import { prisma } from "@/lib/prisma";
 import { createHealthRecord, updateHealthRecordStatus } from "@/lib/health-access";
 import { HEALTH_STATUSES } from "@/lib/health-status";
-import { canDeleteMembers, canManageMembers } from "@/lib/rbac";
+import { canDeleteMembers, canManageMembers, canManageOrg } from "@/lib/rbac";
+import {
+  addCancelReason,
+  addFreezeReason,
+  cancelMember,
+  freezeMember,
+  reactivateMember,
+} from "@/lib/member-lifecycle";
 import { setMemberNoteArchived, setMemberNoteImportant } from "@/lib/members-queries";
 import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type InjuryZone, type Laterality, type Role, type Sex } from "@prisma/client";
+import { Prisma, type HealthRecordType, type HealthSeverity, type HealthStatus, type InjuryZone, type Laterality, type Role, type Sex, type SubscriptionStatus } from "@prisma/client";
 import { INJURY_ZONES, LATERALITIES, defaultSideFor } from "@/lib/injury-zones";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
@@ -845,4 +852,117 @@ export async function logMemberWhatsappContactAction(memberId: string): Promise<
     memberId,
     reason: "retention_alert",
   });
+}
+
+// ---------------------------------------------------------------------------
+// M4 · Tipos de persona (E14-15 / E14-16)
+// ---------------------------------------------------------------------------
+//
+// La ficha era, hasta ahora, el único sitio desde el que NO se podía cambiar el
+// tipo de una persona: se congelaba y se daba de baja el BONO, y el estado del
+// socio venía de rebote. Con el motivo obligatorio eso deja de valer —quien
+// conoce el porqué es quien está delante del socio—, así que las tres
+// transiciones se hacen aquí y pasan, como todas, por `member-lifecycle.ts`.
+
+/** Los roles que ya pueden gestionar suscripciones (billing/subscription-actions.ts). */
+const LIFECYCLE_ROLES = ["OWNER", "CENTER_DIRECTOR", "RECEPTION"] as const;
+
+/** Suscripciones vivas del socio: las que se congelan o se cierran con él. */
+async function liveSubscriptionIdsOf(memberId: string, statuses: SubscriptionStatus[]): Promise<string[]> {
+  const rows = await prisma.subscription.findMany({
+    where: { memberId, status: { in: statuses } },
+    select: { id: true },
+  });
+  return rows.map((r) => r.id);
+}
+
+/** E14-15 · Congelar al socio: motivo del catálogo y fecha de vuelta prevista. */
+export async function freezeMemberAction(formData: FormData): Promise<MemberActionResult> {
+  const session = await requireRole([...LIFECYCLE_ROLES]);
+  const memberId = String(formData.get("memberId") ?? "");
+  const reasonId = String(formData.get("freezeReasonId") ?? "").trim();
+  const resumeOnRaw = String(formData.get("resumeOn") ?? "").trim();
+
+  if (!memberId) return { ok: false, error: "Falta el socio." };
+  if (!reasonId) return { ok: false, error: "El motivo de la congelación es obligatorio." };
+
+  const resumeOn = resumeOnRaw ? new Date(resumeOnRaw) : null;
+  if (resumeOn && Number.isNaN(resumeOn.getTime())) return { ok: false, error: "La fecha de vuelta no es válida." };
+
+  const result = await freezeMember({ kind: "user", user: session.user }, memberId, {
+    reasonId,
+    // La fecha de vuelta prevista NO se duplica en `Member`: su sitio es
+    // `Subscription.pauseUntil`, y por eso viaja con las suscripciones.
+    resumeOn,
+    subscriptionIds: await liveSubscriptionIdsOf(memberId, ["ACTIVE", "PENDING_CONFIRMATION"]),
+  });
+  if (!result.ok) return result;
+
+  revalidatePath(`/members/${memberId}`);
+  revalidatePath("/members");
+  return { ok: true };
+}
+
+/** E14-15 · Dar de baja al socio: motivo del catálogo; la fecha es `cancelledAt`. */
+export async function cancelMemberAction(formData: FormData): Promise<MemberActionResult> {
+  const session = await requireRole([...LIFECYCLE_ROLES]);
+  const memberId = String(formData.get("memberId") ?? "");
+  const reasonId = String(formData.get("cancelReasonId") ?? "").trim();
+
+  if (!memberId) return { ok: false, error: "Falta el socio." };
+  if (!reasonId) return { ok: false, error: "El motivo de baja es obligatorio." };
+
+  const result = await cancelMember({ kind: "user", user: session.user }, memberId, {
+    reasonId,
+    subscriptionIds: await liveSubscriptionIdsOf(memberId, [
+      "ACTIVE",
+      "PENDING_CONFIRMATION",
+      "PAUSED",
+      "FROZEN",
+    ]),
+  });
+  if (!result.ok) return result;
+
+  revalidatePath(`/members/${memberId}`);
+  revalidatePath("/members");
+  revalidatePath("/billing");
+  return { ok: true };
+}
+
+/** E14-15 · Volver a cliente desde congelado, suspendido o excliente. */
+export async function reactivateMemberAction(memberId: string): Promise<MemberActionResult> {
+  const session = await requireRole([...LIFECYCLE_ROLES]);
+  if (!memberId) return { ok: false, error: "Falta el socio." };
+
+  const result = await reactivateMember({ kind: "user", user: session.user }, memberId, {
+    subscriptionIds: await liveSubscriptionIdsOf(memberId, ["PAUSED", "FROZEN"]),
+  });
+  if (!result.ok) return result;
+
+  revalidatePath(`/members/${memberId}`);
+  revalidatePath("/members");
+  return { ok: true };
+}
+
+/**
+ * Los dos catálogos son configurables por dirección sin desplegar, igual que
+ * `LeadChannel` y `NoCloseReason` (RB-LEAD-004/011) y con el mismo control de
+ * permiso: quien gestiona la organización.
+ */
+export async function addFreezeReasonAction(formData: FormData): Promise<MemberActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  if (!canManageOrg(session.user.role)) return { ok: false, error: "No tienes permiso." };
+  const result = await addFreezeReason(session.user.orgId, String(formData.get("label") ?? ""));
+  if (!result.ok) return result;
+  revalidatePath("/members");
+  return { ok: true };
+}
+
+export async function addCancelReasonAction(formData: FormData): Promise<MemberActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  if (!canManageOrg(session.user.role)) return { ok: false, error: "No tienes permiso." };
+  const result = await addCancelReason(session.user.orgId, String(formData.get("label") ?? ""));
+  if (!result.ok) return result;
+  revalidatePath("/members");
+  return { ok: true };
 }

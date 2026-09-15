@@ -6,6 +6,8 @@ import { requireRole } from "@/lib/guard";
 import { getMemberForUser } from "@/lib/portal-queries";
 import { stripeForOrg } from "@/lib/stripe";
 import { createMemberBillingPortalSession, isRecurring } from "@/lib/member-billing";
+// E14-16 · Todo lo que toca el motivo de baja de un socio pasa por el módulo.
+import { clearScheduledCancelReason, recordScheduledCancelReason } from "@/lib/member-lifecycle";
 
 /**
  * E5-01: autoservicio de baja/gestión de pago desde el propio portal — hoy
@@ -52,9 +54,14 @@ export type MemberCancellationResult = { ok: true; cancelAt: Date } | { ok: fals
  * sigue siendo cosa de recepción). Un socio con un bono puntual (no
  * recurrente) no tiene nada que cancelar: su bono caduca solo.
  */
-export async function requestMemberCancellation(): Promise<MemberCancellationResult> {
+export async function requestMemberCancellation(cancelReasonId?: string): Promise<MemberCancellationResult> {
   const ctx = await currentMember();
   if (!ctx) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+  // E14-15 · El motivo de baja es obligatorio TAMBIÉN aquí, y aquí es donde más
+  // vale: el socio que se va es el único que sabe por qué, y el cron que ejecuta
+  // la baja semanas después no tiene a quién preguntárselo. Se guarda ahora, y
+  // `member-lifecycle.ts::cancelMember` lo recoge de la ficha al ejecutarla.
+  if (!cancelReasonId) return { ok: false, error: "Elige un motivo para la baja." };
 
   const subscription = await latestLiveSubscription(ctx.member.id);
   if (!subscription) return { ok: false, error: "No tienes ninguna suscripción activa." };
@@ -79,6 +86,13 @@ export async function requestMemberCancellation(): Promise<MemberCancellationRes
       }
     }
   }
+
+  const recorded = await recordScheduledCancelReason(
+    { kind: "system", orgId: ctx.session.user.orgId, source: "portal-socio", actorUserId: ctx.session.user.id },
+    ctx.member.id,
+    cancelReasonId,
+  );
+  if (!recorded.ok) return recorded;
 
   await prisma.subscription.update({ where: { id: subscription.id }, data: { cancelAt } });
   await prisma.auditLog.create({
@@ -127,6 +141,12 @@ export async function revertMemberCancellation(): Promise<MemberActionResult> {
   }
 
   await prisma.subscription.update({ where: { id: subscription.id }, data: { cancelAt: null } });
+  // Se queda: el socio sigue siendo cliente y un motivo de baja colgado lo
+  // convierte en excliente a ojos de la campaña de reactivación.
+  await clearScheduledCancelReason(
+    { kind: "system", orgId: ctx.session.user.orgId, source: "portal-socio", actorUserId: ctx.session.user.id },
+    ctx.member.id,
+  );
   await prisma.auditLog.create({
     data: {
       orgId: ctx.session.user.orgId,

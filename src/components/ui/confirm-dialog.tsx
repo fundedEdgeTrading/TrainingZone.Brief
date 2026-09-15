@@ -33,6 +33,7 @@ export function ConfirmDialog({
   pendingLabel,
   pending = false,
   blockedReason,
+  confirmDisabled = false,
 }: {
   open: boolean;
   onCancel: () => void;
@@ -45,6 +46,13 @@ export function ConfirmDialog({
   pendingLabel?: string;
   pending?: boolean;
   blockedReason?: string | null;
+  /**
+   * Deshabilita el botón de confirmar sin bloquear el diálogo entero: es para
+   * cuando falta algo que se rellena DENTRO de la descripción (p. ej. el motivo
+   * de baja, obligatorio en E14-15). Distinto de `blockedReason`, que retira la
+   * acción porque no se puede hacer en absoluto.
+   */
+  confirmDisabled?: boolean;
 }) {
   const mounted = useMounted();
 
@@ -97,7 +105,7 @@ export function ConfirmDialog({
             {blockedReason ? "Entendido" : cancelLabel}
           </Button>
           {!blockedReason && (
-            <Button type="button" variant="danger" onClick={onConfirm} disabled={pending}>
+            <Button type="button" variant="danger" onClick={onConfirm} disabled={pending || confirmDisabled}>
               {pending && <ButtonSpinner />}
               {pending ? (pendingLabel ?? "Eliminando...") : confirmLabel}
             </Button>

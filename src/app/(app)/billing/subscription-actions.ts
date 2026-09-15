@@ -5,6 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
 import { createPaymentWithReceipt } from "@/lib/payments";
 import type { Prisma } from "@prisma/client";
+// E14-16 · Toda transición de estado del socio pasa por aquí. Un update suelto
+// en este fichero sería un socio sin motivo, y se saltaría además el enganche
+// de R1 (caducidad del código de referido) y el disparador de E2.
+import {
+  clearScheduledCancelReason,
+  freezeMember,
+  reactivateMember,
+  recordScheduledCancelReason,
+} from "@/lib/member-lifecycle";
 
 export type SubscriptionActionResult = { ok: true } | { ok: false; error: string };
 
@@ -109,9 +118,13 @@ export async function freezeSubscription(formData: FormData): Promise<Subscripti
   const session = await requireRole([...ALLOWED_ROLES]);
   const subscriptionId = String(formData.get("subscriptionId") ?? "");
   const pauseUntilRaw = String(formData.get("pauseUntil") ?? "").trim();
-  const reason = String(formData.get("reason") ?? "").trim();
+  // E14-15: el motivo deja de ser texto libre que solo veía el AuditLog y pasa a
+  // ser una entrada del catálogo `FreezeReason`. Es lo que hace segmentable la
+  // campaña de reactivación: "se congeló por lesión" y "se congeló por precio"
+  // no reciben lo mismo, y con texto libre no se pueden agrupar.
+  const freezeReasonId = String(formData.get("freezeReasonId") ?? "").trim();
   if (!subscriptionId) return { ok: false, error: "Falta la suscripción." };
-  if (!reason) return { ok: false, error: "El motivo de la congelación es obligatorio." };
+  if (!freezeReasonId) return { ok: false, error: "El motivo de la congelación es obligatorio." };
 
   const subscription = await prisma.subscription.findFirst({
     where: { id: subscriptionId, member: { orgId: session.user.orgId } },
@@ -126,11 +139,17 @@ export async function freezeSubscription(formData: FormData): Promise<Subscripti
     return { ok: false, error: "La fecha de reanudación debe ser futura." };
   }
 
-  await prisma.$transaction([
-    prisma.subscription.update({ where: { id: subscriptionId }, data: { status: "FROZEN", pauseUntil } }),
-    prisma.member.update({ where: { id: subscription.memberId }, data: { state: "FROZEN" } }),
-  ]);
-  await logAudit(session.user.orgId, session.user.id, "SUBSCRIPTION_FROZEN", subscriptionId, subscription.memberId, { reason, pauseUntil });
+  // E14-16 · UN SOLO PUNTO DE ESCRITURA. El estado del socio y el de su bono se
+  // mueven juntos desde `member-lifecycle.ts`, que es quien valida el motivo,
+  // escribe `frozenAt` y deja la traza. La fecha de vuelta prevista viaja a
+  // `Subscription.pauseUntil`, que es donde vive: no se duplica en `Member`.
+  const frozen = await freezeMember({ kind: "user", user: session.user }, subscription.memberId, {
+    reasonId: freezeReasonId,
+    resumeOn: pauseUntil,
+    subscriptionIds: [subscriptionId],
+  });
+  if (!frozen.ok) return frozen;
+  await logAudit(session.user.orgId, session.user.id, "SUBSCRIPTION_FROZEN", subscriptionId, subscription.memberId, { freezeReasonId, pauseUntil });
 
   revalidateMemberAndBilling(subscription.memberId);
   return { ok: true };
@@ -144,10 +163,13 @@ export async function resumeSubscription(subscriptionId: string, memberId: strin
   if (!(await memberIsInScope(session.user, subscription.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   if (subscription.status !== "FROZEN") return { ok: false, error: "Esta suscripción no está congelada." };
 
-  await prisma.$transaction([
-    prisma.subscription.update({ where: { id: subscriptionId }, data: { status: "ACTIVE", pauseUntil: null } }),
-    prisma.member.update({ where: { id: subscription.memberId }, data: { state: "ACTIVE" } }),
-  ]);
+  // E14-16: la vuelta también pasa por el módulo, que limpia los dos relojes de
+  // salida (`frozenAt`, `delinquentSince`) y el motivo de la congelación que
+  // acaba de terminar.
+  const resumed = await reactivateMember({ kind: "user", user: session.user }, subscription.memberId, {
+    subscriptionIds: [subscriptionId],
+  });
+  if (!resumed.ok) return resumed;
   await logAudit(session.user.orgId, session.user.id, "SUBSCRIPTION_RESUMED", subscriptionId, subscription.memberId, {});
 
   revalidateMemberAndBilling(memberId);
@@ -189,9 +211,12 @@ export async function scheduleCancellation(formData: FormData): Promise<Subscrip
   const session = await requireRole([...ALLOWED_ROLES]);
   const subscriptionId = String(formData.get("subscriptionId") ?? "");
   const cancelAtRaw = String(formData.get("cancelAt") ?? "");
-  const reason = String(formData.get("reason") ?? "").trim();
+  // E14-15: el motivo de baja se captura AQUÍ, cuando hay una persona delante
+  // que lo sabe, y no semanas después en el cron que ejecuta la baja — que no
+  // tiene a quién preguntárselo.
+  const cancelReasonId = String(formData.get("cancelReasonId") ?? "").trim();
   if (!subscriptionId || !cancelAtRaw) return { ok: false, error: "Indica la fecha de cancelación." };
-  if (!reason) return { ok: false, error: "El motivo de la cancelación es obligatorio." };
+  if (!cancelReasonId) return { ok: false, error: "El motivo de la cancelación es obligatorio." };
 
   const cancelAt = new Date(cancelAtRaw);
   if (Number.isNaN(cancelAt.getTime()) || cancelAt <= new Date()) return { ok: false, error: "La fecha de cancelación debe ser futura." };
@@ -203,8 +228,14 @@ export async function scheduleCancellation(formData: FormData): Promise<Subscrip
     return { ok: false, error: "Solo se pueden programar cancelaciones de suscripciones activas o congeladas." };
   }
 
+  const recorded = await recordScheduledCancelReason(
+    { kind: "user", user: session.user },
+    subscription.memberId,
+    cancelReasonId,
+  );
+  if (!recorded.ok) return recorded;
   await prisma.subscription.update({ where: { id: subscriptionId }, data: { cancelAt } });
-  await logAudit(session.user.orgId, session.user.id, "SUBSCRIPTION_CANCELLATION_SCHEDULED", subscriptionId, subscription.memberId, { reason, cancelAt });
+  await logAudit(session.user.orgId, session.user.id, "SUBSCRIPTION_CANCELLATION_SCHEDULED", subscriptionId, subscription.memberId, { cancelReasonId, cancelAt });
 
   revalidateMemberAndBilling(subscription.memberId);
   return { ok: true };
@@ -219,6 +250,9 @@ export async function cancelScheduledCancellation(subscriptionId: string, member
   if (!subscription.cancelAt) return { ok: false, error: "Esta suscripción no tiene una cancelación programada." };
 
   await prisma.subscription.update({ where: { id: subscriptionId }, data: { cancelAt: null } });
+  // Y con ella se va su motivo: el socio sigue siendo cliente, y dejarle escrito
+  // un motivo de baja lo convierte en excliente a ojos de quien lo lea después.
+  await clearScheduledCancelReason({ kind: "user", user: session.user }, subscription.memberId);
   await logAudit(session.user.orgId, session.user.id, "SUBSCRIPTION_CANCELLATION_UNSCHEDULED", subscriptionId, subscription.memberId, {});
 
   revalidateMemberAndBilling(memberId);

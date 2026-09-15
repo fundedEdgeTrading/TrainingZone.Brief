@@ -13,7 +13,7 @@ import {
   type AssessmentConfig,
   type CustomQuestionDef,
 } from "./config";
-import { assessmentSchemaFor } from "./schemas";
+import { assessmentSchemaFor, memberPartSchemaFor } from "./schemas";
 
 /**
  * Lo que se prueba aquí es que la configuración por organización no cambie nada
@@ -231,4 +231,79 @@ test("retirar una pregunta propia no borra lo que ya se contestó", () => {
   });
   assert.ok(parsed.success);
   assert.equal(parsed.data.custom?.cafes_al_dia, 3);
+});
+
+// ---------------------------------------------------------------------------
+// M5 · La mitad del cuestionario que contesta el propio socio (E14-19)
+// ---------------------------------------------------------------------------
+
+/** Lo que el socio manda desde `/formulario/<token>` en una valoración inicial. */
+const PARTE_DEL_SOCIO = {
+  pesoKg: 71.5,
+  dolorActual: 2,
+  calidadSueno: 4,
+  estres: 3,
+  energia: 4,
+  diasPorSemana: "3",
+  perfil: {
+    edad: 34,
+    sexo: "MUJER",
+    alturaCm: 168,
+    objetivoPrincipal: "Volver a correr 10 km",
+    objetivoSecundario: "",
+    motivacionReal: "",
+    queLeHariaAbandonar: "",
+  },
+  experiencia: {
+    nivelActividad: "MEDIO",
+    haEntrenadoAntes: true,
+    anosExperiencia: 2,
+    tecnicaBasicos: "MEDIA",
+    ejerciciosNoTolera: "",
+  },
+};
+
+test("la parte del socio NO reclama screening, PAR-Q ni marcas: son del entrenador", () => {
+  const parsed = memberPartSchemaFor("INITIAL").safeParse(PARTE_DEL_SOCIO);
+  assert.ok(parsed.success, parsed.error?.issues[0]?.message);
+  // Y el cuestionario completo sí los sigue reclamando: la valoración no se
+  // cierra con lo que rellenó el socio desde el sofá.
+  assert.equal(assessmentSchemaFor("INITIAL").safeParse(PARTE_DEL_SOCIO).success, false);
+});
+
+test("la parte del socio obedece a lo que el centro ha apagado y a lo que ha añadido", () => {
+  const config = configWith({
+    disabledQuestions: ["estres"],
+    customQuestions: [{ ...PREGUNTA_PROPIA, scope: "ALL", required: true }],
+  });
+  const schema = memberPartSchemaFor("INITIAL", config);
+
+  // La apagada ya no se reclama…
+  assert.ok(schema.safeParse({ ...sin(PARTE_DEL_SOCIO, "estres"), custom: { cafes_al_dia: 3 } }).success);
+  // …y la propia del centro sí, con su tipo y bajo `custom[clave]`.
+  const sinContestar = schema.safeParse(sin(PARTE_DEL_SOCIO, "estres"));
+  assert.equal(sinContestar.success, false);
+  assert.match(sinContestar.error!.issues[0].message, /cafés al día/);
+});
+
+test("en una revisión el socio contesta constantes y seguimiento, no su perfil otra vez", () => {
+  const parteDeRevision = {
+    pesoKg: 70,
+    dolorActual: 1,
+    calidadSueno: 4,
+    estres: 3,
+    energia: 4,
+    diasPorSemana: "3",
+    seguimiento: {
+      adherenciaPercibida: 4,
+      progresoPercibido: 3,
+      queHaMejorado: "Duermo mejor",
+      obstaculos: "",
+      objetivoProximoPeriodo: "",
+    },
+  };
+  assert.ok(memberPartSchemaFor("M6").safeParse(parteDeRevision).success);
+  // El perfil es de la inicial: pedirlo en la revisión sería volver a
+  // preguntarle la altura a quien ya la dio.
+  assert.equal(memberPartSchemaFor("M6").safeParse(PARTE_DEL_SOCIO).success, false);
 });

@@ -150,6 +150,11 @@ async function cleanup() {
     await prisma.payment.deleteMany({ where: { orgId: org.id } });
     await prisma.subscription.deleteMany({ where: { member: { orgId: org.id } } });
     await prisma.member.deleteMany({ where: { orgId: org.id } });
+    // M4/E14-16: la baja por reintentos agotados pasa por `member-lifecycle.ts`,
+    // que deja escrito el motivo de baja del sistema en el catálogo de la
+    // organización. Va después de los socios, que son quienes lo referencian.
+    await prisma.cancelReason.deleteMany({ where: { orgId: org.id } });
+    await prisma.freezeReason.deleteMany({ where: { orgId: org.id } });
     await prisma.membershipPlan.deleteMany({ where: { orgId: org.id } });
     await prisma.center.deleteMany({ where: { orgId: org.id } });
     await prisma.organization.delete({ where: { id: org.id } });

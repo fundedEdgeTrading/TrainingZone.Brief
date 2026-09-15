@@ -24,6 +24,7 @@ import { ReceiptDownloadButton } from "./receipt-download-button";
 import { SubscriptionManagement } from "./subscription-management";
 import { FreezeManagement } from "./freeze-management";
 import { getMemberFreezePolicyView } from "./freeze-view";
+import { listCancelReasons, listFreezeReasons } from "@/lib/member-lifecycle";
 
 const RECEIPT_STATUS_LABEL: Record<string, string> = { PAID: "Cobrado", FAILED: "Fallido", REFUNDED: "Devuelto" };
 
@@ -84,7 +85,14 @@ export default async function PortalMembresiaPage({
     getMemberBillingSnapshot(session.user.orgId, member.id),
   ]);
 
-  const freezePolicy = billing.subscriptionId ? await getMemberFreezePolicyView(billing.subscriptionId) : null;
+  const [freezePolicy, freezeReasons, cancelReasons] = await Promise.all([
+    billing.subscriptionId ? getMemberFreezePolicyView(billing.subscriptionId) : Promise.resolve(null),
+    // E14-15: el motivo es obligatorio también aquí, así que el catálogo viaja
+    // con la pantalla; sin entradas configuradas el socio no puede congelar y
+    // eso es correcto: es dirección quien decide qué motivos existen.
+    listFreezeReasons(session.user.orgId),
+    listCancelReasons(session.user.orgId),
+  ]);
 
   const activeSub = member.subscriptions[0];
   const kind = activeSub ? planServiceKind(activeSub.plan.type) : undefined;
@@ -292,6 +300,7 @@ export default async function PortalMembresiaPage({
           initialCancelAt={billing.cancelAt}
           centerName={member.primaryCenter.name}
           centerPhone={member.primaryCenter.phone}
+          cancelReasons={cancelReasons}
         >
           {/* E5-06: congelar/reanudar el bono desde el propio portal. */}
           {freezePolicy && (
@@ -299,6 +308,7 @@ export default async function PortalMembresiaPage({
               status={billing.status === "ACTIVE" || billing.status === "FROZEN" ? billing.status : null}
               pauseUntil={billing.pauseUntil}
               policy={freezePolicy}
+              freezeReasons={freezeReasons}
             />
           )}
         </SubscriptionManagement>
