@@ -73,6 +73,8 @@ import { canAccessMemberChat, getOrCreateConversation, listMessages } from "@/li
 import { StaffChatThread } from "./staff-chat-thread";
 import { WhatsAppButton } from "@/components/ui/whatsapp-button";
 import { logMemberWhatsappContactAction } from "./actions";
+import { MemberFormInvitePanel } from "@/components/member-form-invite";
+import { getMemberFormStatus } from "@/lib/member-forms";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -281,6 +283,7 @@ export default async function MemberDetailPage({
     milestones,
     mesocycles,
     retentionAlerts,
+    formStatus,
   ] = await Promise.all([
     getMemberAttendanceStats(member.id),
     getHealthRecordsForMember({
@@ -304,6 +307,10 @@ export default async function MemberDetailPage({
     getAssessmentMilestones(session.user.orgId),
     canSeeMesocycles ? listMesocyclesForMember(session.user.orgId, member.id) : Promise.resolve([]),
     openRetentionAlertsByMember([member.id]),
+    // M5/E14-20: si el formulario está enviado, pendiente o relleno, y con qué
+    // fecha. Sale de `member-forms.ts`, que es donde vive también la pregunta
+    // «¿lo rellenó?» que necesita el flujo 1 de E3.
+    getMemberFormStatus(session.user.orgId, { kind: "member", memberId: member.id }),
   ]);
 
   // E12-02: el chat del socio se remonta en el lado del personal. El acceso ya
@@ -603,6 +610,19 @@ export default async function MemberDetailPage({
           <SectionHead
             title="Socio"
             description="Datos de contacto, salud y consentimientos en una sola ficha."
+          />
+
+          {/* M5 · «Enviar formulario» y su estado. Fuera del bloque de
+              valoraciones a propósito: recepción no ve las valoraciones (son
+              dato de salud) y es justamente quien manda este formulario. */}
+          <MemberFormInvitePanel
+            target={{ kind: "member", memberId: member.id }}
+            status={{
+              state: formStatus.state,
+              sentAtLabel: formStatus.sentAt ? fmtDay(formStatus.sentAt) : null,
+              completedAtLabel: formStatus.completedAt ? fmtDay(formStatus.completedAt) : null,
+              expiresAtLabel: formStatus.expiresAt ? fmtDay(formStatus.expiresAt) : null,
+            }}
           />
 
           <MemberDataPanel

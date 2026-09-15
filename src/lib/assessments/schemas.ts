@@ -9,6 +9,7 @@ import {
   questionsForKind,
   type AssessmentConfig,
   type CustomQuestionDef,
+  type StandardQuestion,
 } from "./config";
 
 export { ASSESSMENT_KIND_LABEL };
@@ -107,6 +108,22 @@ export const experienciaSchema = z.object({
 });
 
 /**
+ * Cómo ha ido el periodo. Vive aquí, junto a `perfil` y `experiencia`, porque
+ * también lo contesta el socio: es la parte de una REVISIÓN que sabe él y no el
+ * entrenador —qué ha mejorado, qué se le ha puesto por delante y qué quiere el
+ * mes que viene—. Declarado una sola vez para que la revisión del entrenador
+ * (`reviewAssessmentSchema`) y la que el socio rellena desde el formulario
+ * (`memberReviewPartSchema`) no puedan separarse sin que nada avise.
+ */
+export const seguimientoSchema = z.object({
+  adherenciaPercibida: z.number().int().min(1).max(5).optional(),
+  progresoPercibido: z.number().int().min(1).max(5).optional(),
+  queHaMejorado: optionalText,
+  obstaculos: optionalText,
+  objetivoProximoPeriodo: optionalText,
+});
+
+/**
  * Lo que el socio rellena por su cuenta al entrar por primera vez (F-ALTA):
  * quién es, de dónde parte y cómo llega hoy. Deja fuera a propósito el
  * screening, el PAR-Q y las marcas físicas — el screening es dato de salud que
@@ -121,6 +138,94 @@ export const memberInitialPartSchema = vitalsSchema.extend({
 });
 
 export type MemberInitialPartAnswers = z.infer<typeof memberInitialPartSchema>;
+
+/**
+ * La parte que el socio contesta de una REVISIÓN (M1/M3/M6/…): las mismas
+ * constantes de siempre más cómo ha ido el periodo. Deja fuera los ejes del
+ * entrenador, las marcas y el screening, por el mismo motivo que la inicial: se
+ * miden o se interpretan en el centro.
+ *
+ * Existe porque el formulario se manda «al alta, a los seis meses y en la
+ * revisión anual» (E14-18): sin esto, un enlace de revisión reclamaría al socio
+ * el perfil y la experiencia que ya contestó el primer día.
+ */
+export const memberReviewPartSchema = vitalsSchema.extend({
+  seguimiento: seguimientoSchema,
+});
+
+export type MemberReviewPartAnswers = z.infer<typeof memberReviewPartSchema>;
+
+export type MemberPartAnswers = MemberInitialPartAnswers | MemberReviewPartAnswers;
+
+/**
+ * Preguntas del catálogo estándar que contesta el propio socio. Es un
+ * subconjunto declarado de `STANDARD_QUESTIONS` y no un filtro por sección: el
+ * screening y el PAR-Q están en la sección «Screening»/«Cierre» y quedan fuera
+ * a propósito (los firma el entrenador con el socio delante, F3 §4.2), y las
+ * marcas se miden en sala.
+ */
+const MEMBER_PART_PREFIXES = ["perfil.", "experiencia.", "seguimiento."];
+const MEMBER_PART_KEYS = new Set(["pesoKg", "dolorActual", "calidadSueno", "estres", "energia", "diasPorSemana"]);
+
+export function isMemberPartQuestion(key: string): boolean {
+  return MEMBER_PART_KEYS.has(key) || MEMBER_PART_PREFIXES.some((prefix) => key.startsWith(prefix));
+}
+
+/** Las preguntas estándar de este cuestionario que le tocan al socio. */
+export function memberPartQuestionsForKind(kind: AssessmentKind): StandardQuestion[] {
+  return questionsForKind(kind).filter((q) => isMemberPartQuestion(q.key));
+}
+
+/**
+ * Cuestionario de autoservicio de una organización concreta: su parte del
+ * catálogo estándar (sin lo que haya apagado) más sus preguntas propias.
+ *
+ * Es el gemelo de `assessmentSchemaFor` para la mitad del socio. Se construye
+ * igual —y con la misma configuración— a propósito: si el formulario público
+ * validara por su cuenta, una pregunta apagada en Organización seguiría siendo
+ * obligatoria ahí y el socio no podría enviar.
+ */
+export function memberPartSchemaFor(
+  kind: AssessmentKind,
+  config: AssessmentConfig = DEFAULT_ASSESSMENT_CONFIG
+): z.ZodType<MemberPartAnswers> {
+  const base = kind === "INITIAL" ? memberInitialPartSchema : memberReviewPartSchema;
+  const custom = customQuestionsForKind(kind, config.customQuestions);
+
+  const customShape = Object.fromEntries(custom.map((q) => [q.key, customAnswerSchema(q).optional()]));
+  const withCustom = base.extend({
+    custom: z.object(customShape).catchall(z.union([z.string(), z.number()])).optional().default({}),
+  });
+
+  const required = memberPartQuestionsForKind(kind).filter((q) => REQUIRED_WHEN_ENABLED.includes(q.key));
+
+  const schema = withCustom.superRefine((value, ctx) => {
+    for (const question of required) {
+      if (valueAt(value, question.key) !== undefined) continue;
+      if (!isQuestionEnabled(config, question.key)) continue;
+      ctx.addIssue({
+        code: "custom",
+        path: question.key.split("."),
+        message: `Falta responder «${question.label}».`,
+      });
+    }
+
+    const answers = (value as { custom?: Record<string, unknown> }).custom ?? {};
+    for (const question of custom) {
+      if (!question.required) continue;
+      const answer = answers[question.key];
+      if (answer === undefined || answer === "") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["custom", question.key],
+          message: `Falta responder «${question.label}».`,
+        });
+      }
+    }
+  });
+
+  return schema as unknown as z.ZodType<MemberPartAnswers>;
+}
 
 /**
  * Respuestas a las preguntas propias del centro (`AssessmentCustomQuestion`).
@@ -302,13 +407,7 @@ export const reviewAssessmentSchema = vitalsSchema.extend({
    * formulario es que las nuevas siempre lo traen.
    */
   screening: screeningSchema.optional(),
-  seguimiento: z.object({
-    adherenciaPercibida: z.number().int().min(1).max(5).optional(),
-    progresoPercibido: z.number().int().min(1).max(5).optional(),
-    queHaMejorado: optionalText,
-    obstaculos: optionalText,
-    objetivoProximoPeriodo: optionalText,
-  }),
+  seguimiento: seguimientoSchema,
   marcas: marksSchema,
   cierre: z.object({
     notasEntrenador: optionalText,

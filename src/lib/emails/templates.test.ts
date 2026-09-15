@@ -7,6 +7,7 @@ import {
   renderSessionVacancyEmail,
   renderStaffInviteEmail,
   renderPasswordResetEmail,
+  renderMemberFormInviteEmail,
 } from "./templates";
 
 /**
@@ -108,4 +109,30 @@ test("el pie lleva dirección postal y motivo del envío", () => {
   const html = renderMemberWelcomeEmail({ ...BASE, postalAddress: "C/ Falsa 1, Zaragoza" });
   assert.match(html, /C\/ Falsa 1, Zaragoza/);
   assert.match(html, /Recibes este email porque tu centro ha creado tu cuenta de socio\./);
+});
+
+// ---------------------------------------------------------------------------
+// M5 · Formulario de alta (E14-18)
+// ---------------------------------------------------------------------------
+
+test("el correo del formulario no adelanta ninguna pregunta ni ofrece baja publicitaria", () => {
+  const html = renderMemberFormInviteEmail({
+    firstName: "Marta",
+    brandName: "Training Zone",
+    brandLogoUrl: "https://example.test/brand/tz-logo-white.png",
+    formLabel: "Valoración inicial",
+    formUrl: "https://example.test/formulario/abc123",
+    expiresAt: new Date("2026-09-29T08:00:00.000Z"),
+    centerName: "TZ La Jota",
+  });
+
+  assert.match(html, /https:\/\/example\.test\/formulario\/abc123/);
+  // Es correo de servicio: lo dispara una persona del centro y sin él no hay
+  // valoración que preparar, así que no lleva baja publicitaria.
+  assert.doesNotMatch(html, /\/baja\//);
+  assert.match(html, /\/privacidad/);
+  // Y no adelanta una sola pregunta del cuestionario: quien lo reenvíe por
+  // error no está reenviando datos de salud de nadie.
+  assert.doesNotMatch(html, /peso|dolor|lesi/i);
+  assert.match(html, /29 de septiembre de 2026/);
 });
