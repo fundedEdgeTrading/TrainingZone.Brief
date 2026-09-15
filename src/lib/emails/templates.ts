@@ -822,3 +822,71 @@ export function renderNewChatMessageEmail(opts: {
     footerLinksHtml: PRIVACY(),
   });
 }
+
+// ---------------------------------------------------------------------------
+// 10 · Acuse de la solicitud de borrado de cuenta (E5-15)
+//
+// El art. 12.3 RGPD da un mes para atender la solicitud, y el escenario
+// "plazo" pide acuse al socio. Un acuse que no dice hasta cuándo no acusa
+// nada: la fecha límite va en la ficha de datos, no enterrada en el cuerpo.
+//
+// Va SIN token de preferencias a propósito: es estrictamente transaccional —el
+// ejercicio de un derecho— y no hay nada de lo que darse de baja. Cuando la
+// solicitud se resuelve, el mismo correo lo cuenta con `resolution`.
+// ---------------------------------------------------------------------------
+export function renderAccountDeletionAckEmail(opts: {
+  recipientFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  /** Fecha límite del art. 12.3, ya formateada por el call site. */
+  dueDateLabel: string;
+  statusUrl: string;
+  centerName?: string;
+  postalAddress?: string;
+  /** Presente solo en el segundo acuse: qué se hizo, o por qué se denegó. */
+  resolution?: { outcomeLabel: string; notes: string };
+}) {
+  const resolved = opts.resolution;
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Tus datos",
+    preheader: resolved
+      ? "Tu solicitud de borrado de cuenta ya está resuelta."
+      : "Hemos recibido tu solicitud de borrado de cuenta.",
+    eyebrow: resolved ? "Solicitud resuelta" : "Solicitud recibida",
+    title: resolved
+      ? `¡Hola, ${esc(opts.recipientFirstName)}!<br>Tu solicitud ya está resuelta.`
+      : `¡Hola, ${esc(opts.recipientFirstName)}!<br>Hemos recibido tu solicitud.`,
+    bodyHtml: resolved
+      ? p(`Has pedido borrar tu cuenta y ya hemos terminado. Esto es lo que se ha hecho:`, true) +
+        p(`«${esc(resolved.notes)}»`) +
+        p(
+          "Tus cobros emitidos no se borran: se les retira el vínculo contigo y siguen contando en la contabilidad " +
+            "del periodo. Estamos obligados a conservarlos (art. 30 CCom y art. 66 LGT).",
+        )
+      : p("Has pedido borrar tu cuenta. Queda registrada y tu centro la va a atender.", true) +
+        p(
+          "Cuando se resuelva, se borrarán tus datos de contacto, tu historial de entrenamiento y tus datos de " +
+            "salud. Lo que NO se borra son los cobros que ya te emitimos: se les retira el vínculo contigo y siguen " +
+            "contando en la contabilidad del periodo, porque estamos obligados a conservarlos.",
+        ),
+    rows: [
+      ...(opts.centerName ? [{ label: "Centro", value: opts.centerName }] : []),
+      resolved
+        ? { label: "Resultado", value: resolved.outcomeLabel }
+        : { label: "Fecha límite", value: opts.dueDateLabel },
+      { label: "Plazo legal", value: "Un mes (art. 12.3 RGPD)" },
+    ],
+    ctaLabel: resolved ? "Ver el detalle" : "Ver el estado de mi solicitud",
+    ctaUrl: opts.statusUrl,
+    noteHtml: resolved
+      ? "Si no estás de acuerdo con la resolución, puedes reclamar ante la Agencia Española de Protección de Datos."
+      : "Si no has sido tú quien la ha pedido, avisa a tu centro cuanto antes: todavía se puede anular.",
+    signOff: `Un saludo,<br>${strong(`El equipo de ${opts.centerName ?? opts.brandName}`)}`,
+    senderName: opts.centerName ?? opts.brandName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este email porque has pedido borrar tu cuenta. No se puede desactivar: es el acuse de tu solicitud.",
+    footerLinksHtml: PRIVACY(),
+  });
+}
