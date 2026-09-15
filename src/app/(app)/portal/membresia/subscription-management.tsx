@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { openMemberBillingPortal, requestMemberCancellation, revertMemberCancellation } from "./subscription-actions";
+import type { ReasonOption } from "@/lib/member-lifecycle";
 
 function shortDate(date: Date) {
   return date.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
@@ -21,6 +22,7 @@ export function SubscriptionManagement({
   initialCancelAt,
   centerName,
   centerPhone,
+  cancelReasons,
   children,
 }: {
   recurring: boolean;
@@ -28,12 +30,15 @@ export function SubscriptionManagement({
   initialCancelAt: Date | null;
   centerName: string;
   centerPhone: string | null;
+  /** E14-15: catálogo `CancelReason` de la organización. El motivo es obligatorio. */
+  cancelReasons: ReasonOption[];
   /** E5-06: bloque de congelación, montado por el caller — se mantiene fuera de este componente para no acoplarlo a Stripe/RB-PAGO-004. */
   children?: React.ReactNode;
 }) {
   const [pendingPortal, startPortal] = useTransition();
   const [pendingCancel, startCancel] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const [cancelReasonId, setCancelReasonId] = useState("");
   const [cancelAt, setCancelAt] = useState<Date | null>(initialCancelAt);
   const toast = useToast();
 
@@ -50,7 +55,7 @@ export function SubscriptionManagement({
 
   function confirmCancel() {
     startCancel(async () => {
-      const result = await requestMemberCancellation();
+      const result = await requestMemberCancellation(cancelReasonId);
       if (!result.ok) {
         setConfirming(false);
         toast.error(result.error);
@@ -147,8 +152,26 @@ export function SubscriptionManagement({
             Tu cuota no se cobrará más a partir del fin del periodo ya pagado. Hasta esa fecha conservas el acceso
             completo y las sesiones de tu bono siguen disponibles; después dejarás de ser socia activa. Puedes
             revertirlo en cualquier momento antes de esa fecha, desde esta misma pantalla.
+            {/* E14-15 · El motivo es obligatorio: es lo único que distingue a quien se
+                va por precio de quien se muda, y de eso depende la campaña de vuelta. */}
+            <label className="mt-3.5 flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[.06em] text-brand-muted">
+              ¿Por qué te vas?
+              <select
+                value={cancelReasonId}
+                onChange={(e) => setCancelReasonId(e.target.value)}
+                className="border border-brand-border rounded-lg px-2.5 py-2 text-sm text-brand-text normal-case font-medium"
+              >
+                <option value="">Elige un motivo…</option>
+                {cancelReasons.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </>
         }
+        confirmDisabled={!cancelReasonId}
         confirmLabel="Confirmar baja"
         cancelLabel="Seguir siendo socia"
         pendingLabel="Procesando…"

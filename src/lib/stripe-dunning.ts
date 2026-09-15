@@ -13,6 +13,11 @@ import { formatInstantDate, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 // HU-ST-19: reintentar una factura es una escritura contra Stripe, y va con
 // clave de idempotencia como todas (RB-PAGO-022).
 import { invoicePayKey } from "@/lib/stripe-idempotency";
+// E14-16 · Las tres transiciones de estado que hace este motor (impago abierto,
+// impago cerrado y baja por reintentos agotados) las escribe `member-lifecycle`
+// y no este fichero: un update suelto aquí sería un socio sin motivo de baja, y
+// se saltaría además el enganche de R1 y el disparador de E2.
+import { cancelMember, clearDelinquency as clearMemberDelinquency, markDelinquent } from "@/lib/member-lifecycle";
 
 /**
  * HU-ST-18 · Motor de morosidad. **PISTA P1.**
@@ -177,14 +182,13 @@ export async function openDelinquency(params: {
   const live = member.subscriptions.filter((s) => s.status !== "CANCELLED" && s.status !== "EXPIRED");
   if (live.length > 0 && live.every((s) => s.status === "PAUSED")) return;
 
-  await prisma.member.update({
-    where: { id: member.id },
-    data: {
-      state: "DELINQUENT",
-      // El reloj de la gracia arranca en el PRIMER impago y no se reinicia.
-      ...(member.delinquentSince ? {} : { delinquentSince: now }),
-    },
-  });
+  // El reloj de la gracia arranca en el PRIMER impago y no se reinicia: de eso
+  // se encarga `markDelinquent`, que además deja la traza de la transición.
+  await markDelinquent(
+    { kind: "system", orgId, source: "stripe-dunning" },
+    member.id,
+    { at: now, metadata: { reason, amountCents } },
+  );
 
   if (params.noticeKey) {
     await sendDunningNoticeOnce(orgId, memberId, params.noticeKey, amountCents);
@@ -222,17 +226,11 @@ export async function openDelinquency(params: {
  * que está al corriente.
  */
 export async function closeDelinquency(orgId: string, memberId: string): Promise<void> {
-  await prisma.member.updateMany({
-    where: { id: memberId, orgId, state: "DELINQUENT" },
-    data: { state: "ACTIVE", delinquentSince: null },
-  });
   // El `delinquentSince` se limpia también si el socio ya no estaba DELINQUENT
   // (recepción pudo devolverlo a ACTIVE a mano): un reloj colgado sin impago
-  // abierto corta el acceso de alguien que paga.
-  await prisma.member.updateMany({
-    where: { id: memberId, orgId, delinquentSince: { not: null }, state: { not: "DELINQUENT" } },
-    data: { delinquentSince: null },
-  });
+  // abierto corta el acceso de alguien que paga. Las dos escrituras viven en
+  // `member-lifecycle.ts::clearDelinquency`.
+  await clearMemberDelinquency({ kind: "system", orgId, source: "stripe-dunning" }, memberId);
 
   await prisma.notification.updateMany({
     where: { orgId, entityType: "Member", entityId: memberId, kind: "ALERT", resolvedAt: null },
@@ -392,11 +390,13 @@ export async function cancelAfterRetriesExhausted(params: {
     stripeError = resolved.error;
   }
 
-  await prisma.subscription.updateMany({
-    where: { id: subscriptionId, member: { orgId } },
-    data: { status: "CANCELLED" },
+  // La baja por impago escribía aquí `state: "CANCELLED"` a pelo y NO ponía
+  // `cancelledAt`: el socio se iba sin fecha y sin motivo, así que no aparecía
+  // ni en la baja del desglose de ingresos ni en la campaña de reactivación.
+  // Ahora pasa por el módulo, que pone las dos cosas.
+  await cancelMember({ kind: "system", orgId, source: "stripe-dunning" }, memberId, {
+    subscriptionIds: [subscriptionId],
   });
-  await prisma.member.updateMany({ where: { id: memberId, orgId }, data: { state: "CANCELLED" } });
 
   await prisma.auditLog.create({
     data: {

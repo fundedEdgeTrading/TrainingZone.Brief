@@ -1851,6 +1851,31 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
   );
   await prisma.noCloseReason.createMany({ data: noCloseReasons });
 
+  // ---------- M4/E14-15: los dos catálogos de motivo de los tipos de persona ----------
+  // Sin entradas no se puede congelar ni dar de baja a nadie: el motivo es
+  // obligatorio y se elige del catálogo, igual que NoCloseReason en leads
+  // (RB-LEAD-011). Son configurables por dirección sin desplegar; esto es solo
+  // el punto de partida, y son los motivos que de verdad se oyen en recepción.
+  await prisma.freezeReason.createMany({
+    data: ["Vacaciones", "Lesión", "Viaje / trabajo fuera", "Embarazo", "Motivos personales", "Otro"].map((label) => ({
+      id: id(),
+      orgId,
+      label,
+    })),
+  });
+  await prisma.cancelReason.createMany({
+    data: [
+      "Precio",
+      "Horarios",
+      "Mudanza",
+      "Lesión",
+      "Se fue a la competencia",
+      "Dejó de entrenar",
+      "Impago",
+      "Otro",
+    ].map((label) => ({ id: id(), orgId, label })),
+  });
+
   const anyCenter = centersData[0];
   const receptionOrOwner = staffUsers.filter((u) => u.role === "RECEPTION" || u.role === "TRAINER" || u.role === "CENTER_DIRECTOR");
   const activeNonAnchorMembers = members.filter((m) => m.state === MemberState.ACTIVE && !demoAnchorMemberIds.has(m.id));

@@ -11,11 +11,19 @@ import {
 } from "@/app/(app)/billing/subscription-actions";
 import { addSubscription } from "./actions";
 import { Field, Input, Select } from "@/components/ui/field";
+import type { ReasonOption } from "@/lib/member-lifecycle";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
 /** RB-PAGO-004: congelar/reanudar suscripción activa. */
-export function FreezeSubscriptionForm({ subscriptionId }: { subscriptionId: string }) {
+export function FreezeSubscriptionForm({
+  subscriptionId,
+  freezeReasons,
+}: {
+  subscriptionId: string;
+  /** E14-15: catálogo `FreezeReason` de la organización. El motivo es obligatorio. */
+  freezeReasons: ReasonOption[];
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const toast = useToast();
@@ -38,8 +46,21 @@ export function FreezeSubscriptionForm({ subscriptionId }: { subscriptionId: str
       <Field label="Reanudar el (opcional)" hint="Vacío = congelación indefinida">
         <Input name="pauseUntil" type="date" />
       </Field>
-      <Field label="Motivo" className="sm:col-span-2">
-        <Input name="reason" required placeholder="Motivo de la congelación" />
+      <Field
+        label="Motivo"
+        className="sm:col-span-2"
+        hint={freezeReasons.length === 0 ? "Dirección todavía no ha configurado motivos de congelación." : undefined}
+      >
+        <Select name="freezeReasonId" required defaultValue="" disabled={freezeReasons.length === 0}>
+          <option value="" disabled>
+            Elige un motivo…
+          </option>
+          {freezeReasons.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
       </Field>
       <div className="sm:col-span-3 flex justify-end">
         <Button type="submit" variant="secondary" size="sm" disabled={pending}>
@@ -76,7 +97,14 @@ export function ResumeSubscriptionButton({ subscriptionId, memberId }: { subscri
 }
 
 /** RB-PAGO-006: programar cancelación — destructiva, doble confirmación + motivo obligatorio. */
-export function ScheduleCancellationForm({ subscriptionId }: { subscriptionId: string }) {
+export function ScheduleCancellationForm({
+  subscriptionId,
+  cancelReasons,
+}: {
+  subscriptionId: string;
+  /** E14-15: catálogo `CancelReason`. Se captura AQUÍ, que es donde hay alguien que lo sabe. */
+  cancelReasons: ReasonOption[];
+}) {
   const [confirming, setConfirming] = useState(false);
   const [cancelAt, setCancelAt] = useState("");
   const [reason, setReason] = useState("");
@@ -88,7 +116,7 @@ export function ScheduleCancellationForm({ subscriptionId }: { subscriptionId: s
       const fd = new FormData();
       fd.append("subscriptionId", subscriptionId);
       fd.append("cancelAt", cancelAt);
-      fd.append("reason", reason);
+      fd.append("cancelReasonId", reason);
       const result = await scheduleCancellation(fd);
       if (result.ok) {
         toast.success("Cancelación programada.");
@@ -107,8 +135,19 @@ export function ScheduleCancellationForm({ subscriptionId }: { subscriptionId: s
       <Field label="Fecha de baja">
         <Input type="date" value={cancelAt} onChange={(e) => setCancelAt(e.target.value)} />
       </Field>
-      <Field label="Motivo" className="sm:col-span-2">
-        <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Motivo de la cancelación" />
+      <Field
+        label="Motivo"
+        className="sm:col-span-2"
+        hint={cancelReasons.length === 0 ? "Dirección todavía no ha configurado motivos de baja." : undefined}
+      >
+        <Select value={reason} onChange={(e) => setReason(e.target.value)} disabled={cancelReasons.length === 0}>
+          <option value="">Elige un motivo…</option>
+          {cancelReasons.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
       </Field>
       <div className="sm:col-span-3 flex justify-end items-center gap-2">
         {confirming && <span className="text-xs text-critical">¿Confirmar programación de baja?</span>}
