@@ -11,6 +11,8 @@ import { publicOrigin } from "@/lib/site";
 import { resolveInvoiceChargeId, resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
 // HU-ST-23 (P4): punto de enganche del desglose del cobro. Hoy no hace nada.
 import { recordBalanceBreakdown } from "@/lib/stripe-balance";
+// HU-ST-27 (petición de P5): el descuento aplicado, en el Payment de la cuota.
+import { recordInvoiceDiscount } from "@/lib/stripe-coupons";
 import { isDemoModeActive } from "@/lib/platform-plans";
 import { demoMemberCheckoutUrl } from "@/lib/demo-member-checkout";
 import { isRecurring } from "@/lib/plan-recurrence";
@@ -248,6 +250,10 @@ export async function createMemberCheckout(params: {
       mode,
       customer: stripeCustomerId,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
+      // HU-ST-27 (petición de P5): sin esto Stripe no pinta la casilla del
+      // código y el cupón del gimnasio es inalcanzable. Excluyente con
+      // `discounts` (descuento impuesto desde Apta), que la historia no pide.
+      allow_promotion_codes: true,
       // HU-ST-09/D-S2: `payment_method_types` NO se fija. Fijarlo a mano dejaba
       // fuera Bizum, Link y los wallets (Apple Pay, Google Pay) y, peor, hacía
       // fallar el checkout entero si alguno de los métodos listados no estaba
@@ -374,6 +380,9 @@ export async function createProspectMemberCheckout(params: {
       mode: recurring ? "subscription" : "payment",
       customer_email: email,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
+      // HU-ST-27, igual que en `createMemberCheckout`: es la puerta donde más
+      // sentido tiene un código de captación.
+      allow_promotion_codes: true,
       // Mismo criterio que `createMemberCheckout` (HU-ST-09/D-S2): los métodos
       // los decide la cuenta conectada, no una lista escrita a mano aquí.
       success_url: `${publicOrigin()}/hazte-socio/gracias?checkout=success`,
@@ -589,6 +598,11 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
       })
     ).id;
   }
+
+  // HU-ST-27 (petición de P5): el descuento de la factura, sobre el `Payment`
+  // que acaba de escribirse — es el punto común de las dos ramas de arriba
+  // (recibo que ya existía de un intento fallido, y recibo nuevo).
+  if (paymentId) await recordInvoiceDiscount(orgId, invoice, paymentId);
 
   // HU-ST-23 (P4) · Punto de enganche del desglose bruto/comisión/neto. Hoy no
   // hace nada y NO puede lanzar: es un apunte contable colgado del camino del

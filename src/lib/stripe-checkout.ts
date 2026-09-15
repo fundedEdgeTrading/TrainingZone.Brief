@@ -8,6 +8,7 @@ import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { recordCheckoutDiscount } from "@/lib/stripe-coupons";
 // HU-ST-12/RB-PAGO-025: el freno del cobro asíncrono. Vive en `stripe-mandate`
 // (pista P1) porque es la misma marca que consulta el reconciliador de
 // suscripciones para no abrir acceso con el débito en vuelo.
@@ -80,6 +81,12 @@ async function reconcileMemberCheckoutSession(
     where: { id: payment.id },
     data: { status: "PAID", stripePaymentIntentId: paymentIntentId, receiptNumber: payment.receiptNumber ?? `STRIPE-${payment.id.slice(-8)}` },
   });
+
+  // HU-ST-27 (petición de P5): cuánto descuento se aplicó y con qué código. Es
+  // lo que convierte "se usó un cupón" en "este código trajo N ventas y X €".
+  // Va dentro de la guarda de reentrega de arriba, así que una redelivery del
+  // webhook no la repite; sin descuento en la sesión, no hace nada.
+  await recordCheckoutDiscount(orgId, session);
 
   const planId = session.metadata?.planId;
   if (planId) {
@@ -215,6 +222,7 @@ async function reconcileLegacyCheckoutCompleted(checkoutSessionId: string, payme
     where: { id: payment.id },
     data: { status: "PAID", stripePaymentIntentId: paymentIntentId, receiptNumber: payment.receiptNumber ?? `STRIPE-${payment.id.slice(-8)}` },
   });
+
   await confirmLeadClosureForMember(payment.orgId, payment.memberId);
 }
 
