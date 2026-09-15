@@ -36,6 +36,7 @@
  * | `checkout:<orgId>:<email>_<planId>_<ventana>:v1` | `createProspectMemberCheckout` | un solo checkout por prospecto |
  * | `customer:platform:<orgId>:v1` | `createPlatformCheckoutSession` | un solo cliente de licencia por org |
  * | `checkout:platform:<orgId>_<planCode>_<ventana>:v1` | `createPlatformCheckoutSession` | un solo checkout de licencia |
+ * | `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` | `retryOpenInvoice` (HU-ST-19) | un solo intento de cobro por "Pagar ahora" |
  *
  * Cuando se añada una creación nueva, se añade su fila aquí. Una creación sin
  * clave es un duplicado esperando a un reintento de red.
@@ -126,3 +127,16 @@ export function platformCheckoutKey(orgId: string, planCode: string, at?: Date) 
   return idempotencyKey("checkout", "platform", [orgId, planCode, checkoutWindow(at)]);
 }
 
+
+/**
+ * `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` — HU-ST-19, "Pagar ahora".
+ *
+ * La ventana de 10 minutos está aquí por la misma razón que en los checkouts,
+ * y además por una propia: un socio que actualiza su tarjeta y vuelve a
+ * intentarlo TIENE que poder hacerlo. Con una clave fija, Stripe le devolvería
+ * la respuesta cacheada del intento que falló con la tarjeta vieja y la
+ * pantalla le diría que sigue sin poder cobrarse.
+ */
+export function invoicePayKey(orgId: string, invoiceId: string, at?: Date) {
+  return idempotencyKey("invoicepay", orgId, [invoiceId, checkoutWindow(at)]);
+}

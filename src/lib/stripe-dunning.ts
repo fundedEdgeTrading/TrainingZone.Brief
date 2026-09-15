@@ -10,6 +10,9 @@ import { absoluteUrl } from "@/lib/site";
 // número ni el cálculo se escriben en ningún otro sitio.
 import { graceDeadline, graceWindowFor, isWithinGraceWindow } from "@/lib/billing-shared";
 import { formatInstantDate, DEFAULT_TIMEZONE } from "@/lib/date-utils";
+// HU-ST-19: reintentar una factura es una escritura contra Stripe, y va con
+// clave de idempotencia como todas (RB-PAGO-022).
+import { invoicePayKey } from "@/lib/stripe-idempotency";
 
 /**
  * HU-ST-18 · Motor de morosidad. **PISTA P1.**
@@ -425,4 +428,133 @@ export function retriesExhausted(invoice: {
   collection_method?: string | null;
 }): boolean {
   return invoice.collection_method === "charge_automatically" && invoice.next_payment_attempt == null;
+}
+
+// ---------------------------------------------------------------------------
+// HU-ST-19 · Recuperación por el propio socio ("Pagar ahora")
+// ---------------------------------------------------------------------------
+//
+// La pantalla ya existía (`/gestionar-suscripcion/[token]`) pero solo sabía
+// hacer una cosa: mandar al Billing Portal de Stripe. Cambiar ahí la tarjeta NO
+// cobra la factura pendiente — el socio se queda esperando al siguiente
+// reintento de Stripe, que puede tardar días, con el acceso cortándose mientras
+// tanto. Falta exactamente eso: reintentar la factura EN EL MOMENTO.
+
+export type OpenInvoice = {
+  invoiceId: string;
+  amountDueCents: number;
+  /** Página de pago alojada por Stripe, si la factura la trae. */
+  hostedUrl: string | null;
+  /** Descripción legible de lo que se debe. */
+  concept: string | null;
+};
+
+/**
+ * La factura abierta del socio, leída de Stripe. `null` si no debe nada — que
+ * es lo que hay que poder distinguir para no enseñarle un botón de pagar a
+ * alguien al corriente.
+ */
+export async function getOpenInvoiceForMember(orgId: string, memberId: string): Promise<OpenInvoice | null> {
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId },
+    select: { stripeCustomerId: true },
+  });
+  if (!member?.stripeCustomerId) return null;
+
+  const resolved = await stripeForOrg(orgId);
+  if (!resolved.ok) return null;
+
+  try {
+    const invoices = await resolved.stripe.invoices.list(
+      { customer: member.stripeCustomerId, status: "open", limit: 1 },
+      { stripeAccount: resolved.accountId }
+    );
+    const invoice = invoices.data[0];
+    if (!invoice?.id) return null;
+    return {
+      invoiceId: invoice.id,
+      amountDueCents: invoice.amount_due ?? 0,
+      hostedUrl: invoice.hosted_invoice_url ?? null,
+      concept: invoice.lines?.data?.[0]?.description ?? null,
+    };
+  } catch (e) {
+    console.error("[stripe-dunning] no se ha podido leer la factura pendiente", {
+      orgId,
+      memberId,
+      error: e instanceof Error ? e.message : String(e),
+    });
+    return null;
+  }
+}
+
+export type RetryResult =
+  | { ok: true; paid: boolean }
+  | { ok: false; error: string; needsPaymentMethod: boolean };
+
+/**
+ * Códigos de error de Stripe que significan "con este método de pago no se va a
+ * poder, cámbialo". Es lo que separa el escenario "método caducado" —donde
+ * reintentar cien veces no sirve de nada— de un rechazo puntual del banco.
+ */
+const NEEDS_NEW_METHOD = new Set([
+  "expired_card",
+  "card_declined",
+  "incorrect_cvc",
+  "invalid_expiry_month",
+  "invalid_expiry_year",
+  "payment_method_unactivated",
+  "authentication_required",
+  "invoice_payment_intent_requires_action",
+  "missing",
+]);
+
+/**
+ * "Pagar ahora": reintenta la factura pendiente contra el método de pago que el
+ * socio tenga guardado, sin esperar al siguiente reintento automático.
+ *
+ * Si entra, se concilia AQUÍ mismo en vez de esperar al webhook: el socio está
+ * mirando la pantalla, y decirle "ya está" mientras su acceso sigue cortado
+ * hasta que llegue un evento es exactamente la intervención de recepción que la
+ * historia quiere quitar de en medio. La conciliación es idempotente, así que
+ * el `invoice.paid` que llegue después no duplica nada.
+ */
+export async function retryOpenInvoice(orgId: string, memberId: string): Promise<RetryResult> {
+  const open = await getOpenInvoiceForMember(orgId, memberId);
+  if (!open) {
+    return {
+      ok: false,
+      error: "No hay ninguna factura pendiente de pago en este momento.",
+      needsPaymentMethod: false,
+    };
+  }
+
+  const resolved = await stripeForOrg(orgId);
+  if (!resolved.ok) return { ok: false, error: resolved.error, needsPaymentMethod: false };
+
+  try {
+    const invoice = await resolved.stripe.invoices.pay(open.invoiceId, undefined, {
+      stripeAccount: resolved.accountId,
+      idempotencyKey: invoicePayKey(orgId, open.invoiceId),
+    });
+
+    if (invoice.status === "paid") {
+      // El módulo de conciliación importa de este, así que la vuelta se hace
+      // con un import dinámico para no cerrar el ciclo.
+      const { reconcileMemberInvoicePaid } = await import("@/lib/member-billing");
+      await reconcileMemberInvoicePaid(orgId, invoice);
+      return { ok: true, paid: true };
+    }
+
+    // Adeudo SEPA: el cobro se ha enviado al banco y tardará días (RB-PAGO-025).
+    // No es un fallo y no se puede prometer que el acceso vuelva ya.
+    return { ok: true, paid: false };
+  } catch (e) {
+    const code = (e as { code?: string; decline_code?: string }).code ?? "";
+    const message = (e as { message?: string }).message ?? "No hemos podido completar el cobro.";
+    return {
+      ok: false,
+      error: message,
+      needsPaymentMethod: NEEDS_NEW_METHOD.has(code),
+    };
+  }
 }
