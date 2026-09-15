@@ -170,3 +170,92 @@ export function resolveLeadHealthCapture(input: {
     consentVersion: LEAD_CONSENT_VERSION,
   };
 }
+
+// ---------------------------------------------------------------------------
+// M5 · Formulario que rellena el cliente sin cuenta (E14-19)
+// ---------------------------------------------------------------------------
+//
+// El texto legal vive aquí, junto al resto, y no dentro del componente: la
+// invariante del trimestre sobre rótulos («fuente única compartida, no copies
+// una tabla como espejo») vale para el texto que firma una persona antes que
+// para ningún otro. Si algún día hay versión móvil de este formulario, leerá de
+// aquí.
+//
+// La versión que se guarda con cada consentimiento es `CONSENT_VERSION` cuando
+// quien rellena ya es socio —es el mismo texto del onboarding— y
+// `LEAD_CONSENT_VERSION` cuando todavía es un lead, por el mismo motivo por el
+// que son dos constantes: un lead no ha firmado el contrato de servicio.
+
+/**
+ * Capa informativa del art. 13 del formulario de alta a distancia. Va ANTES del
+ * primer campo y antes de la casilla de salud, que es lo que pide E10-01: se
+ * decide con la información delante, no después de haberla dado.
+ */
+export function buildMemberFormPrivacyNotice(orgName: string): LeadPrivacyNotice {
+  return {
+    responsable: `${orgName}, como responsable del tratamiento.`,
+    finalidad:
+      "Preparar tu valoración y tu programa de entrenamiento: conocer tu punto de partida, tus objetivos y las " +
+      "molestias que haya que tener en cuenta para que entrenes seguro.",
+    baseJuridica:
+      "Tu consentimiento expreso para los datos de salud (art. 9.2.a RGPD) y la relación de servicio para el resto " +
+      "(art. 6.1.b RGPD). El envío de comunicaciones comerciales, si lo aceptas, va por su propio consentimiento y " +
+      "es independiente de todo lo demás.",
+    destinatarios:
+      "Tu entrenador y el equipo autorizado del centro, y los proveedores que nos prestan servicio (alojamiento y " +
+      "correo) como encargados del tratamiento. Cada consulta de tus datos de salud queda registrada.",
+    conservacion:
+      "Mientras seas socio y, después, el plazo de prescripción de las posibles reclamaciones derivadas del " +
+      "entrenamiento.",
+    derechos:
+      "Acceso, rectificación, supresión, oposición, limitación y portabilidad, y a retirar tu consentimiento en " +
+      "cualquier momento, escribiendo a info@trainingzone.es.",
+    politicaUrl: "/privacidad",
+  };
+}
+
+/**
+ * Rótulos de las cuatro casillas del formulario. El de salud es el único
+ * obligatorio y va SOLO, en su propio bloque: un consentimiento que cubriera a
+ * la vez la salud y el marketing no sería específico y no valdría para ninguno
+ * de los dos (arts. 6.1.a, 7 y 9.2.a RGPD).
+ */
+export const MEMBER_FORM_CONSENT_COPY: Record<ConsentKind, { title: string; label: string; help: string }> = {
+  health: {
+    title: "Datos de salud",
+    label:
+      "Consiento expresamente que el centro trate los datos de salud que doy en este formulario (peso, dolor, " +
+      "molestias y limitaciones) para valorar mi estado y adaptar mi entrenamiento.",
+    help:
+      "Es lo único obligatorio para enviarlo, porque todo lo que se pregunta aquí es dato de salud. Si prefieres no " +
+      "darlo, cierra esta página: lo veréis en el centro, con tu entrenador delante, y no pierdes nada.",
+  },
+  images: {
+    title: "Uso de imágenes",
+    label: "Autorizo las fotos de evolución física, visibles solo para mí y para mi entrenador.",
+    help: "Opcional. Sin esto no podremos guardar tu galería de progreso.",
+  },
+  ai: {
+    title: "Propuestas con inteligencia artificial",
+    label:
+      "Consiento que mis datos, seudonimizados (sin nombre, DNI ni contacto), se traten con sistemas de IA de " +
+      "proveedores que actúan como encargados del tratamiento, para preparar propuestas de programación.",
+    help:
+      "Opcional. Toda propuesta la revisa y la aprueba tu entrenador antes de aplicarse, y oponerte no afecta a tu " +
+      "acceso al servicio.",
+  },
+  marketing: {
+    title: "Comunicaciones comerciales",
+    label: LEAD_MARKETING_CONSENT_LABEL,
+    help: "Opcional y separado de todo lo anterior. Puedes darte de baja con un clic en cualquier correo.",
+  },
+};
+
+/**
+ * Lo que se le pide al tutor de un socio menor (E10-12, art. 7.2 LOPDGDD). No
+ * basta una casilla: hay que poder acreditar QUIÉN consintió, así que se piden
+ * su nombre, su documento y una declaración expresa.
+ */
+export const GUARDIAN_DECLARATION_LABEL =
+  "Declaro ser la madre, el padre o el tutor legal de quien va a entrenar, y consiento en su nombre el tratamiento " +
+  "de sus datos, incluidos los de salud, descrito más arriba.";
