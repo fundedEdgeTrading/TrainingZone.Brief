@@ -32,22 +32,66 @@ const CONNECT_SECRET = process.env.STRIPE_CONNECT_WEBHOOK_SECRET!;
 const SLUG = "e2e-despachador-lote2";
 const ACCOUNT_ID = `acct_${SLUG}`;
 const PREFIJO_EVENTO = `evt_${SLUG}`;
+/** Referencias de los cobros sembrados, a las que apuntan los objetos de los eventos. */
+const PI_ID = `pi_${SLUG}`;
+const INVOICE_ID = `in_${SLUG}`;
 
-/** Los ocho tipos que S1 añade al `switch`, con el módulo al que delegan. */
-const CASOS_NUEVOS: Array<{ type: string; modulo: string; objeto: Record<string, unknown> }> = [
-  // HU-ST-20 → stripe-refunds.ts (P2)
-  { type: "charge.refunded", modulo: "stripe-refunds", objeto: { id: "ch_1", amount_refunded: 500, refunded: false } },
-  { type: "credit_note.created", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: "in_1" } },
-  { type: "credit_note.updated", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: "in_1" } },
-  { type: "credit_note.voided", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: "in_1" } },
-  // HU-ST-21 → stripe-disputes.ts (P2)
+/**
+ * Los ocho tipos que S1 añade al `switch`, con el módulo al que delegan.
+ *
+ * `implementado: true` marca los módulos que ya NO son esqueletos. Su contrato
+ * de hoy —dejar una línea `[<modulo>]` en el log— era del esqueleto y muere con
+ * él; lo que sigue valiendo para todos, implementados o no, es que el evento
+ * entra, sale con 200 y queda sellado. El enrutado en sí lo cubre la prueba
+ * estructural del final, que lee el `switch` y no depende de ningún log.
+ *
+ * Un módulo ya implementado necesita, además, que el `Payment` del evento
+ * EXISTA en la organización de la prueba: sin fila local, la respuesta correcta
+ * es `retry` (500), porque Stripe no garantiza el orden de entrega. Por eso el
+ * `before` de abajo siembra un socio y dos cobros, y los objetos apuntan a
+ * ellos. Cuando una pista rellene su módulo, hará lo mismo con sus casos.
+ */
+const CASOS_NUEVOS: Array<{
+  type: string;
+  modulo: string;
+  objeto: Record<string, unknown>;
+  implementado?: true;
+}> = [
+  // HU-ST-20 → stripe-refunds.ts (P2) — implementado
+  {
+    type: "charge.refunded",
+    modulo: "stripe-refunds",
+    objeto: { id: "ch_1", payment_intent: PI_ID, amount_refunded: 500, refunded: false },
+    implementado: true,
+  },
+  { type: "credit_note.created", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: INVOICE_ID }, implementado: true },
+  { type: "credit_note.updated", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: INVOICE_ID }, implementado: true },
+  { type: "credit_note.voided", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: INVOICE_ID }, implementado: true },
+  // HU-ST-21 → stripe-disputes.ts (P2) — implementado
   {
     type: "charge.dispute.created",
     modulo: "stripe-disputes",
-    objeto: { id: "dp_1", amount: 4900, status: "needs_response", evidence_details: { due_by: 1790000000 } },
+    objeto: {
+      id: "dp_1",
+      payment_intent: PI_ID,
+      amount: 4900,
+      status: "needs_response",
+      evidence_details: { due_by: 1790000000 },
+    },
+    implementado: true,
   },
-  { type: "charge.dispute.updated", modulo: "stripe-disputes", objeto: { id: "dp_1", amount: 4900, status: "under_review" } },
-  { type: "charge.dispute.closed", modulo: "stripe-disputes", objeto: { id: "dp_1", amount: 4900, status: "lost" } },
+  {
+    type: "charge.dispute.updated",
+    modulo: "stripe-disputes",
+    objeto: { id: "dp_1", payment_intent: PI_ID, amount: 4900, status: "under_review" },
+    implementado: true,
+  },
+  {
+    type: "charge.dispute.closed",
+    modulo: "stripe-disputes",
+    objeto: { id: "dp_1", payment_intent: PI_ID, amount: 4900, status: "lost" },
+    implementado: true,
+  },
   // HU-ST-23 → stripe-balance.ts (P4)
   { type: "payout.paid", modulo: "stripe-balance", objeto: { id: "po_1", amount: 9500, arrival_date: 1789000000, status: "paid" } },
   { type: "payout.failed", modulo: "stripe-balance", objeto: { id: "po_1", amount: 9500, status: "failed" } },
@@ -111,6 +155,12 @@ async function cleanup() {
   await prisma.stripeWebhookEvent.deleteMany({ where: { id: { startsWith: PREFIJO_EVENTO } } });
   const org = await prisma.organization.findUnique({ where: { slug: SLUG }, select: { id: true } });
   if (!org) return;
+  await prisma.notification.deleteMany({ where: { orgId: org.id } });
+  await prisma.auditLog.deleteMany({ where: { orgId: org.id } });
+  await prisma.paymentDispute.deleteMany({ where: { orgId: org.id } });
+  await prisma.payment.deleteMany({ where: { orgId: org.id } });
+  await prisma.member.deleteMany({ where: { orgId: org.id } });
+  await prisma.center.deleteMany({ where: { orgId: org.id } });
   await prisma.stripeAccount.deleteMany({ where: { orgId: org.id } });
   await prisma.organization.delete({ where: { id: org.id } });
 }
@@ -121,6 +171,31 @@ before(async () => {
   await prisma.stripeAccount.create({
     data: { orgId: org.id, accountId: ACCOUNT_ID, chargesEnabled: true, payoutsEnabled: true },
   });
+
+  // Los módulos ya implementados necesitan la fila local del cobro: sin ella la
+  // respuesta correcta a su evento es un reintento, no un 200. Un cobro de
+  // checkout (PaymentIntent) y uno de factura recurrente cubren las dos vías
+  // por las que un evento encuentra su `Payment`.
+  const center = await prisma.center.create({ data: { orgId: org.id, name: "Centro", slug: `${SLUG}-centro` } });
+  const member = await prisma.member.create({
+    data: {
+      orgId: org.id,
+      primaryCenterId: center.id,
+      firstName: "Socio",
+      lastName: "Despachador",
+      email: `${SLUG}@example.com`,
+    },
+  });
+  const cobro = {
+    orgId: org.id,
+    memberId: member.id,
+    amountCents: 4900,
+    method: "STRIPE" as const,
+    status: "PAID" as const,
+    date: new Date(),
+  };
+  await prisma.payment.create({ data: { ...cobro, stripePaymentIntentId: PI_ID } });
+  await prisma.payment.create({ data: { ...cobro, stripeInvoiceId: INVOICE_ID } });
 });
 
 after(async () => {
@@ -141,11 +216,16 @@ test("los ocho tipos nuevos entran por el despachador y salen con 200", async ()
 
     assert.equal(resultado.status, 200, `${caso.type} tenía que procesarse`);
     assert.equal(resultado.body.ok, true);
-    assert.equal(
-      captura.lineas.some((linea) => linea.includes(`[${caso.modulo}]`)),
-      true,
-      `${caso.type} tenía que delegar en ${caso.modulo}.ts, y registró: ${captura.lineas.join(" | ")}`
-    );
+    // El log `[<modulo>]` es el contrato del ESQUELETO. En cuanto una pista
+    // rellena su módulo deja de existir, y el enrutado pasa a comprobarlo la
+    // prueba estructural del final leyendo el `switch`.
+    if (!caso.implementado) {
+      assert.equal(
+        captura.lineas.some((linea) => linea.includes(`[${caso.modulo}]`)),
+        true,
+        `${caso.type} tenía que delegar en ${caso.modulo}.ts, y registró: ${captura.lineas.join(" | ")}`
+      );
+    }
   }
 });
 
@@ -164,7 +244,9 @@ test("cada tipo nuevo queda sellado como procesado, no consumido en silencio", a
 
 test("HU-ST-05: la deduplicación por event.id envuelve también a los casos nuevos", async () => {
   const eventId = `${PREFIJO_EVENTO}-dedup`;
-  const objeto = { id: "dp_dedup", amount: 4900, status: "needs_response" };
+  // Apunta al cobro sembrado: `stripe-disputes.ts` ya está implementado y una
+  // disputa sin `Payment` local es, con razón, un reintento y no un 200.
+  const objeto = { id: "dp_dedup", payment_intent: PI_ID, amount: 4900, status: "needs_response" };
 
   const primera = await entregar(eventId, "charge.dispute.created", objeto);
   assert.equal(primera.status, 200);

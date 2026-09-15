@@ -76,10 +76,16 @@ export async function refundPayments(formData: FormData): Promise<SubscriptionAc
     if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   }
   if (payments.some((p) => p.status !== "PAID")) return { ok: false, error: "Solo se pueden devolver pagos cobrados (PAID)." };
-  if (payments.some((p) => p.stripePaymentIntentId)) {
+  // HU-ST-20 (D-S7): la devolución de un cobro de Stripe YA existe, pero no
+  // aquí. Este camino es el registro local de una devolución de caja y no sabe
+  // emitir un refund contra la cuenta conectada; hacerlo desde aquí dejaría el
+  // recibo diciendo que se devolvió con el dinero todavía en Stripe. La
+  // pantalla de dirección (`/billing/reembolsos`) sí lo emite, con motivo
+  // obligatorio, clave de idempotencia y AuditLog.
+  if (payments.some((p) => p.stripePaymentIntentId || p.stripeInvoiceId)) {
     return {
       ok: false,
-      error: "Devolución Stripe no disponible: pendiente de credenciales del cliente — PAGO-2b. No se puede procesar aquí.",
+      error: "Este cobro entró por Stripe: su devolución se emite desde Cobros → Devoluciones (solo dirección).",
     };
   }
 
