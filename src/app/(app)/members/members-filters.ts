@@ -21,6 +21,10 @@ export const MEMBER_AXIS = {
   center: "centerId",
   plan: "plan",
   joined: "joined",
+  // E1 · etiqueta de socio. Es el único eje MULTI-VALOR POR FILA: un socio tiene
+  // varias etiquetas a la vez, así que la fila casa si comparte alguna con la
+  // selección (OR dentro del eje, como los demás).
+  tag: "tag",
 } as const;
 
 /** Modalidad del plan vigente. `NONE` = sin suscripción. */
@@ -73,6 +77,8 @@ export type MemberFilterRow = {
   primaryCenterId: string;
   joinedAt: Date;
   planKind: PlanKind;
+  /** Claves de las etiquetas ACTIVAS del socio (E1). Vacío = ninguna. */
+  tagKeys: string[];
 };
 
 export type MemberSelection = {
@@ -80,6 +86,7 @@ export type MemberSelection = {
   centerId: string[];
   plan: string[];
   joined: string[];
+  tag: string[];
 };
 
 export function matchesMemberFilters(row: MemberFilterRow, selection: MemberSelection, now: Date): boolean {
@@ -87,6 +94,7 @@ export function matchesMemberFilters(row: MemberFilterRow, selection: MemberSele
   if (selection.centerId.length && !selection.centerId.includes(row.primaryCenterId)) return false;
   if (selection.plan.length && !selection.plan.includes(row.planKind)) return false;
   if (selection.joined.length && !selection.joined.some((r) => inJoinedRange(row.joinedAt, r, now))) return false;
+  if (selection.tag.length && !selection.tag.some((t) => row.tagKeys.includes(t))) return false;
   return true;
 }
 
@@ -106,6 +114,7 @@ export function memberFacetCounts(
     centerId: {} as Record<string, number>,
     plan: {} as Record<string, number>,
     joined: {} as Record<string, number>,
+    tag: {} as Record<string, number>,
   };
 
   for (const axis of axes) {
@@ -120,7 +129,15 @@ export function memberFacetCounts(
               : null;
 
       // Los rangos de alta no son un valor de la fila: hay que probar cada uno.
-      const candidates = axis === "joined" ? JOINED_OPTIONS.map((o) => o.value) : value ? [value] : [];
+      // Las etiquetas sí lo son, pero varias por fila: cuentan todas.
+      const candidates =
+        axis === "joined"
+          ? JOINED_OPTIONS.map((o) => o.value)
+          : axis === "tag"
+            ? row.tagKeys
+            : value
+              ? [value]
+              : [];
       for (const candidate of candidates) {
         if (axis === "joined" && !inJoinedRange(row.joinedAt, candidate, now)) continue;
         // «Si añado este valor a este eje»: el resto de ejes se mantienen.
