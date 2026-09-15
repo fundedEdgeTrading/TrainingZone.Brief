@@ -119,8 +119,11 @@ test.describe("E14-23 · en el listado y en la ficha", () => {
     await expect(page.getByText(`${impagoCount} socios en total`)).toBeVisible();
 
     // Y son los de verdad: todos los de la página llevan la píldora de impago.
-    const filas = page.locator("tbody tr");
-    await expect(filas).toHaveCount(Math.min(impagoCount, 25));
+    // La tabla se busca por su columna «Socio» y no con `tbody tr` a secas:
+    // desde E14-08 el listado tiene encima la card de bonos por centro, que
+    // también es una <table>, y el selector suelto contaba las dos.
+    const listado = page.locator("table").filter({ has: page.locator("th", { hasText: "Socio" }) });
+    await expect(listado.locator("tbody tr")).toHaveCount(Math.min(impagoCount, 25));
   });
 
   test("la ficha enseña las etiquetas, y la automática no se puede quitar a mano", async ({ page }) => {

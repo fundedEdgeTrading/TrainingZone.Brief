@@ -73,5 +73,20 @@ export function geometryNote(realGeometry: boolean): string {
   const shape = realGeometry
     ? "Los contornos son los barrios reales publicados por el ayuntamiento."
     : "Los contornos son una teselación desde el centroide de cada CP, no el barrio real.";
-  return `Dos aproximaciones encadenadas: la correspondencia entre código postal y barrio es un «mejor esfuerzo» (un CP reparte calles entre barrios colindantes). ${shape}`;
+  return `${POSTAL_CODE_CAVEAT} ${shape}`;
+}
+
+const POSTAL_CODE_CAVEAT =
+  "Dos aproximaciones encadenadas: la correspondencia entre código postal y barrio es un «mejor esfuerzo» (un CP reparte calles entre barrios colindantes).";
+
+/**
+ * E14-10 · La misma advertencia cuando NO se está pintando ningún contorno.
+ *
+ * En la vista de tabla no hay geometría, así que la frase de los contornos no
+ * es que sobre: es que afirmaría algo que no está pasando. La aproximación que
+ * sí sigue en pie —y la que de verdad importa leyendo una tabla de CP— es la
+ * correspondencia CP→barrio, que se dice igual.
+ */
+export function postalCodeNote(): string {
+  return POSTAL_CODE_CAVEAT.replace("Dos aproximaciones encadenadas: la", "La");
 }

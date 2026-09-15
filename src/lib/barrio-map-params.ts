@@ -38,9 +38,28 @@ export const BARRIO_STATE_LABEL: Record<BarrioStateFilter, string> = {
   bajas: "Solo bajas",
 };
 
+/**
+ * E14-10 · Qué se lee en primer plano.
+ *
+ *  · `mapa` — el plano de coropletas, con la tabla en su panel lateral.
+ *  · `tabla` — la tabla de códigos postales a pantalla completa, con el plano
+ *    recogido. Negocio pidió «una tabla de CP con nº de clientes, nº de leads y
+ *    conversión» sin saber que esa tabla ya existía: era la vía accesible del
+ *    mapa (E11-04), no una vista con entidad propia. Se encuentra o no existe.
+ */
+export const BARRIO_VIEWS = ["mapa", "tabla"] as const;
+export type BarrioView = (typeof BARRIO_VIEWS)[number];
+
+export const BARRIO_VIEW_LABEL: Record<BarrioView, string> = {
+  mapa: "Mapa",
+  tabla: "Tabla",
+};
+
 export type BarrioMapParams = {
   /** Clave de ciudad del selector. `null` = la primera con datos. */
   ciudad: string | null;
+  /** E14-10 · Vista principal. Viaja en la URL como el resto del estado de la pantalla. */
+  vista: BarrioView;
   metrica: BarrioMetric;
   range: DashboardRange;
   estado: BarrioStateFilter;
@@ -50,6 +69,7 @@ export type BarrioMapParams = {
 
 export const DEFAULT_BARRIO_PARAMS: BarrioMapParams = {
   ciudad: null,
+  vista: "mapa",
   metrica: "members",
   range: "mes",
   estado: "activos",
@@ -60,6 +80,10 @@ function parseMetric(value: string | undefined): BarrioMetric {
   return BARRIO_METRICS.some((m) => m.key === value) ? (value as BarrioMetric) : DEFAULT_BARRIO_PARAMS.metrica;
 }
 
+function parseView(value: string | undefined): BarrioView {
+  return BARRIO_VIEWS.includes(value as BarrioView) ? (value as BarrioView) : DEFAULT_BARRIO_PARAMS.vista;
+}
+
 function parseState(value: string | undefined): BarrioStateFilter {
   return BARRIO_STATE_FILTERS.includes(value as BarrioStateFilter)
     ? (value as BarrioStateFilter)
@@ -67,7 +91,7 @@ function parseState(value: string | undefined): BarrioStateFilter {
 }
 
 /**
- * Lee los cinco parámetros. Todo lo que no reconoce cae al valor por defecto en
+ * Lee los seis parámetros. Todo lo que no reconoce cae al valor por defecto en
  * vez de romper: una URL compartida por WhatsApp llega con lo que llega, y una
  * pantalla de dirección que devuelve un 500 por un parámetro mal escrito es peor
  * que una que enseña el mapa por defecto.
@@ -84,6 +108,7 @@ export function parseBarrioMapParams(query: Record<string, string | string[] | u
 
   return {
     ciudad: one("ciudad")?.trim() || null,
+    vista: parseView(one("vista")),
     metrica: parseMetric(one("metrica")),
     range: parseRange(one("range")),
     estado: parseState(one("estado")),
@@ -99,6 +124,7 @@ export function parseBarrioMapParams(query: Record<string, string | string[] | u
 export function barrioMapQuery(params: BarrioMapParams): string {
   const search = new URLSearchParams();
   if (params.ciudad) search.set("ciudad", params.ciudad);
+  if (params.vista !== DEFAULT_BARRIO_PARAMS.vista) search.set("vista", params.vista);
   if (params.metrica !== DEFAULT_BARRIO_PARAMS.metrica) search.set("metrica", params.metrica);
   if (params.range !== DEFAULT_BARRIO_PARAMS.range) search.set("range", params.range);
   if (params.estado !== DEFAULT_BARRIO_PARAMS.estado) search.set("estado", params.estado);

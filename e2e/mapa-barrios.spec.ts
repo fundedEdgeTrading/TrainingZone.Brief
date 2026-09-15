@@ -134,3 +134,132 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
       .toBeGreaterThan(5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// E14-10 · La tabla de códigos postales pasa a vista de primera clase
+// ---------------------------------------------------------------------------
+//
+// Negocio pidió «una tabla de CP con nº de clientes, nº de leads y conversión»
+// teniendo esa tabla delante desde E11-04: estaba dentro del panel lateral del
+// plano, rotulada como su vía accesible. Lo que se comprueba aquí es que ahora
+// se encuentra, que la elección viaja en la URL como el resto del estado de la
+// pantalla, y que se puede sacar a una hoja de cálculo.
+
+test.describe("E14-10 — la tabla de CP como vista principal", () => {
+  test("el conmutador de vista lleva a la tabla y la elección viaja en la URL", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/mapa-barrios");
+
+    const vista = page.getByRole("group", { name: "Vista" });
+    await expect(vista).toBeVisible();
+
+    await vista.getByRole("button", { name: "Tabla" }).click();
+    // Cambiar de vista NO vuelve al servidor —las filas ya están en el cliente—,
+    // así que la URL se reescribe con `history.replaceState` y no hay
+    // navegación que esperar: se comprueba la URL, no un `waitForURL`.
+    await expect.poll(() => new URL(page.url()).searchParams.get("vista")).toBe("tabla");
+
+    // El plano se recoge: en la vista de tabla no se pinta ninguna geometría, y
+    // por eso la nota deja de hablar de contornos.
+    await expect(page.locator(".tz-barrio-map")).toHaveCount(0);
+    const table = page.locator("table").first();
+    await expect(table).toBeVisible();
+    await expect(table.locator("caption")).not.toContainText(/teselación/);
+    await expect(table.locator("caption")).toContainText(/mejor esfuerzo/);
+
+    // Las tres métricas que pidió negocio, y las cuatro que ya estaban.
+    for (const label of ["Clientes", "Leads", "Conversión", "Tendencia", "Distancia", "Oportunidad"]) {
+      await expect(table.locator("th[scope='col']", { hasText: label })).toHaveCount(1);
+    }
+
+    // Y la vuelta: el mapa se reconstruye entero.
+    await vista.getByRole("button", { name: "Mapa" }).click();
+    // El mapa es el defecto y no se escribe: la URL se queda sin `vista`.
+    await expect.poll(() => new URL(page.url()).searchParams.get("vista")).toBe(null);
+    await expect
+      .poll(() => page.locator(".tz-barrio-map .leaflet-overlay-pane path").count(), { timeout: 15_000 })
+      .toBeGreaterThan(5);
+  });
+
+  test("la URL de la tabla se puede copiar y abre directamente en la tabla", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/mapa-barrios?vista=tabla&metrica=conv");
+
+    await expect(page.locator(".tz-barrio-map")).toHaveCount(0);
+    await expect(page.locator("table").first()).toBeVisible();
+    // La métrica activa llega con ella: la columna ordenada es la de conversión.
+    await expect(page.locator("th[aria-sort='ascending']")).toHaveCount(1);
+  });
+
+  test("el periodo y el estado siguen mandando desde la vista de tabla", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/mapa-barrios?vista=tabla");
+
+    await page.getByRole("button", { name: "3 meses", exact: true }).click();
+    // Cambiar de periodo sí vuelve al servidor: cambia el dato, no el color. Y
+    // no se pierde la vista por el camino.
+    await page.waitForURL(/range=3m/);
+    expect(new URL(page.url()).searchParams.get("vista")).toBe("tabla");
+    await expect(page.locator("table").first()).toBeVisible();
+  });
+
+  test("la tabla se exporta con el periodo y el filtro dentro del fichero", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/mapa-barrios?vista=tabla&range=3m");
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Exportar CSV" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/^codigos-postales-[a-z-]+-\d{4}-\d{2}-\d{2}\.csv$/);
+
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const csv = Buffer.concat(chunks).toString("utf8");
+
+    const [headers, first] = csv.replace(/^﻿/, "").split("\r\n");
+    expect(headers.split(";")).toContain("Clientes");
+    expect(headers.split(";")).toContain("Leads");
+    expect(headers.split(";")).toContain("Conversión");
+    // Sin periodo ni filtro dentro, el fichero no se puede volver a interpretar.
+    // El rótulo del periodo sale de `rangeMeta`, la misma fuente que el panel.
+    expect(first).toContain("los 3 meses del periodo");
+    expect(first).toContain("Socios vivos");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E14-07 · El plano y el panel cuentan lo mismo
+// ---------------------------------------------------------------------------
+//
+// La agregación ya respeta periodo y estado (T7, aplicado por M1 en
+// `getPostalCodeMapData`). Lo que se fija aquí es la consecuencia visible: que
+// cambiar de periodo MUEVA la cifra del plano. Mientras el mapa ignoraba
+// `range` se pintaba igual en todos ellos, y esa es exactamente la avería que
+// no puede volver sin que algo se ponga rojo — con los mismos rótulos que el
+// panel, dos cifras distintas bajo el mismo nombre no se notan a ojo.
+
+test("E14-07 — cambiar de periodo cambia lo que cuenta el plano", async ({ page }) => {
+  await loginAs(page, "direccion@trainingzone.es");
+  await page.goto("/mapa-barrios?vista=tabla&range=mes");
+
+  const tabla = page.locator("table").first();
+  const columnaClientes = async () => {
+    const valores = await tabla
+      .locator("tbody tr td:nth-child(2)")
+      .evaluateAll((tds) => tds.map((td) => Number((td.textContent ?? "0").trim()) || 0));
+    return valores.reduce((a, b) => a + b, 0);
+  };
+
+  const mes = await columnaClientes();
+
+  await page.getByRole("button", { name: "Año", exact: true }).click();
+  await page.waitForURL(/range=ano/);
+  await expect(tabla).toBeVisible();
+  const ano = await columnaClientes();
+
+  // El año incluye al mes, así que nunca puede contar menos; y en la demo hay
+  // altas repartidas por el año, así que tiene que contar MÁS.
+  expect(ano).toBeGreaterThan(mes);
+});
