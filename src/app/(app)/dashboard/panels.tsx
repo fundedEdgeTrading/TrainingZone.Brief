@@ -37,9 +37,11 @@ import {
   getWeeklyChurn,
   getDailyInsight,
   getAverageOccupancy,
+  ADHERENCE_PERIOD_DAYS,
+  type CustomRange,
   type DashboardRange,
 } from "@/lib/dashboard-queries";
-import { OCCUPANCY_TARGET_PCT } from "@/lib/dashboard-targets";
+import { OCCUPANCY_TARGET_PCT, TENURE_TARGET_MONTHS } from "@/lib/dashboard-targets";
 import { MEMBER_STATE_COLOR, MEMBER_STATE_LABEL, PAYMENT_METHOD_COLOR, PAYMENT_METHOD_LABEL, SERIES } from "@/lib/chart-colors";
 import PostalMapPanel from "./postal-map-panel";
 import { KpiCard } from "@/components/kpi-card";
@@ -72,14 +74,20 @@ const demographicsFor = cache((orgId: string, centerId: string | null) =>
 );
 
 /** Ámbito activo del panel. Se pasa desestructurado para que `cache()` funcione. */
-export type PanelProps = { orgId: string; centerId: string | null; range: DashboardRange };
+export type PanelProps = {
+  orgId: string;
+  centerId: string | null;
+  range: DashboardRange;
+  /** Las dos fechas de `range === "custom"`, ya validadas por la página (E14-06). */
+  custom?: CustomRange;
+};
 
-const optsOf = ({ centerId, range }: PanelProps) => ({ centerId, range });
+const optsOf = ({ centerId, range, custom }: PanelProps) => ({ centerId, range, custom });
 
 /* ---------- 1. Insight del día ---------- */
 
-export async function InsightPanel({ orgId, centerId, range }: PanelProps) {
-  const insight = await getDailyInsight(orgId, { centerId, range });
+export async function InsightPanel(props: PanelProps) {
+  const insight = await getDailyInsight(props.orgId, optsOf(props));
   // Sin datos suficientes no se escribe una frase de relleno: el bloque no sale.
   if (!insight) return null;
 
@@ -123,8 +131,8 @@ const KPI_FORMAT = {
   signed: undefined,
 } as const;
 
-export async function KpiRow({ orgId, centerId, range }: PanelProps) {
-  const tiles = await getKpiTiles(orgId, { centerId, range });
+export async function KpiRow(props: PanelProps) {
+  const tiles = await getKpiTiles(props.orgId, optsOf(props));
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -154,8 +162,9 @@ export async function KpiRow({ orgId, centerId, range }: PanelProps) {
 
 /* ---------- 3. Mapa de calor por barrio ---------- */
 
-export async function PostalPanel({ orgId, centerId, range }: PanelProps) {
-  const { points, opportunity } = await getPostalPanelData(orgId, { centerId, range });
+export async function PostalPanel(props: PanelProps) {
+  const { orgId, centerId, range } = props;
+  const { points, opportunity } = await getPostalPanelData(orgId, optsOf(props));
   // E11-07 · El periodo y el centro bajan hasta el enlace del mapa de barrios,
   // que hasta ahora apuntaba a `/mapa-barrios` a secas y perdía los dos.
   return (
@@ -166,7 +175,7 @@ export async function PostalPanel({ orgId, centerId, range }: PanelProps) {
 /* ---------- 4. Dinero ---------- */
 
 export async function RevenuePanel(props: PanelProps) {
-  const { rows, average, meta } = await getRevenueSeries(props.orgId, optsOf(props));
+  const { rows, average, meta, pending } = await getRevenueSeries(props.orgId, optsOf(props));
   return (
     <PanelCard
       title="Ingresos"
@@ -177,6 +186,30 @@ export async function RevenuePanel(props: PanelProps) {
           <LegendSwatch color={SERIES.gold} label="periodo actual" />
           <LegendSwatch color={SERIES.goldSoft} label="media" line />
         </div>
+      }
+      /**
+       * E14-03 · el pie dice qué deja fuera la cifra.
+       *
+       * «Ingresos» es solo lo COBRADO (`status = 'PAID'`). Con SEPA el primer
+       * adeudo tarda días en liquidar y vive en `PENDING`, y ese euro no
+       * aparecía en ninguna card del panel: ni aquí ni en morosidad, que además
+       * exige `state = 'DELINQUENT'` y quien tiene el cobro en vuelo no ha
+       * impagado nada. Se dice, aparte y sin sumarlo — mezclar cobrado con
+       * en-vuelo convertiría un KPI de caja en una previsión.
+       *
+       * Cuando no hay nada en vuelo no se escribe nada: el diagnóstico midió
+       * 0,00 € en la base de demo y una nota permanente sobre cero euros es
+       * ruido.
+       */
+      footer={
+        pending.count > 0 ? (
+          <>
+            La cifra es solo lo <strong className="font-bold text-brand-text">cobrado</strong>. Además hay{" "}
+            <strong className="font-bold text-brand-text">{eur(pending.cents)}</strong> en vuelo (
+            {pending.count} {pending.count === 1 ? "recibo" : "recibos"} sin liquidar, normalmente adeudos SEPA), que no
+            están sumados aquí.
+          </>
+        ) : undefined
       }
     >
       {rows.length === 0 ? (
@@ -203,6 +236,7 @@ export async function RevenueByMethodPanel(props: PanelProps) {
   return (
     <PanelCard
       title="Método de pago"
+      meta="cobrado en el periodo"
       delay={0.18}
       footer={
         total > 0 && recurring ? (
@@ -239,55 +273,110 @@ export async function RevenueByMethodPanel(props: PanelProps) {
   );
 }
 
+/* ---------- 4 bis. Ingresos por concepto (card de M4) ---------- */
+
+/**
+ * «De dónde viene el dinero» (E14-17). El componente lo entrega **M4**
+ * (`revenue-mix-card.tsx`); M1 solo pone la línea, como acordaba el reparto del
+ * lote. Se reexporta desde aquí para que `page.tsx` siga importando todos los
+ * paneles de un único sitio.
+ *
+ * Su `RevenueMixProps` no acepta `custom`, así que con el periodo personalizado
+ * esta card se comporta como «Mes» en vez de romper. Está pedido a M4 en
+ * `docs/hu/M1-peticion-lote3.md`: es aceptar un campo más y pasarlo.
+ */
+export { RevenueMixPanel } from "./revenue-mix-card";
+
 /* ---------- 5. LTV y ticket ---------- */
 
+const months = (n: number) => `${n.toLocaleString("es-ES", { maximumFractionDigits: 1 })} meses`;
+
+/**
+ * E14-05 · las dos cifras que deciden cuánto se puede gastar en captar.
+ *
+ * El LTV es el producto de un ritmo (lo que un socio deja al mes) por una
+ * duración (lo que se queda), y hasta ahora el panel solo tenía una media de
+ * todo lo cobrado por socio sobre todo el histórico llamada «LTV». La card
+ * enseña las dos piezas **y su relación**, que es el número que se usa: hasta
+ * cuánto se puede pagar por un socio nuevo.
+ *
+ * **El titular cambia cuando la permanencia no se puede medir.** Si el negocio
+ * lleva abierto menos que la referencia de organización, nadie ha podido llegar
+ * a ella todavía y compararse contra ella es un artefacto de la edad del
+ * negocio. En ese caso eso ES la noticia, y va en la cifra grande — no en una
+ * nota al pie que nadie lee.
+ */
 export async function LtvRow(props: PanelProps) {
-  const [ltvTicket, demographics] = await Promise.all([
+  const [ltv, demographics] = await Promise.all([
     getLtvAndTicket(props.orgId, optsOf(props)),
     demographicsFor(props.orgId, props.centerId),
   ]);
+  const { tenure } = ltv;
+
+  const tenureHint = [
+    tenure.months === null
+      ? "sin socios que medir"
+      : tenure.belowHorizon
+        ? `el negocio lleva ${months(tenure.horizonMonths)}: todavía no se puede comparar con ${TENURE_TARGET_MONTHS}`
+        : `referencia ${TENURE_TARGET_MONTHS} meses`,
+    tenure.completedCount > 0 ? `${tenure.completedCount} bajas medidas` : null,
+    tenure.censoredCount > 0 ? `${tenure.censoredCount} socios en curso` : null,
+    tenure.importedExcluded > 0 ? `${tenure.importedExcluded} importados fuera` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       <KpiCard
-        label="LTV medio por cliente"
-        value={eur(ltvTicket.ltvEuros * 100)}
-        numericValue={Math.round(ltvTicket.ltvEuros * 100)}
+        label="Valor de un socio"
+        value={ltv.ltvEuros === null ? "—" : eur(ltv.ltvEuros * 100)}
+        numericValue={ltv.ltvEuros === null ? undefined : Math.round(ltv.ltvEuros * 100)}
         format={EUR_FORMAT}
-        hint={`${ltvTicket.payingMembers} clientes con cobros`}
+        // La relación entre las dos cifras, dicha en la propia card: es lo que
+        // contesta cuánto se puede gastar en captar a uno nuevo.
+        hint={
+          ltv.ltvEuros !== null && ltv.monthlyArpuEuros !== null && tenure.months !== null
+            ? `${eur(ltv.monthlyArpuEuros * 100)}/mes × ${months(tenure.months)}`
+            : ltv.monthlyArpuEuros === null
+              ? `solo ${ltv.paymentCount} cobros ${ltv.scopeLabel}: elige un periodo más largo`
+              : "falta permanencia para calcularlo"
+        }
         accent="gold"
         size="ltv"
         delay={0.5}
       />
       <KpiCard
+        label="Permanencia media"
+        value={tenure.months === null ? "—" : months(tenure.months)}
+        numericValue={tenure.months ?? undefined}
+        format={{ suffix: " meses", numberFormat: { maximumFractionDigits: 1 } }}
+        hint={tenureHint}
+        accent={tenure.belowHorizon ? "ink" : "gold"}
+        size="ltv"
+        delay={0.54}
+      />
+      <KpiCard
         label="Ticket medio"
-        value={eur(ltvTicket.avgTicketEuros * 100)}
-        numericValue={Math.round(ltvTicket.avgTicketEuros * 100)}
+        value={eur(ltv.avgTicketEuros * 100)}
+        numericValue={Math.round(ltv.avgTicketEuros * 100)}
         format={EUR_FORMAT}
         // El pie deja de ser un código de regla y dice quién lidera.
         hint={
-          ltvTicket.ticketLeader
-            ? `${ltvTicket.ticketLeader.center} lidera con ${eur(ltvTicket.ticketLeader.avgTicketEuros * 100)}`
-            : ""
+          ltv.ticketLeader
+            ? `${ltv.ticketLeader.center} lidera con ${eur(ltv.ticketLeader.avgTicketEuros * 100)}`
+            : `${ltv.payingMembers} socios con cobros ${ltv.scopeLabel}`
         }
         accent="ink"
         size="ltv"
-        delay={0.54}
+        delay={0.58}
       />
       <KpiCard
         label="Edad media"
         value={demographics.avgAge ? `${demographics.avgAge} años` : "—"}
         numericValue={demographics.avgAge ?? undefined}
         format={{ suffix: " años" }}
-        hint={`muestra: ${demographics.sampleSize}`}
-        accent="ink"
-        size="ltv"
-        delay={0.58}
-      />
-      <KpiCard
-        label="% con hijos / empresarios"
-        value={`${demographics.pctWithChildren ?? "—"}% / ${demographics.pctBusinessOwners ?? "—"}%`}
-        hint="el nicho que más repite"
+        hint={`muestra: ${demographics.sampleSize} · ${demographics.pctWithChildren ?? "—"}% con hijos`}
         accent="ink"
         size="ltv"
         delay={0.62}
@@ -298,39 +387,57 @@ export async function LtvRow(props: PanelProps) {
 
 /* ---------- 6. Ocupación y actividad ---------- */
 
+/**
+ * E14-02 · **plazas vendidas** por centro, que es media card de las dos.
+ *
+ * La barra mide lo vendido sobre el aforo —"¿estoy llenando?"— y el pie añade
+ * la asistencia real y el desglose grupo/EP. Antes esta card tenía una ventana
+ * fija de 30 días que ignoraba el selector, así que su pie y el tile de arriba
+ * daban dos números distintos con la misma palabra: era la mitad del "2 %" que
+ * reportó dirección.
+ */
 export async function OccupancyByCenterPanel(props: PanelProps) {
   const [data, average] = await Promise.all([
     getOccupancyByCenter(props.orgId, optsOf(props)),
     getAverageOccupancy(props.orgId, optsOf(props)),
   ]);
   const rows = [...data]
+    .filter((d) => d.sessions > 0)
     .map((d) => ({ ...d, label: d.center.replace(/^TRAINING ZONE\s*/i, "") }))
-    .sort((a, b) => b.occupancyPct - a.occupancyPct);
+    .sort((a, b) => b.soldPct - a.soldPct);
 
   return (
     <PanelCard
-      title="Ocupación por centro"
-      meta="30 días"
+      title="Plazas vendidas por centro"
+      meta="% del aforo, en el periodo"
       delay={0.24}
       footer={
         rows.length > 0 ? (
           <>
-            Media de la organización: <strong className="font-bold text-brand-text">{average}%</strong>. El objetivo
-            interno son {OCCUPANCY_TARGET_PCT}%.
+            Media de la organización: <strong className="font-bold text-brand-text">{average.soldPct}%</strong> del
+            aforo vendido (objetivo interno {OCCUPANCY_TARGET_PCT}%), y de lo vendido vino el{" "}
+            <strong className="font-bold text-brand-text">{average.attendancePct}%</strong>.
+            {average.epSessions > 0 && average.groupSessions > 0 ? (
+              <>
+                {" "}
+                Grupo {average.groupSoldPct}% y entrenamiento personal {average.epSoldPct}%: van por separado porque el
+                EP tiene aforo 1 y llena siempre.
+              </>
+            ) : null}
           </>
         ) : undefined
       }
     >
       {rows.length === 0 ? (
-        <p className="text-sm text-brand-muted">Sin sesiones en los últimos 30 días.</p>
+        <p className="text-sm text-brand-muted">Sin sesiones en este periodo.</p>
       ) : (
         <div className="flex flex-col gap-4">
           {rows.map((r, i) => (
             <BarBlock
               key={r.center}
               label={r.label}
-              value={`${r.occupancyPct}%`}
-              pct={r.occupancyPct}
+              value={`${r.soldPct}%`}
+              pct={r.soldPct}
               color={i === 0 ? SERIES.gold : SERIES.sand}
               valueColor={i === 0 ? SERIES.gold : "var(--color-brand-text-2)"}
               height={10}
@@ -347,15 +454,35 @@ export async function OccupancyByCenterPanel(props: PanelProps) {
 export async function OccupancyByWeekdayPanel(props: PanelProps) {
   const data = await getOccupancyByWeekday(props.orgId, optsOf(props));
   return (
-    <PanelCard title="Ocupación por día" meta="60 días" delay={0.3}>
+    // Mide venta y no asistencia: la pregunta es cuál es el día flojo para
+    // mover la parrilla, y una plaza vendida a la que no se vino es demanda.
+    <PanelCard title="Plazas vendidas por día" meta="% del aforo, en el periodo" delay={0.3}>
       <OccupancyByWeekdayChart data={data} />
     </PanelCard>
   );
 }
 
+/**
+ * E14-02 · la otra mitad: **asistencia real**, con el no-show como secundario.
+ *
+ * La card oscura enseñaba solo la tasa de no-show sobre una ventana fija de 30
+ * días. Ahora la cifra grande es la que faltaba —de lo que se vendió en clases
+ * ya celebradas, cuánto se presentó— y el pie dice sobre cuánta lista sin pasar
+ * está calculada, que es la nota al pie obligatoria de esta métrica: un 90 % con
+ * la mitad de los rosters sin resolver no significa lo mismo que un 90 % con la
+ * lista al día.
+ */
 export async function NoShowPanel(props: PanelProps) {
-  const { rate, deltaPts } = await getNoShowRate(props.orgId, optsOf(props));
-  return <NoShowRateCard rate={rate} deltaPts={deltaPts} />;
+  const data = await getNoShowRate(props.orgId, optsOf(props));
+  return (
+    <NoShowRateCard
+      rate={data.rate}
+      deltaPts={data.deltaPts}
+      attendancePct={data.attendancePct}
+      unresolved={data.unresolved}
+      scopeLabel={data.scopeLabel}
+    />
+  );
 }
 
 /* ---------- 7. Altas y bajas + estados ---------- */
@@ -409,7 +536,7 @@ export async function MemberStatePanel(props: PanelProps) {
   const max = Math.max(1, ...rows.map((r) => r.count));
 
   return (
-    <PanelCard title="Socios por estado" delay={0.38}>
+    <PanelCard title="Socios por estado" meta="ahora mismo" delay={0.38}>
       {rows.length === 0 ? (
         <p className="text-sm text-brand-muted">Sin socios todavía.</p>
       ) : (
@@ -471,7 +598,7 @@ export async function RankingPanel({
   return (
     <PanelCard
       title="Ranking de socios"
-      meta="LTV, adherencia y antigüedad"
+      meta={`histórico · adherencia ${ADHERENCE_PERIOD_DAYS} días`}
       delay={0.46}
       action={<span className="text-[11.5px] text-brand-faint">Pulsa una columna para ordenar</span>}
       footer={
@@ -642,7 +769,7 @@ export async function FunnelPanel(props: PanelProps) {
 export async function ChannelsPanel(props: PanelProps) {
   const channels = await getAcquisitionChannels(props.orgId, optsOf(props));
   return (
-    <PanelCard title="Canal de origen" meta="todos los leads" delay={0.54}>
+    <PanelCard title="Canal de origen" meta="leads captados en el periodo" delay={0.54}>
       {channels.length === 0 ? (
         <p className="text-sm text-brand-muted">Sin leads registrados todavía.</p>
       ) : (
@@ -657,14 +784,11 @@ export async function ChannelsPanel(props: PanelProps) {
   );
 }
 
-export async function TopServicesPanel({
-  orgId,
-  centerId,
-  range,
-  servicesOrderBy,
-  params,
-}: PanelProps & { servicesOrderBy: "count" | "revenue"; params: DashboardParams }) {
-  const services = await getTopServices(orgId, { centerId, range, orderBy: servicesOrderBy });
+export async function TopServicesPanel(
+  props: PanelProps & { servicesOrderBy: "count" | "revenue"; params: DashboardParams }
+) {
+  const { orgId, servicesOrderBy, params } = props;
+  const services = await getTopServices(orgId, { ...optsOf(props), orderBy: servicesOrderBy });
   const rows = services.slice(0, 5);
   const valueOf = (s: (typeof rows)[number]) =>
     servicesOrderBy === "revenue" ? Math.round(s.revenueEuros) : s.subscriptionsCount;
@@ -673,6 +797,7 @@ export async function TopServicesPanel({
   return (
     <PanelCard
       title="Servicio más vendido"
+      meta="altas e ingresos del periodo"
       delay={0.58}
       action={
         <div className="flex gap-[3px] bg-brand-bg rounded-pill p-[3px]">
@@ -816,7 +941,7 @@ export async function AgeBracketsPanel(props: PanelProps) {
 export async function GoalsPanel(props: PanelProps) {
   const goals = await getGoalsAggregate(props.orgId, optsOf(props));
   return (
-    <PanelCard title="Objetivos" delay={0.78} size="sm">
+    <PanelCard title="Objetivos" meta="abiertos en el periodo" delay={0.78} size="sm">
       <div className="grid grid-cols-2 gap-3.5">
         <GoalTile
           background="bg-brand-bg"

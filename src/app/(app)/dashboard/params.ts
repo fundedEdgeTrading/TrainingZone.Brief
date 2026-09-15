@@ -10,12 +10,23 @@
 export type DashboardParams = {
   centerId?: string;
   range?: string;
+  /** E14-06 · las dos fechas de `range=custom`, en `YYYY-MM-DD`. */
+  desde?: string;
+  hasta?: string;
   rankSort?: string;
   rankDir?: string;
   servicesOrderBy?: string;
 };
 
-const KEYS: (keyof DashboardParams)[] = ["centerId", "range", "rankSort", "rankDir", "servicesOrderBy"];
+export const DASHBOARD_PARAM_KEYS: (keyof DashboardParams)[] = [
+  "centerId",
+  "range",
+  "desde",
+  "hasta",
+  "rankSort",
+  "rankDir",
+  "servicesOrderBy",
+];
 
 /**
  * `/dashboard` con los parámetros actuales y los cambios que se pidan. Un valor
@@ -24,8 +35,15 @@ const KEYS: (keyof DashboardParams)[] = ["centerId", "range", "rankSort", "rankD
  */
 export function dashboardHref(current: DashboardParams, overrides: Partial<DashboardParams> = {}): string {
   const merged = { ...current, ...overrides };
+  // Las fechas solo tienen sentido con el periodo personalizado: arrastrarlas al
+  // pulsar "Mes" dejaría un `?desde=` huérfano en la URL que no hace nada y que
+  // reaparece al volver a "Personalizado" con lo que hubiera antes.
+  if (merged.range !== "custom") {
+    merged.desde = undefined;
+    merged.hasta = undefined;
+  }
   const url = new URLSearchParams();
-  for (const key of KEYS) {
+  for (const key of DASHBOARD_PARAM_KEYS) {
     const value = merged[key];
     if (value) url.set(key, value);
   }
