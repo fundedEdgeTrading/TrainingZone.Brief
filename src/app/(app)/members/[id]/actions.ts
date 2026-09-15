@@ -521,6 +521,14 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
       await tx.invitation.deleteMany({ where: { memberId } });
       // El lead de origen sobrevive al socio: solo se suelta el enlace (@unique).
       await tx.lead.updateMany({ where: { convertedMemberId: memberId }, data: { convertedMemberId: null } });
+      // E5-15 · La solicitud de borrado que pidió el propio socio tiene FK
+      // RESTRICT a `Member`: sin esto, suprimir a quien la pidió reventaba con
+      // P2003 — justo al socio al que más falta le hace que funcione. La fila
+      // se va con él porque es operativa; la prueba de que el plazo del art.
+      // 12.3 se cumplió NO está aquí, está en las entradas
+      // ACCOUNT_DELETION_REQUESTED/RESOLVED del `AuditLog`, que es append-only
+      // y sobrevive al socio.
+      await tx.accountDeletionRequest.deleteMany({ where: { memberId } });
       await tx.member.delete({ where: { id: memberId } });
 
       // Cuenta del portal del socio: se borra con él para que no quede un login
