@@ -36,6 +36,7 @@
  * | `checkout:<orgId>:<email>_<planId>_<ventana>:v1` | `createProspectMemberCheckout` | un solo checkout por prospecto |
  * | `customer:platform:<orgId>:v1` | `createPlatformCheckoutSession` | un solo cliente de licencia por org |
  * | `checkout:platform:<orgId>_<planCode>_<ventana>:v1` | `createPlatformCheckoutSession` | un solo checkout de licencia |
+ * | `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` | `retryOpenInvoice` (HU-ST-19) | un solo intento de cobro por "Pagar ahora" |
  * | `coupon:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo Coupon por código |
  * | `promocode:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo PromotionCode por código |
  *
@@ -129,6 +130,19 @@ export function platformCheckoutKey(orgId: string, planCode: string, at?: Date) 
 }
 
 /**
+ * `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` — HU-ST-19, "Pagar ahora".
+ *
+ * La ventana de 10 minutos está aquí por la misma razón que en los checkouts,
+ * y además por una propia: un socio que actualiza su tarjeta y vuelve a
+ * intentarlo TIENE que poder hacerlo. Con una clave fija, Stripe le devolvería
+ * la respuesta cacheada del intento que falló con la tarjeta vieja y la
+ * pantalla le diría que sigue sin poder cobrarse.
+ */
+export function invoicePayKey(orgId: string, invoiceId: string, at?: Date) {
+  return idempotencyKey("invoicepay", orgId, [invoiceId, checkoutWindow(at)]);
+}
+
+/**
  * HU-ST-27 · `coupon:<orgId>:<código>:v1` y `promocode:<orgId>:<código>:v1`.
  *
  * La entidad es el CÓDIGO ("VERANO25"), no un identificador de fila: cuando se
@@ -150,4 +164,3 @@ export function couponKey(orgId: string, code: string) {
 export function promotionCodeKey(orgId: string, code: string) {
   return idempotencyKey("promocode", orgId, code);
 }
-

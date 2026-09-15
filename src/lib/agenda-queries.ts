@@ -21,6 +21,9 @@ import { resequenceWaitlist } from "@/lib/waitlist";
 import { chargeSession, refundSession } from "@/lib/session-ledger";
 import { enforcementStartsAt } from "@/lib/portal-queries";
 import { sessionServiceKind } from "@/lib/members-queries";
+// HU-ST-18: el mismo corte por morosidad que el portal. Un corte que recepción
+// se salta sin enterarse no es un corte.
+import { bookingGateForMember } from "@/lib/stripe-dunning";
 import {
   chargeSessionToSubscription,
   claimWaitlistedBooking,
@@ -585,8 +588,23 @@ export async function bookSessionForMemberAsStaff(
 
       // El socio, contrastado contra la organización: sin esto bastaba conocer
       // un id ajeno para colar una reserva a nombre de alguien de otra.
-      const member = await tx.member.findFirst({ where: { id: input.memberId, orgId }, select: { id: true } });
+      const member = await tx.member.findFirst({
+        where: { id: input.memberId, orgId },
+        select: { id: true, firstName: true, lastName: true, primaryCenter: { select: { timezone: true } } },
+      });
       if (!member) throw new StaffBookingError("Socio no encontrado.");
+
+      // HU-ST-18 · El mismo corte por morosidad que en el portal. Si recepción
+      // puede seguir apuntando al moroso desde el mostrador, el corte es
+      // decorativo: el motor filtraba por el estado del BONO, no por el del
+      // socio, y ese era justo el agujero. Recepción no se queda sin salida —
+      // registrar el cobro devuelve al socio a ACTIVE y con él el acceso.
+      const gate = await bookingGateForMember(member.id, {
+        surface: "staff",
+        memberName: `${member.firstName} ${member.lastName}`,
+        timezone: member.primaryCenter?.timezone,
+      });
+      if (!gate.allowed) throw new StaffBookingError(gate.reason);
 
       const dayBookings = cls.bookings.filter((b) => isSameDay(b.occurrenceDate, day));
       const mine = dayBookings.filter((b) => b.memberId === member.id);

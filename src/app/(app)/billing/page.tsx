@@ -11,6 +11,9 @@ import {
 import { centerScopeFor } from "@/lib/center-scope";
 import { listActivePlansForOrg } from "@/lib/members-queries";
 import { isStripeConfiguredForOrg } from "@/lib/stripe";
+// HU-ST-22: cuántos socios tienen el método de pago a punto de caducar. Se
+// calcula de los apuntes, no hay columna que consultar.
+import { countMembersWithExpiringCard } from "@/lib/stripe-card-expiry";
 import { PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, PAYMENT_STATUS_TONE } from "@/lib/chart-colors";
 import { KpiCard, Card } from "@/components/kpi-card";
 import { Badge } from "@/components/ui/badge";
@@ -51,14 +54,16 @@ export default async function BillingPage({
   const centerIds = scope ?? undefined;
   const statuses = parseFilterValues(params.status) as PaymentStatus[];
 
-  const [kpis, totalPayments, delinquent, membersForForm, plans, stripeConfigured] = await Promise.all([
-    getBillingKpis(session.user.orgId, centerIds),
-    countPayments(session.user.orgId, { statuses, centerIds }),
-    getDelinquentMembers(session.user.orgId, centerIds),
-    getMembersForPaymentForm(session.user.orgId, centerIds),
-    listActivePlansForOrg(session.user.orgId),
-    isStripeConfiguredForOrg(session.user.orgId),
-  ]);
+  const [kpis, totalPayments, delinquent, membersForForm, plans, stripeConfigured, expiringCards] =
+    await Promise.all([
+      getBillingKpis(session.user.orgId, centerIds),
+      countPayments(session.user.orgId, { statuses, centerIds }),
+      getDelinquentMembers(session.user.orgId, centerIds),
+      getMembersForPaymentForm(session.user.orgId, centerIds),
+      listActivePlansForOrg(session.user.orgId),
+      isStripeConfiguredForOrg(session.user.orgId),
+      countMembersWithExpiringCard(session.user.orgId, centerIds),
+    ]);
 
   const pageCount = Math.max(1, Math.ceil(totalPayments / PAYMENTS_PAGE_SIZE));
   const page = Math.min(Math.max(1, Number(params.page) || 1), pageCount);
@@ -111,6 +116,27 @@ export default async function BillingPage({
         <KpiCard label="Pagos fallidos" value={String(kpis.failed)} tone={kpis.failed ? "critical" : "default"} delay={0.16} />
         <KpiCard label="Socios morosos" value={String(kpis.delinquentMembers)} tone={kpis.delinquentMembers ? "critical" : "default"} delay={0.22} />
       </div>
+
+      {/* HU-ST-22 · Tarjetas por caducar. Va aparte de los KPI de morosidad a
+          propósito: una tarjeta que caduca el mes que viene NO es un impago —no
+          corta acceso ni marca a nadie— sino el aviso que evita llegar a serlo.
+          Solo aparece cuando hay alguno: un cero permanente es ruido. */}
+      {expiringCards > 0 && (
+        <div className="bg-warning-bg border border-warning rounded-2xl px-5 py-4 flex items-start gap-3">
+          <span className="w-2.5 h-2.5 rounded-full bg-warning mt-1.5 shrink-0" />
+          <div>
+            <div className="text-sm font-bold text-warning">
+              {expiringCards === 1
+                ? "1 socio tiene el método de pago a punto de caducar."
+                : `${expiringCards} socios tienen el método de pago a punto de caducar.`}
+            </div>
+            <p className="text-[13px] text-brand-text-2 mt-0.5">
+              Ya les hemos avisado por email con el enlace para cambiarlo. El aviso desaparece solo en cuanto lo
+              actualizan o su banco renueva la tarjeta.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Card title="Cobro por Stripe" meta="RB-PAGO-001 — canal objetivo" delay={0.1}>
         <StripeCheckoutForm members={membersForForm} plans={plans} configured={stripeConfigured} />

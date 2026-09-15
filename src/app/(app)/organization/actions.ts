@@ -15,6 +15,9 @@ import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { canAddCenter } from "@/lib/entitlements";
 import { ADULT_AGE, LOPDGDD_CONSENT_AGE } from "@/lib/minors";
+// HU-ST-18/D-S5: el rango del periodo de gracia vive en un solo sitio, el mismo
+// que garantiza el CHECK de la base de datos.
+import { GRACE_DAYS_MAX, GRACE_DAYS_MIN } from "@/lib/billing-shared";
 import type { PlanType, Role } from "@prisma/client";
 import {
   PLAN_TYPES,
@@ -90,6 +93,34 @@ export async function updateAgePolicy(formData: FormData): Promise<OrgActionResu
   await prisma.organization.update({
     where: { id: session.user.orgId },
     data: { allowsMinors: true, minimumAgeYears: Math.floor(raw) },
+  });
+  revalidatePath("/organization");
+  return { ok: true };
+}
+
+/**
+ * HU-ST-18 · Periodo de gracia de morosidad (decisión D-S5).
+ *
+ * Es configuración de cada centro y no una constante del producto: un gimnasio
+ * de barrio con cobro en mano quiere 0 días y uno con cuota domiciliada quiere
+ * 14. El rango 0-60 lo garantiza además un CHECK en la base de datos — aquí se
+ * valida para poder explicar el motivo en pantalla en vez de reventar con un
+ * error de integridad.
+ */
+export async function updateDunningPolicy(formData: FormData): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
+  const raw = Number(String(formData.get("dunningGraceDays") ?? ""));
+
+  if (!Number.isFinite(raw) || !Number.isInteger(raw) || raw < GRACE_DAYS_MIN || raw > GRACE_DAYS_MAX) {
+    return {
+      ok: false,
+      error: `El periodo de gracia tiene que ser un número entero de días entre ${GRACE_DAYS_MIN} y ${GRACE_DAYS_MAX}.`,
+    };
+  }
+
+  await prisma.organization.update({
+    where: { id: session.user.orgId },
+    data: { dunningGraceDays: raw },
   });
   revalidatePath("/organization");
   return { ok: true };
