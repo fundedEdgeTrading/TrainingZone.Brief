@@ -77,9 +77,9 @@ const CASOS_NUEVOS: Array<{ type: string; modulo: string | null; objeto: Record<
   },
   // HU-ST-16 → sepa-prenotification.ts (P1) · IMPLEMENTADO
   { type: "invoice.upcoming", modulo: null, objeto: { amount_due: 4900, period_end: 1789000000 } },
-  // HU-ST-22 → stripe-card-expiry.ts (P1)
-  { type: "customer.source.expiring", modulo: "stripe-card-expiry", objeto: { id: "card_1", exp_month: 10 } },
-  { type: "payment_method.automatically_updated", modulo: "stripe-card-expiry", objeto: { id: "pm_1" } },
+  // HU-ST-22 → stripe-card-expiry.ts (P1) · IMPLEMENTADO
+  { type: "customer.source.expiring", modulo: null, objeto: { id: "card_1", exp_month: 10 } },
+  { type: "payment_method.automatically_updated", modulo: null, objeto: { id: "pm_1" } },
 ];
 
 function cuerpo(eventId: string, type: string, objeto: Record<string, unknown>): string {

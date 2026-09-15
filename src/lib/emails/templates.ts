@@ -673,6 +673,52 @@ export function renderSepaMandateConfirmationEmail(opts: {
   });
 }
 
+/**
+ * HU-ST-22 · La tarjeta del socio caduca el mes que viene.
+ *
+ * Llega ANTES de que falle nada: es el correo que evita el de "no hemos podido
+ * cobrar tu cuota". Por eso no promete ningún problema —todavía no lo hay— y lo
+ * único que pide es un minuto para cambiarla.
+ */
+export function renderCardExpiringEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  /** "VISA ···· 4242". Nunca el número completo: Apta no lo tiene. */
+  cardLabel: string;
+  /** "10/2026". */
+  expiryLabel: string;
+  portalUrl: string;
+  prefsToken?: string;
+  postalAddress?: string;
+}) {
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Cuota",
+    preheader: "Cámbiala en un minuto y tu cuota se sigue cobrando sin sobresaltos.",
+    eyebrow: "Tarjeta por caducar",
+    title: `Hola, ${esc(opts.memberFirstName)}.<br>Tu tarjeta caduca pronto.`,
+    bodyHtml:
+      p(`La tarjeta con la que pagas tu cuota (${strong(esc(opts.cardLabel))}) caduca en ${strong(esc(opts.expiryLabel))}. Todavía no ha pasado nada: te avisamos antes para que el próximo cobro no se quede sin entrar.`, true) +
+      p("Cambiarla lleva un minuto desde el botón de abajo, sin contraseña y sin llamar a nadie.") +
+      p("Si tu banco ya te ha mandado la tarjeta nueva y la red la ha actualizado sola, ignora este email: lo comprobamos y no volveremos a avisarte."),
+    rows: [
+      { label: "Tarjeta", value: opts.cardLabel },
+      { label: "Caduca", value: opts.expiryLabel },
+      { label: "Qué pasa si no la cambias", value: "El próximo cobro fallará" },
+    ],
+    ctaLabel: "Actualizar mi tarjeta",
+    ctaUrl: opts.portalUrl,
+    noteHtml: "El pago lo procesa Stripe. Nunca guardamos los datos de tu tarjeta.",
+    signOff: `Cualquier duda, aquí estamos,<br>${strong(`El equipo de ${opts.brandName}`)}`,
+    senderName: opts.brandName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este email porque la tarjeta con la que pagas tu cuota está a punto de caducar.",
+    footerLinksHtml: opts.prefsToken ? `${PREFS(opts.prefsToken)} · ${PRIVACY()}` : PRIVACY(),
+  });
+}
+
 export function renderOwnerActivationEmail(opts: {
   orgName: string;
   planName: string;
