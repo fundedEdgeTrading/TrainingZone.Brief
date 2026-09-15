@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { FEATURE_BY_ROUTE, NAV_BY_ROLE, featureForRoute } from "@/lib/rbac";
+import { FEATURE_BY_ROUTE, NAV_BY_ROLE, featureForRoute, filterNavByFeatures, withFeatureFlags } from "@/lib/rbac";
+import { getPlatformPlan, type PlatformFeature } from "@/lib/platform-plans";
 
 /**
  * El muro de pago y quién entra a cada pantalla. Lo que se prueba aquí es lo
@@ -53,6 +54,79 @@ test("E6-02 · toda pantalla con gate heredado llama a la guarda", () => {
     "Estas pantallas están gateadas por el mapa y no comprueban el plan, así que se abren escribiendo la URL: " +
       offenders.map((o) => o.file).join(", ")
   );
+});
+
+// ---------------------------------------------------------------------------
+// Lote 3 · etiquetas, flujos y referidos entran gateados desde el primer día
+// ---------------------------------------------------------------------------
+// Las tres rutas se declaran ANTES de que exista ninguna de sus pantallas, que
+// es justo el orden que evita el agujero de E6-02: cuando E1, E2 y R1 creen su
+// `page.tsx`, el test de arriba («toda pantalla con gate heredado llama a la
+// guarda») ya las está mirando y falla si no llaman a `requireFeature`. El
+// gateo no se añade después de tener la pantalla; la pantalla nace dentro de él.
+
+test("lote3 · las tres rutas nuevas están declaradas en el mapa", () => {
+  assert.equal(featureForRoute("/etiquetas"), "marketing_automatizado");
+  assert.equal(featureForRoute("/flujos"), "marketing_automatizado");
+  assert.equal(featureForRoute("/referidos"), "marketing_automatizado");
+});
+
+test("lote3 · las hijas heredan sin necesitar entrada propia", () => {
+  // El panel por flujo (E3) cuelga dos niveles por debajo y nadie va a
+  // acordarse de declararlo: por eso la herencia es por prefijo.
+  assert.equal(featureForRoute("/flujos/abc123/panel"), "marketing_automatizado");
+  assert.equal(featureForRoute("/flujos/[id]/panel"), "marketing_automatizado");
+  assert.equal(featureForRoute("/etiquetas/[id]"), "marketing_automatizado");
+  assert.equal(featureForRoute("/referidos/embajadores"), "marketing_automatizado");
+  // Y hereda por SEGMENTO, no por texto: `/referidos-antiguos` no es hija de
+  // `/referidos`.
+  assert.equal(featureForRoute("/referidos-antiguos"), undefined);
+});
+
+test("lote3 · lo que sigue abierto en la misma sección del menú", () => {
+  // Se cobra la automatización, no apuntar a quien entra por la puerta:
+  // el CRM de leads y los anuncios son de todos los planes (`CORE_FEATURES`).
+  assert.equal(featureForRoute("/leads"), undefined);
+  assert.equal(featureForRoute("/anuncios"), undefined);
+});
+
+test("lote3 · los tres items están en «Crecimiento» y con su gate resuelto", () => {
+  for (const role of ["OWNER", "CENTER_DIRECTOR"] as const) {
+    const crecimiento = withFeatureFlags(NAV_BY_ROLE[role]).filter((i) => i.section === "Crecimiento");
+    for (const href of ["/etiquetas", "/flujos", "/referidos"]) {
+      const item = crecimiento.find((i) => i.href === href);
+      assert.ok(item, `${role} no tiene ${href} en Crecimiento`);
+      assert.equal(item.feature, "marketing_automatizado", `${href} aparecería en el menú sin comprobar el plan`);
+    }
+  }
+  // Recepción valida y marca como pagada la recompensa del referido; el
+  // catálogo de etiquetas y el editor de flujos son configuración de dirección.
+  const recepcion = NAV_BY_ROLE.RECEPTION.map((i) => i.href);
+  assert.ok(recepcion.includes("/referidos"));
+  assert.equal(recepcion.includes("/etiquetas"), false);
+  assert.equal(recepcion.includes("/flujos"), false);
+});
+
+test("lote3 · un plan sin la funcionalidad no ve ninguno de los tres", () => {
+  // Esencial: `features: []`. El menú no los pinta, y la guarda de página cierra
+  // la URL escrita a mano (`requireFeature`, comprobada por el test de E6-02).
+  const esencial = filterNavByFeatures(NAV_BY_ROLE.OWNER, new Set<PlatformFeature>());
+  for (const href of ["/etiquetas", "/flujos", "/referidos"]) {
+    assert.equal(esencial.some((i) => i.href === href), false, `${href} se cuela con plan Esencial`);
+  }
+  // Y con Avanzado (que la incluye) están los tres.
+  const avanzado = filterNavByFeatures(NAV_BY_ROLE.OWNER, new Set<PlatformFeature>(["marketing_automatizado"]));
+  for (const href of ["/etiquetas", "/flujos", "/referidos"]) {
+    assert.ok(avanzado.some((i) => i.href === href), `${href} no llega con el plan que lo incluye`);
+  }
+});
+
+test("lote3 · la funcionalidad la vende Avanzado y hacia arriba, no Esencial", () => {
+  const featuresOf = (code: string) => getPlatformPlan(code)?.features ?? [];
+  assert.equal(featuresOf("esencial_mes").includes("marketing_automatizado"), false);
+  for (const code of ["avanzado_mes", "avanzado_ano", "elite_mes", "elite_ano", "fundador"]) {
+    assert.ok(featuresOf(code).includes("marketing_automatizado"), `${code} debería incluirla`);
+  }
 });
 
 // ---------------------------------------------------------------------------
