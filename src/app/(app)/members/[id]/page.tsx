@@ -28,6 +28,7 @@ import {
 import { listAssessmentsForMember, getAssessmentMilestones } from "@/lib/assessments/queries";
 import { milestoneLabelOf } from "@/lib/assessments/config";
 import { MEMBER_STATE_LABEL, MEMBER_STATE_TONE, PAYMENT_METHOD_LABEL } from "@/lib/chart-colors";
+import { listCancelReasons, listFreezeReasons, memberKindOf, MEMBER_KIND_LABEL } from "@/lib/member-lifecycle";
 import {
   canAdjustSessionBalance,
   canDeleteMembers,
@@ -43,6 +44,7 @@ import { ActivityThread, type ActivityEntry } from "./activity-thread";
 import { ArchivedNotes, MemberNoteHighlights, type NoteView } from "./note-highlights";
 import { AddHealthRecordForm, HealthStatusSelect, HealthStatusLegend, AddNoteForm, ResendWelcomeButton } from "./member-forms";
 import { MemberDataPanel, DeleteMemberSection, ConsentRevokePanel } from "./member-data-panel";
+import { MemberLifecyclePanel } from "./member-lifecycle-panel";
 import { EditableMemberPhoto } from "./member-photo";
 import { AddProgressEntryForm, ProgressComparator, TanitaPasteImportForm } from "./progress-forms";
 import { BodyCompositionChart } from "./composition-chart";
@@ -363,6 +365,25 @@ export default async function MemberDetailPage({
   const calendarTo = new Date(calendarMonthStart);
   calendarTo.setMonth(calendarTo.getMonth() + 2);
 
+  // E14-15 · Los dos catálogos de motivo: sin ellos no se puede congelar ni dar
+  // de baja, que es exactamente la intención (el motivo es obligatorio). Los
+  // motivos YA REGISTRADOS de este socio se leen aparte y no del catálogo: una
+  // entrada que dirección haya desactivado sigue describiendo al socio que se
+  // fue por ella, y buscarla en la lista de activas la haría desaparecer.
+  const [freezeReasons, cancelReasons, memberReasons] = await Promise.all([
+    listFreezeReasons(session.user.orgId),
+    listCancelReasons(session.user.orgId),
+    prisma.member.findUnique({
+      where: { id: member.id },
+      select: { freezeReason: { select: { label: true } }, cancelReason: { select: { label: true } } },
+    }),
+  ]);
+
+  const memberKind = memberKindOf(member.state);
+  // La fecha de vuelta prevista vive en `Subscription.pauseUntil` y en ningún
+  // otro sitio (M4: "úsalo, no dupliques la verdad").
+  const resumeOn = member.subscriptions.find((s) => s.pauseUntil)?.pauseUntil ?? null;
+
   const [calendarEvents, openableCenters] = await Promise.all([
     getMemberSessionCalendar(session.user.orgId, member.id, calendarFrom, calendarTo),
     // /agenda/session/[id] exige requireCenterRole: sin esto, el enlace echaría
@@ -570,7 +591,11 @@ export default async function MemberDetailPage({
     for (const s of manageableSubscriptions) {
       bonoActions[s.id] = [
         s.status === "ACTIVE"
-          ? { key: "congelar", label: "Congelar", content: <FreezeSubscriptionForm subscriptionId={s.id} /> }
+          ? {
+              key: "congelar",
+              label: "Congelar",
+              content: <FreezeSubscriptionForm subscriptionId={s.id} freezeReasons={freezeReasons} />,
+            }
           : {
               key: "reanudar",
               label: "Reanudar",
@@ -592,7 +617,7 @@ export default async function MemberDetailPage({
               key: "baja",
               label: "Programar baja",
               tone: "danger",
-              content: <ScheduleCancellationForm subscriptionId={s.id} />,
+              content: <ScheduleCancellationForm subscriptionId={s.id} cancelReasons={cancelReasons} />,
             },
       ];
     }
@@ -750,6 +775,21 @@ export default async function MemberDetailPage({
               }}
             />
           </div>
+
+          {/* E14-15 · Tipo de persona: el socio sin bono vivo y el excliente que
+              vuelve no tenían dónde cambiarse de tipo. Ahora sí, con motivo. */}
+          {canManageSub && (
+            <MemberLifecyclePanel
+              memberId={member.id}
+              kind={memberKind}
+              freezeReasons={freezeReasons}
+              cancelReasons={cancelReasons}
+              frozenReasonLabel={memberReasons?.freezeReason?.label ?? null}
+              cancelReasonLabel={memberReasons?.cancelReason?.label ?? null}
+              resumeOn={resumeOn ? fmtShortDay(resumeOn) : null}
+              cancelledAt={member.cancelledAt ? fmtShortDay(member.cancelledAt) : null}
+            />
+          )}
 
           {canDelete && (
             <DeleteMemberSection
@@ -1275,7 +1315,10 @@ export default async function MemberDetailPage({
                     {SERVICE_KIND_LABEL[k]}
                   </Badge>
                 ))}
-                <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_STATE_LABEL[member.state]}</Badge>
+                {/* E14-15 · El rótulo de la cabecera es el TIPO DE PERSONA, que es
+                    el vocabulario de dirección ("excliente", no "baja"). El estado
+                    crudo sigue detrás, en el tono del badge y en el panel de tipo. */}
+                <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_KIND_LABEL[memberKind]}</Badge>
               </div>
             </div>
           </div>

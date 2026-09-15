@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useToast } from "@/components/ui/toast";
 import { previewMemberFreeze, requestMemberFreeze, resumeMemberFreeze, type FreezeConflict } from "./freeze-actions";
 import type { FreezePolicyView } from "./freeze-view";
+import type { ReasonOption } from "@/lib/member-lifecycle";
 
 function shortDate(date: Date) {
   return date.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" });
@@ -21,14 +22,18 @@ export function FreezeManagement({
   status,
   pauseUntil,
   policy,
+  freezeReasons,
 }: {
   status: "ACTIVE" | "FROZEN" | null;
   pauseUntil: Date | null;
   policy: FreezePolicyView;
+  /** E14-15: catálogo de motivos de la organización. El motivo es obligatorio. */
+  freezeReasons: ReasonOption[];
 }) {
   const [step, setStep] = useState<Step>("closed");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [reasonId, setReasonId] = useState("");
   const [conflicts, setConflicts] = useState<FreezeConflict[]>([]);
   const [keepBookings, setKeepBookings] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +44,7 @@ export function FreezeManagement({
   function openForm() {
     setStart("");
     setEnd("");
+    setReasonId("");
     setError(null);
     setStep("form");
   }
@@ -47,6 +53,10 @@ export function FreezeManagement({
     setError(null);
     if (!start || !end) {
       setError("Indica fecha de inicio y de fin.");
+      return;
+    }
+    if (!reasonId) {
+      setError("Elige un motivo para la congelación.");
       return;
     }
     startTransition(async () => {
@@ -68,7 +78,7 @@ export function FreezeManagement({
   function confirmFreeze(cancelIds: string[]) {
     setError(null);
     startTransition(async () => {
-      const result = await requestMemberFreeze(start, end, cancelIds);
+      const result = await requestMemberFreeze(start, end, cancelIds, reasonId);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -151,6 +161,21 @@ export function FreezeManagement({
                   />
                 </label>
               </div>
+              <label className="flex flex-col gap-1 text-[11px] font-bold text-brand-muted uppercase tracking-[.06em]">
+                Motivo
+                <select
+                  value={reasonId}
+                  onChange={(e) => setReasonId(e.target.value)}
+                  className="border border-brand-border rounded-lg px-2.5 py-2 text-sm text-brand-text normal-case font-medium"
+                >
+                  <option value="">Elige un motivo…</option>
+                  {freezeReasons.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {error && <p className="text-xs text-critical">{error}</p>}
               <div className="flex gap-2.5">
                 <button

@@ -15,6 +15,7 @@ import {
   FREEZE_ACTION,
   RESUME_ACTION,
 } from "./freeze-view";
+import { freezeMember, reactivateMember } from "@/lib/member-lifecycle";
 
 /**
  * E5-06: congelar/reanudar el bono desde el propio portal. Depende de
@@ -87,10 +88,15 @@ export type FreezeActionResult = { ok: true } | { ok: false; error: string };
 export async function requestMemberFreeze(
   startDate: string,
   endDate: string,
-  cancelConflictingBookingIds: string[]
+  cancelConflictingBookingIds: string[],
+  // E14-15 · El motivo es obligatorio también cuando quien congela es el propio
+  // socio: la mitad de las congelaciones salen del portal, y sin su porqué la
+  // campaña de reactivación de septiembre se queda sin la mitad de la lista.
+  freezeReasonId?: string,
 ): Promise<FreezeActionResult> {
   const ctx = await currentMember();
   if (!ctx) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+  if (!freezeReasonId) return { ok: false, error: "Elige un motivo para la congelación." };
 
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -136,10 +142,15 @@ export async function requestMemberFreeze(
     }
   }
 
-  await prisma.$transaction([
-    prisma.subscription.update({ where: { id: subscription.id }, data: { status: "FROZEN", pauseUntil: end } }),
-    prisma.member.update({ where: { id: ctx.member.id }, data: { state: "FROZEN" } }),
-  ]);
+  // E14-16 · UN SOLO PUNTO DE ESCRITURA: el mismo módulo que usa recepción.
+  // El socio no tiene ámbito de centro que cruzar (es su propia ficha), pero sí
+  // organización, así que entra como actor de sistema con su origen anotado.
+  const frozen = await freezeMember(
+    { kind: "system", orgId: ctx.session.user.orgId, source: "portal-socio", actorUserId: ctx.session.user.id },
+    ctx.member.id,
+    { reasonId: freezeReasonId, resumeOn: end, subscriptionIds: [subscription.id] },
+  );
+  if (!frozen.ok) return frozen;
   await prisma.auditLog.create({
     data: {
       orgId: ctx.session.user.orgId,
@@ -148,7 +159,12 @@ export async function requestMemberFreeze(
       entityType: FREEZE_ENTITY,
       entityId: subscription.id,
       memberId: ctx.member.id,
-      metadata: { startDate: start, endDate: end, keptBookings: cancelConflictingBookingIds.length === 0 },
+      metadata: {
+        startDate: start,
+        endDate: end,
+        keptBookings: cancelConflictingBookingIds.length === 0,
+        freezeReasonId,
+      },
     },
   });
 
@@ -199,13 +215,12 @@ export async function resumeMemberFreeze(): Promise<FreezeActionResult> {
     }
   }
 
-  await prisma.$transaction([
-    prisma.subscription.update({
-      where: { id: subscription.id },
-      data: { status: "ACTIVE", pauseUntil: null, ...(newEndDate ? { endDate: newEndDate } : {}) },
-    }),
-    prisma.member.update({ where: { id: ctx.member.id }, data: { state: "ACTIVE" } }),
-  ]);
+  const resumed = await reactivateMember(
+    { kind: "system", orgId: ctx.session.user.orgId, source: "portal-socio", actorUserId: ctx.session.user.id },
+    ctx.member.id,
+    { subscriptionIds: [subscription.id], endDate: newEndDate ?? null },
+  );
+  if (!resumed.ok) return resumed;
   await prisma.auditLog.create({
     data: {
       orgId: ctx.session.user.orgId,
