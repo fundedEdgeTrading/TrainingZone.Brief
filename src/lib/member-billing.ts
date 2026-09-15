@@ -2,20 +2,17 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripeForOrg } from "@/lib/stripe";
 import { createPaymentWithReceipt } from "@/lib/payments";
-import { createNotificationOnce } from "@/lib/notifications";
-import { sendMail } from "@/lib/mailer";
-import { renderPaymentFailedEmail } from "@/lib/emails/templates";
-import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-verification";
-import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import type { PlanType, SubscriptionStatus } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
-import { absoluteUrl, publicOrigin } from "@/lib/site";
+import { publicOrigin } from "@/lib/site";
 // HU-ST-02: la resolución del id de suscripción de una factura es la misma para
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
 // shape legado.
 import { resolveInvoiceChargeId, resolveInvoicePeriodEnd, resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
 // HU-ST-23 (P4): punto de enganche del desglose del cobro. Hoy no hace nada.
 import { recordBalanceBreakdown } from "@/lib/stripe-balance";
+// HU-ST-27 (petición de P5): el descuento aplicado, en el Payment de la cuota.
+import { recordInvoiceDiscount } from "@/lib/stripe-coupons";
 import { isDemoModeActive } from "@/lib/platform-plans";
 import { demoMemberCheckoutUrl } from "@/lib/demo-member-checkout";
 import { isRecurring } from "@/lib/plan-recurrence";
@@ -28,6 +25,18 @@ import {
   productKey,
   prospectCheckoutKey,
 } from "@/lib/stripe-idempotency";
+// HU-ST-12/RB-PAGO-025: el freno de "cobro asíncrono en vuelo". Un adeudo SEPA
+// tarda días en liquidar y Stripe da la suscripción por activa mucho antes.
+import { holdAsyncSubscriptionStatus, isAwaitingAsyncSettlement, releaseAsyncHold } from "@/lib/stripe-mandate";
+// HU-ST-12/HU-ST-18: abrir y cerrar la morosidad es UNA puerta, compartida por
+// las cuatro vías por las que se entra (factura fallida, adeudo asíncrono
+// fallido, devolución bancaria, contracargo).
+import {
+  cancelAfterRetriesExhausted,
+  closeDelinquency,
+  openDelinquency,
+  retriesExhausted,
+} from "@/lib/stripe-dunning";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -241,6 +250,10 @@ export async function createMemberCheckout(params: {
       mode,
       customer: stripeCustomerId,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
+      // HU-ST-27 (petición de P5): sin esto Stripe no pinta la casilla del
+      // código y el cupón del gimnasio es inalcanzable. Excluyente con
+      // `discounts` (descuento impuesto desde Apta), que la historia no pide.
+      allow_promotion_codes: true,
       // HU-ST-09/D-S2: `payment_method_types` NO se fija. Fijarlo a mano dejaba
       // fuera Bizum, Link y los wallets (Apple Pay, Google Pay) y, peor, hacía
       // fallar el checkout entero si alguno de los métodos listados no estaba
@@ -367,6 +380,9 @@ export async function createProspectMemberCheckout(params: {
       mode: recurring ? "subscription" : "payment",
       customer_email: email,
       line_items: [{ price: priceResult.priceId, quantity: 1 }],
+      // HU-ST-27, igual que en `createMemberCheckout`: es la puerta donde más
+      // sentido tiene un código de captación.
+      allow_promotion_codes: true,
       // Mismo criterio que `createMemberCheckout` (HU-ST-09/D-S2): los métodos
       // los decide la cuenta conectada, no una lista escrita a mano aquí.
       success_url: `${publicOrigin()}/hazte-socio/gracias?checkout=success`,
@@ -450,7 +466,13 @@ function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): Subscr
 
 /** `customer.subscription.created` / `.updated`. */
 export async function reconcileMemberSubscriptionUpserted(orgId: string, subscription: Stripe.Subscription) {
-  const status = mapStripeSubscriptionStatus(subscription.status);
+  // HU-ST-12/RB-PAGO-025 · Con un adeudo directo en vuelo, Stripe manda esta
+  // suscripción como `active` DÍAS antes de que el dinero se mueva. Abrir el
+  // acceso con ese estado es exactamente lo que la regla prohíbe, así que se
+  // frena en PENDING_CONFIRMATION hasta que llegue el desenlace del cobro
+  // (`async_payment_succeeded` o `invoice.paid`).
+  const awaiting = await isAwaitingAsyncSettlement(subscription.id);
+  const status = holdAsyncSubscriptionStatus(mapStripeSubscriptionStatus(subscription.status), awaiting);
   const item = subscription.items.data[0];
   const endDate = item?.current_period_end ? new Date(item.current_period_end * 1000) : undefined;
 
@@ -577,114 +599,46 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
     ).id;
   }
 
+  // HU-ST-27 (petición de P5): el descuento de la factura, sobre el `Payment`
+  // que acaba de escribirse — es el punto común de las dos ramas de arriba
+  // (recibo que ya existía de un intento fallido, y recibo nuevo).
+  if (paymentId) await recordInvoiceDiscount(orgId, invoice, paymentId);
+
   // HU-ST-23 (P4) · Punto de enganche del desglose bruto/comisión/neto. Hoy no
   // hace nada y NO puede lanzar: es un apunte contable colgado del camino del
   // cobro, y tumbar aquí haría que Stripe reintentase un `invoice.paid` que ya
   // estaba bien. El desglose se reconstruye después; el cobro no.
   if (paymentId) await recordBalanceBreakdown(paymentId, resolveInvoiceChargeId(invoice));
 
+  // HU-ST-12: `invoice.paid` es el otro desenlace posible de un adeudo directo
+  // en vuelo (el primero es `checkout.session.async_payment_succeeded`). El
+  // dinero ya ha entrado, así que el freno de RB-PAGO-025 se levanta aquí.
+  if (stripeSubscriptionId) await releaseAsyncHold(orgId, stripeSubscriptionId, true);
+
   await prisma.subscription.update({
     where: { id: subscription.id },
     data: { status: "ACTIVE", ...(periodEnd ? { endDate: periodEnd } : {}) },
   });
 
-  if (subscription.member.state === "DELINQUENT") {
-    await prisma.member.update({ where: { id: subscription.memberId }, data: { state: "ACTIVE" } });
-  }
-
-  // El aviso a recepción lo abrió `reconcileMemberInvoicePaymentFailed` con esta
-  // misma clave. Cobrado el recibo ya no hay nada que revisar, y dejarlo abierto
-  // manda a alguien a perseguir a un socio que está al corriente.
-  await prisma.notification.updateMany({
-    where: { orgId, entityType: "Member", entityId: subscription.memberId, kind: "ALERT", resolvedAt: null },
-    data: { resolvedAt: new Date() },
-  });
+  // El aviso a recepción lo abrió `reconcileMemberInvoicePaymentFailed`. Cobrado
+  // el recibo ya no hay nada que revisar, y dejarlo abierto manda a alguien a
+  // perseguir a un socio que está al corriente. Con él se para el reloj del
+  // periodo de gracia (HU-ST-18).
+  await closeDelinquency(orgId, subscription.memberId);
 
   return { ok: true };
 }
 
-/** `invoice.payment_failed`: marca al socio moroso y avisa a recepción/dirección — idempotente por `Payment.stripeInvoiceId`. */
 /**
- * Registro de envío del aviso de impago. Va en `AuditLog` (append-only, no
- * exige cuenta de usuario) y no en el propio `Payment`, porque la fila de pago
- * se actualiza en cada reintento y no sirve de marca de "ya avisado".
+ * `invoice.payment_failed`: marca al socio moroso y avisa a recepción/dirección
+ * — idempotente por `Payment.stripeInvoiceId`.
  *
- * La clave es la FACTURA, no el socio: Stripe reintenta la misma factura varias
- * veces en un ciclo de dunning, y el socio debe recibir un aviso por cobro
- * fallido, no uno por reintento.
+ * El efecto de morosidad (estado del socio, reloj del periodo de gracia, aviso
+ * al socio y tarea de recepción) vive en `stripe-dunning.ts`: es el mismo por
+ * las cuatro puertas por las que se entra en impago —factura fallida, adeudo
+ * SEPA que no liquida, devolución bancaria y contracargo—, y tenerlo escrito
+ * aquí dentro obligaba a copiarlo en las otras tres.
  */
-const DUNNING_ENTITY = "DunningNotice";
-const DUNNING_SENT_ACTION = "DUNNING_NOTICE_SENT";
-
-async function sendDunningNoticeOnce(
-  orgId: string,
-  memberId: string,
-  invoiceId: string,
-  amountCents: number
-): Promise<void> {
-  const already = await prisma.auditLog.findFirst({
-    where: { entityType: DUNNING_ENTITY, entityId: invoiceId },
-    select: { id: true },
-  });
-  if (already) return;
-
-  const [org, member] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
-    prisma.member.findUnique({
-      where: { id: memberId },
-      select: {
-        firstName: true,
-        email: true,
-        user: { select: { email: true } },
-        primaryCenter: { select: { address: true } },
-        subscriptions: {
-          where: { status: { in: ["ACTIVE", "FROZEN"] }, plan: { type: { in: ["MONTHLY", "ONLINE"] } } },
-          orderBy: { startDate: "desc" },
-          take: 1,
-          select: { plan: { select: { name: true } } },
-        },
-      },
-    }),
-  ]);
-  const to = member?.user?.email ?? member?.email;
-  if (!member || !to) return;
-
-  // Se registra ANTES de enviar: si el correo falla, el socio se queda sin
-  // aviso de ESTA factura, que es preferible a recibir uno por cada reintento
-  // del banco. Recepción lo ve igual en la lista de morosos.
-  await prisma.auditLog.create({
-    data: {
-      orgId,
-      action: DUNNING_SENT_ACTION,
-      entityType: DUNNING_ENTITY,
-      entityId: invoiceId,
-      memberId,
-      metadata: { amountCents },
-    },
-  });
-
-  const brandName = org?.name ?? "Training Zone";
-  // Correo de servicio: NO lleva `unsubscribeUrl`. Un socio no puede darse de
-  // baja de enterarse de que su cuota no se ha cobrado — sin este aviso pierde
-  // el acceso sin saber por qué. El pie sí enlaza sus preferencias.
-  const footer = memberEmailFooterLinks(memberId);
-  void sendMail({
-    to,
-    fromName: brandName,
-    subject: "No hemos podido cobrar tu cuota",
-    html: renderPaymentFailedEmail({
-      memberFirstName: member.firstName,
-      brandName,
-      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
-      amountLabel: new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(amountCents / 100),
-      portalUrl: memberBillingUrlFor(generateMemberDunningToken(memberId)),
-      planName: member.subscriptions[0]?.plan.name,
-      postalAddress: member.primaryCenter.address ?? undefined,
-      prefsToken: footer.token,
-    }),
-  });
-}
-
 export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice: Stripe.Invoice): Promise<ReconcileResult> {
   if (!invoice.id) return { ok: true };
 
@@ -726,31 +680,28 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
     });
   }
 
-  await prisma.member.update({ where: { id: subscription.memberId }, data: { state: "DELINQUENT" } });
-
-  // El socio se entera antes que nadie y con el enlace que lo arregla. Hasta
-  // ahora el impago solo generaba un aviso interno: alguien tenía que llamarlo,
-  // y mientras tanto el cobro seguía sin entrar.
-  await sendDunningNoticeOnce(orgId, subscription.memberId, invoice.id, invoice.amount_due ?? 0);
-
-  // Aviso a recepción: reutiliza el motor de notificaciones de F10
-  // (lib/notifications.ts), con el mismo grupo de roles que ya puede cobrar a
-  // socios (billing/actions.ts) — createNotificationOnce evita duplicar el
-  // aviso mientras la factura siga sin resolverse.
-  const recipients = await prisma.user.findMany({
-    where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR", "RECEPTION"] }, deactivatedAt: null },
-    select: { id: true },
+  // El socio se entera antes que nadie y con el enlace que lo arregla, el reloj
+  // del periodo de gracia arranca (D-S5) y recepción recibe su tarea. Todo ello
+  // es `openDelinquency`: la única puerta por la que se escribe DELINQUENT.
+  await openDelinquency({
+    orgId,
+    memberId: subscription.memberId,
+    noticeKey: invoice.id,
+    amountCents: invoice.amount_due ?? 0,
+    reason: "INVOICE_FAILED",
   });
-  const memberName = `${subscription.member.firstName} ${subscription.member.lastName}`;
-  for (const recipient of recipients) {
-    await createNotificationOnce({
+
+  // HU-ST-18/D-S6 · Agotados los reintentos, se cancela. No se espera a que lo
+  // haga el Dashboard de Stripe: los dos lados se fijan en `cancel` a propósito
+  // para que coincidan, y confiar solo en la configuración remota deja al socio
+  // de baja en un sitio y vivo en el otro.
+  if (retriesExhausted(invoice)) {
+    await cancelAfterRetriesExhausted({
       orgId,
-      recipientUserId: recipient.id,
-      kind: "ALERT",
-      title: `${memberName}: cobro recurrente fallido`,
-      body: "Stripe no ha podido cobrar la cuota de este mes. Revisa el método de pago del socio.",
-      entityType: "Member",
-      entityId: subscription.memberId,
+      memberId: subscription.memberId,
+      subscriptionId: subscription.id,
+      stripeSubscriptionId,
+      invoiceId: invoice.id,
     });
   }
 

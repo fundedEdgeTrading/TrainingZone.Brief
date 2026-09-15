@@ -37,40 +37,37 @@ const PI_ID = `pi_${SLUG}`;
 const INVOICE_ID = `in_${SLUG}`;
 
 /**
- * Los ocho tipos que S1 añade al `switch`, con el módulo al que delegan.
+ * Los tipos que S1 añade al `switch`, con el módulo al que delegan.
  *
- * `implementado: true` marca los módulos que ya NO son esqueletos. Su contrato
- * de hoy —dejar una línea `[<modulo>]` en el log— era del esqueleto y muere con
- * él; lo que sigue valiendo para todos, implementados o no, es que el evento
- * entra, sale con 200 y queda sellado. El enrutado en sí lo cubre la prueba
- * estructural del final, que lee el `switch` y no depende de ningún log.
+ * `modulo: null` significa "esa pista ya lo ha rellenado". El módulo vacío
+ * dejaba una línea de log —`[stripe-mandate] pendiente de implementar…`— y esa
+ * línea era el único contrato observable que tenía; el reconciliador de verdad
+ * no la escribe, porque un webhook que funciona no debe hablar por consola en
+ * cada evento. Para esos casos aquí se sigue comprobando lo que S1 quería
+ * proteger —que el evento ENTRA, se enruta y sale con 200 y sellado— y el qué
+ * hace cada uno lo prueban los tests de su pista (`stripe-mandate.test.ts`,
+ * `sepa-prenotification.test.ts`, `stripe-card-expiry.test.ts`). El `case` en
+ * el `switch` lo sigue vigilando el test estructural del final.
  *
- * Un módulo ya implementado necesita, además, que el `Payment` del evento
- * EXISTA en la organización de la prueba: sin fila local, la respuesta correcta
- * es `retry` (500), porque Stripe no garantiza el orden de entrega. Por eso el
- * `before` de abajo siembra un socio y dos cobros, y los objetos apuntan a
- * ellos. Cuando una pista rellene su módulo, hará lo mismo con sus casos.
+ * Un módulo ya relleno necesita, además, que el `Payment` del evento EXISTA en
+ * la organización de la prueba: sin fila local la respuesta correcta es un
+ * reintento (500), porque Stripe no garantiza el orden de entrega. Por eso el
+ * `before` siembra un socio y dos cobros, y los objetos apuntan a ellos.
  */
-const CASOS_NUEVOS: Array<{
-  type: string;
-  modulo: string;
-  objeto: Record<string, unknown>;
-  implementado?: true;
-}> = [
-  // HU-ST-20 → stripe-refunds.ts (P2) — implementado
+const CASOS_NUEVOS: Array<{ type: string; modulo: string | null; objeto: Record<string, unknown> }> = [
+  // HU-ST-20 → stripe-refunds.ts (P2) · IMPLEMENTADO
   {
     type: "charge.refunded",
-    modulo: "stripe-refunds",
+    modulo: null,
     objeto: { id: "ch_1", payment_intent: PI_ID, amount_refunded: 500, refunded: false },
-    implementado: true,
   },
-  { type: "credit_note.created", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: INVOICE_ID }, implementado: true },
-  { type: "credit_note.updated", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: INVOICE_ID }, implementado: true },
-  { type: "credit_note.voided", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: INVOICE_ID }, implementado: true },
-  // HU-ST-21 → stripe-disputes.ts (P2) — implementado
+  { type: "credit_note.created", modulo: null, objeto: { id: "cn_1", invoice: INVOICE_ID } },
+  { type: "credit_note.updated", modulo: null, objeto: { id: "cn_1", invoice: INVOICE_ID } },
+  { type: "credit_note.voided", modulo: null, objeto: { id: "cn_1", invoice: INVOICE_ID } },
+  // HU-ST-21 → stripe-disputes.ts (P2) · IMPLEMENTADO
   {
     type: "charge.dispute.created",
-    modulo: "stripe-disputes",
+    modulo: null,
     objeto: {
       id: "dp_1",
       payment_intent: PI_ID,
@@ -78,40 +75,37 @@ const CASOS_NUEVOS: Array<{
       status: "needs_response",
       evidence_details: { due_by: 1790000000 },
     },
-    implementado: true,
   },
   {
     type: "charge.dispute.updated",
-    modulo: "stripe-disputes",
+    modulo: null,
     objeto: { id: "dp_1", payment_intent: PI_ID, amount: 4900, status: "under_review" },
-    implementado: true,
   },
   {
     type: "charge.dispute.closed",
-    modulo: "stripe-disputes",
+    modulo: null,
     objeto: { id: "dp_1", payment_intent: PI_ID, amount: 4900, status: "lost" },
-    implementado: true,
   },
   // HU-ST-23 → stripe-balance.ts (P4)
   { type: "payout.paid", modulo: "stripe-balance", objeto: { id: "po_1", amount: 9500, arrival_date: 1789000000, status: "paid" } },
   { type: "payout.failed", modulo: "stripe-balance", objeto: { id: "po_1", amount: 9500, status: "failed" } },
-  // HU-ST-12 → stripe-mandate.ts (P1)
-  { type: "mandate.updated", modulo: "stripe-mandate", objeto: { id: "mandate_1", status: "active" } },
+  // HU-ST-12 → stripe-mandate.ts (P1) · IMPLEMENTADO
+  { type: "mandate.updated", modulo: null, objeto: { id: "mandate_1", status: "active" } },
   {
     type: "checkout.session.async_payment_succeeded",
-    modulo: "stripe-mandate",
+    modulo: null,
     objeto: { id: "cs_1", payment_status: "paid" },
   },
   {
     type: "checkout.session.async_payment_failed",
-    modulo: "stripe-mandate",
+    modulo: null,
     objeto: { id: "cs_1", payment_status: "unpaid" },
   },
-  // HU-ST-16 → sepa-prenotification.ts (P1)
-  { type: "invoice.upcoming", modulo: "sepa-prenotification", objeto: { amount_due: 4900, period_end: 1789000000 } },
-  // HU-ST-22 → stripe-card-expiry.ts (P1)
-  { type: "customer.source.expiring", modulo: "stripe-card-expiry", objeto: { id: "card_1", exp_month: 10 } },
-  { type: "payment_method.automatically_updated", modulo: "stripe-card-expiry", objeto: { id: "pm_1" } },
+  // HU-ST-16 → sepa-prenotification.ts (P1) · IMPLEMENTADO
+  { type: "invoice.upcoming", modulo: null, objeto: { amount_due: 4900, period_end: 1789000000 } },
+  // HU-ST-22 → stripe-card-expiry.ts (P1) · IMPLEMENTADO
+  { type: "customer.source.expiring", modulo: null, objeto: { id: "card_1", exp_month: 10 } },
+  { type: "payment_method.automatically_updated", modulo: null, objeto: { id: "pm_1" } },
 ];
 
 function cuerpo(eventId: string, type: string, objeto: Record<string, unknown>): string {
@@ -221,10 +215,7 @@ test("los ocho tipos nuevos entran por el despachador y salen con 200", async ()
 
     assert.equal(resultado.status, 200, `${caso.type} tenía que procesarse`);
     assert.equal(resultado.body.ok, true);
-    // El log `[<modulo>]` es el contrato del ESQUELETO. En cuanto una pista
-    // rellena su módulo deja de existir, y el enrutado pasa a comprobarlo la
-    // prueba estructural del final leyendo el `switch`.
-    if (!caso.implementado) {
+    if (caso.modulo) {
       assert.equal(
         captura.lineas.some((linea) => linea.includes(`[${caso.modulo}]`)),
         true,

@@ -1,8 +1,11 @@
+import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
 import { absoluteUrl } from "@/lib/invitations";
 import { renderSepaPrenotificationEmail } from "@/lib/emails/templates";
 import { formatInstantDate, DEFAULT_TIMEZONE } from "@/lib/date-utils";
+import { resolveInvoiceSubscriptionId } from "@/lib/stripe-invoice";
+import type { ReconcileResult } from "@/lib/member-billing";
 import {
   decidePrenotification,
   isSepaMandate,
@@ -50,7 +53,13 @@ export async function runSepaPrenotificationRule(orgId: string, now: Date = new 
             user: { select: { email: true } },
           },
         },
-        // El método del último cobro es lo que dice si hay domiciliación.
+        // HU-ST-12: desde que existe `SepaMandate`, la domiciliación se sabe
+        // por el mandato y no por adivinarla. El método del último cobro se
+        // conserva como respaldo para los bonos anteriores al mandato: los
+        // cobros de Stripe se registran como `STRIPE` sin distinguir el
+        // instrumento, así que por ahí solo se reconocen los cobros que
+        // recepción marcó a mano como SEPA.
+        sepaMandate: { select: { reference: true, ibanLast4: true, status: true } },
         payments: {
           where: { status: "PAID" },
           orderBy: { date: "desc" },
@@ -75,8 +84,12 @@ export async function runSepaPrenotificationRule(orgId: string, now: Date = new 
       select: { id: true },
     });
 
+    const domiciliado =
+      (sub.sepaMandate != null && sub.sepaMandate.status !== "INACTIVE") ||
+      isSepaMandate(sub.payments[0]?.method ?? null);
+
     const decision = decidePrenotification({
-      hasMandate: isSepaMandate(sub.payments[0]?.method ?? null),
+      hasMandate: domiciliado,
       chargeDate,
       noticeDays: notice.days,
       now,
@@ -129,7 +142,9 @@ export async function runSepaPrenotificationRule(orgId: string, now: Date = new 
         brandLogoUrl,
         amountLabel: euros(sub.priceCents),
         chargeDateLabel,
-        mandateReference: mandateReference(sub.id),
+        method: "SEPA",
+        paymentMethodLabel: sub.sepaMandate?.ibanLast4 ? `IBAN ···· ${sub.sepaMandate.ibanLast4}` : undefined,
+        mandateReference: sub.sepaMandate?.reference ?? mandateReference(sub.id),
         noticeDaysLabel: `${decision.daysAhead} días de antelación`,
         planName: sub.plan.name,
         portalUrl,
@@ -139,4 +154,145 @@ export async function runSepaPrenotificationRule(orgId: string, now: Date = new 
   }
 
   return sent;
+}
+
+// ---------------------------------------------------------------------------
+// HU-ST-16 · Preaviso disparado por `invoice.upcoming`
+// ---------------------------------------------------------------------------
+//
+// No se construye desde cero y, sobre todo, no se duplica: la mitad pura
+// —plazos, fechas, decisión— es la de `sepa-prenotification.ts`, y el sello de
+// "ya enviado" es el MISMO `AuditLog` que usa el cron de arriba. Sin compartir
+// la marca, un socio cuya suscripción cae dentro de las dos vías recibiría dos
+// avisos del mismo cargo: uno del cron y otro del webhook.
+//
+// Lo que aporta este evento frente al cron es la fecha de cargo REAL de Stripe
+// en vez de una deducida del aniversario del alta. Y ojo: una `invoice.upcoming`
+// **no tiene `id`** —todavía no existe como factura—, así que la clave de
+// idempotencia sale de la suscripción y del periodo, que es justo lo que ya
+// hace `prenotificationKey()`.
+
+/**
+ * `invoice.upcoming` · Stripe avisa X días antes del cargo. Es el único evento
+ * que llega ANTES de mover dinero, y por eso es el que sirve de preaviso.
+ *
+ * Es correo de SERVICIO: se envía aunque el socio haya desactivado los avisos
+ * comerciales, y no lleva enlace de baja.
+ */
+export async function sendPrenotificationForUpcomingInvoice(
+  orgId: string,
+  invoice: Stripe.Invoice
+): Promise<ReconcileResult> {
+  const stripeSubscriptionId = resolveInvoiceSubscriptionId(invoice);
+  // Una factura suelta (un cargo puntual emitido a mano desde el Dashboard) no
+  // tiene cuota detrás que preavisar.
+  if (!stripeSubscriptionId) return { ok: true };
+
+  const subscription = await prisma.subscription.findUnique({
+    where: { stripeSubscriptionId },
+    select: {
+      id: true,
+      priceCents: true,
+      plan: { select: { name: true } },
+      center: { select: { timezone: true, address: true } },
+      member: {
+        select: { id: true, orgId: true, firstName: true, email: true, user: { select: { email: true } } },
+      },
+      // El mandato es lo que distingue un adeudo domiciliado de una tarjeta, y
+      // con él el plazo que hay que respetar y lo que el correo puede prometer.
+      sepaMandate: { select: { reference: true, ibanLast4: true, status: true } },
+    },
+  });
+  // Stripe no garantiza el orden de entrega: puede llegar el preaviso de una
+  // suscripción que aún no existe localmente. Es retryable, no un no-op.
+  if (!subscription) {
+    return { ok: false, retry: true, error: `Suscripción ${stripeSubscriptionId} aún no existe localmente.` };
+  }
+  if (subscription.member.orgId !== orgId) return { ok: true }; // aislamiento: no es de esta org
+
+  // La fecha de cargo REAL: `next_payment_attempt` es cuándo se va a intentar
+  // el cobro; el fin de periodo es el suelo cuando no viene.
+  const chargeSeconds = invoice.next_payment_attempt ?? invoice.period_end ?? null;
+  if (!chargeSeconds) return { ok: true };
+  const chargeDate = new Date(chargeSeconds * 1000);
+
+  const domiciliado = subscription.sepaMandate != null && subscription.sepaMandate.status !== "INACTIVE";
+  const notice = sepaNoticeFromEnv();
+
+  const key = prenotificationKey(subscription.id, chargeDate);
+  const already = await prisma.auditLog.findFirst({
+    where: { entityType: NOTICE_ENTITY, entityId: key },
+    select: { id: true },
+  });
+
+  const decision = decidePrenotification({
+    hasMandate: true,
+    chargeDate,
+    // Los 14 días son del esquema SEPA y solo atan al adeudo domiciliado. Un
+    // cobro con tarjeta se preavisa igual —lo pide la historia— pero en cuanto
+    // Stripe avisa, sin esperar a un plazo que no le aplica.
+    noticeDays: domiciliado ? notice.days : Number.MAX_SAFE_INTEGER,
+    now: new Date(),
+    alreadySent: already != null,
+  });
+  if (!decision.send) return { ok: true };
+
+  const amountCents = invoice.amount_due ?? subscription.priceCents;
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } });
+
+  // El apunte se escribe ANTES de enviar, igual que en el cron: si el correo
+  // falla, el socio se queda sin preaviso de ESE cargo —y con la traza diciendo
+  // que debía salir— en vez de recibir uno por cada reentrega del evento.
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      action: NOTICE_SENT_ACTION,
+      entityType: NOTICE_ENTITY,
+      entityId: key,
+      memberId: subscription.member.id,
+      metadata: {
+        subscriptionId: subscription.id,
+        chargeDate: chargeDate.toISOString(),
+        amountCents,
+        noticeDays: domiciliado ? notice.days : null,
+        daysAhead: decision.daysAhead,
+        late: domiciliado ? decision.late : false,
+        basis: domiciliado ? notice.basis : "Cobro con tarjeta: no está sujeto al plazo del esquema SEPA Core.",
+        source: "invoice.upcoming",
+        sepa: domiciliado,
+      },
+    },
+  });
+
+  const to = subscription.member.user?.email ?? subscription.member.email;
+  if (!to) return { ok: true };
+
+  const timezone = subscription.center.timezone || DEFAULT_TIMEZONE;
+  const brandName = org?.name ?? "Training Zone";
+  const amountLabel = euros(amountCents);
+  const chargeDateLabel = formatInstantDate(chargeDate, timezone);
+
+  void sendMail({
+    to,
+    fromName: brandName,
+    subject: `Aviso de cargo de ${amountLabel} el ${chargeDateLabel}`,
+    html: renderSepaPrenotificationEmail({
+      memberFirstName: subscription.member.firstName,
+      brandName,
+      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      amountLabel,
+      chargeDateLabel,
+      method: domiciliado ? "SEPA" : "CARD",
+      paymentMethodLabel: domiciliado
+        ? `IBAN ···· ${subscription.sepaMandate?.ibanLast4 || "····"}`
+        : "Tarjeta guardada",
+      mandateReference: subscription.sepaMandate?.reference ?? mandateReference(subscription.id),
+      noticeDaysLabel: `${decision.daysAhead} días de antelación`,
+      planName: subscription.plan.name,
+      portalUrl: absoluteUrl("/portal/membresia"),
+      postalAddress: subscription.center.address ?? undefined,
+    }),
+  });
+
+  return { ok: true };
 }

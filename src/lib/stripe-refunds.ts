@@ -6,6 +6,7 @@ import { stripeForOrg } from "@/lib/stripe";
 import { assertRefundable } from "@/lib/billing-shared";
 import { isMemberInScope, type ScopedUser } from "@/lib/center-scope";
 import { creditNoteKey, refundKey } from "@/lib/stripe-idempotency";
+import { reconcileSepaReturn } from "@/lib/stripe-mandate";
 
 /**
  * HU-ST-20 · Reembolsos reales y notas de crédito (decisión D-S7). **PISTA P2.**
@@ -487,6 +488,23 @@ export async function reconcileChargeRefunded(
   orgId: string,
   charge: Stripe.Charge
 ): Promise<ReconcileResult> {
+  // HU-ST-12 (pista P1) · Devolución bancaria de un adeudo SEPA ya conciliado
+  // (R-transaction). NO es la devolución que emite dirección desde Apta: es el
+  // banco del socio deshaciendo un cargo hasta 8 semanas después, y el efecto
+  // es un impago, no un reembolso comercial. Se conserva tal cual y sale por
+  // aquí: lo de abajo es HU-ST-20 y no debe tocar ese camino.
+  if (isSepaCharge(charge)) {
+    return reconcileSepaReturn({
+      orgId,
+      chargeId: charge.id,
+      paymentIntentId:
+        typeof charge.payment_intent === "string" ? charge.payment_intent : (charge.payment_intent?.id ?? null),
+      amountCents: charge.amount_refunded,
+      outcome: "REFUNDED",
+      reason: "SEPA_RETURNED",
+    });
+  }
+
   const payment = await findPaymentForCharge(orgId, charge);
   if (!payment) {
     // Stripe no garantiza el orden de entrega: un `charge.refunded` puede
@@ -525,6 +543,11 @@ export async function reconcileChargeRefunded(
   });
 
   return { ok: true };
+}
+
+/** ¿El cargo se hizo por adeudo directo SEPA? */
+function isSepaCharge(charge: Stripe.Charge): boolean {
+  return charge.payment_method_details?.type === "sepa_debit";
 }
 
 /**

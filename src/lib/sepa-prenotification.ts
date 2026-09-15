@@ -210,11 +210,12 @@ export async function sendSepaPrenotification(
   orgId: string,
   invoice: Stripe.Invoice
 ): Promise<ReconcileResult> {
-  console.info("[sepa-prenotification] invoice.upcoming pendiente de implementar (HU-ST-16, P1)", {
-    orgId,
-    amountDue: invoice.amount_due,
-    periodEnd: invoice.period_end,
-    customer: typeof invoice.customer === "string" ? invoice.customer : (invoice.customer?.id ?? null),
-  });
-  return { ok: true };
+  // El cuerpo vive en `sepa-prenotification-job.ts`, junto al envío del cron y
+  // —lo que aquí importa— junto al sello de "ya enviado" que las dos vías
+  // comparten. El import es dinámico para que ESTE módulo siga sin arrastrar
+  // nada con efectos en tiempo de ejecución: la mitad pura de arriba se prueba
+  // sin base de datos, y esa propiedad se pierde con un `import` de Prisma en
+  // la cabecera aunque la función no llegue a llamarse nunca.
+  const { sendPrenotificationForUpcomingInvoice } = await import("@/lib/sepa-prenotification-job");
+  return sendPrenotificationForUpcomingInvoice(orgId, invoice);
 }

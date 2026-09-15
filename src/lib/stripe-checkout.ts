@@ -8,6 +8,11 @@ import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+import { recordCheckoutDiscount } from "@/lib/stripe-coupons";
+// HU-ST-12/RB-PAGO-025: el freno del cobro asíncrono. Vive en `stripe-mandate`
+// (pista P1) porque es la misma marca que consulta el reconciliador de
+// suscripciones para no abrir acceso con el débito en vuelo.
+import { holdAsyncCheckout, isAsyncPaymentPending } from "@/lib/stripe-mandate";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -20,6 +25,17 @@ export type CheckoutResult = { ok: true; url: string } | { ok: false; error: str
  *   (`/hazte-socio`) — el `Member` nace aquí mismo, no existía antes del pago.
  */
 export async function reconcileConnectCheckoutCompleted(orgId: string, session: Stripe.Checkout.Session) {
+  // HU-ST-12/RB-PAGO-025 (pista P1) · Un adeudo directo SEPA completa el
+  // checkout DÍAS antes de que el dinero se mueva, y llega aquí como
+  // `complete` + `unpaid`. Todo lo que hay debajo —marcar el `Payment` PAID,
+  // crear el bono— es justo lo que abriría el acceso sin haber cobrado, así
+  // que se aplaza hasta `checkout.session.async_payment_succeeded`, que vuelve
+  // a entrar por esta misma función con la sesión ya pagada.
+  if (isAsyncPaymentPending(session)) {
+    await holdAsyncCheckout(orgId, session);
+    return;
+  }
+
   const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
   const meta = session.metadata ?? {};
 
@@ -65,6 +81,12 @@ async function reconcileMemberCheckoutSession(
     where: { id: payment.id },
     data: { status: "PAID", stripePaymentIntentId: paymentIntentId, receiptNumber: payment.receiptNumber ?? `STRIPE-${payment.id.slice(-8)}` },
   });
+
+  // HU-ST-27 (petición de P5): cuánto descuento se aplicó y con qué código. Es
+  // lo que convierte "se usó un cupón" en "este código trajo N ventas y X €".
+  // Va dentro de la guarda de reentrega de arriba, así que una redelivery del
+  // webhook no la repite; sin descuento en la sesión, no hace nada.
+  await recordCheckoutDiscount(orgId, session);
 
   const planId = session.metadata?.planId;
   if (planId) {
@@ -200,6 +222,7 @@ async function reconcileLegacyCheckoutCompleted(checkoutSessionId: string, payme
     where: { id: payment.id },
     data: { status: "PAID", stripePaymentIntentId: paymentIntentId, receiptNumber: payment.receiptNumber ?? `STRIPE-${payment.id.slice(-8)}` },
   });
+
   await confirmLeadClosureForMember(payment.orgId, payment.memberId);
 }
 

@@ -4,6 +4,7 @@ import type { ReconcileResult } from "@/lib/member-billing";
 import { prisma } from "@/lib/prisma";
 import { createNotificationOnce, resolveNotification } from "@/lib/notifications";
 import { isLiveKey } from "@/lib/billing-shared";
+import { reconcileSepaReturn } from "@/lib/stripe-mandate";
 
 /**
  * HU-ST-21 · Disputas y contracargos visibles (decisión D-S7). **PISTA P2.**
@@ -94,6 +95,25 @@ export async function reconcileDispute(
   dispute: Stripe.Dispute,
   eventType: string
 ): Promise<ReconcileResult> {
+  // HU-ST-12 (pista P1) · Una disputa sobre un cobro SEPA es la otra cara de la
+  // devolución bancaria: el dinero se retiene y el socio deja de estar al
+  // corriente. Se conserva tal cual —va DELANTE y no sustituye a nada—, porque
+  // el resto del ciclo (tarea de dirección, evidencia, cierre) es HU-ST-21 y
+  // sigue teniendo que ocurrir para una disputa SEPA igual que para una de
+  // tarjeta: el socio queda moroso Y alguien tiene que responderla.
+  if (eventType === "charge.dispute.created" && isSepaDispute(dispute)) {
+    const result = await reconcileSepaReturn({
+      orgId,
+      chargeId: typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id,
+      paymentIntentId:
+        typeof dispute.payment_intent === "string" ? dispute.payment_intent : (dispute.payment_intent?.id ?? null),
+      amountCents: dispute.amount,
+      outcome: "FAILED",
+      reason: "DISPUTE",
+    });
+    if (!result.ok) return result;
+  }
+
   const payment = await findPaymentForDispute(orgId, dispute);
   if (!payment) {
     // Stripe no garantiza el orden: la disputa de un cobro que aún no se ha
@@ -406,4 +426,14 @@ export async function listDisputes(orgId: string, centerIds?: string[]): Promise
  */
 export function stripeDisputeUrl(accountId: string, stripeDisputeId: string, live = isLiveKey(process.env.STRIPE_SECRET_KEY)) {
   return `https://dashboard.stripe.com/${accountId}${live ? "" : "/test"}/disputes/${stripeDisputeId}`;
+}
+
+/**
+ * ¿La disputa es sobre un adeudo SEPA? `payment_method_details` de la disputa
+ * lleva el instrumento del cargo original; sin él no se puede afirmar, y
+ * tratarlo como SEPA marcaría moroso a quien hizo un contracargo de tarjeta
+ * antes de que HU-ST-21 decida qué hacer con él.
+ */
+function isSepaDispute(dispute: Stripe.Dispute): boolean {
+  return dispute.payment_method_details?.type === "sepa_debit";
 }
