@@ -6,7 +6,7 @@ import { useTheme, radii } from "@/theme/theme";
 import { typo } from "@/theme/typography";
 import { stagger } from "@/theme/motion";
 import { ScreenContainer } from "@/components/ScreenContainer";
-import { ScreenHeader } from "@/components/ScreenHeader";
+import { ScreenHeader, SectionTitle } from "@/components/ScreenHeader";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Avatar } from "@/components/Avatar";
@@ -86,6 +86,9 @@ export default function AccountScreen() {
         </Card>
       </FadeInUp>
 
+      {/* Lo que el socio CONSULTA. Bloque propio, separado del de abajo: mezclar
+          "mira tus bonos" con "borra tu cuenta" en la misma lista pone una
+          acción irreversible a un toque de una rutinaria. */}
       {isMember ? (
         <FadeInUp delay={stagger(2)}>
           <Card tone="alt" padding={0} style={{ gap: 0 }}>
@@ -103,7 +106,28 @@ export default function AccountScreen() {
         </FadeInUp>
       ) : null}
 
-      <FadeInUp delay={stagger(3)}>
+      {/* E5-15 · «Tus datos y tu cuenta». Bloque para lo que TOCA la cuenta, no
+          para lo que se consulta. Se deja como lista abierta a propósito: la
+          pista D3 (E10-19) tiene que poder colgar aquí los enlaces legales
+          —privacidad, condiciones, cookies— añadiendo filas, sin rehacer la
+          pantalla ni mover el borrado de sitio. */}
+      {isMember ? (
+        <FadeInUp delay={stagger(3)}>
+          <SectionTitle label="TUS DATOS Y TU CUENTA" />
+          <Card tone="alt" padding={0} style={{ gap: 0 }}>
+            <View style={styles.listInset}>
+              <ListRow
+                title="Borrar mi cuenta"
+                meta="Qué se borra, qué se conserva y en cuánto tiempo"
+                chevron
+                onPress={() => router.push("/borrar-cuenta")}
+              />
+            </View>
+          </Card>
+        </FadeInUp>
+      ) : null}
+
+      <FadeInUp delay={stagger(4)}>
         <Button title="Cerrar sesión" variant="danger" onPress={handleLogout} />
       </FadeInUp>
     </ScreenContainer>

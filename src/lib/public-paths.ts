@@ -29,6 +29,10 @@ export const PUBLIC_PATHS = [
   // sin entrada aquí: el proxy la rebotaba a /login, así que el enlace del pie
   // de los correos y el de la propia landing no llevaban a ninguna parte.
   "/cookies",
+  // E5-15 · Cómo pedir el borrado de cuenta. La política de Google Play exige
+  // que sea accesible desde la ficha de la tienda, es decir SIN sesión: si el
+  // proxy la rebotara a /login, la URL no cumpliría lo que se le pide.
+  "/borrar-cuenta",
   // E9-11 · Páginas de captación e índice de centros. Son la respuesta a que el
   // inventario indexable fueran cuatro URLs contra competidores con blogs de
   // cientos de artículos.

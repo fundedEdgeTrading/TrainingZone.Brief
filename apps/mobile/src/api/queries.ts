@@ -1,6 +1,8 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, LONG_REQUEST_TIMEOUT_MS } from "./client";
 import type {
+  AccountDeletionResponse,
+  RequestAccountDeletionResponse,
   ActivityResponse,
   AddStaffBookingResponse,
   BirthdayGreetingResponse,
@@ -722,4 +724,31 @@ export function useCreateEpSlot() {
 
 export function useConsumption() {
   return useQuery({ queryKey: ["consumption"], queryFn: () => apiRequest<ConsumptionResponse>("/portal/consumption") });
+}
+
+/**
+ * E5-15 · Borrado de cuenta. Una sola consulta: trae a la vez el texto de qué
+ * se borra —que vive en el servidor, no en el bundle— y el estado de la
+ * solicitud, porque la pantalla enseña lo uno o lo otro según lo haya pedido ya.
+ */
+export function useAccountDeletion(opts: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: ["account-deletion"],
+    queryFn: () => apiRequest<AccountDeletionResponse>("/portal/account-deletion"),
+    enabled: opts.enabled ?? true,
+  });
+}
+
+export function useRequestAccountDeletion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (password: string) =>
+      apiRequest<RequestAccountDeletionResponse>("/portal/account-deletion", {
+        method: "POST",
+        body: { password },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["account-deletion"] });
+    },
+  });
 }

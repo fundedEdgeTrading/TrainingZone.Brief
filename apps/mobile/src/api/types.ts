@@ -1018,3 +1018,47 @@ export type ConsumptionResponse = {
   detailSince: string | null;
   movements: ConsumptionMovement[];
 };
+
+// ---------- Borrado de cuenta (E5-15) ----------
+
+/**
+ * El texto de qué se borra y qué se conserva NO se escribe aquí: viaja desde
+ * el servidor, que lo saca del mismo plan de supresión que ejecuta el borrado
+ * (E10-09). Esto es solo la forma del sobre.
+ */
+export type AccountDeletionEffect = {
+  key: string;
+  label: string;
+  action: "DELETE" | "DISSOCIATE" | "ANONYMIZE";
+  detail: string;
+  legalBasis?: string;
+  count: number | null;
+};
+
+export type AccountDeletionDisclosure = {
+  effects: AccountDeletionEffect[];
+  retention: { billingDays: number; healthDays: number; pendingLegalReview: boolean };
+  healthCountsVisible: boolean;
+};
+
+export type AccountDeletionRequestDto = {
+  id: string;
+  status: "PENDING" | "COMPLETED" | "REJECTED";
+  source: "MOBILE_APP" | "WEB_PORTAL";
+  requestedAt: string;
+  dueAt: string;
+  resolvedAt: string | null;
+  resolutionNotes: string | null;
+};
+
+export type AccountDeletionResponse = {
+  disclosure: AccountDeletionDisclosure;
+  request: AccountDeletionRequestDto | null;
+  deadlineText: string;
+  publicUrl: string;
+};
+
+export type RequestAccountDeletionResponse = {
+  request: AccountDeletionRequestDto;
+  alreadyOpen: boolean;
+};
