@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { KpiCard } from "@/components/kpi-card";
 import { FilterToolbar, type FilterGroup } from "@/components/ui/filter-toolbar";
-import { listAssignableUsers, listTasks, type TaskRow } from "@/lib/tasks-queries";
+import { autoTaskCapUsage, listAssignableUsers, listTasks, type TaskRow } from "@/lib/tasks-queries";
 import {
   ACTIVE_TASK_STATUSES,
   DONE_COLUMN_WINDOW_HOURS,
@@ -22,6 +22,7 @@ import {
   taskCategories,
   type TaskSelection,
 } from "@/lib/tasks";
+import { AutoCapNotice } from "./auto-cap-notice";
 import { NewTaskDrawer } from "./new-task-drawer";
 import { TasksBoard } from "./tasks-board";
 import { TasksList } from "./tasks-list";
@@ -63,6 +64,9 @@ function toCardData(task: TaskRow): TaskCardData & { startedAt: string | null } 
     recipientUserId: task.recipientUserId,
     recipientName: task.recipient.name,
     createdByName: task.createdBy?.name ?? null,
+    // E14-13: de qué regla es. Va a la tarjeta para poder agrupar en pantalla.
+    entityType: task.entityType,
+    createdByUserId: task.createdByUserId,
   };
 }
 
@@ -95,6 +99,13 @@ export default async function TareasPage({ searchParams }: { searchParams: Promi
       : Promise.resolve([] as TaskRow[]),
     listAssignableUsers(orgId, centerIds),
   ]);
+
+  // E14-12 · consumo del tope semanal de quien se está viendo. En el histórico
+  // no se pinta: allí no se está mirando trabajo pendiente.
+  const capUsage =
+    view === "historico"
+      ? null
+      : await autoTaskCapUsage(orgId, scopeToSelf ? [scopeToSelf] : assignees.map((a) => a.id), new Date());
 
   const selection: TaskSelection = {
     ...EMPTY_TASK_SELECTION,
@@ -218,6 +229,15 @@ export default async function TareasPage({ searchParams }: { searchParams: Promi
             tone="good"
           />
         </div>
+      )}
+
+      {capUsage && (
+        <AutoCapNotice
+          usage={capUsage}
+          userIds={scopeToSelf ? [scopeToSelf] : assignees.map((a) => a.id)}
+          nameOf={(id) => assigneeName.get(id) ?? "Sin nombre"}
+          ownUserId={userId}
+        />
       )}
 
       <FilterToolbar

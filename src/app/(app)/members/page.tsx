@@ -17,6 +17,9 @@ import { canManageMembers, canImportMembers } from "@/lib/rbac";
 import { parseFilterValues } from "@/lib/filter-params";
 import { centerScopeFor, intersectCenterScope } from "@/lib/center-scope";
 import { openRetentionAlertsByMember, type RetentionSignal } from "@/lib/retention";
+// E1 · filtro por etiqueta. Las dos consultas traen ya aplicado el ámbito de centro.
+import { listTagOptions, tagKeysByMember } from "@/lib/tags-queries";
+import { toneOf } from "@/lib/tags";
 import type { MemberState } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +63,8 @@ export default async function MembersPage({
     centerId?: string;
     plan?: string;
     joined?: string;
+    /** E14-23 · Eje de etiquetas del listado. */
+    tag?: string;
     page?: string;
     /** E14-08 · Periodo de las cifras de FLUJO de la card de bonos, como en el resto del panel. */
     range?: string;
@@ -78,6 +83,7 @@ export default async function MembersPage({
     centerId: parseFilterValues(params.centerId),
     plan: parseFilterValues(params.plan),
     joined: parseFilterValues(params.joined),
+    tag: parseFilterValues(params.tag),
   };
 
   // Ámbito de centro (center-scope.ts): dirección de organización ve toda la
@@ -91,7 +97,7 @@ export default async function MembersPage({
   // Estado y Centro se filtran en la query; Plan y Alta, en memoria (ver
   // `members-filters.ts`). `filterBase` solo aplica la búsqueda: es la base con
   // la que se calculan los recuentos por opción de cada eje.
-  const [rawMembers, filterBase, centers, plans, orgAgePolicy] = await Promise.all([
+  const [rawMembers, filterBase, centers, plans, orgAgePolicy, tagOptions] = await Promise.all([
     listMembers(session.user.orgId, {
       q: params.q,
       states: selection.state as MemberState[],
@@ -106,8 +112,19 @@ export default async function MembersPage({
       where: { id: session.user.orgId },
       select: { allowsMinors: true, minimumAgeYears: true },
     }),
+    // E1: el catálogo activo. Sin plan `marketing_automatizado` no hay etiquetas
+    // y el eje no se pinta, en vez de enseñar un filtro que no filtra nada.
+    listTagOptions(session.user),
   ]);
   const agePolicy = orgAgePolicy ?? { allowsMinors: false, minimumAgeYears: 18 };
+
+  // Las etiquetas de TODAS las filas que entran en juego: las del listado y las
+  // de la base con la que se calculan los recuentos por opción. Una consulta
+  // para las dos, no una por socio.
+  const tagKeys = await tagKeysByMember(
+    session.user,
+    [...new Set([...rawMembers.map((m) => m.id), ...filterBase.map((m) => m.id)])],
+  );
 
   const now = new Date();
   const members = rawMembers.filter((m) =>
@@ -117,6 +134,7 @@ export default async function MembersPage({
         primaryCenterId: m.primaryCenterId,
         joinedAt: m.joinedAt,
         planKind: planKindOf(m.subscriptions[0]?.plan.type),
+        tagKeys: tagKeys.get(m.id) ?? [],
       },
       selection,
       now,
@@ -129,6 +147,7 @@ export default async function MembersPage({
       primaryCenterId: m.primaryCenterId,
       joinedAt: m.joinedAt,
       planKind: planKindOf(m.subscriptions[0]?.plan.type),
+      tagKeys: tagKeys.get(m.id) ?? [],
     })),
     selection,
     now,
@@ -204,6 +223,22 @@ export default async function MembersPage({
       width: 244,
       options: JOINED_OPTIONS.map((o) => ({ ...o, count: facets.joined[o.value] ?? 0 })),
     },
+    // E14-23 · filtrar por etiqueta: trabajar una lista en vez de una intuición.
+    ...(tagOptions.length
+      ? [
+          {
+            name: MEMBER_AXIS.tag,
+            label: "Etiqueta",
+            width: 268,
+            options: tagOptions.map((t) => ({
+              value: t.key,
+              label: t.label,
+              tone: toneOf(t.color),
+              count: facets.tag[t.key] ?? 0,
+            })),
+          },
+        ]
+      : []),
   ];
 
   const byName = new Map(groups.map((g) => [g.name, g]));
@@ -262,6 +297,16 @@ export default async function MembersPage({
         toolbar={
           <FilterRail
             groups={groups}
+            // Los ejes sin columna SIEMPRE visible viven en el riel: `FilterRail`
+            // solo pinta como píldora lo que se le nombra aquí (fuera de móvil),
+            // y el filtro de una columna oculta por ancho está en un `th` con
+            // `display:none`, así que no se puede abrir desde ningún sitio.
+            //
+            //  · Etiqueta (E14-23) no tiene columna donde colgar su filtro.
+            //  · Plan (E14-09) pasa a tenerla solo a partir de `2xl`, al ceder
+            //    sitio a «Última visita» y «Ritmo»: sin esta línea, filtrar por
+            //    plan dejaría de ser posible entre 1024 y 1535 px.
+            railAxes={[MEMBER_AXIS.tag, MEMBER_AXIS.plan]}
             total={total}
             resultLabel={{ one: "socio", many: "socios" }}
             searchPlaceholder="Buscar nombre o email…"

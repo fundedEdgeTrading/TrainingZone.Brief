@@ -14,6 +14,7 @@ import { runAssessmentDueRule } from "@/lib/assessment-jobs";
 import { runBirthdayRule } from "@/lib/birthday-jobs";
 import { runSessionReminderRule } from "@/lib/session-reminders";
 import { runRetentionAlertRule } from "@/lib/retention";
+import { runMemberTagRule } from "@/lib/tag-engine";
 import { runSepaPrenotificationRule } from "@/lib/sepa-prenotification-job";
 import { purgeAuditLog, purgePendingPaymentOrganizations, runDataRetention, type RetentionRunReport } from "@/lib/data-retention";
 import { reportJobFailures } from "@/lib/job-failure-report";
@@ -56,6 +57,7 @@ export async function GET(req: NextRequest) {
     sessionReminders: 0,
     ledgerOpeningEntries: 0,
     sepaPrenotifications: 0,
+    memberTagMoves: 0,
     dataRetention: 0,
     auditLogPurged: 0,
     pendingPaymentOrgsPurged: 0,
@@ -110,6 +112,12 @@ export async function GET(req: NextRequest) {
     // de reglas temporales. Sin él, el socio domiciliado se entera del cargo
     // por el extracto y el esquema SEPA Core queda incumplido.
     summary.sepaPrenotifications += await run(org.id, "sepaPrenotifications", () => runSepaPrenotificationRule(org.id));
+    // E1 · motor de etiquetas. Va DESPUÉS de las reglas que mueven el estado del
+    // socio —las bajas programadas de arriba pasan socios a CANCELLED— para que
+    // las etiquetas de esta pasada describan el estado de esta pasada y no el de
+    // la anterior. Cuenta MOVIMIENTOS (puestas + retiradas): un 0 en una segunda
+    // pasada seguida es la prueba barata de que el motor es idempotente.
+    summary.memberTagMoves += await run(org.id, "memberTags", () => runMemberTagRule(org.id));
     // E10-08 · motor de conservación. Va el ÚLTIMO de la organización: purga y
     // anonimiza, y TODAS las reglas anteriores —recordatorios y libro mayor
     // incluidos— todavía quieren leer lo que borra.

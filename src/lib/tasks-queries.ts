@@ -1,7 +1,13 @@
 import type { Prisma, TaskPriority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createNotification } from "@/lib/notifications";
-import { MAX_CATEGORY_LENGTH, MAX_TITLE_LENGTH, DONE_COLUMN_WINDOW_HOURS } from "@/lib/tasks";
+import {
+  AUTO_TASK_CAP_ENTITY,
+  DONE_COLUMN_WINDOW_HOURS,
+  MAX_CATEGORY_LENGTH,
+  MAX_TITLE_LENGTH,
+  autoTaskWeekStart,
+} from "@/lib/tasks";
 
 /**
  * Tareas manuales (F10). El modelo es el de siempre —`Notification` con
@@ -178,6 +184,11 @@ const TASK_SELECT = {
   createdAt: true,
   recipientUserId: true,
   createdByUserId: true,
+  // E14-13: la agrupación por regla se lee de la entidad de la tarea. Va en el
+  // `select` y no en una tabla aparte porque la agrupación es de presentación:
+  // el dato ya está en la fila.
+  entityType: true,
+  entityId: true,
   recipient: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
 } satisfies Prisma.NotificationSelect;
@@ -249,4 +260,62 @@ export async function listTasks(
     orderBy: scopeOrder(scope),
     take: 300,
   });
+}
+
+/* ------------------------------------------------------------------------- *
+ * E14-12 · Lo que la pantalla necesita saber del tope
+ * ------------------------------------------------------------------------- */
+
+export type AutoTaskCapUsage = {
+  cap: number;
+  /** Tareas automáticas creadas esta semana, por destinatario. */
+  usedByUser: Map<string, number>;
+  /** Quién tiene ahora mismo abierto el aviso de «tope alcanzado». */
+  cappedUserIds: Set<string>;
+};
+
+/**
+ * Consumo del tope semanal para las personas que se están viendo en el tablero.
+ *
+ * Un tope invisible es un fallo que nadie reporta: la pantalla tiene que poder
+ * decir «llevas 15 de 15 y por eso el motor ha dejado de escribirte». Se cuenta
+ * lo mismo que cuenta el motor (`notifications.ts`): solo `kind = TASK` sin
+ * `createdByUserId`, creadas desde el lunes, y sin contar el propio aviso del
+ * tope.
+ */
+export async function autoTaskCapUsage(orgId: string, userIds: string[], now: Date): Promise<AutoTaskCapUsage> {
+  const [org, counts, capNotices] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: orgId }, select: { autoTaskWeeklyCapPerUser: true } }),
+    userIds.length
+      ? prisma.notification.groupBy({
+          by: ["recipientUserId"],
+          where: {
+            orgId,
+            recipientUserId: { in: userIds },
+            kind: "TASK",
+            createdByUserId: null,
+            entityType: { not: AUTO_TASK_CAP_ENTITY },
+            createdAt: { gte: autoTaskWeekStart(now) },
+          },
+          _count: { _all: true },
+        })
+      : Promise.resolve([]),
+    userIds.length
+      ? prisma.notification.findMany({
+          where: {
+            orgId,
+            recipientUserId: { in: userIds },
+            entityType: AUTO_TASK_CAP_ENTITY,
+            resolvedAt: null,
+          },
+          select: { recipientUserId: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return {
+    cap: org?.autoTaskWeeklyCapPerUser ?? 15,
+    usedByUser: new Map(counts.map((c) => [c.recipientUserId, c._count._all])),
+    cappedUserIds: new Set(capNotices.map((n) => n.recipientUserId)),
+  };
 }

@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { usePointerDrag } from "@/lib/use-pointer-drag";
-import { DONE_COLUMN_WINDOW_HOURS, TASK_STATUS_LABEL, TASK_STATUSES, type TaskStatus } from "@/lib/tasks";
-import { completeTaskAction, moveTaskAction, reopenTaskAction } from "./actions";
+import { DONE_COLUMN_WINDOW_HOURS, TASK_STATUS_LABEL, TASK_STATUSES, groupTasksByRule, type TaskStatus } from "@/lib/tasks";
+import { completeTaskAction, completeTasksAction, moveTaskAction, reopenTaskAction } from "./actions";
 import { TaskCardBody, type TaskCardData } from "./task-card";
+import { TaskGroupCard } from "./task-group-card";
 import { TaskAssignee } from "./task-assignee";
 
 const COLUMN_DOT: Record<TaskStatus, string> = {
@@ -42,7 +43,7 @@ export function TasksBoard({
 }) {
   const router = useRouter();
   const toast = useToast();
-  const [, startTransition] = useTransition();
+  const [pending, startTransition] = useTransition();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<TaskStatus | null>(null);
   // En táctil el dedo tapa la tarjeta original: el fantasma que sigue al puntero
@@ -106,6 +107,64 @@ export function TasksBoard({
       {TASK_STATUSES.map((status) => {
         const items = tasksByStatus[status] ?? [];
         const isOver = dragOver === status;
+
+        /**
+         * La tarjeta de una tarea, suelta en la columna o dentro de un grupo.
+         * Es una función que devuelve JSX y no un componente declarado aquí
+         * dentro: un componente nuevo en cada repintado remonta el DOM y se
+         * lleva por delante el arrastre a medio gesto.
+         */
+        const taskCard = (task: TaskCardData, draggable = false) => (
+          <div
+            key={task.id}
+            onPointerDown={(e) => {
+              if (!draggable) return;
+              if ((e.target as HTMLElement).closest("button, select, [data-no-drag]")) return;
+              drag.start(e, { id: task.id, label: task.title, from: status });
+            }}
+            onClickCapture={(e) => {
+              if (!justDraggedRef.current) return;
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            className={`rounded-control border border-brand-border bg-white p-2.5 hover:shadow-hover hover:border-brand-border-hover transition-[box-shadow,border-color,opacity] duration-200 touch-pan-y select-none [-webkit-touch-callout:none] ${
+              draggable ? "cursor-grab active:cursor-grabbing" : ""
+            } ${draggingId === task.id ? "opacity-40" : ""}`}
+          >
+            <TaskCardBody task={task}>
+              {status === "HECHA" ? (
+                <button
+                  type="button"
+                  onClick={() => run(() => reopenTaskAction(task.id), "Tarea reabierta")}
+                  className="shrink-0 text-[11px] font-bold uppercase text-brand-muted hover:text-brand-text"
+                >
+                  Reabrir
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => run(() => completeTaskAction(task.id), "Tarea completada")}
+                  className="shrink-0 text-[11px] font-bold uppercase text-brand-muted hover:text-brand-text"
+                >
+                  Completar
+                </button>
+              )}
+            </TaskCardBody>
+
+            {canReassign && status !== "HECHA" && (
+              <div className="mt-2" data-no-drag>
+                <TaskAssignee
+                  taskId={task.id}
+                  taskTitle={task.title}
+                  assignees={assignees}
+                  currentUserId={task.recipientUserId}
+                  currentName={task.recipientName}
+                />
+              </div>
+            )}
+          </div>
+        );
+
         return (
           <div
             key={status}
@@ -127,55 +186,29 @@ export function TasksBoard({
             </div>
 
             <div className="p-2.5 space-y-2 min-h-[120px] max-h-[64vh] overflow-y-auto">
-              {items.map((task) => (
-                <div
-                  key={task.id}
-                  onPointerDown={(e) => {
-                    if ((e.target as HTMLElement).closest("button, select, [data-no-drag]")) return;
-                    drag.start(e, { id: task.id, label: task.title, from: status });
-                  }}
-                  onClickCapture={(e) => {
-                    if (!justDraggedRef.current) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  className={`rounded-control border border-brand-border bg-white p-2.5 cursor-grab active:cursor-grabbing hover:shadow-hover hover:border-brand-border-hover transition-[box-shadow,border-color,opacity] duration-200 touch-pan-y select-none [-webkit-touch-callout:none] ${
-                    draggingId === task.id ? "opacity-40" : ""
-                  }`}
-                >
-                  <TaskCardBody task={task}>
-                    {status === "HECHA" ? (
-                      <button
-                        type="button"
-                        onClick={() => run(() => reopenTaskAction(task.id), "Tarea reabierta")}
-                        className="shrink-0 text-[11px] font-bold uppercase text-brand-muted hover:text-brand-text"
-                      >
-                        Reabrir
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => run(() => completeTaskAction(task.id), "Tarea completada")}
-                        className="shrink-0 text-[11px] font-bold uppercase text-brand-muted hover:text-brand-text"
-                      >
-                        Completar
-                      </button>
-                    )}
-                  </TaskCardBody>
-
-                  {canReassign && status !== "HECHA" && (
-                    <div className="mt-2" data-no-drag>
-                      <TaskAssignee
-                        taskId={task.id}
-                        taskTitle={task.title}
-                        assignees={assignees}
-                        currentUserId={task.recipientUserId}
-                        currentName={task.recipientName}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
+              {groupTasksByRule(items).map((group) =>
+                group.tasks.length > 1 && group.label ? (
+                  // E14-13: varias de la misma regla, una sola tarjeta. Las
+                  // agrupadas no se arrastran: mover en bloque entre columnas
+                  // escondería a cuál de las N se le está cambiando el estado.
+                  <TaskGroupCard
+                    key={group.key}
+                    label={group.label}
+                    count={group.tasks.length}
+                    pending={pending}
+                    onCompleteAll={() =>
+                      run(
+                        () => completeTasksAction(group.tasks.map((t) => t.id)),
+                        `${group.tasks.length} tareas completadas`
+                      )
+                    }
+                  >
+                    {group.tasks.map((task) => taskCard(task))}
+                  </TaskGroupCard>
+                ) : (
+                  taskCard(group.tasks[0], true)
+                )
+              )}
               {items.length === 0 && <p className="text-xs text-faint text-center py-6">Vacío</p>}
             </div>
           </div>
