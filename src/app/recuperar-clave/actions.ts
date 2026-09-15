@@ -1,7 +1,9 @@
 "use server";
 
+import { headers } from "next/headers";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { clientIpFrom, throttledAccessAttempt } from "@/lib/login-throttle";
 import { MIN_PASSWORD_LENGTH, setPassword } from "@/lib/identity";
 import { absoluteUrl } from "@/lib/invitations";
 import { generatePasswordResetToken, passwordResetUrlFor, verifyPasswordResetToken } from "@/lib/email-verification";
@@ -16,13 +18,36 @@ const emailSchema = z.object({ email: z.string().trim().toLowerCase().email("Ema
  * RB-ID-005: la respuesta es SIEMPRE la misma exista o no el email. Devolver
  * "no hay cuenta con ese email" convertiría este formulario, que es público, en
  * un listador de clientes de Apta.
+ *
+ * E1-10, escenario 4: el mismo límite que el login, con el mismo módulo y su
+ * propio propósito (`PASSWORD_RESET`), para que gastar el cupo de enlaces no
+ * gaste también el de contraseñas ni al revés. Aquí **toda** petición consume
+ * cupo —no hay nada que acertar— y un intento bloqueado devuelve el mismo
+ * `{ ok: true }` de siempre: ni el visitante ni el atacante distinguen "enviado"
+ * de "frenado", igual que hoy no distinguen "existe" de "no existe".
  */
 export async function requestPasswordReset(email: string): Promise<RequestResetResult> {
   const parsed = emailSchema.safeParse({ email });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]!.message };
 
+  const ip = clientIpFrom(await headers());
+  await throttledAccessAttempt(
+    { purpose: "PASSWORD_RESET", email: parsed.data.email, ip },
+    async () => {
+      await sendPasswordResetEmail(parsed.data.email);
+      // Siempre `granted: false`: la solicitud de enlace no concede nada, así
+      // que siempre cuenta y nunca reinicia el contador.
+      return { granted: false };
+    }
+  );
+
+  return { ok: true };
+}
+
+/** Envío best-effort del enlace, ya pasado el freno de E1-10. */
+async function sendPasswordResetEmail(email: string): Promise<void> {
   const identity = await prisma.identity.findUnique({
-    where: { email: parsed.data.email },
+    where: { email },
     select: {
       id: true,
       email: true,
@@ -69,8 +94,6 @@ export async function requestPasswordReset(email: string): Promise<RequestResetR
       console.error("[recuperar-clave] error enviando email:", error);
     }
   }
-
-  return { ok: true };
 }
 
 export type CompleteResetResult = { ok: true } | { ok: false; error: string };

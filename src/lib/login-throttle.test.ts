@@ -338,6 +338,57 @@ test("E1-10/3: la ventana se mide desde el último fallo, no desde el primero", 
 });
 
 // ---------------------------------------------------------------------------
+// Escenario 4 · el mismo límite en la solicitud de enlace de recuperación
+// ---------------------------------------------------------------------------
+
+async function pedirEnlace(h: ReturnType<typeof harness>, email: string, ip: string | null, enviados: string[]) {
+  return throttledAccessAttempt(
+    { purpose: "PASSWORD_RESET", email, ip },
+    async () => {
+      enviados.push(email);
+      return { granted: false };
+    },
+    h.deps
+  );
+}
+
+test("E1-10/4: la solicitud de enlace de recuperación tiene el mismo límite", async () => {
+  const h = harness();
+  const enviados: string[] = [];
+  const umbral = THROTTLE_POLICY.PASSWORD_RESET.emailThreshold;
+
+  for (let i = 0; i < umbral + 5; i++) await pedirEnlace(h, "socio1.lajota@trainingzone.es", "203.0.113.9", enviados);
+
+  assert.equal(enviados.length, umbral, "pasado el umbral deja de enviarse el correo, no solo de contestar");
+});
+
+test("E1-10/4: login y recuperación llevan cupos separados", async () => {
+  const h = harness();
+  const email = "socio1.lajota@trainingzone.es";
+  const ip = "203.0.113.9";
+
+  const enviados: string[] = [];
+  for (let i = 0; i < THROTTLE_POLICY.PASSWORD_RESET.emailThreshold + 2; i++) await pedirEnlace(h, email, ip, enviados);
+
+  // Quemar el cupo de enlaces no puede dejar a nadie sin poder intentar entrar.
+  const alcanzados: string[] = [];
+  await login(h, { email, ip, good: true }, alcanzados);
+  assert.deepEqual(alcanzados, [email], "el cupo de recuperación no gasta el del login");
+
+  assert.equal(h.store.rows.has(`PASSWORD_RESET|EMAIL|${email}`), true);
+  assert.equal(h.store.rows.has(`LOGIN|EMAIL|${email}`), false);
+});
+
+test("E1-10/4: el barrido de enlaces desde una IP también se corta", async () => {
+  const h = harness();
+  const enviados: string[] = [];
+  const umbralIp = THROTTLE_POLICY.PASSWORD_RESET.ipThreshold;
+
+  for (let i = 0; i < umbralIp + 3; i++) await pedirEnlace(h, `socio${i}@trainingzone.es`, "203.0.113.66", enviados);
+  assert.equal(enviados.length, umbralIp);
+});
+
+// ---------------------------------------------------------------------------
 // Escenario 5 · trazabilidad
 // ---------------------------------------------------------------------------
 
@@ -458,6 +509,7 @@ test("E1-10: los cuatro puntos de entrada pasan por la MISMA función", () => {
     "src/app/login/actions.ts",
     "src/auth.config.ts",
     "src/app/api/mobile/v1/auth/login/route.ts",
+    "src/app/recuperar-clave/actions.ts",
   ];
 
   for (const fichero of entradas) {
