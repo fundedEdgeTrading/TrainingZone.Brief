@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { createNotificationOnce } from "@/lib/notifications";
+import { createNotificationOnce, pickCenterTaskRecipient } from "@/lib/notifications";
+import { AUTO_TASK_RULES } from "@/lib/tasks";
 
 const STALL_KEYWORDS = ["estanc", "no avanzo", "no progres", "aburrid"];
 const LOOKBACK_DAYS = 90;
@@ -99,30 +100,46 @@ export function isStalled(signals: StallSignals): boolean {
 export async function runStallDetectionRule(orgId: string): Promise<number> {
   const members = await prisma.member.findMany({
     where: { orgId, state: "ACTIVE" },
-    select: { id: true, firstName: true, lastName: true },
+    select: { id: true, firstName: true, lastName: true, primaryCenterId: true },
   });
 
-  // Ya no hay un entrenador fijo del socio al que avisar: la alerta va siempre
-  // a dirección del centro (OWNER/CENTER_DIRECTOR de la organización).
-  const directors = await prisma.user.findMany({ where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] }, deactivatedAt: null }, select: { id: true } });
+  // Ya no hay un entrenador fijo del socio al que avisar: la alerta va a
+  // dirección. E14-11: UNA, no una por cada persona de dirección — el
+  // destinatario se elige por reparto y se puede reasignar desde el tablero.
+  const directors = await prisma.user.findMany({
+    where: { orgId, role: { in: ["OWNER", "CENTER_DIRECTOR"] }, deactivatedAt: null },
+    select: { id: true, role: true, centerId: true, centerMemberships: { select: { centerId: true } } },
+  });
 
   let created = 0;
   for (const member of members) {
     const signals = await getStallSignals(member.id);
     if (!isStalled(signals)) continue;
 
-    for (const recipientUserId of directors.map((d) => d.id)) {
-      await createNotificationOnce({
-        orgId,
-        recipientUserId,
-        kind: "ALERT",
-        title: `${member.firstName} ${member.lastName}: riesgo de estancamiento`,
-        body: "Autovaloración y/o señales objetivas (asistencia, RPE, objetivos) sugieren estancamiento. Contacta y valora una acción comercial (RB-IA-005).",
-        entityType: "Member",
-        entityId: member.id,
-      });
-      created++;
-    }
+    // Dirección de organización siempre; dirección de centro, la del suyo
+    // (E1-07): el nombre de un socio no cruza la frontera de centro.
+    const candidates = directors.filter(
+      (d) =>
+        d.role === "OWNER" ||
+        d.centerId === member.primaryCenterId ||
+        d.centerMemberships.some((m) => m.centerId === member.primaryCenterId)
+    );
+    const recipientUserId = await pickCenterTaskRecipient(
+      orgId,
+      candidates.map((d) => d.id)
+    );
+    if (!recipientUserId) continue;
+
+    const result = await createNotificationOnce({
+      orgId,
+      recipientUserId,
+      kind: "ALERT",
+      title: `${member.firstName} ${member.lastName}: riesgo de estancamiento`,
+      body: "Autovaloración y/o señales objetivas (asistencia, RPE, objetivos) sugieren estancamiento. Contacta y valora una acción comercial (RB-IA-005).",
+      entityType: AUTO_TASK_RULES.stallRisk.entityType,
+      entityId: member.id,
+    });
+    if (result.status === "created") created++;
   }
   return created;
 }

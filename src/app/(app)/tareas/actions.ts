@@ -135,6 +135,35 @@ export async function completeTaskAction(taskId: string): Promise<TaskActionResu
   return { ok: true };
 }
 
+/**
+ * E14-13 · resolver la tarjeta agrupada.
+ *
+ * Cierra las tareas del grupo **una a una y por el mismo camino de siempre**
+ * (`completeTaskAction` → `resolveNotification`), con su comprobación de acceso
+ * cada una. No hay un "resolver grupo" en la base de datos porque no hay grupo
+ * en la base de datos: la agrupación es de presentación y el estado se sigue
+ * derivando de `startedAt`/`resolvedAt`. Un `updateMany` por regla sería más
+ * corto y se saltaría el control de acceso por tarea.
+ *
+ * Devuelve cuántas se han cerrado: si alguna no era del actor, el resto sí se
+ * cierra y la pantalla lo dice, en vez de fallar entero y dejar el grupo a
+ * medias sin explicación.
+ */
+export async function completeTasksAction(taskIds: string[]): Promise<TaskActionResult & { completed?: number }> {
+  if (taskIds.length === 0) return { ok: true, completed: 0 };
+
+  let completed = 0;
+  let lastError: string | null = null;
+  for (const taskId of taskIds) {
+    const result = await completeTaskAction(taskId);
+    if (result.ok) completed++;
+    else lastError = result.error;
+  }
+
+  if (completed === 0) return { ok: false, error: lastError ?? "No se pudo completar el grupo." };
+  return { ok: true, completed };
+}
+
 export async function reopenTaskAction(taskId: string): Promise<TaskActionResult> {
   const session = await requireRole([...STAFF_ROLES]);
   const { id: actorId, orgId, role } = session.user;
