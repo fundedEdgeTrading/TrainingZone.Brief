@@ -5,9 +5,19 @@
  * que empiezan por `= + - @` se neutralizan para que un nombre o una nota no
  * se ejecuten como fórmula al abrir el fichero.
  */
+/**
+ * Una celda que es SOLO un número (`1234`, `1234.56`, `-49,00`) no puede ser
+ * una fórmula, así que no se neutraliza. Sin esta excepción, las devoluciones
+ * en negativo de la exportación contable (HU-ST-25) salían como `'-49,00`:
+ * texto para Excel, que la gestoría no puede sumar ni cuadrar. Todo lo demás
+ * —nombres, notas, conceptos, que los escriben personas— se sigue neutralizando
+ * exactamente igual que antes.
+ */
+const NUMERIC_CELL = /^-?\d+(?:[.,]\d+)?$/;
+
 function csvCell(value: string | number): string {
   const raw = String(value);
-  const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  const safe = !NUMERIC_CELL.test(raw) && /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   if (/[";\n]/.test(safe)) return `"${safe.replace(/"/g, '""')}"`;
   return safe;
 }
