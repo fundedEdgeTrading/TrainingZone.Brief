@@ -69,6 +69,29 @@ model Organization {
   /// días en el cliente, ni en la web ni en la app.
   dunningGraceDays Int @default(7)
 
+  // ---------- Lote 3 · Flujos de email marketing (E2, reglas de seguridad 4 y 5) ----------
+  /// Regla 4 · PAUSA GLOBAL. Para TODOS los flujos de la organización al
+  /// instante. Se guarda la fecha y no un booleano por la misma razón que
+  /// `Member.emailOptOutAt`: interesa cuándo se paró, no solo que está parado.
+  /// Lo encolado NO se pierde — `FlowEnrollment.nextRunAt` se queda donde
+  /// estaba y el cron simplemente no lo consume mientras esto no sea null.
+  flowsPausedAt  DateTime?
+  /// Regla 5 · MODO BORRADOR. Un flujo en `DRAFT` se ejecuta de verdad pero
+  /// todo envío va aquí en vez de al socio (`FlowEmailLog.testMode`). Es la
+  /// única forma de probar un flujo sin escribir a 49 personas. Sin esta
+  /// dirección configurada, un flujo en borrador no manda nada.
+  flowsTestEmail String?
+
+  /// M3 · Tope de tareas AUTOMÁTICAS por persona y semana. Solo cuenta lo que
+  /// genera el motor de reglas (`Notification.createdByUserId = null`): lo que
+  /// una persona encarga a otra no se limita nunca. El valor por defecto es una
+  /// semilla razonable —unas tres al día de trabajo, que es lo que alguien
+  /// puede atender además de su trabajo real—; el número definitivo y qué pasa
+  /// al alcanzarlo los decide M3. El rango 1-200 lo garantiza un CHECK en la
+  /// base de datos, igual que `dunningGraceDays`: un 0 aquí apagaría el motor
+  /// de reglas entero en silencio.
+  autoTaskWeeklyCapPerUser Int @default(15)
+
   stripeAccount StripeAccount?
 
   centers           Center[]
@@ -107,6 +130,21 @@ model Organization {
   mesocycles                Mesocycle[]
   sessionLedger             SessionLedger[]
   retentionPolicies         RetentionPolicy[]
+
+  freezeReasons     FreezeReason[]
+  cancelReasons     CancelReason[]
+  memberTagDefs     MemberTagDefinition[]
+  memberTags        MemberTag[]
+  memberTagEvents   MemberTagEvent[]
+  flows             Flow[]
+  flowConditions    FlowCondition[]
+  flowSteps         FlowStep[]
+  flowEnrollments   FlowEnrollment[]
+  flowEmails        FlowEmailLog[]
+  referralCodes     ReferralCode[]
+  referralRewards   ReferralReward[]
+  referralPrograms  ReferralProgramConfig[]
+  memberFormInvites MemberFormInvite[]
 
   sepaMandates            SepaMandate[]
   paymentDisputes         PaymentDispute[]
@@ -160,6 +198,14 @@ model Center {
   timeClockEntries TimeClockEntry[]
   announcements    Announcement[]
   subscriptions    Subscription[]
+
+  flows           Flow[]
+  flowEnrollments FlowEnrollment[]
+  flowEmails      FlowEmailLog[]
+  referralCodes   ReferralCode[]
+  referralRewards ReferralReward[]
+  referralProgram ReferralProgramConfig?
+  formInvites     MemberFormInvite[]
 
   @@unique([orgId, slug])
   @@index([orgId])
@@ -286,6 +332,13 @@ model User {
   retentionPoliciesEdited  RetentionPolicy[]        @relation("RetentionPolicyEditor")
   paymentsRefunded         Payment[]                @relation("RefundedBy")
   deletionRequestsResolved AccountDeletionRequest[] @relation("DeletionRequestResolver")
+
+  memberTagsAssigned      MemberTag[]        @relation("MemberTagAssignedBy")
+  memberTagEvents         MemberTagEvent[]   @relation("MemberTagEventActor")
+  flowsCreated            Flow[]             @relation("FlowCreatedBy")
+  referralRewardsReviewed ReferralReward[]   @relation("ReferralRewardReviewer")
+  referralRewardsPaid     ReferralReward[]   @relation("ReferralRewardPayer")
+  formInvitesSent         MemberFormInvite[] @relation("MemberFormInviteSender")
 
   // Sustituye al @unique global de email: el mismo email puede tener membresía
   // en varias organizaciones, pero solo una dentro de cada una.
@@ -441,6 +494,32 @@ model Member {
   /// DELINQUENT y se limpia al recuperar el cobro: null = no hay impago abierto.
   delinquentSince DateTime?
 
+  // ---------- Lote 3 · Tipos de persona (M4, decisión 2 del plan) ----------
+  // Son CUATRO tipos y no tres: Cliente (ACTIVE), Congelado (FROZEN,
+  // voluntario), Suspendido (DELINQUENT, impago) y Excliente (CANCELLED). El
+  // enum `MemberState` NO se toca: los cuatro estados ya estaban ahí y
+  // fusionar congelado con impago deshace HU-ST-14 —la lista de morosos volvía
+  // a incluir a quien estaba de vacaciones— y rompe el flujo 5 de E3.
+  // Lo que faltaba era el PORQUÉ de cada uno de los dos estados de salida, que
+  // es lo que hace utilizable la campaña de reactivación (E3, flujo 6): un
+  // excliente que se fue por mudanza no recibe la misma campaña que uno que se
+  // fue por precio.
+  //
+  /// Cuándo empezó la congelación en curso. Gemelo de `delinquentSince`
+  /// (HU-ST-18) para el otro estado de salida: se pone al pasar a FROZEN y se
+  /// limpia al volver. La FECHA DE VUELTA PREVISTA no vive aquí a propósito —
+  /// ya es `Subscription.pauseUntil`, y duplicarla daría dos verdades para lo
+  /// mismo (M4: "úsalo, no dupliques la verdad").
+  frozenAt       DateTime?
+  /// Motivo de la congelación, contra el catálogo configurable de la
+  /// organización. Obligatorio en la acción de congelar (M4), no en la columna:
+  /// hay socios FROZEN anteriores a esta migración y ninguna migración puede
+  /// inventarles un motivo.
+  freezeReasonId String?
+  /// Motivo de baja, contra su catálogo. La FECHA de la baja ya es
+  /// `Member.cancelledAt` y no se duplica.
+  cancelReasonId String?
+
   // RB-PERFIL: perfil extendido (F9) — CP/ocupación/canal heredados del lead de origen.
   // Ya no hay entrenador responsable fijo: el socio puede hacer EP con distintos
   // entrenadores según la sesión (ver ClassSession.trainerId/SessionTemplate.trainerId).
@@ -502,10 +581,24 @@ model Member {
   sepaMandates        SepaMandate[]
   deletionRequests    AccountDeletionRequest[]
 
+  freezeReason        FreezeReason?      @relation("MemberFreezeReason", fields: [freezeReasonId], references: [id])
+  cancelReason        CancelReason?      @relation("MemberCancelReason", fields: [cancelReasonId], references: [id])
+  tags                MemberTag[]
+  tagEvents           MemberTagEvent[]
+  flowEnrollments     FlowEnrollment[]
+  flowEmails          FlowEmailLog[]
+  referralCode        ReferralCode?
+  leadsReferred       Lead[]             @relation("LeadReferredBy")
+  referralRewardsWon  ReferralReward[]   @relation("ReferralRewardBeneficiary")
+  referralRewardsMade ReferralReward[]   @relation("ReferralRewardReferrer")
+  formInvites         MemberFormInvite[]
+
   @@unique([orgId, externalRef]) // idempotencia de la importación por socio del origen
   @@index([orgId])
   @@index([primaryCenterId])
   @@index([state])
+  @@index([freezeReasonId])
+  @@index([cancelReasonId])
 }
 
 // Fotos y métricas de evolución física (Ficha Socio). Visibles solo para el
@@ -1392,6 +1485,22 @@ model Lead {
   convertedMemberId String?        @unique // enlace al Member creado si CERRADO (RB-LEAD-007)
   createdAt         DateTime       @default(now())
 
+  // ---------- Lote 3 · Referidos (R1) ----------
+  // "Referido" como CANAL no necesita tabla: `channel` ya es texto libre y
+  // `LeadChannel` es configurable por dirección sin desplegar (RB-LEAD-004).
+  // Lo único que faltaba es DE QUIÉN VIENE, y ese es un socio de la casa.
+  //
+  // El ESTADO del referido (invitado → valoración hecha → alta) NO se guarda
+  // aquí ni en ninguna tabla nueva: se DERIVA de este mismo lead —`status`
+  // llega a CON_FECHA_VALORACION y `convertedMemberId` se rellena al cerrar—.
+  // Un estado paralelo discreparía del embudo en una semana (R1, punto 2).
+  /// Socio que trajo este lead. Null en todo lo que no viene de un referido.
+  referredByMemberId String?
+  /// Código concreto por el que entró. Distingue "entró por el enlace" de "lo
+  /// apuntó recepción a mano", y esa diferencia decide dinero: el antifraude de
+  /// R1 necesita saber si el código estaba vivo el día en que se usó.
+  referralCodeId     String?
+
   organization    Organization   @relation(fields: [orgId], references: [id])
   center          Center         @relation(fields: [centerId], references: [id])
   owner           User?          @relation("LeadOwner", fields: [ownerUserId], references: [id])
@@ -1400,9 +1509,16 @@ model Lead {
   notes           LeadNote[]
   healthRecords   HealthRecord[]
 
+  referredBy      Member?            @relation("LeadReferredBy", fields: [referredByMemberId], references: [id])
+  referralCode    ReferralCode?      @relation(fields: [referralCodeId], references: [id])
+  referralRewards ReferralReward[]
+  formInvites     MemberFormInvite[]
+
   @@index([orgId])
   @@index([centerId])
   @@index([status])
+  /// Panel de embajadores: "cuántos ha traído este socio y en qué estado van".
+  @@index([referredByMemberId, status])
 }
 
 // Bitácora del lead (RB-LEAD-008), gemela de MemberNote pero para el embudo comercial.
@@ -2395,4 +2511,726 @@ model RetentionPolicy {
 
   @@unique([orgId, category])
   @@index([orgId])
+}
+
+// ===========================================================================
+// LOTE 3 · Panel, CRM y email marketing
+// docs/PLAN_LOTE3_PANEL_Y_MARKETING_2026-09-15.md · docs/hu/E14.md
+//
+// Todo el esquema del lote en un solo sitio y en una sola migración: después de
+// esto `prisma/schema.prisma` vuelve a estar CONGELADO y las nueve pistas que
+// arrancan a continuación trabajan sobre lo que hay aquí.
+//
+// Invariantes del trimestre que este bloque NO toca, a propósito:
+//   · `sessionsRemaining` sigue exigiendo asiento en `SessionLedger`. Ninguna
+//     tabla de aquí mueve saldo de bono: la recompensa de un referido en
+//     sesiones se LIBERA como tarea a administración, y quien la aplique pasa
+//     por el camino de siempre (`adjustSubscriptionSessions`), que ya escribe
+//     su asiento.
+//   · El trigger `auditlog_append_only` (E10-14) se queda como está.
+//   · Ningún `Price` de Stripe se borra. Nada de aquí habla con Stripe: la
+//     recompensa NO toca recibos, ni `Payment`, ni cupones (R1).
+//   · Todo lo que es de un centro lleva `centerId` y se puede acotar con
+//     `isCenterInScope`. Lo que es de un socio se acota por el socio
+//     (`isMemberInScope` → `Member.primaryCenterId`): denormalizar ahí un
+//     `centerId` crearía una segunda verdad que se queda vieja en cuanto un
+//     socio cambia de centro.
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// M4 · Motivos de congelación y de baja (tipos de persona)
+// ---------------------------------------------------------------------------
+// Mismo patrón que `LeadChannel` y `NoCloseReason`: catálogo por organización,
+// editable por dirección sin desplegar, y `active = false` en vez de borrar —
+// una fila borrada se llevaría por delante el motivo de los socios que ya la
+// tenían, que es justo el dato que necesita la campaña de reactivación.
+//
+// UNA DIFERENCIA DELIBERADA con esos dos: aquí la referencia es una CLAVE
+// AJENA (`Member.freezeReasonId`), no el texto de la etiqueta. `Lead.channel`
+// y `Lead.noCloseReason` guardan el `label` copiado, así que renombrar una
+// entrada del catálogo deja huérfanas las filas anteriores en silencio. El
+// flujo 6 de E3 segmenta la campaña de septiembre POR MOTIVO de baja
+// ("mudanza" no recibe lo mismo que "precio"), y una segmentación que se rompe
+// al renombrar una etiqueta es una segmentación que nadie puede mantener.
+
+model FreezeReason {
+  id        String   @id @default(cuid())
+  orgId     String
+  label     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  members      Member[]     @relation("MemberFreezeReason")
+
+  @@index([orgId])
+}
+
+model CancelReason {
+  id        String   @id @default(cuid())
+  orgId     String
+  label     String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  members      Member[]     @relation("MemberCancelReason")
+
+  @@index([orgId])
+}
+
+// ---------------------------------------------------------------------------
+// E1 · Etiquetas de socio
+// ---------------------------------------------------------------------------
+
+/// Quién manda sobre la etiqueta, Y ESTO ES DATO, NO CONVENIO DE NOMBRES.
+/// Una AUTOMÁTICA la pone y la quita el motor del cron: si el equipo la pudiera
+/// quitar a mano, volvería sola en la pasada siguiente y parecería un fallo.
+/// Contradecir al sistema se hace con una etiqueta MANUAL distinta, nunca
+/// borrando la automática.
+enum MemberTagKind {
+  AUTOMATIC
+  MANUAL
+}
+
+/// Catálogo de etiquetas de la organización. Las nueve automáticas de salida
+/// (E1) se siembran con estas claves estables, que son el contrato con E2 —un
+/// flujo guarda la clave de la etiqueta que dispara su condición, no su
+/// rótulo—: `grupo_reducido`, `entrenamiento_personal`, `primeros_30_dias`,
+/// `bono_por_acabarse`, `dos_semanas_sin_venir`, `impago`, `congelado`,
+/// `excliente`, `cumple_este_mes`.
+///
+/// Es catálogo de ORGANIZACIÓN, como `LeadChannel`: no lleva `centerId` porque
+/// no es el dato de un centro sino la configuración de la casa. El ámbito de
+/// centro se aplica donde se asigna (`MemberTag`, vía el socio).
+model MemberTagDefinition {
+  id          String        @id @default(cuid())
+  orgId       String
+  /// Clave estable dentro de la organización. No cambia aunque se reescriba el
+  /// rótulo: si cambiara, las condiciones de los flujos que la citan quedarían
+  /// apuntando a nada.
+  key         String
+  label       String
+  kind        MemberTagKind
+  /// La definición en texto llano que se enseña en `/etiquetas` para las
+  /// automáticas ("lleva 14 días sin una sesión asistida").
+  description String?
+  /// Color de la píldora en la ficha y en el listado. Presentación pura.
+  color       String?
+  /// Desactivar NO borra: una etiqueta borrada se lleva por delante el
+  /// histórico de los flujos que la usaron (E1, punto 2).
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @default(now()) @updatedAt
+
+  organization Organization     @relation(fields: [orgId], references: [id])
+  assignments  MemberTag[]
+  events       MemberTagEvent[]
+
+  @@unique([orgId, key])
+  @@index([orgId])
+  @@index([orgId, kind, active])
+}
+
+/// Etiqueta que un socio tiene AHORA MISMO. Un socio tiene varias.
+///
+/// La unicidad `(memberId, tagDefinitionId)` es lo que hace la idempotencia del
+/// motor estructural y no una promesa: dos pasadas del cron seguidas no pueden
+/// duplicar una etiqueta ni aunque la regla se evalúe dos veces.
+///
+/// El histórico —cuándo se puso, cuándo se quitó y por qué regla— NO vive aquí:
+/// esta tabla se vacía de la fila cuando la etiqueta se retira, y el rastro
+/// queda en `MemberTagEvent`. Guardar las dos cosas en una sola tabla con
+/// `removedAt` habría impedido esa unicidad (Prisma no expresa índices únicos
+/// parciales) y con ella la garantía que de verdad importa.
+model MemberTag {
+  id               String   @id @default(cuid())
+  orgId            String
+  memberId         String
+  tagDefinitionId  String
+  assignedAt       DateTime @default(now())
+  /// Quién la puso. `null` = el sistema (el motor del cron). Mismo criterio que
+  /// `Notification.createdByUserId` y `SessionLedger.actorUserId`: firmar una
+  /// fila automática con el usuario del cron sería mentir sobre quién la pidió.
+  assignedByUserId String?
+  /// Regla del motor que la puso, cuando la puso el motor. El panel de un flujo
+  /// tiene que poder explicar POR QUÉ entró un socio.
+  ruleKey          String?
+
+  organization  Organization        @relation(fields: [orgId], references: [id])
+  member        Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tagDefinition MemberTagDefinition @relation(fields: [tagDefinitionId], references: [id])
+  assignedBy    User?               @relation("MemberTagAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([memberId, tagDefinitionId])
+  @@index([orgId])
+  /// "¿Qué etiquetas tiene este socio ahora?" — el contrato de E1 con E2.
+  @@index([memberId])
+  /// "¿Quién tiene esta etiqueta?" — el otro lado del mismo contrato, y lo que
+  /// alimenta el contador de socios afectados de `/etiquetas`.
+  @@index([tagDefinitionId])
+}
+
+enum MemberTagAction {
+  ADDED
+  REMOVED
+}
+
+/// Traza de cada puesta y cada RETIRADA. La mitad que se olvida siempre es la
+/// segunda: "2 semanas sin venir" tiene que desaparecer sola cuando el socio
+/// vuelve, y sin este registro nadie puede comprobar que lo hizo.
+/// Solo se inserta, nunca se edita.
+model MemberTagEvent {
+  id              String          @id @default(cuid())
+  orgId           String
+  memberId        String
+  tagDefinitionId String
+  action          MemberTagAction
+  /// Regla que lo provocó. `null` cuando lo hizo una persona.
+  ruleKey         String?
+  /// Quién. `null` = el sistema.
+  actorUserId     String?
+  note            String?
+  createdAt       DateTime        @default(now())
+
+  organization  Organization        @relation(fields: [orgId], references: [id])
+  member        Member              @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tagDefinition MemberTagDefinition @relation(fields: [tagDefinitionId], references: [id])
+  actor         User?               @relation("MemberTagEventActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([memberId, createdAt])
+  @@index([tagDefinitionId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// E2 · Motor de flujos de email marketing
+// ---------------------------------------------------------------------------
+// La estructura es FIJA: DISPARADOR → CONDICIÓN → ESPERA → ACCIÓN. El editor no
+// debe permitir nada más, y eso se valida en el servidor.
+//
+// LAS CINCO REGLAS DE SEGURIDAD, y dónde vive cada una:
+//   1. Máx. 1 email por socio y semana ENTRE TODOS los flujos → se contesta con
+//      `FlowEmailLog` y su índice `(memberId, sentAt)`, y se reserva el hueco
+//      insertando la fila en la MISMA transacción que el envío. NO hay columna
+//      configurable para el tope: una regla de seguridad que se puede aflojar
+//      desde una pantalla deja de serlo.
+//   2. Nada entre 22:00 y 8:00 → por eso `FlowEnrollment` guarda CUÁNDO LE TOCA
+//      (`nextRunAt`) y no "mándalo ya": el cron puede pasar a las 23:00 y lo
+//      que toque entonces se reprograma a las 8:00, ni se manda ni se pierde.
+//      La hora es la DEL CENTRO y ya existe: `Center.timezone`.
+//   3. Un socio no repite el mismo flujo hasta 90 días después → índice
+//      `(memberId, flowId, enrolledAt)` sobre `FlowEnrollment`. Los 90 días son
+//      la regla, no una columna: ver el punto 1.
+//   4. Pausa global → `Organization.flowsPausedAt`.
+//   5. Modo borrador → `Flow.status = DRAFT` + `Organization.flowsTestEmail`,
+//      con `FlowEmailLog.testMode` marcando lo que fue al buzón de pruebas.
+//   Y la sexta, que ya es ley y ya está resuelta: todo envío pasa por
+//   `canSendMemberEmail("marketing", …)`. Nada de aquí monta un segundo sistema
+//   de bajas — el pie y las cabeceras `List-Unsubscribe` ya los pone
+//   `mailer.ts`.
+
+/// Qué mete a un socio en un flujo. Casi todos existen ya como señal calculada
+/// en otro sitio (E2 los CABLEA, no los recalcula): alta (`Member.joinedAt`),
+/// ausencia (`retention.ts`), bono bajo (`runLowPackBalanceRule`), impago
+/// (`stripe-dunning.ts` / `Member.delinquentSince`), cambio de estado
+/// (`member-lifecycle.ts`, M4), cumpleaños (`birthday-jobs.ts`), formulario
+/// (`member-forms.ts`, M5), valoración (`TrainerRating` / `Assessment`).
+enum FlowTriggerType {
+  MEMBER_JOINED // alta nueva
+  FIRST_SESSION_DONE // primera sesión hecha
+  SESSIONS_ABSENCE // X sesiones (o días) sin venir
+  PACK_BALANCE_BELOW // el bono baja de N
+  PAYMENT_FAILED // recibo fallido
+  MEMBER_STATE_CHANGED // cambio de estado
+  DATE_ANNIVERSARY // aniversario del alta
+  DATE_BIRTHDAY // cumpleaños
+  FORM_ANSWERED // formulario respondido
+  RATING_BELOW // valoración por debajo de N
+}
+
+/// Catálogo CERRADO de condiciones. El parámetro concreto (qué centro, qué
+/// etiqueta, cuántos meses) viaja en `FlowCondition.config`.
+enum FlowConditionType {
+  CENTER
+  PLAN_TYPE
+  TAG
+  TENURE
+  TRAINER
+}
+
+enum FlowActionType {
+  SEND_EMAIL
+  SEND_FORM // genera un `MemberFormInvite` (M5); no monta otro formulario
+  ADD_TAG
+  REMOVE_TAG
+  CREATE_TASK // `Notification` con `dueDate`; el motor de tareas ya existe
+  CHANGE_STATE // pasa por `member-lifecycle.ts` (M4), no por un update suelto
+  NOTIFY_DIRECTOR
+}
+
+/// Rama de la que cuelga un paso.
+///
+/// `ON_CLICK` y no "si abre": medir aperturas exige un píxel de traza, y con él
+/// un CMP con "rechazar todo" al mismo nivel visual que "aceptar todo" EN EL
+/// MISMO CAMBIO (AGENTS.md). La decisión 4 del plan lo deja cerrado para la
+/// fase 1: se mide el CLIC, que el enlace es nuestro y no necesita píxel.
+///
+/// `MAIN` existe para que la unicidad `(flowId, branch, position)` sea real: con
+/// una rama nullable, dos pasos del tronco en la misma posición no chocarían
+/// (en Postgres los nulos no colisionan en un índice único).
+enum FlowBranch {
+  MAIN
+  ON_CLICK
+  ON_REPLY
+  ON_NO_REPLY
+}
+
+enum FlowStatus {
+  DRAFT // se ejecuta de verdad, pero todo envío va a `Organization.flowsTestEmail`
+  ACTIVE
+  PAUSED
+}
+
+/// Objetivo del flujo, medido contra datos que YA existen. El hueco lo deja E2
+/// tipado y documentado; qué objetivo lleva cada uno de los seis lo decide E3.
+enum FlowGoalKind {
+  TRAINED_AGAIN // una reserva ATTENDED posterior al envío
+  RENEWED // suscripción nueva o bono recargado
+  FORM_COMPLETED // `Assessment.memberPartAt` / `MemberFormInvite.completedAt`
+  PAYMENT_RECOVERED // el recibo fallido acaba cobrado
+  REFERRAL_SENT // el socio comparte su código (R1)
+}
+
+model Flow {
+  id              String          @id @default(cuid())
+  orgId           String
+  /// Un flujo es DE UN CENTRO: los horarios, el remitente y la sala de la que
+  /// habla el correo son los suyos. Nada de flujos colgando solo de `orgId`.
+  centerId        String
+  name            String
+  description     String?
+  status          FlowStatus      @default(DRAFT)
+  triggerType     FlowTriggerType
+  /// Parámetros del disparador (la N de "el bono baja de N", los días de
+  /// "X sesiones sin venir"). Json y no columnas: cada disparador tiene los
+  /// suyos y añadir uno no debería costar una migración.
+  triggerConfig   Json?
+  goalKind        FlowGoalKind?
+  /// Clave de la semilla de la que salió (`src/lib/flows/seeds/`), cuando
+  /// viene de una. Permite resembrar sin duplicar los seis de salida.
+  seedKey         String?
+  createdByUserId String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt
+
+  organization Organization     @relation(fields: [orgId], references: [id])
+  center       Center           @relation(fields: [centerId], references: [id])
+  createdBy    User?            @relation("FlowCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  conditions   FlowCondition[]
+  steps        FlowStep[]
+  enrollments  FlowEnrollment[]
+  emails       FlowEmailLog[]
+
+  @@unique([orgId, seedKey])
+  @@index([orgId])
+  @@index([centerId])
+  /// El cron recorre los flujos vivos de cada organización en cada pasada.
+  @@index([orgId, status])
+}
+
+/// Condición del flujo. Con `stepId` null es una condición DE ENTRADA (se
+/// evalúa al inscribir); con `stepId` es la puerta de ese paso concreto (el
+/// socio sigue en el flujo, pero ese paso no se ejecuta si no se cumple).
+/// Todas las condiciones de un mismo ámbito se cumplen a la vez (Y lógico):
+/// un O lógico son dos flujos, y eso mantiene el editor en cuatro piezas.
+model FlowCondition {
+  id       String            @id @default(cuid())
+  orgId    String
+  flowId   String
+  stepId   String?
+  type     FlowConditionType
+  /// Qué centro, qué etiqueta (por `MemberTagDefinition.key`), cuántos meses de
+  /// antigüedad, qué entrenador.
+  config   Json
+  /// Invierte la condición ("NO tiene la etiqueta X"). Sin esto, la rama por
+  /// producto de E3 necesitaría un flujo por cada etiqueta que NO se tiene.
+  negated  Boolean           @default(false)
+  position Int               @default(0)
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  flow         Flow         @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  step         FlowStep?    @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([flowId])
+  @@index([stepId])
+}
+
+/// Un paso = ESPERA + ACCIÓN. La espera es en días y se cuenta desde que el
+/// paso anterior se ejecutó; `0` significa "en la misma pasada".
+model FlowStep {
+  id              String         @id @default(cuid())
+  orgId           String
+  flowId          String
+  branch          FlowBranch     @default(MAIN)
+  position        Int
+  waitDays        Int            @default(0)
+  actionType      FlowActionType
+  /// La plantilla del correo, la etiqueta que se pone, a qué entrenador va la
+  /// tarea y con qué fecha. Json por lo mismo que `Flow.triggerConfig`.
+  actionConfig    Json
+  /// Solo en la rama `ON_NO_REPLY`: cuántos días se espera respuesta antes de
+  /// darla por no recibida. Null en el resto.
+  branchAfterDays Int?
+
+  organization Organization    @relation(fields: [orgId], references: [id])
+  flow         Flow            @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  conditions   FlowCondition[]
+  emails       FlowEmailLog[]
+
+  @@unique([flowId, branch, position])
+  @@index([orgId])
+  @@index([flowId])
+}
+
+enum FlowEnrollmentStatus {
+  /// En cola. `nextRunAt` dice cuándo le toca el paso siguiente.
+  SCHEDULED
+  /// Recorrió el flujo entero.
+  COMPLETED
+  /// Salió antes de tiempo: se dio de baja, dejó de cumplir la condición de
+  /// entrada, o el flujo se borró. No se reanuda; si vuelve a entrar es una
+  /// inscripción nueva (y la cuenta de los 90 días parte de esa).
+  CANCELLED
+}
+
+/// LA COLA. Un socio inscrito en un flujo, en qué paso va y CUÁNDO LE TOCA el
+/// siguiente. Esto es lo que hace que el motor sea una cola y no un
+/// "enviar ahora": el cron puede pasar a las 23:00, y lo que caiga en la
+/// ventana de silencio se reprograma a las 8:00 del centro sin perderse.
+model FlowEnrollment {
+  id                  String               @id @default(cuid())
+  orgId               String
+  /// Copiado de `Flow.centerId` al inscribir. Se denormaliza a propósito: el
+  /// cron resuelve la ventana de 22:00-8:00 con `Center.timezone` en cada
+  /// pasada, y la cola no puede permitirse un join por fila. Si el flujo cambia
+  /// de centro después, las inscripciones vivas conservan el suyo, que es el
+  /// centro en cuyo horario se les prometió el correo.
+  centerId            String
+  flowId              String
+  memberId            String
+  status              FlowEnrollmentStatus @default(SCHEDULED)
+  currentBranch       FlowBranch           @default(MAIN)
+  /// Posición del último paso EJECUTADO dentro de `currentBranch`. `-1` = no se
+  /// ha ejecutado ninguno todavía.
+  currentStepPosition Int                  @default(-1)
+  /// Cuándo le toca el paso siguiente. `null` = no hay nada pendiente (flujo
+  /// terminado o cancelado). NUNCA significa "mándalo ya".
+  nextRunAt           DateTime?
+  enrolledAt          DateTime             @default(now())
+  completedAt         DateTime?
+  cancelledAt         DateTime?
+  /// Por qué salió antes de tiempo. Texto, no enum: lo que aquí se escribe se
+  /// lee en el panel del flujo, no se consulta por igualdad.
+  cancelledReason     String?
+  /// Objetivo cumplido (`Flow.goalKind`). El hueco del panel por flujo: E2 lo
+  /// deja tipado, E3 decide cómo se mide en cada uno de los seis.
+  goalMetAt           DateTime?
+
+  organization Organization   @relation(fields: [orgId], references: [id])
+  center       Center         @relation(fields: [centerId], references: [id])
+  flow         Flow           @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  member       Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  emails       FlowEmailLog[]
+
+  @@index([orgId])
+  @@index([centerId])
+  /// LA COLA: "qué toca ahora". Igualdad por estado y rango por fecha, en ese
+  /// orden, que es el que sirve para el barrido del cron.
+  @@index([status, nextRunAt])
+  /// REGLA 3: "¿pasó este socio por este flujo en los últimos 90 días?".
+  @@index([memberId, flowId, enrolledAt])
+  /// Panel por flujo: cuántos entran y cuántos cumplen el objetivo.
+  @@index([flowId, status])
+}
+
+/// EL REGISTRO DE ENVÍOS. Una fila por correo de flujo efectivamente enviado a
+/// un socio, con su flujo y su marca de tiempo.
+///
+/// Es la tabla que contesta la REGLA 1 ("¿le he escrito esta semana?") y la que
+/// RESERVA el hueco: la fila se inserta en la misma transacción que el envío,
+/// así que dos flujos que disparan el mismo minuto no pueden mandar dos correos.
+///
+/// Lo que cuenta para el tope: SOLO lo que sale de un flujo, y solo lo que
+/// llegó de verdad al socio (`testMode = false`). El correo transaccional que
+/// ya existe —recordatorio de sesión, preaviso SEPA, cobro fallido— NO cuenta y
+/// NO se registra aquí: es la ejecución del servicio contratado, no una
+/// comunicación comercial, y silenciarlo dejaría al socio sin poder pagar.
+/// Esta frase es la definición del tope; está escrita aquí a propósito.
+model FlowEmailLog {
+  id             String    @id @default(cuid())
+  orgId          String
+  /// Copiado de la inscripción, por lo mismo: el panel por flujo y por centro
+  /// filtra por aquí sin join.
+  centerId       String
+  memberId       String
+  flowId         String
+  enrollmentId   String?
+  stepId         String?
+  sentAt         DateTime  @default(now())
+  subject        String
+  /// Plantilla de `emails/flow-templates.ts` con la que salió.
+  templateKey    String?
+  /// A dónde fue DE VERDAD. En modo borrador es `Organization.flowsTestEmail`,
+  /// no el correo del socio.
+  toEmail        String
+  /// `true` = fue al buzón de pruebas (flujo en `DRAFT`). Estas filas se
+  /// registran igual —el panel y la depuración las necesitan— pero NO cuentan
+  /// para el tope semanal: no llegaron al socio.
+  testMode       Boolean   @default(false)
+  /// Idempotencia del envío: `<enrollmentId>:<stepId>:<intento>`. Lo que impide
+  /// que un reintento del cron mande el mismo paso dos veces.
+  idempotencyKey String?
+  /// Rama `ON_CLICK`. El enlace es nuestro, así que no hace falta píxel. El
+  /// token del enlace se firma sobre este `id` (mismo patrón que
+  /// `email-preferences-queries.ts`): no hay columna de token que filtrar.
+  clickedAt      DateTime?
+  /// Rama `ON_REPLY` / `ON_NO_REPLY`.
+  repliedAt      DateTime?
+
+  organization Organization    @relation(fields: [orgId], references: [id])
+  center       Center          @relation(fields: [centerId], references: [id])
+  member       Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  flow         Flow            @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  enrollment   FlowEnrollment? @relation(fields: [enrollmentId], references: [id], onDelete: SetNull)
+  step         FlowStep?       @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@unique([orgId, idempotencyKey])
+  @@index([orgId])
+  @@index([centerId])
+  /// REGLA 1: "¿le he escrito a este socio esta semana?" — un puñado de filas
+  /// por socio, no un recorrido de tabla.
+  @@index([memberId, sentAt])
+  /// Panel por flujo: envíos y clics del flujo en una ventana.
+  @@index([flowId, sentAt])
+  @@index([enrollmentId])
+}
+
+// ---------------------------------------------------------------------------
+// R1 · Referidos con recompensa
+// ---------------------------------------------------------------------------
+// LA REGLA QUE MANDA SOBRE TODAS: la recompensa NO se aplica sola. Genera una
+// tarea a administración (`Notification`, que ya existe) para validar y marcar
+// como pagada. Nada de aquí toca un recibo, un `Payment` ni un cupón de Stripe.
+//
+// Y el embudo NO se duplica: quien entra por un enlace cae en `Lead`, con
+// `channel = "Referido"` y `Lead.referredByMemberId` relleno, y sigue el
+// recorrido de siempre. Los estados invitado → valoración hecha → alta se
+// DERIVAN de `Lead.status` y `Lead.convertedMemberId`; no hay columna de estado
+// del referido en ninguna parte, a propósito.
+
+/// Código único por socio, el de `/r/[code]`. Único GLOBAL y no por
+/// organización: la ruta es pública y no tiene contexto de organización desde
+/// el que desambiguar.
+model ReferralCode {
+  id        String    @id @default(cuid())
+  orgId     String
+  /// Centro al que caen los leads que entren por aquí.
+  centerId  String
+  memberId  String    @unique
+  code      String    @unique
+  createdAt DateTime  @default(now())
+  /// El código caduca si el socio se da de baja (antifraude 3). Se revoca, no
+  /// se borra: un lead que entró con él ayer tiene que poder seguir señalando
+  /// por dónde entró. Si el socio vuelve, se reactiva esta misma fila.
+  revokedAt DateTime?
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  center       Center       @relation(fields: [centerId], references: [id])
+  member       Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  leads        Lead[]
+
+  @@index([orgId])
+  @@index([centerId])
+}
+
+enum ReferralRewardKind {
+  FIXED_AMOUNT // importe fijo a descontar del siguiente recibo — lo aplica una persona
+  FREE_SESSIONS // sesiones sueltas — las aplica una persona, y ese camino ya escribe en SessionLedger
+}
+
+/// A quién premia. A doble cara funciona mejor: también hay algo para el que
+/// entra, y también es una tarea, no un automatismo.
+enum ReferralRewardBeneficiary {
+  REFERRER
+  REFERRED
+}
+
+enum ReferralRewardStatus {
+  PENDING_VALIDATION
+  VALIDATED
+  PAID
+  REJECTED
+}
+
+/// La recompensa y su estado. Se LIBERA en el alta del referido, y liberar
+/// significa CREAR LA TAREA, no mover dinero.
+///
+/// `notificationId` es esa tarea. No hay relación de Prisma hacia
+/// `Notification` a propósito: la tarea se puede resolver, reasignar o limpiar
+/// por el script de M3, y una clave ajena convertiría una limpieza de tareas en
+/// un borrado de recompensas.
+model ReferralReward {
+  id                  String                    @id @default(cuid())
+  orgId               String
+  centerId            String
+  /// El referido que la generó. Es el lead, que es el embudo: no hay tabla de
+  /// referidos en paralelo.
+  leadId              String
+  referrerMemberId    String
+  /// A quién se le paga. Para `REFERRED` puede ser null hasta que el lead se
+  /// convierte en socio.
+  beneficiaryMemberId String?
+  beneficiary         ReferralRewardBeneficiary
+  kind                ReferralRewardKind
+  /// Uno de los dos, según `kind`. En céntimos, como todo el dinero del
+  /// esquema.
+  amountCents         Int?
+  sessions            Int?
+  status              ReferralRewardStatus      @default(PENDING_VALIDATION)
+  /// Antifraude: el caso que no se puede decidir solo. Los socios importados de
+  /// MyWellness traen su vida anterior en `externalRef`/`lastAccessAt`/
+  /// `accountCreatedAt` y muchos NO tienen `cancelledAt`, así que "se fue hace
+  /// menos de 6 meses" no siempre se puede contestar. Cuando no se puede, la
+  /// respuesta segura es mandarlo a revisión humana, no dejarlo pasar.
+  reviewRequired      Boolean                   @default(false)
+  reviewReason        String?
+  /// Quién y cuándo en el salto pendiente → validada (o rechazada).
+  reviewedByUserId    String?
+  reviewedAt          DateTime?
+  rejectedReason      String?
+  /// Quién y cuándo en el salto validada → pagada.
+  paidByUserId        String?
+  paidAt              DateTime?
+  /// `Notification.id` de la tarea a administración que libera esta recompensa.
+  notificationId      String?
+  createdAt           DateTime                  @default(now())
+
+  organization      Organization @relation(fields: [orgId], references: [id])
+  center            Center       @relation(fields: [centerId], references: [id])
+  lead              Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  referrer          Member       @relation("ReferralRewardReferrer", fields: [referrerMemberId], references: [id])
+  beneficiaryMember Member?      @relation("ReferralRewardBeneficiary", fields: [beneficiaryMemberId], references: [id])
+  reviewedBy        User?        @relation("ReferralRewardReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  paidBy            User?        @relation("ReferralRewardPayer", fields: [paidByUserId], references: [id], onDelete: SetNull)
+
+  /// ANTIFRAUDE 2, en la base de datos y no solo en el código: una recompensa
+  /// por alta y por cara. Ni dos al que trae por el mismo referido, ni dos al
+  /// que entra.
+  @@unique([leadId, beneficiary])
+  @@index([orgId])
+  @@index([centerId])
+  @@index([orgId, status])
+  /// Panel: top embajadores y coste en recompensas.
+  @@index([referrerMemberId, status])
+}
+
+/// Configuración del programa POR CENTRO. Cuelga del centro y no de la
+/// organización porque lo que se paga por traer a alguien lo decide quien
+/// dirige ese centro, y porque así `isCenterInScope` puede acotarlo.
+model ReferralProgramConfig {
+  id                   String              @id @default(cuid())
+  orgId                String
+  centerId             String              @unique
+  active               Boolean             @default(false)
+  /// Lo que se lleva quien trae.
+  referrerKind         ReferralRewardKind  @default(FIXED_AMOUNT)
+  referrerAmountCents  Int?
+  referrerSessions     Int?
+  /// Lo que se lleva quien entra. Null en `referredKind` = programa a una cara.
+  referredKind         ReferralRewardKind?
+  referredAmountCents  Int?
+  referredSessions     Int?
+  /// Antifraude 1: cuánto tiene que llevar fuera un excliente para volver a
+  /// contar como referido. Configurable y no un literal de 6 meses en el
+  /// código, por lo mismo que `Organization.dunningGraceDays`.
+  exMemberCooldownDays Int                 @default(180)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @default(now()) @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  center       Center       @relation(fields: [centerId], references: [id])
+
+  @@index([orgId])
+}
+
+// ---------------------------------------------------------------------------
+// M5 · Envío del formulario a quien todavía no tiene cuenta
+// ---------------------------------------------------------------------------
+// ESTO ES LO ÚNICO QUE SE AÑADE FUERA DEL INVENTARIO, y va con su explicación,
+// como pedía el encargo.
+//
+// El CONTENIDO del formulario no necesita esquema nuevo y no lo lleva:
+// `Assessment.answers` es Json, `Assessment.memberPartAt` es literalmente
+// "cuándo el socio rellenó SU parte", y `AssessmentCustomQuestion` /
+// `AssessmentQuestionToggle` ya permiten que cada centro añada preguntas y
+// apague las estándar sin desplegar. Los consentimientos tienen sus campos en
+// `Member`, con fecha y versión. Nada de eso se toca.
+//
+// Lo que NO existía es el ENVÍO: un enlace con token para alguien que todavía
+// no tiene cuenta en el portal. `Invitation` no vale, y no por estilo:
+//   · `Invitation.memberId` es `@unique` — una invitación por socio EN TODA SU
+//     VIDA. El formulario se manda al alta, y otra vez a los seis meses, y otra
+//     en la revisión anual.
+//   · No tiene `leadId`: el caso de negocio es mandárselo a quien todavía es un
+//     lead, antes de darle de alta.
+//   · `InvitationType` no tiene un valor para esto, y añadírselo obligaría a
+//     relajar ese `@unique`, que es lo que hoy impide que existan dos
+//     invitaciones de cuenta abiertas para la misma persona.
+// Relajar una garantía del alta de cuentas para reutilizar su tabla habría
+// salido más caro que esta tabla.
+
+/// Envío de un formulario a un socio o a un lead, con token de un solo uso.
+/// El token es aleatorio y opaco (mismo patrón que `Invitation`): no lleva
+/// dentro quién es el socio, y la URL no arrastra ningún dato de salud al
+/// historial del navegador.
+model MemberFormInvite {
+  id           String         @id @default(cuid())
+  orgId        String
+  centerId     String
+  /// Uno de los dos, nunca los dos ni ninguno (lo garantiza un CHECK en la
+  /// migración, no solo el formulario).
+  memberId     String?
+  leadId       String?
+  /// Qué se le pide. `AssessmentKind` ya es el catálogo de hitos y no se
+  /// duplica; `milestoneKey` cubre los hitos propios del centro.
+  kind         AssessmentKind @default(INITIAL)
+  milestoneKey String?
+  token        String         @unique
+  expiresAt    DateTime
+  sentAt       DateTime       @default(now())
+  sentByUserId String?
+  openedAt     DateTime?
+  /// Cuándo se rellenó. Es lo que contesta "¿lo rellenó?" a los dos días, que
+  /// es lo que pregunta el flujo 1 de E3 — y por eso se expone como función de
+  /// `member-forms.ts`, no como consulta suelta que E3 tenga que reinventar.
+  completedAt  DateTime?
+  /// Valoración que quedó rellena. Lo respondido cae en `Assessment.answers`,
+  /// donde cae hoy: no hay tabla paralela de respuestas.
+  assessmentId String?
+  revokedAt    DateTime?
+  createdAt    DateTime       @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  center       Center       @relation(fields: [centerId], references: [id])
+  member       Member?      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  sentBy       User?        @relation("MemberFormInviteSender", fields: [sentByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([centerId])
+  @@index([memberId, sentAt])
+  @@index([leadId, sentAt])
+  @@index([expiresAt])
 }
