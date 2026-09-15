@@ -16,6 +16,10 @@ export type NotificationEntityType =
   | "Lead"
   | "Member"
   | "MemberNoShowStreak"
+  | "MemberFewSessionsScheduled"
+  | "MemberLowPackBalance"
+  | "MemberStallRisk"
+  | "AutoTaskWeeklyCap"
   | "Booking"
   | "ClassSession"
   | "Subscription"
@@ -25,6 +29,10 @@ export const NOTIFICATION_ENTITY_TYPES: NotificationEntityType[] = [
   "Lead",
   "Member",
   "MemberNoShowStreak",
+  "MemberFewSessionsScheduled",
+  "MemberLowPackBalance",
+  "MemberStallRisk",
+  "AutoTaskWeeklyCap",
   "Booking",
   "ClassSession",
   "Subscription",
@@ -53,7 +61,16 @@ export function notificationRoute(
       return isMember ? null : { path: "/leads", params: { openId: entityId } };
     case "Member":
     case "MemberNoShowStreak":
+    case "MemberFewSessionsScheduled":
+    case "MemberLowPackBalance":
+    case "MemberStallRisk":
+      // E14-11: una entidad por regla para que la deduplicación distinga la
+      // regla; el id sigue siendo el del socio y el destino, su ficha.
       return isMember ? null : { path: `/mis-socios/${entityId}` };
+    case "AutoTaskWeeklyCap":
+      // E14-12: el aviso del tope va al tablero de tareas, que en la app es
+      // la pestaña `/tareas`.
+      return isMember ? null : { path: "/tareas", params: { recipientUserId: entityId } };
     case "Booking":
     case "ClassSession":
       return isMember ? { path: "/sesiones" } : { path: "/panel" };

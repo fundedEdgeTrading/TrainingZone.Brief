@@ -21,6 +21,10 @@ export type NotificationEntityType =
   | "Lead"
   | "Member"
   | "MemberNoShowStreak"
+  | "MemberFewSessionsScheduled"
+  | "MemberLowPackBalance"
+  | "MemberStallRisk"
+  | "AutoTaskWeeklyCap"
   | "Booking"
   | "ClassSession"
   | "Subscription"
@@ -30,6 +34,10 @@ export const NOTIFICATION_ENTITY_TYPES: NotificationEntityType[] = [
   "Lead",
   "Member",
   "MemberNoShowStreak",
+  "MemberFewSessionsScheduled",
+  "MemberLowPackBalance",
+  "MemberStallRisk",
+  "AutoTaskWeeklyCap",
   "Booking",
   "ClassSession",
   "Subscription",
@@ -58,10 +66,18 @@ export function notificationHref(
       return isMember ? null : `/leads/${entityId}`;
     case "Member":
     case "MemberNoShowStreak":
-      // La alerta de faltas seguidas usa entidad propia para no deduplicarse
-      // contra el resto de tareas del socio (no-show-alerts.ts), pero apunta
-      // a la misma ficha que "Member".
+    case "MemberFewSessionsScheduled":
+    case "MemberLowPackBalance":
+    case "MemberStallRisk":
+      // E14-11: cada regla automática tiene su propia entidad para que la
+      // deduplicación distinga la REGLA y no solo el socio (el catálogo está en
+      // `lib/tasks.ts`). El `entityId` sigue siendo el id del socio, así que
+      // todas apuntan a la misma ficha que "Member".
       return isMember ? null : `/members/${entityId}`;
+    case "AutoTaskWeeklyCap":
+      // E14-12: el aviso del tope habla de la bandeja de una persona, no de un
+      // socio. `entityId` es su id de usuario, y el destino es su tablero.
+      return isMember ? null : `/tareas?recipientUserId=${entityId}`;
     case "Booking":
     case "ClassSession":
       return isMember ? "/portal/agenda" : `/agenda/session/${entityId}`;

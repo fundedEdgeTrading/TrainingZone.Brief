@@ -1,4 +1,6 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
+import { prisma } from "@/lib/prisma";
+import { AUTO_TASK_RULES } from "@/lib/tasks";
 import { loginAs } from "./helpers";
 
 /**
@@ -108,5 +110,77 @@ test.describe("F10 — Tareas", () => {
     await expect(page.getByRole("button", { name: "+ Nueva tarea" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Asignada a" })).toHaveCount(0);
     await expect(page.locator("select[aria-label^='Reasignar']")).toHaveCount(0);
+  });
+
+  /**
+   * E14-13 · la agrupación por regla.
+   *
+   * Las tareas de la regla las siembra el spec por Prisma (mismo patrón que
+   * `e2e/fixtures/*`) y no dejando correr el cron: el cron solo escribe si hay
+   * socios en esa situación ese día, y un test que dependa de eso es un test
+   * que falla los martes. Lo que se comprueba aquí es de pantalla —una tarjeta,
+   * un contador, y que cerrar pasa por el camino de siempre— y para eso da
+   * igual de dónde salgan las filas.
+   */
+  test("varias tareas de la misma regla se ven como una tarjeta con contador", async ({ page }) => {
+    const director = await prisma.user.findFirstOrThrow({ where: { email: "direccion@trainingzone.es" } });
+    const entityType = AUTO_TASK_RULES.lowPackBalance.entityType;
+    const tag = `e2e-grupo-${Date.now()}`;
+
+    // Tres tareas AUTOMÁTICAS (`createdByUserId: null`) de la misma regla.
+    await prisma.notification.createMany({
+      data: [1, 2, 3].map((n) => ({
+        orgId: director.orgId,
+        recipientUserId: director.id,
+        kind: "TASK" as const,
+        title: `${tag} · socio ${n}: le quedan ${n} sesiones del bono`,
+        entityType,
+        entityId: `${tag}-${n}`,
+      })),
+    });
+
+    try {
+      await loginAs(page, "direccion@trainingzone.es");
+      await page.goto("/tareas?vista=lista&q=" + tag);
+
+      const group = page.locator(`[data-task-group="${AUTO_TASK_RULES.lowPackBalance.label}"]`).first();
+      await expect(group).toBeVisible({ timeout: 10_000 });
+      // Una tarjeta con su contador, no tres tarjetas.
+      await expect(group.locator("span.rounded-pill").first()).toHaveText("3");
+
+      // Desplegable: las tres, una a una.
+      await group.getByRole("button", { expanded: false }).click();
+      await expect(group.locator("li")).toHaveCount(3);
+
+      // Resolver una suelta baja el contador.
+      await group.locator("li").first().getByRole("button", { name: "Completar" }).click();
+      await expect(page.getByText("Tarea completada")).toBeVisible({ timeout: 10_000 });
+      const after = page.locator(`[data-task-group="${AUTO_TASK_RULES.lowPackBalance.label}"]`).first();
+      await expect(after.locator("span.rounded-pill").first()).toHaveText("2", { timeout: 10_000 });
+
+      // Resolver la tarjeta agrupada resuelve todas...
+      await after.getByRole("button", { name: "Completar 2" }).click();
+      await expect(page.getByText("2 tareas completadas")).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator(`[data-task-group="${AUTO_TASK_RULES.lowPackBalance.label}"]`)).toHaveCount(0, {
+        timeout: 15_000,
+      });
+
+      // ...por el camino de siempre: quedan cerradas y en el histórico, donde
+      // vuelven a verse como un grupo de tres.
+      await page.goto("/tareas?vista=historico&q=" + tag);
+      const archivadas = page.locator(`[data-task-group="${AUTO_TASK_RULES.lowPackBalance.label}"]`).first();
+      await expect(archivadas).toBeVisible({ timeout: 10_000 });
+      await expect(archivadas.locator("span.rounded-pill").first()).toHaveText("3");
+      await archivadas.getByRole("button", { expanded: false }).click();
+      await expect(archivadas.locator("li").filter({ hasText: tag })).toHaveCount(3);
+
+      // Y «Hecha» significa exactamente una cosa: hay `resolvedAt`.
+      const abiertas = await prisma.notification.count({
+        where: { orgId: director.orgId, title: { startsWith: tag }, resolvedAt: null },
+      });
+      expect(abiertas).toBe(0);
+    } finally {
+      await prisma.notification.deleteMany({ where: { orgId: director.orgId, title: { startsWith: tag } } });
+    }
   });
 });

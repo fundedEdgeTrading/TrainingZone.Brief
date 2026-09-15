@@ -15,6 +15,9 @@ export type TaskCardData = {
   resolvedAt: string | null;
   recipientName: string;
   createdByName: string | null;
+  /** E14-13: de qué regla es, para agruparla. Null en las que encarga una persona. */
+  entityType: string | null;
+  createdByUserId: string | null;
 };
 
 export const PRIORITY_TONE: Record<TaskPriority, BadgeTone> = {
