@@ -19,7 +19,11 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
     // termine (RB-E2E: no navegar a la ruta en la que ya estás).
     await loginAs(page, "direccion@trainingzone.es");
 
-    await expect(page.getByText("LTV medio por cliente")).toBeVisible();
+    // E14-05 · «LTV medio por cliente» era la media de todo lo cobrado por
+    // socio sobre todo el histórico, que no es un LTV. Ahora son dos cifras y
+    // su producto: lo que deja al mes por lo que se queda.
+    await expect(page.getByText("Valor de un socio")).toBeVisible();
+    await expect(page.getByText("Permanencia media")).toBeVisible();
     await expect(page.getByText("Ticket medio")).toBeVisible();
     // El rediseño del panel acortó los títulos: "Nicho principal (ocupación)" y
     // "Objetivos (agregado)" perdieron el paréntesis, que era jerga interna.
@@ -28,7 +32,10 @@ test.describe("F12 — Cobros por Stripe (fallback) y F17 — BI", () => {
     // El panel por provincia se sustituyó por el mapa de calor por barrio (CP completo).
     await expect(page.getByText(/Mapa de calor/).first()).toBeVisible();
     // El insight y los selectores de la barra de contexto son la cabecera nueva.
-    await expect(page.getByText("Ocupación media")).toBeVisible();
+    // E14-02 · «Ocupación media» significaba tres cosas a la vez y ninguna
+    // bien. Son dos métricas: lo que se vende y lo que se presenta.
+    await expect(page.getByText("Plazas vendidas", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Asistencia real/ })).toBeVisible();
     await expect(page.getByRole("link", { name: "Todos", exact: true })).toBeVisible();
   });
 });

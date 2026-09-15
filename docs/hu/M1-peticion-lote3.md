@@ -133,5 +133,21 @@ el diff:
   aserciones originales (no pasar del 100 %, contar clases y no filas) siguen
   ahí, y he añadido la de asistencia real.
 
-Si alguna de las dos os pisa un cambio vuestro, avisadme y lo resolvemos en la
-ventana.
+- **`e2e/billing-dashboard.spec.ts`** (F17 · BI). Comprobaba «LTV medio por
+  cliente» y «Ocupación media», los dos rótulos que E14-05 y E14-02 cambian
+  porque cambia lo que miden. Ahora comprueba «Valor de un socio» +
+  «Permanencia media» y «Plazas vendidas» + «Asistencia real», que son las
+  cifras que las sustituyen.
+
+- **`src/app/api/mobile/v1/admin/dashboard/route.ts`** · una línea, y es la que
+  evita reabrir un fallo cerrado. La ruta calculaba su propia asistencia
+  (`attended / held`) en vez de leer la de `getNoShowRate`. Con E14-02 esa
+  cuenta deja de ser la de la web —el denominador pasan a ser las plazas
+  **vendidas** de las clases celebradas, así que un roster sin resolver baja la
+  cifra en vez de desaparecer del cálculo— y el mismo centro daría dos
+  asistencias distintas según se mirara desde la web o desde la app. Es el
+  «espejo móvil» que prohíbe `AGENTS.md` y es exactamente el fallo de E12-05.
+  Ahora lee `noShow.attendancePct`. El tipo de la respuesta no cambia y
+  `apps/mobile` no se toca.
+
+Si alguna os pisa un cambio vuestro, avisadme y lo resolvemos en la ventana.

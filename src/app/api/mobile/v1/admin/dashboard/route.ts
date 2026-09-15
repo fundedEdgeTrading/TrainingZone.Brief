@@ -93,7 +93,16 @@ export async function GET(req: NextRequest) {
       amountCents: delinquencyAmountCents,
     },
     attendance: {
-      avgPct: noShow.held ? Math.round((noShow.attended / noShow.held) * 100) : 0,
+      // E14-02 · la asistencia la calcula `getNoShowRate`, no esta ruta.
+      //
+      // Aquí se dividía `attended / held` —asistencias sobre plazas con la
+      // lista pasada—, que ya no es la definición de la web: el denominador
+      // son las plazas VENDIDAS de las clases celebradas, así que un roster sin
+      // resolver baja la cifra en vez de desaparecer de la cuenta. Recalcularla
+      // aquí es el "espejo móvil" que AGENTS.md prohíbe, y con las dos
+      // definiciones distintas el mismo centro daría dos asistencias según por
+      // dónde se mire — que es justo el fallo de E12-05.
+      avgPct: noShow.attendancePct,
       noShowPct: noShow.rate,
       sessionsHeld: noShow.held,
     },
