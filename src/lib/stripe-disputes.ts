@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import type { ReconcileResult } from "@/lib/member-billing";
+import { reconcileSepaReturn } from "@/lib/stripe-mandate";
 
 /**
  * HU-ST-21 · Disputas y contracargos visibles (decisión D-S7). **PISTA P2.**
@@ -39,6 +40,23 @@ export async function reconcileDispute(
   dispute: Stripe.Dispute,
   eventType: string
 ): Promise<ReconcileResult> {
+  // HU-ST-12 (pista P1) · Una disputa sobre un cobro SEPA es la otra cara de la
+  // devolución bancaria: el dinero se retiene y el socio deja de estar al
+  // corriente. El resto del ciclo de la disputa (tarea de dirección, evidencia,
+  // cierre) es HU-ST-21 y lo escribe P2 — conserva esta derivación al hacerlo.
+  if (eventType === "charge.dispute.created" && isSepaDispute(dispute)) {
+    const result = await reconcileSepaReturn({
+      orgId,
+      chargeId: typeof dispute.charge === "string" ? dispute.charge : dispute.charge.id,
+      paymentIntentId:
+        typeof dispute.payment_intent === "string" ? dispute.payment_intent : (dispute.payment_intent?.id ?? null),
+      amountCents: dispute.amount,
+      outcome: "FAILED",
+      reason: "DISPUTE",
+    });
+    if (!result.ok) return result;
+  }
+
   console.info("[stripe-disputes] charge.dispute.* pendiente de implementar (HU-ST-21, P2)", {
     orgId,
     eventType,
@@ -48,4 +66,14 @@ export async function reconcileDispute(
     evidenceDueBy: dispute.evidence_details?.due_by ?? null,
   });
   return { ok: true };
+}
+
+/**
+ * ¿La disputa es sobre un adeudo SEPA? `payment_method_details` de la disputa
+ * lleva el instrumento del cargo original; sin él no se puede afirmar, y
+ * tratarlo como SEPA marcaría moroso a quien hizo un contracargo de tarjeta
+ * antes de que HU-ST-21 decida qué hacer con él.
+ */
+function isSepaDispute(dispute: Stripe.Dispute): boolean {
+  return dispute.payment_method_details?.type === "sepa_debit";
 }

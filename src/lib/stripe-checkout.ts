@@ -8,6 +8,10 @@ import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+// HU-ST-12/RB-PAGO-025: el freno del cobro asíncrono. Vive en `stripe-mandate`
+// (pista P1) porque es la misma marca que consulta el reconciliador de
+// suscripciones para no abrir acceso con el débito en vuelo.
+import { holdAsyncCheckout, isAsyncPaymentPending } from "@/lib/stripe-mandate";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -20,6 +24,17 @@ export type CheckoutResult = { ok: true; url: string } | { ok: false; error: str
  *   (`/hazte-socio`) — el `Member` nace aquí mismo, no existía antes del pago.
  */
 export async function reconcileConnectCheckoutCompleted(orgId: string, session: Stripe.Checkout.Session) {
+  // HU-ST-12/RB-PAGO-025 (pista P1) · Un adeudo directo SEPA completa el
+  // checkout DÍAS antes de que el dinero se mueva, y llega aquí como
+  // `complete` + `unpaid`. Todo lo que hay debajo —marcar el `Payment` PAID,
+  // crear el bono— es justo lo que abriría el acceso sin haber cobrado, así
+  // que se aplaza hasta `checkout.session.async_payment_succeeded`, que vuelve
+  // a entrar por esta misma función con la sesión ya pagada.
+  if (isAsyncPaymentPending(session)) {
+    await holdAsyncCheckout(orgId, session);
+    return;
+  }
+
   const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
   const meta = session.metadata ?? {};
 

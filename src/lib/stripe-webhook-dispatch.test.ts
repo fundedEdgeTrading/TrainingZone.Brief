@@ -33,8 +33,20 @@ const SLUG = "e2e-despachador-lote2";
 const ACCOUNT_ID = `acct_${SLUG}`;
 const PREFIJO_EVENTO = `evt_${SLUG}`;
 
-/** Los ocho tipos que S1 añade al `switch`, con el módulo al que delegan. */
-const CASOS_NUEVOS: Array<{ type: string; modulo: string; objeto: Record<string, unknown> }> = [
+/**
+ * Los tipos que S1 añade al `switch`, con el módulo al que delegan.
+ *
+ * `modulo: null` significa "esa pista ya lo ha rellenado". El módulo vacío
+ * dejaba una línea de log —`[stripe-mandate] pendiente de implementar…`— y esa
+ * línea era el único contrato observable que tenía; el reconciliador de verdad
+ * no la escribe, porque un webhook que funciona no debe hablar por consola en
+ * cada evento. Para esos casos aquí se sigue comprobando lo que S1 quería
+ * proteger —que el evento ENTRA, se enruta y sale con 200 y sellado— y el qué
+ * hace cada uno lo prueban los tests de su pista (`stripe-mandate.test.ts`,
+ * `sepa-prenotification.test.ts`, `stripe-card-expiry.test.ts`). El `case` en
+ * el `switch` lo sigue vigilando el test estructural del final.
+ */
+const CASOS_NUEVOS: Array<{ type: string; modulo: string | null; objeto: Record<string, unknown> }> = [
   // HU-ST-20 → stripe-refunds.ts (P2)
   { type: "charge.refunded", modulo: "stripe-refunds", objeto: { id: "ch_1", amount_refunded: 500, refunded: false } },
   { type: "credit_note.created", modulo: "stripe-refunds", objeto: { id: "cn_1", invoice: "in_1" } },
@@ -51,16 +63,16 @@ const CASOS_NUEVOS: Array<{ type: string; modulo: string; objeto: Record<string,
   // HU-ST-23 → stripe-balance.ts (P4)
   { type: "payout.paid", modulo: "stripe-balance", objeto: { id: "po_1", amount: 9500, arrival_date: 1789000000, status: "paid" } },
   { type: "payout.failed", modulo: "stripe-balance", objeto: { id: "po_1", amount: 9500, status: "failed" } },
-  // HU-ST-12 → stripe-mandate.ts (P1)
-  { type: "mandate.updated", modulo: "stripe-mandate", objeto: { id: "mandate_1", status: "active" } },
+  // HU-ST-12 → stripe-mandate.ts (P1) · IMPLEMENTADO
+  { type: "mandate.updated", modulo: null, objeto: { id: "mandate_1", status: "active" } },
   {
     type: "checkout.session.async_payment_succeeded",
-    modulo: "stripe-mandate",
+    modulo: null,
     objeto: { id: "cs_1", payment_status: "paid" },
   },
   {
     type: "checkout.session.async_payment_failed",
-    modulo: "stripe-mandate",
+    modulo: null,
     objeto: { id: "cs_1", payment_status: "unpaid" },
   },
   // HU-ST-16 → sepa-prenotification.ts (P1)
@@ -141,11 +153,13 @@ test("los ocho tipos nuevos entran por el despachador y salen con 200", async ()
 
     assert.equal(resultado.status, 200, `${caso.type} tenía que procesarse`);
     assert.equal(resultado.body.ok, true);
-    assert.equal(
-      captura.lineas.some((linea) => linea.includes(`[${caso.modulo}]`)),
-      true,
-      `${caso.type} tenía que delegar en ${caso.modulo}.ts, y registró: ${captura.lineas.join(" | ")}`
-    );
+    if (caso.modulo) {
+      assert.equal(
+        captura.lineas.some((linea) => linea.includes(`[${caso.modulo}]`)),
+        true,
+        `${caso.type} tenía que delegar en ${caso.modulo}.ts, y registró: ${captura.lineas.join(" | ")}`
+      );
+    }
   }
 });
 

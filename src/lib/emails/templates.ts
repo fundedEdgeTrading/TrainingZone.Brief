@@ -601,6 +601,57 @@ export function renderSepaPrenotificationEmail(opts: {
   });
 }
 
+/**
+ * HU-ST-12 · Confirmación del mandato de adeudo directo.
+ *
+ * El esquema SEPA Core obliga a confirmar el mandato al deudor: sin esto el
+ * socio firma una domiciliación en el checkout de Stripe y no vuelve a ver
+ * nunca la referencia con la que se le va a cargar —que es justo la que le
+ * pedirá su banco si quiere anularla—.
+ *
+ * Correo de SERVICIO, como el preaviso: se manda aunque el socio haya
+ * desactivado las comunicaciones prescindibles y no lleva enlace de baja.
+ * Del IBAN solo salen los cuatro últimos dígitos, que es lo único que Apta
+ * guarda.
+ */
+export function renderSepaMandateConfirmationEmail(opts: {
+  memberFirstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  mandateReference: string;
+  ibanLast4: string;
+  portalUrl: string;
+  postalAddress?: string;
+}) {
+  const ibanLabel = opts.ibanLast4 ? `···· ${esc(opts.ibanLast4)}` : "La cuenta que nos indicaste";
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Cuota",
+    preheader: "Guarda esta referencia: es la de tu domiciliación.",
+    eyebrow: "Domiciliación activa",
+    title: `Hola, ${esc(opts.memberFirstName)}.<br>Tu domiciliación ya está en vigor.`,
+    bodyHtml:
+      p(`Tu banco ha confirmado la orden de domiciliación que firmaste. A partir de ahora cargaremos tu cuota en ${strong(ibanLabel)}, y te avisaremos por email antes de cada cargo.`, true) +
+      p(`Guarda la referencia del mandato: es la que identifica esta autorización si alguna vez quieres anularla en tu banco.`) +
+      p(`Puedes ${strong("revocar la domiciliación cuando quieras")}, y pedir la devolución de un cargo a tu banco durante las 8 semanas siguientes, sin dar motivo.`),
+    rows: [
+      { label: "Referencia del mandato", value: opts.mandateReference },
+      { label: "Cuenta", value: opts.ibanLast4 ? `···· ${opts.ibanLast4}` : "La que nos indicaste" },
+      { label: "Estado", value: "En vigor" },
+      { label: "Plazo de devolución", value: "8 semanas desde cada cargo" },
+    ],
+    ctaLabel: "Ver mi cuota",
+    ctaUrl: opts.portalUrl,
+    noteHtml: "Nunca guardamos tu IBAN completo: de tu cuenta solo conservamos los cuatro últimos dígitos.",
+    signOff: `Cualquier duda, aquí estamos,<br>${strong(`El equipo de ${opts.brandName}`)}`,
+    senderName: opts.brandName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este email porque has domiciliado tu cuota. Es un correo de servicio y no se puede desactivar.",
+    footerLinksHtml: PRIVACY(),
+  });
+}
+
 export function renderOwnerActivationEmail(opts: {
   orgName: string;
   planName: string;
