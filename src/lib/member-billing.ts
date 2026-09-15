@@ -29,7 +29,12 @@ import { holdAsyncSubscriptionStatus, isAwaitingAsyncSettlement, releaseAsyncHol
 // HU-ST-12/HU-ST-18: abrir y cerrar la morosidad es UNA puerta, compartida por
 // las cuatro vías por las que se entra (factura fallida, adeudo asíncrono
 // fallido, devolución bancaria, contracargo).
-import { closeDelinquency, openDelinquency } from "@/lib/stripe-dunning";
+import {
+  cancelAfterRetriesExhausted,
+  closeDelinquency,
+  openDelinquency,
+  retriesExhausted,
+} from "@/lib/stripe-dunning";
 
 export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -671,6 +676,20 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
     amountCents: invoice.amount_due ?? 0,
     reason: "INVOICE_FAILED",
   });
+
+  // HU-ST-18/D-S6 · Agotados los reintentos, se cancela. No se espera a que lo
+  // haga el Dashboard de Stripe: los dos lados se fijan en `cancel` a propósito
+  // para que coincidan, y confiar solo en la configuración remota deja al socio
+  // de baja en un sitio y vivo en el otro.
+  if (retriesExhausted(invoice)) {
+    await cancelAfterRetriesExhausted({
+      orgId,
+      memberId: subscription.memberId,
+      subscriptionId: subscription.id,
+      stripeSubscriptionId,
+      invoiceId: invoice.id,
+    });
+  }
 
   return { ok: true };
 }

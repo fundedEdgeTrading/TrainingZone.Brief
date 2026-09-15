@@ -12,6 +12,8 @@ export async function getOrganization(orgId: string) {
       // E10-12 · política de edad declarada por la organización (D-P8).
       allowsMinors: true,
       minimumAgeYears: true,
+      // HU-ST-18 · periodo de gracia de morosidad de esta organización (D-S5).
+      dunningGraceDays: true,
       stripeAccount: { select: { chargesEnabled: true, payoutsEnabled: true } },
     },
   });

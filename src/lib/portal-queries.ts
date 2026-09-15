@@ -17,6 +17,9 @@ import { refundSession } from "@/lib/session-ledger";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { getOwnProgressEntries } from "@/lib/health-access";
+// HU-ST-18: el corte de acceso por morosidad, con los días de gracia de la
+// organización leídos del servidor (D-S5).
+import { bookingGateForMember } from "@/lib/stripe-dunning";
 
 // RB-PERFIL-004/portal: el socio ve su propio seguimiento de fotos y evolución (misma vista
 // de composición corporal que su entrenador consulta en la ficha del socio), sujeto a los
@@ -620,6 +623,14 @@ export async function bookSessionForMember(
   /** Día concreto de la serie que se reserva ("YYYY-MM-DD"); por defecto, la fecha base. */
   occurrenceDateParam?: string | null
 ): Promise<BookingResult> {
+  // HU-ST-18 · Corte de acceso por morosidad. `Member.state = DELINQUENT` no
+  // cortaba NADA: el motor filtra por `Subscription.status === "ACTIVE"`, así
+  // que el moroso seguía reservando mientras su bono estuviera vivo. El corte
+  // llega al agotarse el periodo de gracia de su organización (D-S5, días
+  // leídos del servidor) y no toca el saldo: el bono le espera intacto.
+  const gate = await bookingGateForMember(member.id, { surface: "member" });
+  if (!gate.allowed) return { ok: false as const, error: gate.reason };
+
   return prisma.$transaction(async (tx) => {
     // Bloquea la fila de la sesión para serializar reservas concurrentes: sin
     // este lock, dos peticiones simultáneas pueden leer el mismo aforo libre y

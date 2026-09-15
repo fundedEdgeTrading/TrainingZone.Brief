@@ -9,9 +9,13 @@ import {
   CANCEL_WINDOW_HOURS,
 } from "@/lib/portal-queries";
 import { getMemberServiceKinds, getSessionBalances, activeBookingSubscriptions } from "@/lib/members-queries";
+// HU-ST-18: el estado de morosidad y su periodo de gracia se resuelven en el
+// servidor. En esta página no hay ni un número de días escrito a mano.
+import { getMemberDunningStatus, memberBlockedMessage } from "@/lib/stripe-dunning";
 import { serviceLabel, serviceLabelLower } from "@/lib/service-labels";
 import { getOnlineWorkouts } from "@/lib/online-queries";
 import { resolveTimezone } from "@/lib/timezone";
+import { formatInstantDate } from "@/lib/date-utils";
 import SessionCard from "./session-card";
 import UpcomingBookings from "./upcoming-bookings";
 import { OnlineWorkoutLibrary } from "./online-library";
@@ -44,10 +48,14 @@ export default async function PortalAgendaPage({
   // cuentas atrás y la ventana de cancelación se miden con esa zona.
   const timezone = await resolveTimezone(member.primaryCenter.timezone);
 
-  const [sessions, onlineWorkouts, upcomingBookings] = await Promise.all([
+  const [sessions, onlineWorkouts, upcomingBookings, dunning] = await Promise.all([
     getBookableSessions(session.user.orgId, member.id, activeBookingSubscriptions(member.subscriptions), timezone),
     hasOnline ? getOnlineWorkouts(session.user.orgId) : Promise.resolve([]),
     getMemberUpcomingBookings(member.id, timezone),
+    // HU-ST-18: "se le explica el motivo al entrar". Descubrir el corte al
+    // pulsar Reservar, sin saber por qué, es lo que llena el teléfono de
+    // recepción.
+    getMemberDunningStatus(member.id),
   ]);
 
   // Saldo agotado en alguno de sus servicios: se avisa para renovar (RB-RES-006).
@@ -139,6 +147,36 @@ export default async function PortalAgendaPage({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* HU-ST-18 · Impago abierto. Durante la gracia se avisa; pasada, se
+          explica el corte. El plazo lo decide el centro y llega ya resuelto
+          del servidor (D-S5). */}
+      {dunning?.delinquent && (
+        <div
+          className={`rounded-2xl px-5 py-4 flex items-start gap-3 tz-fade-up ${
+            dunning.blocked ? "bg-critical-bg border border-critical" : "bg-warning-bg border border-warning"
+          }`}
+        >
+          <span
+            className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${dunning.blocked ? "bg-critical" : "bg-warning"}`}
+          />
+          <div>
+            <div className={`text-sm font-bold ${dunning.blocked ? "text-critical" : "text-warning"}`}>
+              {dunning.blocked ? "No puedes reservar: tienes un recibo pendiente." : "Tenemos un recibo pendiente."}
+            </div>
+            <p className="text-[13px] text-brand-text-2 mt-0.5">
+              {dunning.blocked
+                ? memberBlockedMessage(dunning.graceDays)
+                : `No hemos podido cobrar tu cuota. Puedes seguir reservando hasta el ${
+                    dunning.deadline ? formatInstantDate(dunning.deadline, timezone) : ""
+                  }; arréglalo antes y no notarás nada.`}{" "}
+              <Link href="/portal/membresia" className="font-semibold underline underline-offset-2">
+                Actualizar mi pago →
+              </Link>
+            </p>
+          </div>
         </div>
       )}
 

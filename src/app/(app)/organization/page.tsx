@@ -11,6 +11,7 @@ import {
   updateCenterLogo,
   assignUserToCenter,
   updateAgePolicy,
+  updateDunningPolicy,
 } from "./actions";
 import { updateCenterCapacity } from "../aforo/actions";
 import { RemoveMembershipButton } from "./controls";
@@ -28,6 +29,9 @@ import { StripeConnectCard } from "./stripe-connect-card";
 import { prisma } from "@/lib/prisma";
 import { ProductsSection } from "./products-section";
 import { ADULT_AGE, LOPDGDD_CONSENT_AGE, agePolicyLabel } from "@/lib/minors";
+// HU-ST-18/D-S5: el rango de días de gracia se lee del servidor, nunca escrito
+// a mano en el cliente.
+import { GRACE_DAYS_DEFAULT, GRACE_DAYS_MAX, GRACE_DAYS_MIN } from "@/lib/billing-shared";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
@@ -216,6 +220,41 @@ export default async function OrganizationPage({
           )}
           {/* HU-ST-07: el estado real del KYC, no solo conectado/no conectado. */}
           <StripeConnectCard orgId={session.user.orgId} />
+
+          {/* HU-ST-18 · Periodo de gracia de morosidad (decisión D-S5). */}
+          <div className={CARD}>
+            <div className="font-display font-extrabold text-sm uppercase tracking-[.04em] text-brand-text">
+              Morosidad
+            </div>
+            <p className="text-sm text-brand-muted max-w-3xl mt-1.5">
+              Cuando un cobro falla, el socio queda marcado como moroso y recibe un email con el enlace para
+              arreglarlo, pero <b>sigue pudiendo reservar durante el periodo de gracia</b>: el primer fallo suele ser
+              una tarjeta caducada, no un impago. Pasados esos días se le corta la reserva de nuevas sesiones —su
+              bono no se toca, le espera intacto— y vuelve solo en cuanto el cobro entra. Agotados los reintentos de
+              Stripe, la suscripción se cancela en los dos lados.
+            </p>
+            <ActionForm
+              action={updateDunningPolicy}
+              successMessage="Periodo de gracia actualizado."
+              resetOnSuccess={false}
+              className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end mt-4"
+            >
+              <Field
+                label="Periodo de gracia"
+                hint={`Días naturales desde el primer impago. Entre ${GRACE_DAYS_MIN} y ${GRACE_DAYS_MAX}; ${GRACE_DAYS_DEFAULT} por defecto. 0 = corte inmediato.`}
+              >
+                <Input
+                  name="dunningGraceDays"
+                  type="number"
+                  min={GRACE_DAYS_MIN}
+                  max={GRACE_DAYS_MAX}
+                  step={1}
+                  defaultValue={org.dunningGraceDays}
+                />
+              </Field>
+              <Button type="submit">Guardar periodo de gracia</Button>
+            </ActionForm>
+          </div>
         </section>
       )}
 
