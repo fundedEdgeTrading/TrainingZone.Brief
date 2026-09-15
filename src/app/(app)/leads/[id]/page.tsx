@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { resolveTimezone } from "@/lib/timezone";
-import { formatInstantDateTime } from "@/lib/date-utils";
+import { formatInstantDate, formatInstantDateTime } from "@/lib/date-utils";
 import Link from "next/link";
 import { requireRole, centerIsInScope } from "@/lib/guard";
 import { getLeadDetail, listNoCloseReasons, leadIsArchived, missingLeadFields } from "@/lib/leads-queries";
@@ -21,6 +21,8 @@ import {
 import { WhatsAppButton } from "@/components/ui/whatsapp-button";
 import { logLeadWhatsappContactAction, updateLeadDetailsAction } from "../actions";
 import { ActionForm } from "@/components/ui/action-form";
+import { MemberFormInvitePanel } from "@/components/member-form-invite";
+import { getMemberFormStatus } from "@/lib/member-forms";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 
@@ -48,13 +50,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   if (!(await centerIsInScope(session.user, lead.centerId))) notFound();
 
   const canSeeHealth = canViewHealthData(session.user.role);
-  const [healthRecords, reasons, staff, plans] = await Promise.all([
+  const [healthRecords, reasons, staff, plans, formStatus] = await Promise.all([
     canSeeHealth
       ? getHealthRecordsForLead({ leadId: id, orgId: session.user.orgId, actorUserId: session.user.id, actorRole: session.user.role })
       : Promise.resolve(null),
     listNoCloseReasons(session.user.orgId),
     listAssignableStaff(session.user.orgId, ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"], lead.centerId),
     listActivePlansForOrg(session.user.orgId),
+    // M5/E14-18: el formulario se manda también desde la ficha del lead, antes
+    // de que exista ficha de socio.
+    getMemberFormStatus(session.user.orgId, { kind: "lead", leadId: id }),
   ]);
 
   const archived = leadIsArchived(lead.status);
@@ -187,6 +192,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="space-y-4">
                 <OwnerAssignForm leadId={lead.id} staff={staff} ownerUserId={lead.ownerUserId} />
                 <StageButtons leadId={lead.id} status={lead.status} />
+                <MemberFormInvitePanel
+                  target={{ kind: "lead", leadId: lead.id }}
+                  status={{
+                    state: formStatus.state,
+                    sentAtLabel: formStatus.sentAt ? formatInstantDate(formStatus.sentAt, timeZone) : null,
+                    completedAtLabel: formStatus.completedAt
+                      ? formatInstantDate(formStatus.completedAt, timeZone)
+                      : null,
+                    expiresAtLabel: formStatus.expiresAt ? formatInstantDate(formStatus.expiresAt, timeZone) : null,
+                  }}
+                />
                 {lead.status === "SIN_CONTACTAR" && (
                   <WhatsAppButton
                     phone={lead.phone}

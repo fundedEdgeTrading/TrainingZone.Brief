@@ -1008,3 +1008,61 @@ export function renderAccountDeletionAckEmail(opts: {
     footerLinksHtml: PRIVACY(),
   });
 }
+
+// ---------------------------------------------------------------------------
+// 17 · Formulario de alta que rellena el cliente (M5 · E14-18)
+//
+// Correo de SERVICIO, no comercial: lo dispara una persona del centro pulsando
+// «enviar formulario» con el cliente delante o al teléfono, y sin él no hay
+// valoración que preparar. Por eso va sin enlace de baja publicitaria — solo
+// Privacidad —, igual que el preaviso SEPA o el acuse de borrado.
+//
+// El cuerpo NO adelanta una sola pregunta del cuestionario, y el enlace no
+// lleva dentro ningún id: quien reenvíe este correo por error no está
+// reenviando datos de salud de nadie.
+// ---------------------------------------------------------------------------
+export function renderMemberFormInviteEmail(opts: {
+  firstName: string;
+  brandName: string;
+  brandLogoUrl: string;
+  /** Nombre del hito tal y como lo llama el centro: «Valoración inicial», «Revisión · 6 meses»… */
+  formLabel: string;
+  formUrl: string;
+  expiresAt: Date;
+  centerName: string;
+  postalAddress?: string;
+}) {
+  const expiresLabel = opts.expiresAt.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
+  return shell({
+    logoUrl: opts.brandLogoUrl,
+    logoAlt: opts.brandName,
+    section: "Socios",
+    preheader: "Cinco minutos desde el móvil y llegas con tu entrenamiento ya preparado.",
+    eyebrow: opts.formLabel,
+    title: `¡Hola, ${esc(opts.firstName)}!<br>Cuéntanos de dónde partes.`,
+    bodyHtml:
+      p(
+        "Antes de tu próxima sesión necesitamos saber de dónde partes: tus objetivos, tu experiencia previa y cómo " +
+          "llegas hoy. Son cinco minutos desde el móvil, y nos ahorra tenerlo que rellenar en sala contigo delante.",
+        true,
+      ) +
+      p("No hace falta que tengas cuenta ni contraseña: el enlace de abajo abre tu formulario directamente.") +
+      p("Si prefieres no rellenarlo, no pasa nada — lo vemos en el centro con tu entrenador."),
+    rows: [
+      { label: "Formulario", value: opts.formLabel },
+      { label: "Centro", value: opts.centerName },
+      { label: "Válido hasta", value: expiresLabel },
+    ],
+    ctaLabel: "Rellenar mi formulario",
+    ctaUrl: opts.formUrl,
+    noteHtml:
+      `Es un enlace personal y de un solo uso: no lo reenvíes. Caduca el ${esc(expiresLabel)} y, si lo necesitas ` +
+      "después, en el centro te mandan uno nuevo. Lo que respondas solo lo ve tu entrenador y el equipo autorizado, " +
+      "y cada consulta queda registrada.",
+    signOff: `Nos vemos en el centro,<br>${strong(`El equipo de ${opts.centerName}`)}`,
+    senderName: opts.centerName,
+    postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,
+    reason: "Recibes este email porque tu centro te ha enviado el formulario previo a tu valoración.",
+    footerLinksHtml: PRIVACY(),
+  });
+}
