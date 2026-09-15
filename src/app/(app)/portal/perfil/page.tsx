@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ACCOUNT_DELETION_PORTAL_PATH, getLatestDeletionRequest } from "@/lib/account-deletion";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
@@ -21,7 +23,10 @@ export default async function PortalProfilePage() {
     prisma.user.findUnique({ where: { id: session.user.id }, select: { theme: true } }),
   ]);
   if (!member || !user) redirect("/login");
-  const wantsSessionReminders = await memberWantsSessionReminders(member.id);
+  const [wantsSessionReminders, deletionRequest] = await Promise.all([
+    memberWantsSessionReminders(member.id),
+    getLatestDeletionRequest(member.id, session.user.orgId),
+  ]);
 
   return (
     <div className="max-w-[720px] mx-auto flex flex-col gap-4">
@@ -171,6 +176,24 @@ export default async function PortalProfilePage() {
           internas del equipo sobre ti y el registro de quién ha consultado tus datos (art. 15). La entrega es
           inmediata; el plazo legal es de un mes (art. 12.3).
         </p>
+      </Card>
+
+      {/* E5-15 · La misma ruta que ofrece la app, aquí y sin necesidad de ella.
+          Va la última y con su propia tarjeta a propósito: es la acción más
+          costosa de deshacer de toda la pantalla. El estado de la solicitud vive
+          dentro, no aquí, para que el perfil no se convierta en un tablón. */}
+      <Card title="Borrar mi cuenta" meta="RGPD">
+        <p className="text-[13px] text-brand-muted -mt-3 mb-3">
+          {deletionRequest?.status === "PENDING"
+            ? `Ya tienes una solicitud en curso. Tu centro tiene hasta el ${deletionRequest.dueAt.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })} para resolverla.`
+            : "Puedes pedir que se borre tu cuenta. Antes de confirmar verás qué se borra, qué está obligado tu centro a conservar y durante cuánto tiempo."}
+        </p>
+        <Link
+          href={ACCOUNT_DELETION_PORTAL_PATH}
+          className="inline-flex items-center gap-2 bg-white text-critical border border-critical/30 rounded-[11px] px-5 py-3 font-display font-bold text-sm hover:bg-critical-bg transition-colors duration-150"
+        >
+          {deletionRequest?.status === "PENDING" ? "Ver el estado de mi solicitud →" : "Pedir el borrado de mi cuenta →"}
+        </Link>
       </Card>
     </div>
   );

@@ -5,6 +5,11 @@ import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
 import { CONSENT_VERSION, CONSENT_FIELD, type ConsentKind } from "@/lib/consent";
+import {
+  ACCOUNT_DELETION_PORTAL_PATH,
+  confirmPasswordForUser,
+  requestAccountDeletion,
+} from "@/lib/account-deletion";
 
 export type { ConsentKind };
 import type { MemberEmailKind } from "@/lib/email-preferences";
@@ -209,6 +214,44 @@ export async function updateMySessionReminderPreferenceAction(enabled: boolean):
 
   await setMemberSessionReminderPreference(session.user.orgId, member.id, enabled);
 
+  revalidatePath("/portal/perfil");
+  return { ok: true };
+}
+
+/**
+ * E5-15 · Solicitud de borrado de cuenta desde el portal web.
+ *
+ * Misma ruta que la app: las dos llaman a `requestAccountDeletion`, que es
+ * quien comprueba el ámbito, escribe la fila con su fecha límite del art. 12.3
+ * y deja la traza. Aquí solo se reautentica: la sesión ya está abierta, así que
+ * lo que confirma la contraseña es que quien está delante de la pantalla es la
+ * persona, no que pueda entrar.
+ */
+export async function requestAccountDeletionAction(password: string): Promise<ProfileActionResult> {
+  const session = await requireRole(["MEMBER"]);
+  const member = await getMemberForUser(session.user.id);
+  if (!member) return { ok: false, error: "No se ha encontrado tu ficha de socio." };
+
+  const confirmation = await confirmPasswordForUser(session.user.id, password);
+  if (!confirmation.ok) {
+    return {
+      ok: false,
+      error:
+        confirmation.reason === "NO_PASSWORD"
+          ? "Tu cuenta no tiene contraseña propia. Fíjala desde «¿Has olvidado tu contraseña?» y vuelve a intentarlo."
+          : "La contraseña no es correcta.",
+    };
+  }
+
+  const result = await requestAccountDeletion({
+    memberId: member.id,
+    orgId: session.user.orgId,
+    actorUserId: session.user.id,
+    source: "WEB_PORTAL",
+  });
+  if (!result.ok) return result;
+
+  revalidatePath(ACCOUNT_DELETION_PORTAL_PATH);
   revalidatePath("/portal/perfil");
   return { ok: true };
 }
