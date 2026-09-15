@@ -79,12 +79,31 @@ export default async function BillingPage({
         description="Cero dudas sobre quién está al corriente (F3). El cobro online con Stripe está aquí mismo, debajo; la facturación certificada (VERI*FACTU) queda fuera de esta entrega."
         actions={
           canExport ? (
-            <a
-              href="/api/export/payments"
-              className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
-            >
-              Exportar cobros
-            </a>
+            <>
+              {/* HU-ST-20 / HU-ST-21 (D-S7): devoluciones y disputas se
+                  gestionan desde Apta, y son de dirección — la misma frontera
+                  que la exportación. `rbac.ts` está congelado este trimestre,
+                  así que su entrada al menú no puede declararse allí todavía y
+                  la puerta es esta. */}
+              <Link
+                href="/billing/reembolsos"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Devoluciones
+              </Link>
+              <Link
+                href="/billing/disputas"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Disputas
+              </Link>
+              <a
+                href="/api/export/payments"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Exportar cobros
+              </a>
+            </>
           ) : undefined
         }
       />
