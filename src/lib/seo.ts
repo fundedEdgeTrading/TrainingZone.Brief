@@ -54,6 +54,9 @@ export const TOKEN_PATHS = [
   "/gestionar-suscripcion",
   "/preferencias",
   "/baja",
+  // M5 (E14-18) · el formulario de alta con token. Indexarlo sería publicar un
+  // enlace que abre el cuestionario de salud de una persona concreta.
+  "/formulario",
 ] as const;
 
 /** Públicas, sin token, y aun así fuera del índice. */

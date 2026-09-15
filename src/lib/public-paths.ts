@@ -12,6 +12,10 @@ export const PUBLIC_PATHS = [
   "/login",
   "/onboarding",
   "/lead-form",
+  // M5 (E14-18) · el formulario que el centro manda por correo a quien todavía
+  // no tiene cuenta. Si el proxy lo rebotara a /login, el enlace no llevaría a
+  // ninguna parte justo para las personas a las que va dirigido.
+  "/formulario",
   "/planes",
   "/demo-checkout",
   "/hazte-socio",
