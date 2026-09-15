@@ -227,3 +227,96 @@ test.describe("Plan y pagos en la ficha del socio", () => {
     await expect(page.getByText("Calendario de entrenamientos")).toBeVisible();
   });
 });
+
+// ---------------------------------------------------------------------------
+// E14-08 / E14-09 · Bonos por centro y ritmo de visita, en el listado del CRM
+// ---------------------------------------------------------------------------
+
+/** La tabla del listado, no la de la card de bonos que ahora vive encima. */
+function membersTable(page: Page) {
+  return page.locator("table").filter({ has: page.locator("th", { hasText: "Socio" }) });
+}
+
+test.describe("El listado de socios lee bonos y ritmo", () => {
+  test("E14-09 — «Última visita» y «Ritmo» se ven en un portátil normal, con su ventana declarada", async ({
+    page,
+  }) => {
+    // 1280 × 800 es el portátil de dirección. A este ancho «Última visita»
+    // estaba en `2xl` (1536 px), o sea invisible: es por lo que negocio creía
+    // que la columna no existía.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/members");
+
+    // `first()` no vale en esta pantalla: la card de bonos de arriba también
+    // es una <table>. La del listado es la que tiene la columna «Socio».
+    const table = membersTable(page);
+    await expect(table.locator("th", { hasText: "Última visita" })).toBeVisible();
+
+    // La ventana va EN el encabezado: un «1,3 a la semana» sin ventana
+    // declarada no se puede interpretar.
+    const ritmo = table.locator("th", { hasText: "Ritmo" });
+    await expect(ritmo).toBeVisible();
+    await expect(ritmo).toContainText(/\d+ sem/);
+    await expect(ritmo.locator("[title*='por semana']")).toHaveCount(1);
+
+    // Y la columna que cede el sitio ya no está en el listado, a ningún ancho:
+    // con ocho columnas la tabla desborda su tarjeta siempre, así que no era
+    // cuestión de demotarla. Su pregunta la contesta la card de arriba.
+    await expect(table.locator("th", { hasText: "Bono usado" })).toHaveCount(0);
+  });
+
+  test("E14-09 — ordenar por ritmo saca primero a quien menos viene", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/members");
+
+    const table = membersTable(page);
+    const ritmoIndex = await table
+      .locator("thead th")
+      .evaluateAll((ths) => ths.findIndex((th) => (th.textContent ?? "").includes("Ritmo")));
+    expect(ritmoIndex).toBeGreaterThan(-1);
+
+    await table.locator("thead th").nth(ritmoIndex).getByRole("button").first().click();
+
+    const values = await table
+      .locator(`tbody tr td:nth-child(${ritmoIndex + 1})`)
+      .evaluateAll((tds) =>
+        tds.map((td) => Number((td.textContent ?? "").replace(/[^0-9,]/g, "").replace(",", ".") || "0")),
+      );
+    expect(values.length).toBeGreaterThan(1);
+    // El primer clic ordena ascendente, que es la lectura útil: quién ha bajado
+    // el ritmo, sin abrir 49 fichas.
+    expect(values).toEqual([...values].sort((a, b) => a - b));
+  });
+
+  test("E14-08 — dirección ve los bonos sumados por centro, con su lista de a quién llamar", async ({ page }) => {
+    await loginAs(page, "direccion@trainingzone.es");
+    await page.goto("/members");
+
+    const card = page.getByRole("region", { name: "Bonos por centro" });
+    await expect(card).toBeVisible();
+
+    // Flujo y stock se rotulan distinto a propósito: es la trampa que el mapa
+    // ya tuvo con «leads de este trimestre» y «leads desde siempre».
+    await expect(card).toContainText(/Restantes y caducidad, a día de hoy/);
+    for (const label of ["Canjeadas", "Restantes", "Caducidad"]) {
+      await expect(card.locator("th", { hasText: label })).toHaveCount(1);
+    }
+    await expect(card.getByText("A punto de acabarse")).toBeVisible();
+
+    // El periodo viaja en la URL, como en el resto del panel.
+    await card.getByRole("link", { name: "Trim.", exact: true }).click();
+    await page.waitForURL(/range=trim/);
+    await expect(page.getByRole("region", { name: "Bonos por centro" })).toBeVisible();
+  });
+
+  test("E14-08 — recepción no ve las cifras agregadas del centro", async ({ page }) => {
+    // Las cifras por centro son lectura de dirección, igual que la exportación.
+    await loginAs(page, "recepcion.puertacarmen@trainingzone.es");
+    await page.goto("/members");
+
+    await expect(membersTable(page)).toBeVisible();
+    await expect(page.getByRole("region", { name: "Bonos por centro" })).toHaveCount(0);
+  });
+});

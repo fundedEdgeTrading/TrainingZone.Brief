@@ -117,6 +117,107 @@ export async function lastAttendanceByMember(memberIds: string[]) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// E14-09 · Frecuencia semanal de visita
+// ---------------------------------------------------------------------------
+
+/**
+ * La ventana sobre la que se mide la frecuencia semanal, en semanas.
+ *
+ * Ocho, y va escrita en el encabezado de la columna: **un número de sesiones por
+ * semana sin ventana declarada no se puede interpretar**. «1,2 a la semana»
+ * significa cosas distintas si es de los últimos quince días o del último año, y
+ * quien lo lee no tiene forma de saber cuál.
+ *
+ * Ocho y no doce, que es la línea base de `retention.ts`, porque las dos cifras
+ * hacen trabajos distintos: allí doce semanas son el HÁBITO contra el que se
+ * compara una caída, y cuanto más largo mejor; aquí la pregunta es «¿a qué ritmo
+ * viene AHORA?», y una ventana larga esconde precisamente lo que se busca — quien
+ * dejó de venir hace un mes seguiría leyéndose alto. Ocho semanas son dos meses:
+ * cubren dos ciclos de bono mensual, así que una semana de vacaciones no domina
+ * la cifra, y a la vez una bajada de tres semanas ya se nota.
+ */
+export const FREQUENCY_WINDOW_WEEKS = 8;
+
+/** Lo que se pinta en la columna «Ritmo», con la ventana real que lo respalda. */
+export type MemberRhythm = {
+  /** Sesiones asistidas dentro de la ventana. */
+  sessions: number;
+  /** Semanas sobre las que se divide de verdad. Puede ser menor que la ventana. */
+  weeks: number;
+  /** Sesiones por semana, a un decimal. */
+  perWeek: number;
+};
+
+const WEEK_MS = 7 * 86_400_000;
+
+/**
+ * Frecuencia de UN socio. Aritmética pura, para poder probar el caso que la
+ * rompe sin sembrar nada.
+ *
+ * El divisor NO es siempre la ventana: un socio que se dio de alta hace tres
+ * días no lleva ocho semanas sin venir, lleva tres días. Dividir sus cero
+ * sesiones entre ocho semanas lo pondría el primero en el orden de «menos
+ * frecuencia», que es justo la lista de a quién llamar — y llamar a quien acaba
+ * de entrar por no haber venido todavía es el tipo de error que hace que nadie
+ * vuelva a mirar la columna. Así que se divide entre lo que de verdad lleva
+ * dentro, con un suelo de una semana para que los primeros días no disparen el
+ * cociente.
+ */
+export function memberRhythm(
+  sessions: number,
+  joinedAt: Date,
+  now: Date,
+  windowWeeks: number = FREQUENCY_WINDOW_WEEKS,
+): MemberRhythm {
+  const sinceJoined = (now.getTime() - joinedAt.getTime()) / WEEK_MS;
+  const weeks = Math.max(1, Math.min(windowWeeks, sinceJoined));
+  return {
+    sessions,
+    weeks: Math.round(weeks * 10) / 10,
+    perWeek: Math.round((sessions / weeks) * 10) / 10,
+  };
+}
+
+/**
+ * E14-09 · Ritmo de visita de los socios de la página.
+ *
+ * Mismo patrón que `lastAttendanceByMember` y por la misma razón (E12-10): UNA
+ * agregación sobre los socios de la página, nunca una consulta por fila. El
+ * listado pagina en servidor y aquí llega la página, no la tabla entera.
+ *
+ * Recibe `joinedAt` junto al id porque el divisor depende de él (ver
+ * `memberRhythm`) y el listado ya lo tiene cargado: pedirlo otra vez sería una
+ * segunda consulta para un dato que está en la mano.
+ */
+export async function weeklyFrequencyByMember(
+  members: { id: string; joinedAt: Date }[],
+  now: Date = new Date(),
+  windowWeeks: number = FREQUENCY_WINDOW_WEEKS,
+) {
+  const out = new Map<string, MemberRhythm>();
+  if (members.length === 0) return out;
+
+  const from = new Date(now.getTime() - windowWeeks * WEEK_MS);
+  const rows = await prisma.booking.groupBy({
+    by: ["memberId"],
+    where: {
+      memberId: { in: members.map((m) => m.id) },
+      status: "ATTENDED",
+      // Mismo campo que la última visita: `occurrenceDate` es el día concreto
+      // de la reserva, no la fecha base de la serie recurrente.
+      occurrenceDate: { gte: from, lte: now },
+    },
+    _count: { _all: true },
+  });
+
+  const counts = new Map(rows.map((r) => [r.memberId, r._count._all]));
+  for (const member of members) {
+    out.set(member.id, memberRhythm(counts.get(member.id) ?? 0, member.joinedAt, now, windowWeeks));
+  }
+  return out;
+}
+
 export async function listActiveMembersForSelect(orgId: string) {
   return prisma.member.findMany({
     where: { orgId, state: "ACTIVE" },

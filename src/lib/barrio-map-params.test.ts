@@ -18,9 +18,10 @@ import {
  * estado vive en la URL por decisión explícita.
  */
 
-test("acepta los cinco parámetros", () => {
+test("acepta los seis parámetros", () => {
   const params = parseBarrioMapParams({
     ciudad: "santander",
+    vista: "tabla",
     metrica: "opp",
     range: "trim",
     estado: "todos",
@@ -28,10 +29,44 @@ test("acepta los cinco parámetros", () => {
   });
   assert.deepEqual(params, {
     ciudad: "santander",
+    vista: "tabla",
     metrica: "opp",
     range: "trim",
     estado: "todos",
     centerId: "ctr_1",
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E14-10 · La tabla de CP pasa a vista de primera clase
+// ---------------------------------------------------------------------------
+
+test("E14-10 · la vista viaja en la URL, como el resto del estado de la pantalla", () => {
+  assert.equal(parseBarrioMapParams({ vista: "tabla" }).vista, "tabla");
+  assert.equal(barrioMapQuery({ ...DEFAULT_BARRIO_PARAMS, vista: "tabla" }), "vista=tabla");
+  assert.equal(barrioMapHref({ vista: "tabla" }), "/mapa-barrios?vista=tabla");
+});
+
+test("E14-10 · el mapa sigue siendo el defecto y no ensucia la URL", () => {
+  assert.equal(DEFAULT_BARRIO_PARAMS.vista, "mapa");
+  assert.equal(parseBarrioMapParams({}).vista, "mapa");
+  assert.equal(barrioMapQuery(DEFAULT_BARRIO_PARAMS), "");
+});
+
+test("E14-10 · una vista que no existe cae al mapa en vez de romper", () => {
+  assert.equal(parseBarrioMapParams({ vista: "grafico" }).vista, "mapa");
+  assert.equal(parseBarrioMapParams({ vista: "" }).vista, "mapa");
+});
+
+test("E14-10 · la vista de tabla se puede enlazar con el resto del estado", () => {
+  const url = barrioMapHref({ vista: "tabla", ciudad: "zaragoza", metrica: "conv", range: "trim" });
+  assert.deepEqual(parseBarrioMapParams(Object.fromEntries(new URL(url, "http://x").searchParams)), {
+    ciudad: "zaragoza",
+    vista: "tabla",
+    metrica: "conv",
+    range: "trim",
+    estado: "activos",
+    centerId: null,
   });
 });
 
