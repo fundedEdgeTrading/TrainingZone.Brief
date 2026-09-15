@@ -18,7 +18,35 @@ export type PlatformFeature =
   | "feedback_direccion" // contraste cliente ⟷ entrenador
   | "bi_avanzado" // panel de control completo
   | "exportaciones" // exportar datos y auditoría avanzada
-  | "ia_programacion"; // rutinas por IA — único módulo con coste marginal real
+  | "ia_programacion" // rutinas por IA — único módulo con coste marginal real
+  /**
+   * Lote 3 · etiquetas (`/etiquetas`), flujos de email (`/flujos`) y programa
+   * de referidos (`/referidos`). Las TRES bajo una sola funcionalidad, y no
+   * tres, por una razón de producto y otra de ingeniería:
+   *
+   *  · De producto: captar, recuperar y comunicar son el mismo trabajo — es lo
+   *    que dice el propio comentario de la sección «Crecimiento» en `rbac.ts`—
+   *    y venderlo troceado obliga al gimnasio a decidir por separado tres
+   *    cosas que solo tienen sentido juntas.
+   *  · De ingeniería: no se pueden separar sin dejar combinaciones rotas. La
+   *    mitad de los disparadores de un flujo y TODAS sus condiciones se apoyan
+   *    en etiquetas, así que «flujos sin etiquetas» es un editor que no puede
+   *    segmentar. Y el programa de referidos se mide con las etiquetas del
+   *    embajador y su correo de los 90 días es un flujo, así que «referidos
+   *    sin lo demás» es un enlace y un panel sin campaña detrás.
+   *
+   * Va en Avanzado (y por herencia en Élite y Fundador). Lo que NO se gatea, y
+   * sigue siendo de todos los planes, es el CRM de leads y los anuncios: eso ya
+   * está en `CORE_FEATURES` y ahí se queda — lo que se cobra es la
+   * AUTOMATIZACIÓN, no poder apuntar a quien entra por la puerta.
+   *
+   * A diferencia de `ia_programacion`, entra en Fundador sin reparos: su coste
+   * marginal es el correo, y la regla de seguridad del motor —máximo un email
+   * por socio y semana entre todos los flujos— lo deja acotado por diseño. Un
+   * cupo mensual en un pago único envejece mal cuando el gasto es ilimitado;
+   * aquí no lo es.
+   */
+  | "marketing_automatizado";
 
 export type PlanTier = "esencial" | "avanzado" | "elite" | "fundador";
 
@@ -73,6 +101,9 @@ const AVANZADO_FEATURES: PlatformFeature[] = [
   // coste marginal real (~0,18 $/generación) y ahí es donde tenía que
   // gatearse de verdad (E6-03).
   "ia_programacion",
+  // Lote 3: etiquetas, flujos de email y referidos. Ver el comentario de
+  // `marketing_automatizado` en `PlatformFeature`.
+  "marketing_automatizado",
 ];
 
 /** Cupo mensual de generaciones de IA del plan Avanzado (E6-04). */
@@ -172,6 +203,7 @@ export const FEATURE_LABEL: Record<PlatformFeature, string> = {
   bi_avanzado: "Panel de control avanzado",
   exportaciones: "Exportaciones y auditoría avanzada",
   ia_programacion: "Programación de rutinas por IA",
+  marketing_automatizado: "Etiquetas, flujos de email y programa de referidos",
 };
 
 /** Lo que incluye cualquier plan, sin excepción. Se enseña en /planes para que el gateado se entienda. */

@@ -132,6 +132,33 @@ const PATHS: Record<NavIcon, React.ReactNode> = {
       <path d="m16 15.6 2.1 2.1 3.9-4.2" />
     </>
   ),
+  // Lote 3 · Crecimiento. Etiqueta colgando, con su ojal: es la forma que
+  // todo el mundo lee como "etiqueta" sin necesidad de rótulo.
+  etiquetas: (
+    <>
+      <path d="M11.3 3.5H20v8.7l-8.8 8.8a1.8 1.8 0 0 1-2.5 0l-6.2-6.2a1.8 1.8 0 0 1 0-2.5z" />
+      <circle cx="16.3" cy="7.7" r="1.5" />
+    </>
+  ),
+  // Flujos: tres nodos encadenados con sus ramas, que es literalmente la
+  // estructura del editor (disparador → condición → espera → acción).
+  flujos: (
+    <>
+      <circle cx="5" cy="6" r="2.2" />
+      <circle cx="19" cy="12" r="2.2" />
+      <circle cx="5" cy="18" r="2.2" />
+      <path d="M7.2 6h5.3a2 2 0 0 1 2 2v1.9M7.2 18h5.3a2 2 0 0 0 2-2v-1.9" />
+    </>
+  ),
+  // Referidos: una persona que trae a otra, con el signo de que se suma. Se
+  // distingue de "socios" en que aquí hay una flecha, no dos figuras iguales.
+  referidos: (
+    <>
+      <circle cx="9" cy="8" r="3.4" />
+      <path d="M2.5 20c0-3.4 2.9-5.6 6.5-5.6 1.4 0 2.7.3 3.8.8" />
+      <path d="M18.5 13v6M15.5 16h6" />
+    </>
+  ),
   descargar: <path d="M12 3v12M7 11l5 5 5-5M4 20h16" />,
 };
 

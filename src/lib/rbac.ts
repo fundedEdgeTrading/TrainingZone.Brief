@@ -44,6 +44,10 @@ export type NavIcon =
   | "auditoria"
   | "brief"
   | "tareas"
+  // Lote 3 · los tres módulos de «Crecimiento».
+  | "etiquetas"
+  | "flujos"
+  | "referidos"
   | "actividad"
   | "reservar"
   | "evolucion"
@@ -83,6 +87,29 @@ export const FEATURE_BY_ROUTE: Record<string, PlatformFeature> = {
   // alertas que enseñar ni en el listado de socios ni en la ficha.
   "/feedback": "feedback_direccion",
   "/brief": "salud_aptitud",
+  // ---------- Lote 3 · etiquetas, flujos y referidos ----------
+  // Las tres comparten funcionalidad de plan, `marketing_automatizado`, y es
+  // una NUEVA: ninguna de las seis que había encaja sin mentir. `retencion` es
+  // el motor de alertas —no tiene ni ruta que gatear, por eso no está en este
+  // mapa— y solo describiría dos de los seis flujos; `bi_avanzado` es el panel
+  // de control; el resto no se rozan. El argumento completo de por qué las
+  // tres van juntas y no por separado está en `platform-plans.ts`, junto a la
+  // definición de la funcionalidad: en resumen, la mitad de los disparadores
+  // de un flujo y todas sus condiciones se apoyan en etiquetas, y el correo de
+  // los 90 días de los referidos es un flujo — venderlas sueltas deja
+  // combinaciones que no funcionan.
+  //
+  // Lo que NO entra aquí: `/leads` y `/anuncios`, que están en la misma
+  // sección del menú y siguen siendo de todos los planes (`CORE_FEATURES`). Lo
+  // que se cobra es la automatización, no poder apuntar a quien entra.
+  //
+  // Y recuerda que `featureForRoute` HEREDA por prefijo: `/flujos/[id]/panel`,
+  // `/etiquetas/[id]` y `/referidos/embajadores` quedan cubiertas sin entrada
+  // propia, y una pantalla nueva bajo estas tres que no llame a
+  // `requireFeature` la caza `rbac-gating.test.ts`, no producción.
+  "/etiquetas": "marketing_automatizado",
+  "/flujos": "marketing_automatizado",
+  "/referidos": "marketing_automatizado",
   "/health/aptitude-rules": "salud_aptitud",
   "/health/reference-ranges": "salud_aptitud",
   // `/audit` NO se gatea (E6-07, decisión D-C7). El responsable del tratamiento
@@ -145,6 +172,13 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
     // Anuncios sale de Administración: es comunicación al socio, no estructura.
     { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
+    // Lote 3. Van en "Crecimiento" y no en "Día a día" por lo que ya dice el
+    // comentario de `NavSection`: captar, recuperar y comunicar son el mismo
+    // trabajo. En orden de uso: primero se segmenta, luego se comunica, y el
+    // programa de referidos es la campaña que sale de las dos.
+    { href: "/etiquetas", label: "Etiquetas", section: "Crecimiento", icon: "etiquetas" },
+    { href: "/flujos", label: "Flujos de email", section: "Crecimiento", icon: "flujos" },
+    { href: "/referidos", label: "Referidos", section: "Crecimiento", icon: "referidos" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
     { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },
     // Qué se pregunta en las valoraciones y cada cuánto (F-VAL). Cuelga de
@@ -167,6 +201,9 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
     { href: "/leads", label: "Leads", section: "Crecimiento", icon: "leads" },
     { href: "/anuncios", label: "Anuncios", section: "Crecimiento", icon: "anuncios" },
+    { href: "/etiquetas", label: "Etiquetas", section: "Crecimiento", icon: "etiquetas" },
+    { href: "/flujos", label: "Flujos de email", section: "Crecimiento", icon: "flujos" },
+    { href: "/referidos", label: "Referidos", section: "Crecimiento", icon: "referidos" },
     { href: "/health/aptitude-rules", label: "Reglas de aptitud", section: "Salud y aptitud", icon: "reglas" },
     { href: "/health/reference-ranges", label: "Rangos de composición", section: "Salud y aptitud", icon: "rangos" },
     // Dirección de centro entra en Organización solo por la plantilla: la ve
@@ -203,6 +240,13 @@ export const NAV_BY_ROLE: Record<Role, NavItem[]> = {
     { href: "/agenda", label: "Agenda", section: "Día a día", icon: "agenda" },
     { href: "/tareas", label: "Tareas", section: "Día a día", icon: "tareas" },
     { href: "/billing", label: "Cobros", section: "Día a día", icon: "cobros" },
+    // Recepción entra en Referidos y NO en Etiquetas ni en Flujos, y la línea
+    // está donde está por lo que hace cada pantalla: la recompensa de un
+    // referido no se aplica sola —genera una tarea a administración para
+    // validarla y marcarla como pagada— y quien hace ese trabajo es recepción.
+    // El catálogo de etiquetas y el editor de flujos son configuración de la
+    // casa, y eso es de dirección.
+    { href: "/referidos", label: "Referidos", section: "Crecimiento", icon: "referidos" },
   ],
   // "Mi perfil" ya no vive en el nav: se accede desde el bloque de usuario del
   // pie del sidebar y desde el chip de usuario del header (menú de cuenta).
