@@ -228,3 +228,38 @@ test.describe("E14-10 — la tabla de CP como vista principal", () => {
     expect(first).toContain("Socios vivos");
   });
 });
+
+// ---------------------------------------------------------------------------
+// E14-07 · El plano y el panel cuentan lo mismo
+// ---------------------------------------------------------------------------
+//
+// La agregación ya respeta periodo y estado (T7, aplicado por M1 en
+// `getPostalCodeMapData`). Lo que se fija aquí es la consecuencia visible: que
+// cambiar de periodo MUEVA la cifra del plano. Mientras el mapa ignoraba
+// `range` se pintaba igual en todos ellos, y esa es exactamente la avería que
+// no puede volver sin que algo se ponga rojo — con los mismos rótulos que el
+// panel, dos cifras distintas bajo el mismo nombre no se notan a ojo.
+
+test("E14-07 — cambiar de periodo cambia lo que cuenta el plano", async ({ page }) => {
+  await loginAs(page, "direccion@trainingzone.es");
+  await page.goto("/mapa-barrios?vista=tabla&range=mes");
+
+  const tabla = page.locator("table").first();
+  const columnaClientes = async () => {
+    const valores = await tabla
+      .locator("tbody tr td:nth-child(2)")
+      .evaluateAll((tds) => tds.map((td) => Number((td.textContent ?? "0").trim()) || 0));
+    return valores.reduce((a, b) => a + b, 0);
+  };
+
+  const mes = await columnaClientes();
+
+  await page.getByRole("button", { name: "Año", exact: true }).click();
+  await page.waitForURL(/range=ano/);
+  await expect(tabla).toBeVisible();
+  const ano = await columnaClientes();
+
+  // El año incluye al mes, así que nunca puede contar menos; y en la demo hay
+  // altas repartidas por el año, así que tiene que contar MÁS.
+  expect(ano).toBeGreaterThan(mes);
+});
