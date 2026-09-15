@@ -77,6 +77,10 @@ import { WhatsAppButton } from "@/components/ui/whatsapp-button";
 import { logMemberWhatsappContactAction } from "./actions";
 import { MemberFormInvitePanel } from "@/components/member-form-invite";
 import { getMemberFormStatus } from "@/lib/member-forms";
+// E1 · las etiquetas del socio. El componente es de la pista de etiquetas: se
+// trae entero (consulta, ámbito de centro y permiso incluidos) para que la
+// ficha no crezca por esto.
+import MemberTagsSection from "../../etiquetas/member-tags-section";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -1319,6 +1323,9 @@ export default async function MemberDetailPage({
                     el vocabulario de dirección ("excliente", no "baja"). El estado
                     crudo sigue detrás, en el tono del badge y en el panel de tipo. */}
                 <Badge tone={MEMBER_STATE_TONE[member.state]}>{MEMBER_KIND_LABEL[memberKind]}</Badge>
+              </div>
+              <div className="mt-2">
+                <MemberTagsSection user={session.user} memberId={member.id} />
               </div>
             </div>
           </div>
