@@ -217,8 +217,27 @@ test("HU-ST-23 · reconcilePayout guarda el payout aunque no haya lectura de Str
     failure_message: null,
   } as unknown as Stripe.Payout;
 
-  const primera = await reconcilePayout(orgId, payout, "payout.paid");
+  // El despachador de S1 espera que cada módulo del lote deje su rastro
+  // (`stripe-webhook-dispatch.test.ts` lo comprueba desde el otro lado): una
+  // línea por payout atendido, diga lo que diga la composición.
+  const real = console.info;
+  const lineas: string[] = [];
+  console.info = (...args: unknown[]) => {
+    lineas.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+  };
+
+  let primera;
+  try {
+    primera = await reconcilePayout(orgId, payout, "payout.paid");
+  } finally {
+    console.info = real;
+  }
   assert.equal(primera.ok, true);
+  assert.equal(
+    lineas.some((l) => l.includes("[stripe-balance]") && l.includes(payout.id)),
+    true,
+    `el payout tenía que dejar rastro, y registró: ${lineas.join(" | ")}`
+  );
 
   const guardado = await prisma.stripePayout.findUniqueOrThrow({
     where: { orgId_stripePayoutId: { orgId, stripePayoutId: payout.id } },

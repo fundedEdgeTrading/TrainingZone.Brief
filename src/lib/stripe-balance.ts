@@ -30,6 +30,14 @@ const MAX_BALANCE_TRANSACTION_PAGES = 20;
 const BALANCE_TRANSACTION_PAGE_SIZE = 100;
 
 /**
+ * Componer el payout son varias llamadas a Stripe colgadas de un webhook, y
+ * Stripe espera su 200 en 20 s. Con el timeout por defecto del SDK (80 s) una
+ * sola llamada lenta bastaba para que el evento se diera por fallido y volviera
+ * a entregarse; sin reintentos de red, además, no se multiplica la espera.
+ */
+const COMPOSE_REQUEST = { timeout: 15_000, maxNetworkRetries: 0 } as const;
+
+/**
  * Tipos de balance transaction que representan DINERO DE UN COBRO. El resto
  * (el propio `payout`, las tarifas sueltas de Stripe, los ajustes de reserva)
  * no tiene `Payment` al que apuntar y se salta sin ruido.
@@ -227,7 +235,7 @@ async function linkPayoutPayments(
   payoutRowId: string,
   stripePayoutId: string
 ): Promise<number> {
-  const options = { stripeAccount: client.accountId };
+  const options = { stripeAccount: client.accountId, ...COMPOSE_REQUEST };
   let enlazados = 0;
   let starting_after: string | undefined;
 
@@ -332,26 +340,36 @@ export async function reconcilePayout(
     return { ok: false, retry: true, error: `No se pudo guardar el payout ${payout.id}: ${errorMessage(error)}` };
   }
 
+  // Una línea por payout atendido, pase lo que pase con la composición. Es el
+  // rastro de operación que el despachador de S1 espera de este módulo —cada
+  // pista deja el suyo— y es lo que permite saber, mirando el log, si un payout
+  // entró completo o se guardó a medias.
   const client = await stripeReadClient(orgId);
+  let composicion: string;
   if (!client.ok) {
-    console.info("[stripe-balance] payout guardado sin composición, sin lectura de Stripe", {
-      orgId,
-      payoutId: payout.id,
-      motivo: client.error,
-    });
-    return { ok: true };
+    composicion = `sin composición (${client.error})`;
+  } else {
+    try {
+      const enlazados = await linkPayoutPayments(client, orgId, payoutRowId, payout.id);
+      composicion = `${enlazados} cobros enlazados`;
+    } catch (error) {
+      // El payout ya está guardado: se registra el motivo y se devuelve `ok`.
+      // La composición se reconstruye en la siguiente entrega o desde la
+      // pantalla de contabilidad; pedir reintento a Stripe contra una cuenta
+      // que ha revocado el acceso no arregla nada.
+      composicion = `composición fallida (${errorMessage(error)})`;
+    }
   }
 
-  try {
-    await linkPayoutPayments(client, orgId, payoutRowId, payout.id);
-  } catch (error) {
-    console.error("[stripe-balance] no se pudo componer el payout", {
-      orgId,
-      payoutId: payout.id,
-      eventType,
-      error: errorMessage(error),
-    });
-  }
+  console.info("[stripe-balance] payout conciliado", {
+    orgId,
+    eventType,
+    payoutId: payout.id,
+    status,
+    arrivalDate: arrivalDate?.toISOString() ?? null,
+    amount: payout.amount,
+    composicion,
+  });
 
   return { ok: true };
 }

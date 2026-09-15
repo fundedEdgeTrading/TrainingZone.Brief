@@ -13,9 +13,10 @@ import {
   recentAccountingMonths,
   totalsOf,
 } from "@/lib/stripe-export";
+import { buildFinancialReport, stripeConnectionFor } from "@/lib/stripe-reports";
 import type { PayoutStatus } from "@prisma/client";
 import { resolveAccountingScope } from "./resolve-scope";
-import { downloadAccountingCsvAction } from "./actions";
+import { downloadAccountingCsvAction, downloadFinancialReportAction } from "./actions";
 import { DownloadButton } from "./download-button";
 
 /**
@@ -64,12 +65,25 @@ export default async function ContabilidadPage({
   const mes = parseAccountingMonth(params.mes);
   const meses = recentAccountingMonths(12);
 
-  const [movimientos, cuadre, payouts] = await Promise.all([
+  const [movimientos, cuadre, payouts, conexion] = await Promise.all([
     listAccountingMovements(session.user.orgId, { from: mes.from, to: mes.to, centerIds: scope.centerIds }),
     reconcilePeriod(session.user.orgId, { from: mes.from, to: mes.to, centerIds: scope.centerIds }),
     listPayoutsWithComposition(session.user.orgId, { centerIds: scope.centerIds, take: 12 }),
+    stripeConnectionFor(session.user.orgId),
   ]);
   const totales = totalsOf(movimientos);
+
+  // HU-ST-26 · el informe solo se calcula si hay cobros conectados: sin cuenta
+  // no hay saldo que leer y la sección enseña la explicación, no un botón.
+  const informe = conexion.connected
+    ? await buildFinancialReport(session.user.orgId, {
+        from: mes.from,
+        to: mes.to,
+        centerIds: scope.centerIds,
+        periodLabel: mes.label,
+        scopeLabel: scope.scopeLabel,
+      })
+    : null;
 
   function href(next: { mes?: string; centerId?: string | null }) {
     const qs = new URLSearchParams();
@@ -156,6 +170,82 @@ export default async function ContabilidadPage({
             </p>
           </div>
         </div>
+      </Card>
+
+      <Card
+        title="Informe financiero"
+        meta={informe ? mes.label : "sin cobros conectados"}
+        delay={0.13}
+      >
+        {!conexion.connected || !informe ? (
+          // Escenario "sin Stripe conectado": se explica qué falta y por dónde
+          // se hace. Un botón que no puede generar nada es peor que no tenerlo:
+          // se pulsa, no pasa nada, y nadie sabe si el fallo es suyo.
+          <div className="space-y-3">
+            <p className="text-sm text-brand-text-2">
+              Para pedir un informe financiero hace falta conectar los cobros de este centro con Stripe. El
+              informe sale de lo que Stripe liquida —comisiones, netos y saldo—, y sin cuenta conectada no hay
+              nada que leer.
+            </p>
+            <p className="text-xs text-brand-muted">
+              {!conexion.connected && conexion.reason}
+            </p>
+            <Link
+              href="/organization"
+              className="inline-block rounded-lg bg-brand-ink px-3.5 py-1.5 text-xs font-semibold text-tz-bone transition-opacity duration-150 hover:opacity-90"
+            >
+              Conectar cobros
+            </Link>
+            <p className="text-xs text-faint">
+              Mientras tanto, el extracto de arriba sigue funcionando: se arma con los cobros registrados en
+              Apta, tengan o no desglose de Stripe.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div>
+                <div className="text-xs text-faint">Saldo disponible</div>
+                <div className="font-semibold tz-nums">
+                  {informe.balance ? euros(informe.balance.availableCents) : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-faint">Pendiente en Stripe</div>
+                <div className="font-semibold tz-nums">
+                  {informe.balance ? euros(informe.balance.pendingCents) : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-faint">Métodos con cobros</div>
+                <div className="font-semibold tz-nums">{informe.byMethod.length}</div>
+              </div>
+              <div>
+                <div className="text-xs text-faint">Entorno</div>
+                <div>
+                  <Badge tone={informe.livemode ? "good" : "warning"}>
+                    {informe.livemode ? "Live" : "Pruebas"}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            {informe.balanceError && (
+              // La tarjeta degrada con su mensaje: el resto del informe sale de
+              // nuestra base y no depende de que Stripe conteste.
+              <p className="text-xs text-warning-text">
+                No se pudo leer el saldo en Stripe: {informe.balanceError} El resto del informe sale igual.
+              </p>
+            )}
+
+            <DownloadButton
+              label="Descargar informe del periodo"
+              pendingLabel="Generando…"
+              variant="ghost"
+              request={async () => downloadFinancialReportAction({ mes: mes.id, centerId: scope.centerId })}
+            />
+          </div>
+        )}
       </Card>
 
       <Card

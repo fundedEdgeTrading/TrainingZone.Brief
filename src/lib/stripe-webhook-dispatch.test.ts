@@ -112,6 +112,11 @@ async function cleanup() {
   const org = await prisma.organization.findUnique({ where: { slug: SLUG }, select: { id: true } });
   if (!org) return;
   await prisma.stripeAccount.deleteMany({ where: { orgId: org.id } });
+  // HU-ST-23 (P4): `payout.paid` / `payout.failed` ya no son un `console.info`.
+  // Desde que `reconcilePayout` tiene cuerpo, pasar esos dos eventos por el
+  // despachador deja una fila en `StripePayout`, y borrar la organización sin
+  // llevársela antes choca contra `StripePayout_orgId_fkey`.
+  await prisma.stripePayout.deleteMany({ where: { orgId: org.id } });
   await prisma.organization.delete({ where: { id: org.id } });
 }
 
