@@ -2,7 +2,8 @@ import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import Google from "next-auth/providers/google";
-import { authenticate, membershipIn } from "@/lib/identity";
+import { authenticate, membershipIn, type Membership } from "@/lib/identity";
+import { clientIpFrom, throttledAccessAttempt } from "@/lib/login-throttle";
 import type { Role } from "@prisma/client";
 
 /**
@@ -33,22 +34,43 @@ const providers: NextAuthConfig["providers"] = [
       // del valor recibido.
       orgId: { label: "Organización", type: "text" },
     },
-    async authorize(credentials) {
+    // E1-10: `request` se usa para la IP del cliente. El formulario pasa antes
+    // por `resolveLoginTargets`, pero esta es la ruta que Auth.js expone
+    // (`/api/auth/callback/credentials`) y se puede llamar directamente: si el
+    // freno viviera solo en la server action, bastaría con saltársela.
+    async authorize(credentials, request) {
       const email = credentials?.email as string | undefined;
       const password = credentials?.password as string | undefined;
       const orgId = (credentials?.orgId as string | undefined) || undefined;
       if (!email || !password) return null;
 
-      const result = await authenticate(email, password);
-      if (!result.ok) return null;
+      type Authorized = { identityId: string; membership: Membership | null };
 
-      // Sin elección explícita solo se resuelve el caso inequívoco: una sola
-      // membresía. Con varias no se adivina — el login pide elegir.
-      const chosen = orgId
-        ? result.memberships.find((m) => m.orgId === orgId)
-        : result.memberships.length === 1
-          ? result.memberships[0]
-          : null;
+      const outcome = await throttledAccessAttempt<Authorized>(
+        { purpose: "LOGIN", email, ip: clientIpFrom(new Headers(request?.headers)) },
+        async () => {
+          const result = await authenticate(email, password);
+          if (!result.ok) return { granted: false };
+
+          // Sin elección explícita solo se resuelve el caso inequívoco: una sola
+          // membresía. Con varias no se adivina — el login pide elegir.
+          //
+          // Las credenciales SÍ eran buenas, así que el intento se concede y el
+          // contador se limpia: quien acierta la contraseña no está probando
+          // contraseñas, por mucho que le falte decir en qué organización entra.
+          const chosen = orgId
+            ? result.memberships.find((m) => m.orgId === orgId)
+            : result.memberships.length === 1
+              ? result.memberships[0]
+              : null;
+          return { granted: true, value: { identityId: result.identityId, membership: chosen ?? null } };
+        }
+      );
+
+      // Credenciales malas y intento bloqueado devuelven lo mismo, que es lo que
+      // Auth.js traduce a un error de login indistinguible.
+      if (!outcome.ok) return null;
+      const { identityId, membership: chosen } = outcome.value;
       if (!chosen) return null;
 
       return {
@@ -59,7 +81,7 @@ const providers: NextAuthConfig["providers"] = [
         role: chosen.role,
         orgId: chosen.orgId,
         centerId: chosen.centerId,
-        identityId: result.identityId,
+        identityId,
       };
     },
   }),
