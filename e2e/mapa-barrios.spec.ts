@@ -195,17 +195,17 @@ test.describe("E14-10 — la tabla de CP como vista principal", () => {
     await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios?vista=tabla");
 
-    await page.getByRole("button", { name: "Trim.", exact: true }).click();
+    await page.getByRole("button", { name: "3 meses", exact: true }).click();
     // Cambiar de periodo sí vuelve al servidor: cambia el dato, no el color. Y
     // no se pierde la vista por el camino.
-    await page.waitForURL(/range=trim/);
+    await page.waitForURL(/range=3m/);
     expect(new URL(page.url()).searchParams.get("vista")).toBe("tabla");
     await expect(page.locator("table").first()).toBeVisible();
   });
 
   test("la tabla se exporta con el periodo y el filtro dentro del fichero", async ({ page }) => {
     await loginAs(page, "direccion@trainingzone.es");
-    await page.goto("/mapa-barrios?vista=tabla&range=trim");
+    await page.goto("/mapa-barrios?vista=tabla&range=3m");
 
     const [download] = await Promise.all([
       page.waitForEvent("download"),
@@ -223,7 +223,8 @@ test.describe("E14-10 — la tabla de CP como vista principal", () => {
     expect(headers.split(";")).toContain("Leads");
     expect(headers.split(";")).toContain("Conversión");
     // Sin periodo ni filtro dentro, el fichero no se puede volver a interpretar.
-    expect(first).toContain("trimestre en curso");
+    // El rótulo del periodo sale de `rangeMeta`, la misma fuente que el panel.
+    expect(first).toContain("los 3 meses del periodo");
     expect(first).toContain("Socios vivos");
   });
 });

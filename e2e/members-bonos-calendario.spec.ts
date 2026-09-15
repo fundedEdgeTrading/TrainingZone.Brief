@@ -306,8 +306,8 @@ test.describe("El listado de socios lee bonos y ritmo", () => {
     await expect(card.getByText("A punto de acabarse")).toBeVisible();
 
     // El periodo viaja en la URL, como en el resto del panel.
-    await card.getByRole("link", { name: "Trim.", exact: true }).click();
-    await page.waitForURL(/range=trim/);
+    await card.getByRole("link", { name: "3 meses", exact: true }).click();
+    await page.waitForURL(/range=3m/);
     await expect(page.getByRole("region", { name: "Bonos por centro" })).toBeVisible();
   });
 

@@ -3,7 +3,7 @@ import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { centerScopeFor } from "@/lib/center-scope";
 import { resolveTimezone } from "@/lib/timezone";
-import { parseRange } from "@/lib/dashboard-queries";
+import { parseCustomRange, parseRange, type CustomRange } from "@/lib/dashboard-queries";
 import { Skeleton, SkeletonKpiRow, SkeletonChartCard } from "@/components/ui/skeleton";
 import { ContextBar, type CenterOption } from "./context-bar";
 import { ZoneDivider } from "./panel-card";
@@ -12,6 +12,7 @@ import {
   InsightPanel,
   KpiRow,
   RevenuePanel,
+  RevenueMixPanel,
   MemberStatePanel,
   OccupancyByCenterPanel,
   OccupancyByWeekdayPanel,
@@ -52,6 +53,8 @@ export default async function DashboardPage({
   searchParams: Promise<{
     centerId?: string;
     range?: string;
+    desde?: string;
+    hasta?: string;
     rankSort?: string;
     rankDir?: string;
     servicesOrderBy?: string;
@@ -76,14 +79,31 @@ export default async function DashboardPage({
   // es ese centro, y el panel debe enseñar sus cifras y no las de la org.
   const centerId = requested ?? (scope !== null && allowed.length === 1 ? allowed[0].id : null);
 
-  const range = parseRange(query.range);
+  const requestedRange = parseRange(query.range);
   const rankSort = (RANK_SORTS.includes(query.rankSort as RankSort) ? query.rankSort : "mixed") as RankSort;
   const rankDir = query.rankDir === "asc" ? "asc" : "desc";
   const servicesOrderBy = query.servicesOrderBy === "revenue" ? "revenue" : "count";
 
+  /**
+   * E14-06 · el periodo personalizado se valida aquí y **rechaza sin romper la
+   * pantalla**: un rango invertido, futuro o de más de dos años cae al mes en
+   * curso y la barra de contexto dice por qué. Llega por URL, o sea que viene
+   * escrito a mano, pegado de un chat o recortado por un cliente de correo tan
+   * a menudo como del propio selector.
+   */
+  const parsedCustom = requestedRange === "custom" ? parseCustomRange(query.desde, query.hasta) : null;
+  const custom: CustomRange | undefined = parsedCustom?.ok ? parsedCustom.range : undefined;
+  const customError = parsedCustom && !parsedCustom.ok ? parsedCustom.message : null;
+  const range = requestedRange === "custom" && !custom ? "mes" : requestedRange;
+
   const params: DashboardParams = {
     centerId: centerId ?? undefined,
     range: range === "mes" ? undefined : range,
+    // Se devuelven lo que llegó y no lo ya validado: si el periodo se rechazó,
+    // los campos del formulario tienen que seguir enseñando lo que se escribió
+    // para poder corregirlo, no vaciarse.
+    desde: requestedRange === "custom" ? query.desde : undefined,
+    hasta: requestedRange === "custom" ? query.hasta : undefined,
     rankSort: rankSort === "mixed" ? undefined : rankSort,
     rankDir: rankDir === "desc" ? undefined : rankDir,
     servicesOrderBy: servicesOrderBy === "count" ? undefined : servicesOrderBy,
@@ -100,7 +120,7 @@ export default async function DashboardPage({
   const activeCenter = allowed.find((c) => c.id === centerId) ?? allowed[0];
   const timezone = await resolveTimezone(activeCenter?.timezone);
 
-  const panel = { orgId, centerId, range } as const;
+  const panel = { orgId, centerId, range, custom } as const;
 
   return (
     <div className="max-w-[1240px] mx-auto flex flex-col gap-3.5">
@@ -111,6 +131,7 @@ export default async function DashboardPage({
         activeCenterId={centerId ?? "all"}
         range={range}
         params={params}
+        customError={customError}
       />
 
       <Suspense fallback={<Skeleton className="h-[92px] rounded-[18px]" />}>
@@ -144,6 +165,13 @@ export default async function DashboardPage({
           <RevenueByMethodPanel {...panel} />
         </Suspense>
       </div>
+
+      {/* «De dónde viene el dinero» (E14-17). La card es de M4; M1 pone la
+          línea. No recibe `custom`: con el periodo personalizado se comporta
+          como «Mes» hasta que M4 acepte el campo. */}
+      <Suspense fallback={<SkeletonChartCard height={300} />}>
+        <RevenueMixPanel orgId={orgId} centerId={centerId} range={range} />
+      </Suspense>
 
       <Suspense fallback={<SkeletonKpiRow count={4} cols={4} />}>
         <LtvRow {...panel} />

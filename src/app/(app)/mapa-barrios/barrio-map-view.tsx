@@ -23,7 +23,7 @@ import {
   type BarrioMetric,
   type BarrioStat,
 } from "@/lib/barrio-map";
-import { DASHBOARD_RANGES } from "@/lib/dashboard-range";
+import { DASHBOARD_RANGES, rangeMeta } from "@/lib/dashboard-range";
 import { HeaderActions, useHeaderSubtitle } from "../header-slot";
 import BarrioMap from "./barrio-map-loader";
 import { BarrioTable } from "./barrio-table";
@@ -229,7 +229,7 @@ export function BarrioMapView({
   const exportCsv = useCallback(() => {
     const csv = barrioTableCsv(rows, {
       cityLabel: city.label,
-      rangeLabel: DASHBOARD_RANGES.find((r) => r.id === params.range)?.meta ?? params.range,
+      rangeLabel: rangeMeta(params.range),
       stateLabel: BARRIO_STATE_LABEL[params.estado],
       centerLabel,
     });
@@ -285,7 +285,12 @@ export function BarrioMapView({
       data-tz-overlay
       className={`self-start flex flex-wrap items-center gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
     >
-      {DASHBOARD_RANGES.map((r) => (
+      {/* E14-06 · Fuera el personalizado: necesita un selector de fechas, y
+          `/mapa-barrios` no lo tiene. Una pastilla que navega a `range=custom`
+          sin fechas se comporta como «Mes» sin decirlo, que es justo la clase
+          de rótulo mentiroso que este lote vino a quitar. Mismo criterio que
+          la barra de contexto del panel. */}
+      {DASHBOARD_RANGES.filter((r) => r.id !== "custom").map((r) => (
         <button
           key={r.id}
           type="button"

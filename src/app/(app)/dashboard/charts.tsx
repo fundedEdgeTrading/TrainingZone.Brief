@@ -145,21 +145,21 @@ export function RevenueChart({
 export function OccupancyByWeekdayChart({
   data,
 }: {
-  data: { day: string; occupancyPct: number }[];
+  data: { day: string; soldPct: number }[];
 }) {
   const { active, setActive } = useHover();
-  const peak = data.reduce((best, d, i) => (d.occupancyPct > (data[best]?.occupancyPct ?? -1) ? i : best), 0);
+  const peak = data.reduce((best, d, i) => (d.soldPct > (data[best]?.soldPct ?? -1) ? i : best), 0);
   const rows = data.map((d, i) => ({
     ...d,
     label: d.day.slice(0, 3),
     // Domingo y sábado: fin de semana, la serie más tenue.
     weekend: i === 0 || i === 6,
-    peakLabel: i === peak ? `${d.occupancyPct}%` : "",
+    peakLabel: i === peak ? `${d.soldPct}%` : "",
   }));
   const peakLabel = rows[peak]?.label ?? "";
   // El eje llega hasta 80% salvo que algún día lo pase: con el tope fijo, un
   // martes al 95% se salía del lienzo en vez de crecer la escala.
-  const top = Math.max(80, Math.ceil(Math.max(0, ...data.map((d) => d.occupancyPct)) / 20) * 20);
+  const top = Math.max(80, Math.ceil(Math.max(0, ...data.map((d) => d.soldPct)) / 20) * 20);
 
   return (
     <ResponsiveContainer width="100%" height={186}>
@@ -167,8 +167,8 @@ export function OccupancyByWeekdayChart({
         <CartesianGrid {...gridProps} />
         <XAxis dataKey="label" tick={highlightTick(peakLabel, SERIES.gold)} axisLine={{ stroke: INK.baseline }} tickLine={false} />
         <YAxis tick={axisStyle} axisLine={false} tickLine={false} width={36} unit="%" ticks={[0, top / 2, top]} domain={[0, top]} />
-        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="ocupación" unit="%" />} />
-        <Bar dataKey="occupancyPct" radius={[7, 7, 0, 0]} maxBarSize={30} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
+        <Tooltip cursor={false} content={(props: TooltipContentProps) => <TzTooltip {...props} metric="plazas vendidas" unit="%" />} />
+        <Bar dataKey="soldPct" radius={[7, 7, 0, 0]} maxBarSize={30} isAnimationActive animationDuration={700} animationBegin={200} animationEasing="ease-out">
           {rows.map((r, i) => (
             <Cell
               key={i}
@@ -186,30 +186,70 @@ export function OccupancyByWeekdayChart({
   );
 }
 
-export function NoShowRateCard({ rate, deltaPts }: { rate: number; deltaPts: number | null }) {
+/**
+ * E14-02 · asistencia real, con el no-show al lado.
+ *
+ * La cifra grande era la tasa de no-show sobre una ventana fija de 30 días.
+ * Pasa a ser la asistencia —de lo vendido en clases **ya celebradas**, cuánto
+ * se presentó— porque es la pregunta que dirección hacía cuando leía
+ * "ocupación" y le contestaban otra cosa. El no-show sigue, de secundario: son
+ * el complemento uno del otro, pero se leen distinto.
+ *
+ * El pie no es decorativo. Una asistencia calculada sobre un periodo con la
+ * mitad de las listas sin pasar no significa lo mismo que una calculada sobre
+ * un periodo con la lista al día, y quien mira tiene derecho a saber cuál de
+ * las dos está leyendo.
+ */
+export function NoShowRateCard({
+  rate,
+  deltaPts,
+  attendancePct,
+  unresolved,
+  scopeLabel,
+}: {
+  rate: number;
+  deltaPts: number | null;
+  attendancePct: number;
+  unresolved: { occurrences: number; bookings: number; total: number };
+  scopeLabel: string;
+}) {
   return (
     <div
       className="relative overflow-hidden bg-brand-ink rounded-[18px] p-[22px] flex flex-col justify-between h-full tz-fade-up"
       style={{ animationDelay: "0.36s" }}
     >
       <h3 className="relative z-10 font-display font-bold text-base uppercase text-white">
-        Tasa de no-show <span className="font-sans font-semibold text-xs normal-case text-brand-muted-2">· 30 días</span>
+        Asistencia real{" "}
+        <span className="font-sans font-semibold text-xs normal-case text-brand-muted-2">
+          · clases ya dadas {scopeLabel}
+        </span>
       </h3>
       <div className="relative z-10">
         <div className="flex items-end gap-2.5">
           <span className="font-display font-bold text-[72px] leading-none tracking-[-.03em] text-apta-gold tz-nums">
-            {rate}%
+            {attendancePct}%
           </span>
           {deltaPts !== null && deltaPts !== 0 && (
             // Chip dorado sobre oscuro: se usan los tokens `gold-bg`/`gold`, que
             // se invierten con el tema igual que la propia card oscura.
+            // El signo es el del no-show: más faltas es peor asistencia.
             <span className="mb-2 rounded-pill bg-gold-bg text-gold px-2 py-[3px] text-[11px] font-bold tabular-nums">
-              {deltaPts > 0 ? "↑" : "↓"} {Math.abs(deltaPts)} pts
+              {deltaPts > 0 ? "↑" : "↓"} {Math.abs(deltaPts)} pts de faltas
             </span>
           )}
         </div>
-        <p className="text-[13px] text-brand-muted-2 mt-2 max-w-[220px]">
-          de las reservas confirmadas no se presentaron
+        <p className="text-[13px] text-brand-muted-2 mt-2 max-w-[240px]">
+          de las plazas vendidas se presentaron. El {rate}% faltó sin avisar.
+          {unresolved.occurrences > 0 && (
+            <>
+              {" "}
+              <span className="text-white/80">
+                Ojo: {unresolved.occurrences} de {unresolved.total} clases no tienen la lista pasada (
+                {unresolved.bookings} {unresolved.bookings === 1 ? "reserva" : "reservas"}), y esas no cuentan como
+                asistencia.
+              </span>
+            </>
+          )}
         </p>
       </div>
       {/* El círculo decorativo iba al mismo tono que el fondo y no se veía.

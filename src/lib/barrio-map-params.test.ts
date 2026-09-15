@@ -23,7 +23,7 @@ test("acepta los seis parámetros", () => {
     ciudad: "santander",
     vista: "tabla",
     metrica: "opp",
-    range: "trim",
+    range: "3m",
     estado: "todos",
     centerId: "ctr_1",
   });
@@ -31,10 +31,19 @@ test("acepta los seis parámetros", () => {
     ciudad: "santander",
     vista: "tabla",
     metrica: "opp",
-    range: "trim",
+    range: "3m",
     estado: "todos",
     centerId: "ctr_1",
   });
+});
+
+test("un enlace con el selector viejo sigue llevando al periodo equivalente", () => {
+  // E14-06 subió el panel de cuatro periodos a siete y `trim` (trimestre
+  // natural en curso) pasó a ser `3m` (últimos tres meses). Un enlace guardado
+  // o compartido antes del cambio no puede caer en el periodo por defecto sin
+  // decir nada: quien lo abrió esperaba un trimestre.
+  assert.equal(parseBarrioMapParams({ range: "trim" }).range, "3m");
+  assert.equal(parseBarrioMapParams({ range: "30d" }).range, "mes");
 });
 
 // ---------------------------------------------------------------------------
@@ -59,12 +68,12 @@ test("E14-10 · una vista que no existe cae al mapa en vez de romper", () => {
 });
 
 test("E14-10 · la vista de tabla se puede enlazar con el resto del estado", () => {
-  const url = barrioMapHref({ vista: "tabla", ciudad: "zaragoza", metrica: "conv", range: "trim" });
+  const url = barrioMapHref({ vista: "tabla", ciudad: "zaragoza", metrica: "conv", range: "3m" });
   assert.deepEqual(parseBarrioMapParams(Object.fromEntries(new URL(url, "http://x").searchParams)), {
     ciudad: "zaragoza",
     vista: "tabla",
     metrica: "conv",
-    range: "trim",
+    range: "3m",
     estado: "activos",
     centerId: null,
   });
@@ -114,7 +123,7 @@ test("los tres estados son los que necesitan E11-01 y E11-09", () => {
 });
 
 test("el enlace del panel encadena su rango, y conserva prefetch={false}", () => {
-  assert.equal(barrioMapHref({ range: "trim", centerId: "ctr_1" }), "/mapa-barrios?range=trim&centerId=ctr_1");
+  assert.equal(barrioMapHref({ range: "3m", centerId: "ctr_1" }), "/mapa-barrios?range=3m&centerId=ctr_1");
 
   const panel = readFileSync("src/app/(app)/dashboard/postal-map-panel.tsx", "utf8");
   assert.match(panel, /href=\{barrioMapHref\(\{ range, centerId \}\)\}/);

@@ -4,20 +4,32 @@ import { prisma } from "@/lib/prisma";
 import { sessionsInRangeWhere } from "@/lib/session-occurrences";
 import {
   OCCUPANCY_SELECT,
-  occupancyByWeekday,
-  occupancyPct,
+  attendancePct,
+  heldOccurrences,
+  ofKind,
   occurrencesOf,
   noShowPct,
+  soldByWeekday,
+  soldPct,
+  unresolvedRosters,
+  type Occurrence,
 } from "@/lib/occupancy";
 import { nearestOf } from "@/lib/barrio-geometry";
 import type { BarrioCenter, BarrioStat } from "@/lib/barrio-map";
-import { OCCUPANCY_TARGET_PCT } from "@/lib/dashboard-targets";
 import {
+  MIN_SAMPLE_PAYMENTS,
+  MIN_SAMPLE_REVENUE_CENTS,
+  OCCUPANCY_TARGET_PCT,
+  TENURE_TARGET_MONTHS,
+} from "@/lib/dashboard-targets";
+import {
+  LIVE_MEMBER_STATES,
   comparisonWindow,
+  rangeMeta,
   revenueBuckets,
   sparkBuckets,
   weekBuckets,
-  DASHBOARD_RANGES,
+  type ComparisonWindow,
   type DashboardOpts,
 } from "@/lib/dashboard-range";
 
@@ -48,6 +60,46 @@ function centerColumnScope(orgId: string, centerId?: string | null) {
   return centerId ? { orgId, centerId } : { orgId };
 }
 
+// ---------- Periodo activo ----------
+
+/**
+ * La ventana del selector, resuelta una sola vez por consulta.
+ *
+ * E14-06 · El diagnóstico de E14-01 encontró que **21 de las 25 consultas del
+ * panel recibían `opts.range` y no lo usaban**: unas tenían su propia ventana
+ * fija (30 o 60 días, rotulada en la card) y otras agregaban directamente todo
+ * el histórico bajo un rótulo que se movía con el selector. El resultado era un
+ * panel donde dos cifras contiguas hablaban de periodos distintos.
+ *
+ * A partir de aquí el criterio es explícito y solo hay tres formas legítimas de
+ * tratar el periodo, y cada consulta declara la suya en su comentario:
+ *
+ * 1. **Sigue la ventana** (`windowOf`): lo normal para una métrica de flujo
+ *    —dinero cobrado, altas, leads, sesiones—.
+ * 2. **Es un stock**: "cuántos socios hay AHORA" no tiene periodo. Se dice en
+ *    el rótulo y no se acota.
+ * 3. **Tiene ventana propia por definición**: la tendencia del mapa son sus dos
+ *    ventanas de 90 días, las altas y bajas son ocho semanas cerradas. También
+ *    se dice en el rótulo.
+ *
+ * Lo que ya no puede pasar es la cuarta: recibir el rango y no hacer nada con
+ * él sin que la pantalla lo diga.
+ */
+function windowOf(opts: DashboardOpts, now = new Date()): ComparisonWindow {
+  return comparisonWindow(opts.range ?? "mes", now, opts.custom);
+}
+
+/** Los tramos de la serie de ingresos del periodo activo, con su rótulo. */
+function revenueSeriesOf(opts: DashboardOpts, now = new Date()) {
+  const range = opts.range ?? "mes";
+  return { buckets: revenueBuckets(range, now, opts.custom), meta: rangeMeta(range, opts.custom) };
+}
+
+/** Los siete tramos de la sparkline del periodo activo. */
+function sparkOf(opts: DashboardOpts, now = new Date()) {
+  return sparkBuckets(opts.range ?? "mes", now, opts.custom);
+}
+
 /**
  * Serie de ingresos del periodo activo. Los tramos los decide el selector
  * (seis meses, cuatro semanas, el trimestre en curso o diez meses), así que la
@@ -59,14 +111,20 @@ function centerColumnScope(orgId: string, centerId?: string | null) {
  * puedan discrepar.
  */
 export async function getRevenueSeries(orgId: string, opts: DashboardOpts = {}) {
-  const range = opts.range ?? "mes";
-  const buckets = revenueBuckets(range);
+  const { buckets, meta } = revenueSeriesOf(opts);
   const since = buckets[0]?.from ?? new Date();
+  const scope = paymentScope(orgId, opts.centerId);
 
-  const payments = await prisma.payment.findMany({
-    where: { ...paymentScope(orgId, opts.centerId), status: "PAID", date: { gte: since } },
-    select: { date: true, amountCents: true },
-  });
+  const [payments, pending] = await Promise.all([
+    prisma.payment.findMany({
+      where: { ...scope, status: "PAID", date: { gte: since } },
+      select: { date: true, amountCents: true },
+    }),
+    // E14-03: el dinero en vuelo es el de la VENTANA ACTIVA, no el del tramo de
+    // la gráfica —que en «mes» son seis meses de contexto—, porque lo que el
+    // pie contesta es "¿qué me falta por confirmar de este periodo?".
+    pendingInWindow(scope, windowOf(opts)),
+  ]);
 
   const rows = buckets.map((b, i) => {
     const cents = payments
@@ -76,7 +134,36 @@ export async function getRevenueSeries(orgId: string, opts: DashboardOpts = {}) 
   });
 
   const average = rows.length ? rows.reduce((sum, r) => sum + r.totalEuros, 0) / rows.length : 0;
-  return { rows, average, meta: DASHBOARD_RANGES.find((r) => r.id === range)?.meta ?? "" };
+  return { rows, average, meta, pending };
+}
+
+/**
+ * E14-03 · el dinero que está en vuelo, para que «Ingresos» no mienta por omisión.
+ *
+ * `Payment.status = 'PENDING'` es el primer cobro asíncrono sin liquidar: con
+ * SEPA Direct Debit tarda días, y mientras tanto la suscripción vive en
+ * `PENDING_CONFIRMATION` (ver `stripe-mandate.ts`). Ese euro **no aparecía en
+ * ningún sitio del panel**: no está en «Ingresos», que filtra `PAID`, y tampoco
+ * en morosidad, que además exige `member.state = 'DELINQUENT'` — y quien tiene
+ * el primer adeudo en vuelo no ha impagado nada, todavía no se sabe.
+ *
+ * No se suma a la cifra grande: mezclar cobrado con en-vuelo convertiría el KPI
+ * de caja en una previsión, que es otra cosa. Se devuelve aparte para que la
+ * card lo pinte distinguido, y cuando son cero euros —que es lo que midió el
+ * diagnóstico contra los datos de demo— no se pinta nada.
+ */
+export type PendingRevenue = { cents: number; count: number };
+
+async function pendingInWindow(
+  scope: Prisma.PaymentWhereInput,
+  win: { from: Date; to: Date }
+): Promise<PendingRevenue> {
+  const agg = await prisma.payment.aggregate({
+    where: { ...scope, status: "PENDING", date: { gte: win.from, lt: win.to } },
+    _sum: { amountCents: true },
+    _count: { _all: true },
+  });
+  return { cents: agg._sum.amountCents ?? 0, count: agg._count._all };
 }
 
 /**
@@ -98,6 +185,7 @@ export async function getDelinquencyAmount(orgId: string, opts: DashboardOpts = 
   return unpaid.reduce((sum, p) => sum + p.amountCents, 0);
 }
 
+/** Stock: cuántos socios hay AHORA en cada estado. No tiene periodo, y el rótulo lo dice. */
 export async function getMemberStateBreakdown(orgId: string, opts: DashboardOpts = {}) {
   const rows = await prisma.member.groupBy({
     by: ["state"],
@@ -107,60 +195,102 @@ export async function getMemberStateBreakdown(orgId: string, opts: DashboardOpts
   return rows.map((r) => ({ state: r.state, count: r._count._all }));
 }
 
-export async function getOccupancyByCenter(orgId: string, opts: DashboardOpts = {}) {
-  const centers = await prisma.center.findMany({
-    where: opts.centerId ? { orgId, id: opts.centerId } : { orgId },
-    orderBy: { name: "asc" },
-  });
-  const until = new Date();
-  const since = new Date(until);
-  since.setDate(since.getDate() - 30);
-
-  const result = [];
-  for (const c of centers) {
-    // E12-06: se traen las filas CANDIDATAS a tener ocurrencias en la ventana
-    // (incluidas las series nacidas antes) y se cuentan las ocurrencias reales.
-    const sessions = await prisma.classSession.findMany({
-      where: { orgId, centerId: c.id, status: "SCHEDULED", ...sessionsInRangeWhere(since, until) },
-      select: OCCUPANCY_SELECT,
-    });
-    const occurrences = occurrencesOf(sessions, since, until);
-    result.push({
-      center: c.name,
-      occupancyPct: occupancyPct(occurrences),
-      // Sesiones celebradas de verdad en la ventana, no filas de la tabla.
-      sessions: occurrences.length,
-    });
-  }
-  return result;
-}
-
-export async function getNoShowRate(orgId: string, opts: DashboardOpts = {}) {
-  const until = new Date();
-  const since = new Date(until);
-  since.setDate(since.getDate() - 30);
-  const previousSince = new Date(since.getTime() - 30 * 86_400_000);
-
-  // E12-06: sobre las MISMAS ocurrencias que la ocupación. Contar reservas
-  // filtrando por `session.date` metía en la ventana todo el histórico de una
-  // serie cuya fecha base cayera dentro, y dejaba fuera series enteras.
+/**
+ * Las ocurrencias del ámbito dentro de una ventana, con una sola consulta.
+ *
+ * E12-06: se traen las filas CANDIDATAS a tener ocurrencias (incluidas las
+ * series nacidas antes de la ventana) y se proyectan las ocurrencias reales.
+ */
+async function occurrencesIn(orgId: string, opts: DashboardOpts, from: Date, to: Date) {
   const sessions = await prisma.classSession.findMany({
     where: {
       ...centerColumnScope(orgId, opts.centerId),
       status: "SCHEDULED",
-      ...sessionsInRangeWhere(previousSince, until),
+      ...sessionsInRangeWhere(from, to),
     },
-    select: OCCUPANCY_SELECT,
+    select: { centerId: true, ...OCCUPANCY_SELECT },
   });
+  return { sessions, occurrences: occurrencesOf(sessions, from, to) };
+}
 
-  const currentOccurrences = occurrencesOf(sessions, since, until);
-  const current = noShowPct(currentOccurrences);
-  const previousOccurrences = occurrencesOf(sessions, previousSince, since);
-  const previous = noShowPct(previousOccurrences);
-  const previousVolume = previousOccurrences.reduce((sum, o) => sum + o.attended + o.noShow, 0);
+/**
+ * E14-02 · las dos cifras de ocupación de un juego de ocurrencias, juntas.
+ *
+ * Van juntas porque se leen juntas: «40 % vendido y 75 % de asistencia» dice
+ * algo que ninguna de las dos por separado dice. `sold` incluye las clases que
+ * todavía no se han dado (una plaza vendida para el viernes está vendida hoy);
+ * `attendance` solo las celebradas, y `unresolved` es la nota al pie que dice
+ * sobre cuánta lista sin pasar está calculada.
+ */
+function occupancyOf(occurrences: Occurrence[], now = new Date()) {
+  const group = ofKind(occurrences, "GROUP");
+  const ep = ofKind(occurrences, "EP");
+  return {
+    soldPct: soldPct(occurrences),
+    attendancePct: attendancePct(occurrences, now),
+    // El EP tiene aforo 1 y llena siempre: promediarlo con el grupo sube la
+    // cifra de una parrilla vacía sin que nadie haya llenado una clase.
+    groupSoldPct: soldPct(group),
+    epSoldPct: soldPct(ep),
+    groupSessions: group.length,
+    epSessions: ep.length,
+    /** Clases ya celebradas: el denominador honesto de "cuántas sesiones hubo". */
+    heldSessions: heldOccurrences(occurrences, now).length,
+    sessions: occurrences.length,
+    unresolved: unresolvedRosters(occurrences, now),
+  };
+}
 
-  const attended = currentOccurrences.reduce((sum, o) => sum + o.attended, 0);
-  const noShow = currentOccurrences.reduce((sum, o) => sum + o.noShow, 0);
+export type CenterOccupancy = ReturnType<typeof occupancyOf> & { center: string };
+
+/**
+ * Ocupación por centro **del periodo activo**.
+ *
+ * Antes tenía una ventana fija de 30 días que ignoraba el selector, así que el
+ * pie de esta card y el tile de arriba daban dos números distintos bajo la
+ * misma palabra (E14-01, cifra 2). Ahora los dos miran lo mismo.
+ */
+export async function getOccupancyByCenter(orgId: string, opts: DashboardOpts = {}): Promise<CenterOccupancy[]> {
+  const now = new Date();
+  const win = windowOf(opts, now);
+  const [centers, { sessions }] = await Promise.all([
+    prisma.center.findMany({
+      where: opts.centerId ? { orgId, id: opts.centerId } : { orgId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    occurrencesIn(orgId, opts, win.from, win.to),
+  ]);
+
+  // Una sola consulta y el reparto por centro en memoria: antes era una por
+  // centro, y con el selector en "Todos" eso es N viajes para pintar N barras.
+  return centers.map((c) => ({
+    center: c.name,
+    ...occupancyOf(occurrencesOf(sessions.filter((s) => s.centerId === c.id), win.from, win.to), now),
+  }));
+}
+
+/**
+ * Tasa de no presentados del periodo activo, con su comparativa.
+ *
+ * Sobre las MISMAS ocurrencias ya celebradas que la asistencia real (E14-02):
+ * una clase que no se ha dado no tiene no-shows, y contarla como si los tuviera
+ * era parte del fallo de la cifra 2 del diagnóstico.
+ */
+export async function getNoShowRate(orgId: string, opts: DashboardOpts = {}) {
+  const now = new Date();
+  const win = windowOf(opts, now);
+  const { sessions } = await occurrencesIn(orgId, opts, win.prevFrom, win.to);
+
+  const currentOccurrences = occurrencesOf(sessions, win.from, win.to);
+  const current = noShowPct(currentOccurrences, now);
+  const previousOccurrences = occurrencesOf(sessions, win.prevFrom, win.prevTo);
+  const previous = noShowPct(previousOccurrences, now);
+  const previousVolume = heldOccurrences(previousOccurrences, now).reduce((sum, o) => sum + o.attended + o.noShow, 0);
+
+  const held = heldOccurrences(currentOccurrences, now);
+  const attended = held.reduce((sum, o) => sum + o.attended, 0);
+  const noShow = held.reduce((sum, o) => sum + o.noShow, 0);
 
   // El chip de la card oscura cuenta la variación en puntos, no en porcentaje:
   // "del 8% al 6,6%" es −1,4 pts, no −17,5%.
@@ -173,30 +303,34 @@ export async function getNoShowRate(orgId: string, opts: DashboardOpts = {}) {
     attended,
     noShow,
     held: attended + noShow,
+    // E14-02: la asistencia real y la lista sin pasar sobre la que se calcula.
+    attendancePct: attendancePct(currentOccurrences, now),
+    unresolved: unresolvedRosters(currentOccurrences, now),
+    deltaHint: win.deltaHint,
+    scopeLabel: win.scopeLabel,
   };
 }
 
+/**
+ * Plazas vendidas por día de la semana, en el periodo activo.
+ *
+ * Mide venta y no asistencia: la pregunta es cuál es el día flojo para mover la
+ * parrilla, y una plaza vendida a la que luego no se vino sigue siendo demanda.
+ */
 export async function getOccupancyByWeekday(orgId: string, opts: DashboardOpts = {}) {
-  const until = new Date();
-  const since = new Date(until);
-  since.setDate(since.getDate() - 60);
-  const sessions = await prisma.classSession.findMany({
-    where: {
-      ...centerColumnScope(orgId, opts.centerId),
-      status: "SCHEDULED",
-      ...sessionsInRangeWhere(since, until),
-    },
-    select: OCCUPANCY_SELECT,
-  });
+  const win = windowOf(opts);
+  const { occurrences } = await occurrencesIn(orgId, opts, win.from, win.to);
   // E12-06: cada ocurrencia se imputa a SU día. Con la fecha base, una serie
   // "todos los laborables" cargaba entera en un solo día de la semana.
-  const pcts = occupancyByWeekday(occurrencesOf(sessions, since, until));
+  const pcts = soldByWeekday(occurrences);
   const labels = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-  return pcts.map((occupancyPct, i) => ({ day: labels[i], occupancyPct }));
+  return pcts.map((soldPct, i) => ({ day: labels[i], soldPct }));
 }
 
+/** Cobrado por método **en el periodo activo**: antes agregaba todo el histórico. */
 export async function getRevenueByMethod(orgId: string, opts: DashboardOpts = {}) {
-  const scope = paymentScope(orgId, opts.centerId);
+  const win = windowOf(opts);
+  const scope = { ...paymentScope(orgId, opts.centerId), date: { gte: win.from, lt: win.to } };
   // Los fallidos van aparte del cobrado: el pie de la card dice qué método
   // genera más recibos fallidos, y eso hay que contarlo, no suponerlo.
   const [rows, failed] = await Promise.all([
@@ -212,10 +346,126 @@ export async function getRevenueByMethod(orgId: string, opts: DashboardOpts = {}
 
 // ---------- F17: BI para dirección (RB-BI-002/003/004) ----------
 
-/** RB-BI-002: LTV medio por cliente y ticket medio por cobro. */
+const MONTH_MS = 2_629_746_000; // mes medio gregoriano: 365,2425 / 12 días
+
+/** Una vida de socio observada: meses transcurridos y si terminó o sigue abierta. */
+export type TenureObservation = { months: number; churned: boolean };
+
+export type Tenure = {
+  /** Permanencia media medida, en meses. `null` cuando no hay nada que medir. */
+  months: number | null;
+  /** Hasta dónde se puede medir: la vida de socio más larga que existe. */
+  horizonMonths: number;
+  /** La media simple de quienes YA se fueron. Es un suelo, no la permanencia. */
+  completedMonths: number | null;
+  completedCount: number;
+  /** Socios vivos: aportan tiempo, no aportan baja (censura por la derecha). */
+  censoredCount: number;
+  targetMonths: number;
+  /**
+   * El horizonte no llega a la referencia: comparar contra ella todavía no
+   * significa nada. Es el titular de la card cuando es `true`.
+   */
+  belowHorizon: boolean;
+};
+
+/**
+ * E14-05 · permanencia media en meses, con la censura por la derecha resuelta.
+ *
+ * **La decisión, y por qué.** La historia plantea dos opciones y las dos están
+ * mal: incluir a los socios vivos con su antigüedad de hoy infravalora la
+ * permanencia (todavía les queda por quedarse), y excluirlos la sobrevalora si
+ * el negocio es joven (solo se han podido ir los que entraron pronto). Hay una
+ * tercera, que es la correcta y la estándar para esto: **Kaplan-Meier**. Los
+ * socios vivos no se excluyen ni se cuentan como bajas — entran como
+ * observaciones **censuradas**: aportan el tiempo que llevan al denominador de
+ * riesgo de cada mes y no aportan ninguna baja. Eso es exactamente "usar lo que
+ * se sabe de ellos y no inventar lo que no".
+ *
+ * Lo que se devuelve es el **área bajo la curva de supervivencia hasta el
+ * horizonte de observación** (la vida de socio más larga que existe). En
+ * cristiano: los meses que de media aguanta un socio *dentro del tiempo que
+ * llevamos mirando*. No se extrapola más allá, y por eso viene acompañado de
+ * `horizonMonths`: sin ese dato la cifra se puede comparar con cualquier cosa.
+ *
+ * **El aviso que importa.** Medido contra los datos de demo en septiembre de
+ * 2026, el alta más antigua tiene 23,6 meses y la referencia de negocio son 25.
+ * Nadie ha podido quedarse 25 meses: el negocio no existe desde hace 25 meses.
+ * Titular "estamos un 70 % por debajo del objetivo" con la media simple de los
+ * ocho que se fueron (7,26 meses) sería el mismo error que el insight de la
+ * cifra 4 del diagnóstico, con más ceros. De ahí `belowHorizon`.
+ */
+export function tenureFromObservations(
+  observations: TenureObservation[],
+  targetMonths = TENURE_TARGET_MONTHS
+): Tenure {
+  const completed = observations.filter((o) => o.churned);
+  const censoredCount = observations.length - completed.length;
+  const completedMonths = completed.length
+    ? completed.reduce((sum, o) => sum + o.months, 0) / completed.length
+    : null;
+  const horizonMonths = observations.reduce((max, o) => Math.max(max, o.months), 0);
+
+  const base: Omit<Tenure, "months"> = {
+    horizonMonths,
+    completedMonths,
+    completedCount: completed.length,
+    censoredCount,
+    targetMonths,
+    belowHorizon: horizonMonths < targetMonths,
+  };
+  if (!observations.length) return { ...base, months: null };
+
+  // Curva de supervivencia: en cada baja, la probabilidad de seguir cae en
+  // proporción a cuántos socios estaban en riesgo ESE mes. Quien se dio de alta
+  // después no estaba expuesto y no cuenta en ese denominador — que es justo lo
+  // que arregla el sesgo del negocio joven.
+  const eventTimes = [...new Set(completed.map((o) => o.months))].sort((a, b) => a - b);
+  let survival = 1;
+  let previous = 0;
+  let area = 0;
+  for (const t of eventTimes) {
+    const atRisk = observations.filter((o) => o.months >= t).length;
+    if (!atRisk) break;
+    area += survival * (t - previous);
+    survival *= 1 - completed.filter((o) => o.months === t).length / atRisk;
+    previous = t;
+  }
+  // El tramo final, en el que ya no hay más bajas observadas.
+  area += survival * (horizonMonths - previous);
+
+  return { ...base, months: Math.round(area * 10) / 10 };
+}
+
+/**
+ * RB-BI-002 / E14-05 · lo que deja un socio y cuánto se queda.
+ *
+ * Lo que había aquí **no era un LTV**: era la media de todo lo cobrado por
+ * socio sobre todo el histórico, sin acotar por `opts.range`, así que devolvía
+ * la misma cifra con el selector en «Mes» que en «Año» mientras el resto del
+ * panel sí se movía (E14-01). Ahora hay dos piezas y cada una respeta lo que le
+ * toca:
+ *
+ * - **El ritmo** (ticket medio, ingreso por socio y mes) sale de la **ventana
+ *   activa**, como cualquier métrica de flujo del panel.
+ * - **La duración** (permanencia) es una métrica de cohorte y tiene ventana
+ *   propia por definición: se mide sobre toda la vida de los socios, con su
+ *   horizonte declarado. Acotarla al mes en curso no daría una permanencia más
+ *   corta, daría una permanencia sin sentido.
+ *
+ * Y el LTV es el producto de las dos, que es la cifra que contesta cuánto se
+ * puede gastar en captar a uno nuevo.
+ */
 export async function getLtvAndTicket(orgId: string, opts: DashboardOpts = {}) {
-  const where = { ...paymentScope(orgId, opts.centerId), status: "PAID" as const };
-  const [byMember, overall, byCenter] = await Promise.all([
+  const now = new Date();
+  const win = windowOf(opts, now);
+  const where = {
+    ...paymentScope(orgId, opts.centerId),
+    status: "PAID" as const,
+    date: { gte: win.from, lt: win.to },
+  };
+
+  const [byMember, overall, byCenter, members] = await Promise.all([
     prisma.payment.groupBy({ by: ["memberId"], where, _sum: { amountCents: true } }),
     prisma.payment.aggregate({ where, _sum: { amountCents: true }, _count: { _all: true } }),
     // El pie de la card dejó de ser un código de regla y pasó a decir qué centro
@@ -224,9 +474,36 @@ export async function getLtvAndTicket(orgId: string, opts: DashboardOpts = {}) {
       where,
       select: { amountCents: true, member: { select: { primaryCenter: { select: { name: true } } } } },
     }),
+    prisma.member.findMany({
+      where: { ...memberScope(orgId, opts.centerId), state: { not: "PROSPECT" } },
+      select: { joinedAt: true, cancelledAt: true, externalSource: true, externalId: true },
+    }),
   ]);
-  const ltvCents = byMember.length ? byMember.reduce((s, m) => s + (m._sum.amountCents ?? 0), 0) / byMember.length : 0;
-  const ticketCents = overall._count._all ? (overall._sum.amountCents ?? 0) / overall._count._all : 0;
+
+  const revenueCents = overall._sum.amountCents ?? 0;
+  const paymentCount = overall._count._all;
+  const ticketCents = paymentCount ? revenueCents / paymentCount : 0;
+
+  /**
+   * Ingreso por socio y mes: el ritmo al que un socio deja dinero.
+   *
+   * **Se divide por meses-socio de exposición, no por la duración de la
+   * ventana.** Un socio que se dio de alta a mitad del año no ha tenido ocasión
+   * de pagar los doce meses, y meterlo entero en el denominador baja el ritmo
+   * de todos: medido contra los datos de demo, con el selector en «Año» eso
+   * daba 72 €/mes cuando la cuota real son 160 €.
+   *
+   * Y por eso hay suelo. En una ventana corta o con pocos cobros el ritmo no se
+   * puede estimar **en ninguna de las dos direcciones**: el mes en curso a día
+   * 15 tiene medio mes de exposición pero todavía no ha entrado ni la mitad de
+   * los recibos, así que la división sale disparada o hundida según de qué lado
+   * caiga el calendario de cobros. Es el mismo problema que el porcentaje del
+   * insight (E14-04), con el mismo umbral y el mismo argumento.
+   */
+  const memberMonths = members.reduce((sum, m) => sum + exposureMonths(m, win), 0);
+  const monthlyArpuCents = hasSample(revenueCents, paymentCount) && memberMonths > 0
+    ? revenueCents / memberMonths
+    : null;
 
   const perCenter = new Map<string, { cents: number; count: number }>();
   for (const p of byCenter) {
@@ -241,12 +518,60 @@ export async function getLtvAndTicket(orgId: string, opts: DashboardOpts = {}) {
     .map(([name, v]) => ({ center: name, avgTicketEuros: v.cents / v.count / 100 }))
     .sort((a, b) => b.avgTicketEuros - a.avgTicketEuros)[0];
 
+  /**
+   * **Los importados quedan fuera, y se dice cuántos son.**
+   *
+   * `Member.joinedAt` de un socio importado no es una fecha de alta de este
+   * negocio: viene del CSV de la plataforma anterior (`externalSource` /
+   * `externalId`, ver `docs/IMPORTACION_SOCIOS_CSV.md`) y puede ser la fecha de
+   * la importación o el alta en la otra casa. Con la primera, la permanencia
+   * sale artificialmente corta para todo el que venía de antes; con la segunda,
+   * se le estaría atribuyendo a este centro una lealtad que se ganó otro.
+   * Ninguna de las dos es medible aquí, así que no se miden: se cuentan y la
+   * card lo dice. Si algún día TODOS los socios son importados, la permanencia
+   * sale `null` y la card explica por qué, que es mejor que una cifra falsa.
+   *
+   * Nota del diagnóstico: en la base de demo no hay ni un socio importado, así
+   * que esta rama es una regla escrita, no una conclusión de datos.
+   */
+  const imported = members.filter((m) => m.externalSource !== null || m.externalId !== null);
+  const observations: TenureObservation[] = members
+    .filter((m) => m.externalSource === null && m.externalId === null)
+    .map((m) => ({
+      months: Math.max(0, ((m.cancelledAt ?? now).getTime() - m.joinedAt.getTime()) / MONTH_MS),
+      churned: m.cancelledAt !== null && m.cancelledAt <= now,
+    }));
+
+  const tenure = tenureFromObservations(observations);
+  const monthlyArpuEuros = monthlyArpuCents === null ? null : monthlyArpuCents / 100;
+
   return {
-    ltvEuros: ltvCents / 100,
+    // El LTV de verdad: lo que deja al mes por lo que se queda. `null` en
+    // cuanto falte cualquiera de los dos factores — un LTV a medias no es medio
+    // LTV, es un número inventado.
+    ltvEuros: tenure.months === null || monthlyArpuEuros === null ? null : monthlyArpuEuros * tenure.months,
+    monthlyArpuEuros,
     avgTicketEuros: ticketCents / 100,
+    /** Socios con algún cobro EN LA VENTANA, no en todo el histórico. */
     payingMembers: byMember.length,
+    paymentCount,
     ticketLeader: leader ?? null,
+    tenure: { ...tenure, importedExcluded: imported.length },
+    scopeLabel: win.scopeLabel,
   };
+}
+
+/**
+ * Meses que un socio estuvo dado de alta dentro de la ventana.
+ *
+ * Es el solape entre su vida como socio —de `joinedAt` a `cancelledAt`, o hasta
+ * hoy si sigue— y el periodo que se está mirando. Cero si no se solapan: quien
+ * se dio de alta después del periodo no estuvo expuesto a pagarlo.
+ */
+function exposureMonths(member: { joinedAt: Date; cancelledAt: Date | null }, win: { from: Date; to: Date }): number {
+  const start = Math.max(member.joinedAt.getTime(), win.from.getTime());
+  const end = Math.min((member.cancelledAt ?? win.to).getTime(), win.to.getTime());
+  return Math.max(0, end - start) / MONTH_MS;
 }
 
 const BUSINESS_OWNER_KEYWORDS = ["empresari", "autónomo", "autonomo", "ceo", "founder", "fundador", "dueñ", "gerente"];
@@ -290,12 +615,21 @@ export async function getMemberDemographics(orgId: string, opts: DashboardOpts =
   };
 }
 
-/** RB-BI-004: seguimiento de objetivos agregado (a partir de ClientGoal + SelfAssessment). */
+/**
+ * RB-BI-004: seguimiento de objetivos agregado (ClientGoal + SelfAssessment),
+ * **del periodo activo**. Antes agregaba todo el histórico junto a cards que sí
+ * respetaban el selector: "12 objetivos cumplidos" al lado de "este mes".
+ */
 export async function getGoalsAggregate(orgId: string, opts: DashboardOpts = {}) {
+  const win = windowOf(opts);
   const ofCenter = opts.centerId ? { member: { primaryCenterId: opts.centerId } } : {};
+  const created = { createdAt: { gte: win.from, lt: win.to } };
   const [goals, assessments] = await Promise.all([
-    prisma.clientGoal.findMany({ where: { orgId, isTemplate: false, ...ofCenter }, select: { achievedAt: true } }),
-    prisma.selfAssessment.findMany({ where: { orgId, ...ofCenter }, select: { structured: true } }),
+    prisma.clientGoal.findMany({
+      where: { orgId, isTemplate: false, ...ofCenter, ...created },
+      select: { achievedAt: true },
+    }),
+    prisma.selfAssessment.findMany({ where: { orgId, ...ofCenter, ...created }, select: { structured: true } }),
   ]);
 
   const totalGoals = goals.length;
@@ -365,6 +699,30 @@ export type PostalCodeMapData = {
 export async function getPostalCodeMapData(orgId: string, opts: DashboardOpts = {}): Promise<PostalCodeMapData> {
   const recentFrom = new Date(Date.now() - TREND_WINDOW_DAYS * 86_400_000);
   const previousFrom = new Date(Date.now() - 2 * TREND_WINDOW_DAYS * 86_400_000);
+
+  // ---- E14-07 · la petición T7 del 6 de septiembre, aplicada ----
+  //
+  // Los cuatro puntos de `docs/hu/T7-peticion-dashboard-queries.md`. Hasta
+  // ahora esta función recibía `opts.range` y `opts.memberStates` y **no usaba
+  // ninguno de los dos**: el mapa contaba socios cancelados y todo el histórico
+  // mientras el panel de al lado contaba el periodo en curso, con rótulos
+  // parecidos. Verificado en el diagnóstico (E14-01): las cuatro salidas del
+  // selector eran idénticas hasta el último lead.
+  //
+  // Nota sobre el punto 1 de la petición: dice que "con `range === 'mes'` el
+  // comportamiento tiene que quedar exactamente como está hoy", y eso no se
+  // puede cumplir a la vez que su propia prueba nº 4 ni que el criterio de
+  // aceptación de E14-07 ("para el mismo periodo y el mismo estado, mapa y
+  // panel dan la misma cifra"). Manda el criterio de aceptación: el periodo se
+  // aplica también en `mes`, que es el único modo de que las dos pantallas
+  // cuenten lo mismo. Es la única desviación, y es deliberada.
+  const win = windowOf(opts);
+  const memberStates = opts.memberStates ?? LIVE_MEMBER_STATES;
+  // Las dos ventanas de 90 días de la TENDENCIA no se acotan: son su propia
+  // definición y no dependen del selector (punto 1 de la petición).
+  const leadWindow = Prisma.sql`AND "createdAt" >= ${win.from} AND "createdAt" < ${win.to}`;
+  const memberWindow = Prisma.sql`AND "joinedAt" >= ${win.from} AND "joinedAt" < ${win.to}`;
+  const memberStateFilter = Prisma.sql`AND "state" = ANY(${memberStates}::"MemberState"[])`;
   // El selector de centro filtra los recuentos, no la geografía: los centros
   // siguen situándose todos para que la distancia por barrio (y con ella el
   // índice de oportunidad) no cambie de significado según lo que haya elegido
@@ -397,6 +755,7 @@ export async function getPostalCodeMapData(orgId: string, opts: DashboardOpts = 
         members: bigint;
         recent: bigint;
         previous: bigint;
+        churn: bigint;
       }[]
     >`
       SELECT
@@ -407,21 +766,35 @@ export async function getPostalCodeMapData(orgId: string, opts: DashboardOpts = 
         COALESCE(l.leads, 0) AS leads,
         COALESCE(m.members, 0) AS members,
         COALESCE(t.recent, 0) AS recent,
-        COALESCE(t.previous, 0) AS previous
+        COALESCE(t.previous, 0) AS previous,
+        COALESCE(c.churn, 0) AS churn
       FROM "PostalCodeArea" pca
       LEFT JOIN (
+        -- E11-01 · fuera los cerrados y los ya convertidos. La misma persona se
+        -- contaba como lead Y como socio, y la conversión del barrio se
+        -- calculaba sobre ese total inflado.
         SELECT "postalCode" AS code, COUNT(*) AS leads
         FROM "Lead"
-        WHERE "orgId" = ${orgId} ${leadCenter}
+        WHERE "orgId" = ${orgId}
+          AND "convertedMemberId" IS NULL
+          AND "status" <> 'CERRADO'
+          ${leadWindow}
+          ${leadCenter}
         GROUP BY 1
       ) l ON l.code = pca.code
       LEFT JOIN (
         SELECT "postalCode" AS code, COUNT(*) AS members
         FROM "Member"
-        WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL ${memberCenter}
+        WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL
+          ${memberStateFilter}
+          ${memberWindow}
+          ${memberCenter}
         GROUP BY 1
       ) m ON m.code = pca.code
       LEFT JOIN (
+        -- La tendencia cuenta ALTAS y va sin filtro de estado a propósito: un
+        -- socio que se dio de alta en marzo y se fue en julio se dio de alta
+        -- igual, y quitarlo reescribiría el pasado.
         SELECT
           "postalCode" AS code,
           COUNT(*) FILTER (WHERE "joinedAt" >= ${recentFrom}) AS recent,
@@ -430,6 +803,17 @@ export async function getPostalCodeMapData(orgId: string, opts: DashboardOpts = 
         WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL AND "joinedAt" >= ${previousFrom} ${memberCenter}
         GROUP BY 1
       ) t ON t.code = pca.code
+      LEFT JOIN (
+        -- E11-09 · bajas del periodo, CON COTA SUPERIOR. Sin ella una baja
+        -- programada a futuro contaría ya como baja del periodo en curso y el
+        -- mapa de fuga enseñaría barrios que todavía no han perdido a nadie.
+        SELECT "postalCode" AS code, COUNT(*) AS churn
+        FROM "Member"
+        WHERE "orgId" = ${orgId} AND "postalCode" IS NOT NULL
+          AND "cancelledAt" >= ${win.from} AND "cancelledAt" < ${win.to}
+          ${memberCenter}
+        GROUP BY 1
+      ) c ON c.code = pca.code
     `,
     prisma.center.findMany({
       where: { orgId, lat: { not: null }, lng: { not: null } },
@@ -466,6 +850,10 @@ export async function getPostalCodeMapData(orgId: string, opts: DashboardOpts = 
       total,
       conv: Math.round((members / Math.max(1, total)) * 100),
       trend: trendPercent(Number(r.recent), Number(r.previous)),
+      // E11-09 · el dato que faltaba para poder responder "¿qué barrios tienen
+      // fuga?". `trend` mide altas, y un barrio puede crecer en altas mientras
+      // se desangra por detrás.
+      churn: Number(r.churn),
       dist: Math.round(distKm * 10) / 10,
       // Demanda que existe pero queda lejos de un centro: un barrio con muchos
       // leads a 3 km de la puerta puntúa alto; el mismo volumen a 500 m no,
@@ -501,10 +889,16 @@ function trendPercent(recent: number, previous: number): number {
   return Math.max(-TREND_CAP, Math.min(TREND_CAP, change));
 }
 
-/** Barrios con datos, de más a menos volumen: lo que consume el mapa de calor del panel. */
+/**
+ * Barrios con datos, de más a menos volumen: lo que consume el mapa de calor
+ * del panel.
+ *
+ * "Con datos" incluye las bajas (E11-09): un barrio del que se ha ido todo el
+ * mundo tiene cero socios y cero leads, y es precisamente el que hay que ver.
+ */
 export async function getPostalCodeStats(orgId: string, opts: DashboardOpts = {}): Promise<PostalCodeStat[]> {
   const { points } = await getPostalCodeMapData(orgId, opts);
-  return points.filter((p) => p.total > 0).sort((a, b) => b.total - a.total);
+  return points.filter((p) => p.total > 0 || (p.churn ?? 0) > 0).sort((a, b) => b.total - a.total);
 }
 
 /** Leads mínimos para que un barrio pueda salir como "oportunidad": con dos o tres el ratio es ruido. */
@@ -593,9 +987,15 @@ export async function getMembersByService(orgId: string, opts: DashboardOpts = {
     .sort((a, b) => b.count - a.count);
 }
 
-/** RB-BI-008: leads agrupados por canal de origen, con nº de cerrados por canal. */
+/**
+ * RB-BI-008: leads **captados en el periodo activo** agrupados por canal, con
+ * cuántos se cerraron. Antes contaba todos los leads de la historia bajo un
+ * rótulo que se movía con el selector: el canal que funcionó hace dos años
+ * seguía liderando la card de captación de este mes.
+ */
 export async function getAcquisitionChannels(orgId: string, opts: DashboardOpts = {}) {
-  const where = centerColumnScope(orgId, opts.centerId);
+  const win = windowOf(opts);
+  const where = { ...centerColumnScope(orgId, opts.centerId), createdAt: { gte: win.from, lt: win.to } };
   const [leads, closed] = await Promise.all([
     prisma.lead.groupBy({ by: ["channel"], where, _count: { _all: true } }),
     prisma.lead.groupBy({ by: ["channel"], where: { ...where, status: "CERRADO" }, _count: { _all: true } }),
@@ -609,17 +1009,31 @@ export async function getAcquisitionChannels(orgId: string, opts: DashboardOpts 
     .sort((a, b) => b.count - a.count);
 }
 
-/** RB-BI-010: ranking de servicios por nº de altas y por ingresos asociados. */
+/**
+ * RB-BI-010: ranking de servicios por altas y por ingresos **del periodo
+ * activo**. El alta es `startDate` (cuándo empieza a valer el bono) y no
+ * `createdAt` (cuándo se tecleó), igual que en el resto del panel.
+ */
 export async function getTopServices(orgId: string, opts: DashboardOpts & { orderBy?: "count" | "revenue" } = {}) {
+  const win = windowOf(opts);
   const [plans, subCounts, payments] = await Promise.all([
     prisma.membershipPlan.findMany({ where: { orgId }, select: { id: true, name: true, type: true } }),
     prisma.subscription.groupBy({
       by: ["planId"],
-      where: { member: { orgId }, ...(opts.centerId ? { centerId: opts.centerId } : {}) },
+      where: {
+        member: { orgId },
+        ...(opts.centerId ? { centerId: opts.centerId } : {}),
+        startDate: { gte: win.from, lt: win.to },
+      },
       _count: { _all: true },
     }),
     prisma.payment.findMany({
-      where: { ...paymentScope(orgId, opts.centerId), status: "PAID", subscriptionId: { not: null } },
+      where: {
+        ...paymentScope(orgId, opts.centerId),
+        status: "PAID",
+        subscriptionId: { not: null },
+        date: { gte: win.from, lt: win.to },
+      },
       select: { amountCents: true, subscription: { select: { planId: true } } },
     }),
   ]);
@@ -646,11 +1060,23 @@ export async function getTopServices(orgId: string, opts: DashboardOpts & { orde
 // RB-BI-011: pesos del score compuesto "mixed" (media ponderada 0-100), centralizados
 // aquí para no dispersar números mágicos entre la query y la UI.
 export const MEMBER_RANKING_WEIGHTS = { ltv: 0.5, adherence: 0.3, tenure: 0.2 } as const;
-const ADHERENCE_PERIOD_DAYS = 90;
+/** Ventana de la adherencia del ranking. Exportada porque la card la rotula. */
+export const ADHERENCE_PERIOD_DAYS = 90;
 
 export const MEMBER_RANKING_PAGE_SIZE = 10;
 
-/** RB-BI-011: ranking de socios por LTV, adherencia (asistencia/reservas) y antigüedad. */
+/**
+ * RB-BI-011: ranking de socios por LTV, adherencia (asistencia/reservas) y
+ * antigüedad.
+ *
+ * **Ventana propia por definición, y la card lo dice.** Es de las pocas que no
+ * sigue al selector, y a propósito: las tres dimensiones son de la relación
+ * entera con el socio —lo que ha dejado, lo que lleva viniendo, lo que lleva
+ * apuntado—, así que acotarlas al periodo activo con el selector en «Hoy»
+ * dejaría a todo el mundo a cero y ordenaría la tabla por nada. Lo que sí hacía
+ * falta era que el rótulo dejara de callarlo: el `meta` de la card declara el
+ * histórico y los {@link ADHERENCE_PERIOD_DAYS} días de la adherencia.
+ */
 export async function getMemberRanking(
   orgId: string,
   opts: DashboardOpts & { dimension?: "mixed" | "ltv" | "adherence" | "tenure"; dir?: "asc" | "desc" } = {}
@@ -728,28 +1154,26 @@ export async function getMemberRanking(
 const inWindow = (d: Date, from: Date, to: Date) => d >= from && d < to;
 
 /**
- * Ocupación media ponderada del ámbito activo: se suman plazas y reservas de
- * todas las sesiones antes de dividir, en vez de promediar los porcentajes de
- * cada centro. Un centro con 4 sesiones no puede pesar lo mismo que uno con 90.
+ * Las dos cifras de ocupación del ámbito activo, **en el periodo del selector**.
+ *
+ * Medias ponderadas: se suman plazas y aforos de todas las sesiones antes de
+ * dividir, en vez de promediar los porcentajes de cada centro. Un centro con 4
+ * sesiones no puede pesar lo mismo que uno con 90.
+ *
+ * Tenía una ventana fija de 30 días que ignoraba el selector, y era la mitad de
+ * la contradicción de la cifra 2 del diagnóstico: el tile de arriba decía 7 % y
+ * el pie de esta card 8 %, con la misma palabra, en la misma pantalla.
  */
 export async function getAverageOccupancy(orgId: string, opts: DashboardOpts = {}) {
-  const until = new Date();
-  const since = new Date(until);
-  since.setDate(since.getDate() - 30);
-  const sessions = await prisma.classSession.findMany({
-    where: {
-      ...centerColumnScope(orgId, opts.centerId),
-      status: "SCHEDULED",
-      ...sessionsInRangeWhere(since, until),
-    },
-    select: OCCUPANCY_SELECT,
-  });
-  return occupancyPct(occurrencesOf(sessions, since, until));
+  const now = new Date();
+  const win = windowOf(opts, now);
+  const { occurrences } = await occurrencesIn(orgId, opts, win.from, win.to);
+  return occupancyOf(occurrences, now);
 }
 
 /** Altas menos bajas del periodo activo: el KPI "Altas − bajas" y el neto del panel semanal. */
 export async function getNetJoins(orgId: string, opts: DashboardOpts = {}) {
-  const { from, to } = comparisonWindow(opts.range ?? "mes");
+  const { from, to } = windowOf(opts);
   const where = memberScope(orgId, opts.centerId);
   const [joins, cancels] = await Promise.all([
     prisma.member.count({ where: { ...where, joinedAt: { gte: from, lt: to } } }),
@@ -840,11 +1264,10 @@ function signedDelta(diff: number, unit: string, goodWhen: "up" | "down"): { tex
  * ya reserva para "sin cambios".
  */
 export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Promise<KpiTile[]> {
-  const range = opts.range ?? "mes";
-  const win = comparisonWindow(range);
-  const buckets = sparkBuckets(range);
-  const since = new Date(Math.min(buckets[0].from.getTime(), win.prevFrom.getTime()));
   const now = new Date();
+  const win = windowOf(opts, now);
+  const buckets = sparkOf(opts, now);
+  const since = new Date(Math.min(buckets[0].from.getTime(), win.prevFrom.getTime()));
   const members = memberScope(orgId, opts.centerId);
 
   const [memberRows, stateCounts, payments, sessions, alerts] = await Promise.all([
@@ -886,10 +1309,16 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
   const revenueChange = pctChange(revenue, revenuePrev);
 
   const activeMembers = stateCount("ACTIVE");
-  const occupancy = occupancyPct(sessionsIn(win.from, win.to));
-  const occupancyPrev = occupancyPct(sessionsIn(win.prevFrom, win.prevTo));
-  const sessionCount = sessionsIn(win.from, win.to).length;
-  const sessionCountPrev = sessionsIn(win.prevFrom, win.prevTo).length;
+  // E14-02: el tile es PLAZAS VENDIDAS, no "ocupación" a secas. La asistencia
+  // real vive en su propia card, con la lista sin pasar al pie: son dos
+  // preguntas y el diagnóstico encontró que juntarlas es lo que hacía que un
+  // 2 % no significara nada.
+  const sold = soldPct(sessionsIn(win.from, win.to));
+  const soldPrev = soldPct(sessionsIn(win.prevFrom, win.prevTo));
+  // Sesiones ya CELEBRADAS: contar la agenda de esta tarde como "sesiones de
+  // este mes" infla el ritmo con clases que todavía no han ocurrido.
+  const sessionCount = heldOccurrences(sessionsIn(win.from, win.to), now).length;
+  const sessionCountPrev = heldOccurrences(sessionsIn(win.prevFrom, win.prevTo), now).length;
   const openAlerts = alertsAt(now);
   const delinquent = stateCount("DELINQUENT");
   const frozen = stateCount("FROZEN");
@@ -935,15 +1364,15 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
     },
     {
       key: "occupancy",
-      label: "Ocupación media",
-      numericValue: occupancy,
-      value: `${occupancy}%`,
+      label: "Plazas vendidas",
+      numericValue: sold,
+      value: `${sold}%`,
       format: "pct",
-      delta: signedDelta(occupancy - occupancyPrev, Math.abs(occupancy - occupancyPrev) === 1 ? " pt" : " pts", "up"),
-      deltaValue: occupancy - occupancyPrev,
-      hint: `objetivo ${OCCUPANCY_TARGET_PCT}%`,
+      delta: signedDelta(sold - soldPrev, Math.abs(sold - soldPrev) === 1 ? " pt" : " pts", "up"),
+      deltaValue: sold - soldPrev,
+      hint: `del aforo · objetivo ${OCCUPANCY_TARGET_PCT}%`,
       accent: "ink",
-      spark: buckets.map((b) => occupancyPct(sessionsIn(b.from, b.to))),
+      spark: buckets.map((b) => soldPct(sessionsIn(b.from, b.to))),
     },
     {
       key: "sessions",
@@ -953,9 +1382,9 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
       format: "int",
       delta: signedDelta(sessionCount - sessionCountPrev, "", "up"),
       deltaValue: sessionCount - sessionCountPrev,
-      hint: "ritmo de agenda",
+      hint: "clases ya celebradas",
       accent: "ink",
-      spark: buckets.map((b) => sessionsIn(b.from, b.to).length),
+      spark: buckets.map((b) => heldOccurrences(sessionsIn(b.from, b.to), now).length),
     },
     {
       key: "risk",
@@ -1010,6 +1439,54 @@ export async function getKpiTiles(orgId: string, opts: DashboardOpts = {}): Prom
 
 export type DailyInsight = { text: string; ctaLabel: string; ctaHref: string };
 
+const sum = (payments: { date: Date; amountCents: number }[], from: Date, to: Date) =>
+  payments.filter((p) => inWindow(p.date, from, to)).reduce((s, p) => s + p.amountCents, 0);
+
+/**
+ * ¿Da la ventana para derivar algo de sus cobros? El umbral y su argumento
+ * están en `dashboard-targets.ts`; aquí solo se aplica, y en los dos sitios
+ * que lo necesitan, para que no se puedan separar.
+ */
+const hasSample = (cents: number, count: number) =>
+  count >= MIN_SAMPLE_PAYMENTS && cents >= MIN_SAMPLE_REVENUE_CENTS;
+
+/**
+ * E14-04 · la frase de ingresos del insight, con suelo.
+ *
+ * Lo que había: `if (revenue > 0 && change !== null)` escribía "los ingresos
+ * van un X % abajo" en cuanto hubiera un euro. Con cinco cobros y 561 € eso
+ * producía un "82,5 % abajo" que un solo recibo cruzando el borde de la ventana
+ * movía ocho puntos (E14-01, cifra 4).
+ *
+ * Por debajo del suelo —{@link MIN_SAMPLE_PAYMENTS} recibos o
+ * {@link MIN_SAMPLE_REVENUE_CENTS}, ambos justificados en `dashboard-targets`—
+ * la frase **no desaparece**: callarse del todo también informa mal, porque el
+ * lector no distingue "no hay dato" de "no ha pasado nada". Dice el número
+ * absoluto y cuántos recibos lo sostienen, que es lo que se sabe de verdad.
+ */
+function revenuePhrase(
+  cents: number,
+  count: number,
+  change: number | null,
+  prevLabel: string,
+  scopeLabel: string
+): string | null {
+  if (cents <= 0) return null;
+
+  if (!hasSample(cents, count)) {
+    const amount = (cents / 100).toLocaleString("es-ES", {
+      style: "currency",
+      currency: "EUR",
+      maximumFractionDigits: 0,
+    });
+    return `Llevas ${amount} cobrados ${scopeLabel}, en ${count} ${count === 1 ? "recibo" : "recibos"}: son pocos para sacar un porcentaje.`;
+  }
+
+  if (change === null) return null;
+  const pretty = Math.abs(change).toLocaleString("es-ES", { maximumFractionDigits: 1 });
+  return `Los ingresos van un ${pretty}% ${change >= 0 ? "arriba" : "abajo"} respecto a ${prevLabel}.`;
+}
+
 /**
  * Las tres frases de la banda oscura. Se escriben en servidor a partir de los
  * datos que el panel ya calcula — no hay IA detrás — y en este orden: el centro
@@ -1018,8 +1495,8 @@ export type DailyInsight = { text: string; ctaLabel: string; ctaHref: string };
  * nada de ingresos, en vez de rellenar con un 0%.
  */
 export async function getDailyInsight(orgId: string, opts: DashboardOpts = {}): Promise<DailyInsight | null> {
-  const range = opts.range ?? "mes";
-  const win = comparisonWindow(range);
+  const now = new Date();
+  const win = windowOf(opts, now);
   const members = memberScope(orgId, opts.centerId);
 
   const [sessions, payments, alerts, centers] = await Promise.all([
@@ -1055,10 +1532,10 @@ export async function getDailyInsight(orgId: string, opts: DashboardOpts = {}): 
       const current = occurrencesOf(own, win.from, win.to);
       return {
         name: shortCenterName(c.name, org?.name),
-        pct: occupancyPct(current),
-        prevPct: occupancyPct(occurrencesOf(own, win.prevFrom, win.prevTo)),
-        // Clases celebradas en la ventana, no filas: una serie vale por todas
-        // sus ocurrencias.
+        // E14-02: plazas vendidas. "Ocupación" a secas es la palabra que el
+        // diagnóstico encontró que significaba tres cosas a la vez.
+        pct: soldPct(current),
+        prevPct: soldPct(occurrencesOf(own, win.prevFrom, win.prevTo)),
         sessions: current.length,
       };
     })
@@ -1074,20 +1551,17 @@ export async function getDailyInsight(orgId: string, opts: DashboardOpts = {}): 
         : `, ${Math.abs(diff)} ${Math.abs(diff) === 1 ? "punto" : "puntos"} ${diff > 0 ? "por encima de" : "por debajo de"} ${win.prevLabel}`;
     sentences.push(
       ranked.length > 1
-        ? `${leader.name} lidera con un ${leader.pct}% de ocupación${movement}.`
-        : `${leader.name} está al ${leader.pct}% de ocupación${movement}.`
+        ? `${leader.name} lidera con un ${leader.pct}% de plazas vendidas${movement}.`
+        : `${leader.name} tiene vendido el ${leader.pct}% del aforo${movement}.`
     );
   }
 
-  // (b) Cómo van los ingresos, y si es el mejor tramo del trimestre.
-  const sum = (from: Date, to: Date) =>
-    payments.filter((p) => inWindow(p.date, from, to)).reduce((s, p) => s + p.amountCents, 0);
-  const revenue = sum(win.from, win.to);
-  const change = pctChange(revenue, sum(win.prevFrom, win.prevTo));
-  if (revenue > 0 && change !== null) {
-    const pretty = Math.abs(change).toLocaleString("es-ES", { maximumFractionDigits: 1 });
-    sentences.push(`Los ingresos van un ${pretty}% ${change >= 0 ? "arriba" : "abajo"} respecto a ${win.prevLabel}.`);
-  }
+  // (b) Cómo van los ingresos — con suelo, para no dar porcentajes sobre ruido.
+  const inRange = payments.filter((p) => inWindow(p.date, win.from, win.to));
+  const revenue = inRange.reduce((s, p) => s + p.amountCents, 0);
+  const change = pctChange(revenue, sum(payments, win.prevFrom, win.prevTo));
+  const revenueSentence = revenuePhrase(revenue, inRange.length, change, win.prevLabel, win.scopeLabel);
+  if (revenueSentence) sentences.push(revenueSentence);
 
   // (c) La señal a vigilar: cuántos socios en riesgo y dónde se concentran.
   if (alerts.length > 0) {

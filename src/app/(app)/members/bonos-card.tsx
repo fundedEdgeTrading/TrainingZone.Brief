@@ -66,7 +66,9 @@ export function BonosPorCentroCard({
           </p>
         </div>
         <div className="flex gap-1 shrink-0">
-          {DASHBOARD_RANGES.map((r) => (
+          {/* Fuera el personalizado (E14-06): sin selector de fechas navegaría
+              a un periodo que se comporta como «Mes» sin decirlo. */}
+          {DASHBOARD_RANGES.filter((r) => r.id !== "custom").map((r) => (
             <Link
               key={r.id}
               href={hrefWithRange(params, r.id)}
