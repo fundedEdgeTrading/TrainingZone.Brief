@@ -36,6 +36,8 @@
  * | `checkout:<orgId>:<email>_<planId>_<ventana>:v1` | `createProspectMemberCheckout` | un solo checkout por prospecto |
  * | `customer:platform:<orgId>:v1` | `createPlatformCheckoutSession` | un solo cliente de licencia por org |
  * | `checkout:platform:<orgId>_<planCode>_<ventana>:v1` | `createPlatformCheckoutSession` | un solo checkout de licencia |
+ * | `refund:<orgId>:<paymentId>_<importe>_<yaDevuelto>:v1` | `issueRefund` (HU-ST-20) | un solo refund por doble clic |
+ * | `credit_note:<orgId>:<invoiceId>_<importe>_<yaDevuelto>:v1` | `issueRefund` (HU-ST-20) | una sola nota de crédito por doble clic |
  * | `invoicepay:<orgId>:<invoiceId>_<ventana>:v1` | `retryOpenInvoice` (HU-ST-19) | un solo intento de cobro por "Pagar ahora" |
  * | `coupon:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo Coupon por código |
  * | `promocode:<orgId>:<código>:v1` | `createCoupon` (HU-ST-27) | un solo PromotionCode por código |
@@ -127,6 +129,38 @@ export function platformCustomerKey(orgId: string) {
 
 export function platformCheckoutKey(orgId: string, planCode: string, at?: Date) {
   return idempotencyKey("checkout", "platform", [orgId, planCode, checkoutWindow(at)]);
+}
+
+/**
+ * HU-ST-20 · `refund:<orgId>:<paymentId>_<importe>_<yaDevuelto>:v1`
+ *
+ * El escenario que esta clave tiene que ganar es el "doble clic": dirección
+ * pulsa "Devolver" dos veces y Stripe recibe dos peticiones idénticas. Con la
+ * misma clave, la segunda devuelve el MISMO refund en vez de emitir otro, y el
+ * socio recibe su dinero una vez.
+ *
+ * `yaDevuelto` —lo que el `Payment` tenía devuelto ANTES de esta operación—
+ * está en la clave por un motivo concreto, y no es decorativo: sin él, dos
+ * devoluciones parciales LEGÍTIMAS del mismo importe sobre el mismo cobro
+ * (dos veces 10 € de un bono de 60 €, con días de diferencia pero dentro de
+ * las 24 h que Stripe guarda la clave) compartirían clave y la segunda se
+ * perdería en silencio. Con él, el doble clic sigue colisionando —los dos
+ * clics leen el mismo `yaDevuelto`, porque el primero aún no ha escrito— y las
+ * dos devoluciones de verdad no.
+ */
+export function refundKey(orgId: string, paymentId: string, amountCents: number, alreadyRefundedCents = 0) {
+  return idempotencyKey("refund", orgId, [paymentId, String(amountCents), String(alreadyRefundedCents)]);
+}
+
+/**
+ * HU-ST-20 · `credit_note:<orgId>:<invoiceId>_<importe>_<yaDevuelto>:v1`
+ *
+ * Misma lógica que `refundKey`, para la devolución que va contra una factura de
+ * suscripción: ahí lo que se crea es una nota de crédito (que a su vez emite el
+ * refund), así que el recurso y el identificador estable son otros.
+ */
+export function creditNoteKey(orgId: string, invoiceId: string, amountCents: number, alreadyRefundedCents = 0) {
+  return idempotencyKey("credit_note", orgId, [invoiceId, String(amountCents), String(alreadyRefundedCents)]);
 }
 
 /**

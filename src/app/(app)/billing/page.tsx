@@ -87,12 +87,26 @@ export default async function BillingPage({
         actions={
           canExport ? (
             <>
-              {/* HU-ST-27: `/billing/cupones` no lleva item de menú propio
-                  (`rbac.ts` está congelado, y un item por subpantalla de
-                  facturación es lo que el rediseño del NavBar quitó). Se entra
-                  desde aquí, que es de donde cuelga. Mismo criterio de rol que
-                  la propia pantalla: un código promocional es una decisión
-                  comercial, no de mostrador. */}
+              {/* Las subpantallas de facturación NO llevan item de menú propio:
+                  `rbac.ts` está congelado este trimestre, y un item por
+                  subpantalla es justo lo que el rediseño del NavBar quitó. Se
+                  entra desde aquí, que es de donde cuelgan, y con el mismo
+                  criterio de rol que cada una aplica por su cuenta — dirección.
+                  Devoluciones y disputas (HU-ST-20 / HU-ST-21, D-S7) mueven
+                  dinero; un código promocional (HU-ST-27) es una decisión
+                  comercial. Ninguna de las tres es de mostrador. */}
+              <Link
+                href="/billing/reembolsos"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Devoluciones
+              </Link>
+              <Link
+                href="/billing/disputas"
+                className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
+              >
+                Disputas
+              </Link>
               <Link
                 href="/billing/cupones"
                 className="text-xs font-semibold text-brand-text-2 border border-brand-border rounded-lg px-3 py-1.5 transition-colors hover:bg-brand-ink hover:text-white hover:border-brand-ink"
