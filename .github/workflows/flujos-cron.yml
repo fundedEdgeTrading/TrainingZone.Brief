@@ -1,0 +1,110 @@
+# E2 · Disparador de la COLA de flujos de email marketing.
+#
+# POR QUÉ VA APARTE DE `jobs-cron.yml`, que corre una vez al día:
+#
+# El motor de flujos no manda nada entre las 22:00 y las 8:00 del centro. Es
+# una de las seis reglas de seguridad y no se toca. `jobs-cron.yml` corre a las
+# 05:00 UTC —las 06:00 o las 07:00 en Madrid según la época—, que está DENTRO de
+# esa ventana: el motor reprograma a las 8:00, y al día siguiente vuelve a pasar
+# antes de las 8:00 y vuelve a reprogramar. Con solo esa pasada, la cola no se
+# vacía nunca.
+#
+# La solución no es aflojar la ventana ni cambiar la cadencia del cron general
+# —sus reglas están pensadas para una pasada diaria—, sino llamar al motor
+# DENTRO de la ventana. Eso es este workflow.
+#
+# LAS HORAS. GitHub evalúa el cron en UTC y no conoce el cambio de hora
+# española, así que cada una se elige para caer entre las 8:00 y las 22:00 de
+# Madrid TANTO en invierno (UTC+1) como en verano (UTC+2):
+#
+#   07:00 UTC → 08:00 invierno · 09:00 verano
+#   11:00 UTC → 12:00 invierno · 13:00 verano
+#   15:00 UTC → 16:00 invierno · 17:00 verano
+#   19:00 UTC → 20:00 invierno · 21:00 verano
+#
+# Cuatro pasadas bastan: la espera de un flujo se mide en DÍAS, así que como
+# mucho un correo sale unas horas más tarde de lo que le tocaba. Y ninguna cae
+# cerca del borde de las 22:00, que es donde un retraso de Actions (5-30 min,
+# frecuente) podría empujar una pasada a la ventana de silencio — donde, por
+# cierto, tampoco pasaría nada malo: reprogramaría.
+name: Cola de flujos de email
+
+on:
+  schedule:
+    - cron: "0 7,11,15,19 * * *"
+  workflow_dispatch:
+
+# Dos pasadas simultáneas sobre la misma cola harían el trabajo dos veces. El
+# motor lo aguanta —el hueco semanal se reserva con la fila del socio bloqueada
+# y el paso lleva clave de idempotencia— pero no hay ninguna razón para darle
+# la oportunidad.
+concurrency:
+  group: flujos-cron
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Comprobar configuración
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          JOBS_CRON_SECRET: ${{ secrets.JOBS_CRON_SECRET }}
+        run: |
+          [ -n "$APP_URL" ] || { echo "::error::Falta la variable APP_URL (Settings → Secrets and variables → Actions → Variables)."; exit 1; }
+          [ -n "$JOBS_CRON_SECRET" ] || { echo "::error::Falta el secreto JOBS_CRON_SECRET. Debe ser el mismo valor que la variable de entorno del servicio web."; exit 1; }
+
+      - name: Pasar la cola
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          JOBS_CRON_SECRET: ${{ secrets.JOBS_CRON_SECRET }}
+        run: |
+          set -uo pipefail
+
+          # El secreto va en cabecera y no como `?secret=`: la query string
+          # acaba en los logs de acceso del proveedor y en el historial de
+          # cualquier proxy por el que pase.
+          code=$(curl -sS -o respuesta.json -w '%{http_code}' \
+            --max-time 300 --retry 2 --retry-delay 30 --retry-connrefused \
+            -H "x-cron-secret: ${JOBS_CRON_SECRET}" \
+            "${APP_URL%/}/api/flujos/cron") || {
+              echo "::error::La llamada no llegó a completarse (red o timeout)."
+              exit 1
+            }
+
+          echo "Código HTTP: $code"
+          cat respuesta.json
+          echo
+
+          {
+            echo "### Cola de flujos"
+            echo
+            echo "**HTTP $code**"
+            echo
+            echo '```json'
+            cat respuesta.json
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          case "$code" in
+            200) echo "La cola pasó entera." ;;
+            207)
+              echo "::error::La cola falló en alguna organización. El detalle está en 'failures'."
+              exit 1
+              ;;
+            401)
+              echo "::error::401: JOBS_CRON_SECRET no coincide con el del servicio web."
+              exit 1
+              ;;
+            503)
+              echo "::error::503: el servicio web no tiene JOBS_CRON_SECRET definido, así que el endpoint falla cerrado."
+              exit 1
+              ;;
+            *)
+              echo "::error::Respuesta inesperada ($code)."
+              exit 1
+              ;;
+          esac

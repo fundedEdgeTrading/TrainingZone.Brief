@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { canManageMembers } from "@/lib/rbac";
 import { PageHeader } from "@/components/ui/page-header";
 import { FlowEditor } from "../flow-editor";
@@ -11,6 +12,8 @@ import { flowEditorOptions } from "../editor-options";
 /** Montar un flujo desde cero. Nace en BORRADOR, siempre: encenderlo es otro gesto. */
 export default async function NuevoFlujoPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // En la página y no solo en el layout: ver la nota de `/flujos/page.tsx`.
+  await requireFeature("marketing_automatizado");
   if (!canManageMembers(session.user.role)) redirect("/flujos");
 
   const options = await flowEditorOptions(session.user);

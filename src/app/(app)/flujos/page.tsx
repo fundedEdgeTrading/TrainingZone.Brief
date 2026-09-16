@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { canManageMembers } from "@/lib/rbac";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
@@ -26,6 +27,11 @@ import { TestEmailForm } from "./test-email-form";
  */
 export default async function FlujosPage() {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // El plan contratado, en LA PÁGINA y no solo en el layout: `rbac-gating.test.ts`
+  // exige que toda pantalla bajo una ruta gateada llame a la guarda ella misma,
+  // y tiene razón — el día que alguien mueva esta página fuera del layout, el
+  // muro de pago se quedaría atrás sin que nada fallara.
+  await requireFeature("marketing_automatizado");
   const canEdit = canManageMembers(session.user.role);
 
   const [flows, state] = await Promise.all([listFlows(session.user), getFlowsModuleState(session.user)]);

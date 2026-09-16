@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import type { FlowGoalKind } from "@prisma/client";
 import { requireRole } from "@/lib/guard";
+import { requireFeature } from "@/lib/entitlements";
 import { canManageMembers } from "@/lib/rbac";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
@@ -24,6 +25,8 @@ import { FunnelCard } from "../funnel-card";
 export default async function FlujoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR"]);
+  // En la página y no solo en el layout: ver la nota de `/flujos/page.tsx`.
+  await requireFeature("marketing_automatizado");
 
   // Fuera de ámbito es 404, no 403: un error que distingue «no existe» de «no
   // es tuyo» cuenta lo que hay en el centro de al lado.

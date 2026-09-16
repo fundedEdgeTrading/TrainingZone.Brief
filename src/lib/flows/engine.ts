@@ -702,7 +702,7 @@ async function advanceEnrollment(args: {
     if (!memberFacts || !matchesAllConditions(stepConditions, memberFacts, now)) {
       // Se salta el paso y se sigue: no se cancela la inscripción, que la
       // condición puede ser de este paso y no del flujo entero.
-      await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone);
+      if (await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone)) report.completed++;
       return;
     }
   }
@@ -758,7 +758,7 @@ async function advanceEnrollment(args: {
         // El correo no va a poder salir nunca por este motivo (no consiente, no
         // tiene email): el paso se da por cerrado y el flujo sigue. Lo que no se
         // hace es reintentarlo cada noche.
-        await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone);
+        if (await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone)) report.completed++;
         return;
       case "sent":
         report.stepsRun++;
@@ -771,7 +771,7 @@ async function advanceEnrollment(args: {
         if (step.actionType === "SEND_FORM" && !outcome.testMode) {
           await sendFlowFormInvite(actionContext(org, flow, enrollment, member, step.id, now), asRecord(step.actionConfig));
         }
-        await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone, flow);
+        if (await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone, flow)) report.completed++;
         return;
     }
   }
@@ -787,7 +787,7 @@ async function advanceEnrollment(args: {
   if (result.ok) report.stepsRun++;
   else console.error(`[flujos] ${flow.name} · paso ${step.position}: ${result.error}`);
 
-  await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone, flow);
+  if (await moveToNextStep(enrollment.id, branch, step.position, steps, now, timeZone, flow)) report.completed++;
 }
 
 function actionContext(
@@ -873,7 +873,7 @@ async function moveToNextStep(
   now: Date,
   timeZone: string,
   flow?: FlowWithDefinition
-): Promise<void> {
+): Promise<boolean> {
   const next = steps.find((s) => s.position === currentPosition + 1);
   const branches = flow ? [...new Set(flow.steps.map((s) => s.branch))] : [];
   const conRamas = branch === "MAIN" && hasBranches(branches);
@@ -883,7 +883,7 @@ async function moveToNextStep(
       where: { id: enrollmentId },
       data: { status: "COMPLETED", completedAt: now, nextRunAt: null, currentBranch: branch, currentStepPosition: currentPosition },
     });
-    return;
+    return true;
   }
 
   const porPaso = next ? nextStepRunAt(now, next.waitDays, timeZone) : null;
@@ -897,6 +897,7 @@ async function moveToNextStep(
     where: { id: enrollmentId },
     data: { currentBranch: branch, currentStepPosition: currentPosition, nextRunAt: runAt },
   });
+  return false;
 }
 
 /** Salida antes de tiempo. No se reanuda: volver a entrar es una inscripción nueva. */

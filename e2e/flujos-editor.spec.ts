@@ -21,8 +21,13 @@ const NOMBRE = `Flujo E2E ${Date.now().toString().slice(-6)}`;
 let orgId = "";
 
 test.beforeAll(async () => {
-  const org = await prisma.organization.findFirstOrThrow({ select: { id: true } });
-  orgId = org.id;
+  // La organización se resuelve por el USUARIO con el que entra el test, no con
+  // `organization.findFirst`: la base de demo tiene varias organizaciones y
+  // Postgres no garantiza qué fila devuelve primero. Con la equivocada, los
+  // `count === 0` de más abajo pasarían siempre —y por el motivo equivocado—,
+  // que es un verde peor que un rojo.
+  const usuario = await prisma.user.findFirstOrThrow({ where: { email: DIRECCION }, select: { orgId: true } });
+  orgId = usuario.orgId;
   // La pausa global es un estado de la organización y la demo es compartida:
   // una pasada anterior que se cayera a mitad la dejaría puesta, y entonces
   // este spec buscaría un botón «Pausar todo» que no está. Se parte siempre de
@@ -101,7 +106,11 @@ test.describe("E14-28 · el editor de cuatro piezas", () => {
     await expect(page.getByTestId("flow-editor-errores")).toHaveCount(0);
     await page.getByRole("button", { name: "Crear flujo" }).click();
 
-    await page.waitForURL(/\/flujos\/[^/]+$/, { timeout: 15_000 });
+    // Se espera al EMBUDO, que solo existe en la ficha del flujo. `waitForURL`
+    // con `/flujos/[^/]+$` volvía al instante: la URL de partida es
+    // `/flujos/nuevo` y ya encaja con ese patrón, así que la lectura de abajo
+    // corría contra la acción de servidor y fallaba una de cada tres veces.
+    await expect(page.getByTestId("flow-funnel")).toBeVisible({ timeout: 15_000 });
 
     const guardado = await prisma.flow.findFirstOrThrow({
       where: { orgId, name: `${NOMBRE} valido` },
