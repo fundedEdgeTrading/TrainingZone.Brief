@@ -170,7 +170,7 @@ export async function updateMyEmailPreferenceAction(
   // marketing), igual que hace `updateMemberEmailPreferences` por el enlace
   // del pie del correo: sin esto, apagar desde aquí el último interruptor que
   // le quedaba encendido no fijaba `emailOptOutAt` ni dejaba el mismo rastro
-  // de auditoría que la vía del token — pese a que `docs/EMAILS_TRANSACCIONALES.md`
+  // de auditoría que la vía del token — pese a que `docs/CRM_Y_MARKETING.md` §5
   // documenta las cuatro vías como equivalentes.
   const anyEnabled =
     (kind === "vacancy" ? enabled : member.notifyVacancies) ||

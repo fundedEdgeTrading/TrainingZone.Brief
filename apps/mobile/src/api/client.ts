@@ -2,7 +2,7 @@ import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import type { RefreshResponse } from "./types";
 
-// F1 (docs/APP_MOVIL_NATIVA_PLAN.md §5.2): wrapper fetch con inyección de
+// docs/APP_MOVIL.md §1.3: wrapper fetch con inyección de
 // Bearer, refresh automático en 401, y tokens SIEMPRE en SecureStore
 // (Keychain/Keystore) — nunca AsyncStorage.
 // F8: el emulador se prueba contra el entorno desplegado, no contra localhost —

@@ -128,7 +128,7 @@ export default function EvolutionScreen() {
           ) : null}
 
           {/* `compositionTiles` (semáforo contra el rango de referencia por edad
-              y sexo, docs/COMPOSICION_CORPORAL_TANITA.md §3) llega del servidor
+              y sexo, docs/PRODUCTO_GESTION.md §3.2) llega del servidor
               igual que en la web (`CompositionSummary`), pero esta pantalla solo
               pintaba sus propios tiles de delta — el semáforo nunca se veía. */}
           {data.compositionTiles.length > 0 ? (
