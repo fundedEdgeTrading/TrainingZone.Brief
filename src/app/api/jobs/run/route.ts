@@ -15,6 +15,7 @@ import { runBirthdayRule } from "@/lib/birthday-jobs";
 import { runSessionReminderRule } from "@/lib/session-reminders";
 import { runRetentionAlertRule } from "@/lib/retention";
 import { runMemberTagRule } from "@/lib/tag-engine";
+import { runFlowEngineRule } from "@/lib/flows";
 import { runSepaPrenotificationRule } from "@/lib/sepa-prenotification-job";
 import { purgeAuditLog, purgePendingPaymentOrganizations, runDataRetention, type RetentionRunReport } from "@/lib/data-retention";
 import { reportJobFailures } from "@/lib/job-failure-report";
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
     ledgerOpeningEntries: 0,
     sepaPrenotifications: 0,
     memberTagMoves: 0,
+    flowSteps: 0,
     dataRetention: 0,
     auditLogPurged: 0,
     pendingPaymentOrgsPurged: 0,
@@ -118,6 +120,13 @@ export async function GET(req: NextRequest) {
     // la anterior. Cuenta MOVIMIENTOS (puestas + retiradas): un 0 en una segunda
     // pasada seguida es la prueba barata de que el motor es idempotente.
     summary.memberTagMoves += await run(org.id, "memberTags", () => runMemberTagRule(org.id));
+    // E2 · motor de flujos. Va DESPUÉS del motor de etiquetas porque la mitad
+    // de sus condiciones se apoyan en ellas: con las etiquetas de la pasada
+    // anterior, un socio que acaba de volver seguiría entrando en el flujo de
+    // ausencia. Es una COLA, no un «enviar ahora»: si esta pasada cae dentro de
+    // la ventana de silencio del centro (22:00-8:00) no manda nada y reprograma
+    // a las 8:00, sin perder nada.
+    summary.flowSteps += await run(org.id, "flows", () => runFlowEngineRule(org.id));
     // E10-08 · motor de conservación. Va el ÚLTIMO de la organización: purga y
     // anonimiza, y TODAS las reglas anteriores —recordatorios y libro mayor
     // incluidos— todavía quieren leer lo que borra.

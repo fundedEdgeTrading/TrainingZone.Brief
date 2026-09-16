@@ -59,26 +59,32 @@
  * una regla de seguridad que se afloja desde una pantalla deja de serlo.
  *
  * ---------------------------------------------------------------------------
- * LO QUE FALTA POR ESCRIBIR, con la forma acordada
+ * EL MAPA DEL MÓDULO · qué hace cada fichero
  * ---------------------------------------------------------------------------
- * Se deja como contrato en prosa y no como export declarado sin implementar:
- * un `declare const` es `undefined` en ejecución sin que TypeScript proteste.
+ * PUROS (sin Prisma, con el reloj inyectado, probados sin base de datos):
  *
- *   runFlowQueue(now: Date, opts?: { orgId?: string }): Promise<FlowRunReport>
- *     Una pasada del cron sobre la cola. Lee `FlowEnrollment` por
- *     `(status, nextRunAt)`, aplica las seis reglas y avanza. Con el reloj
- *     INYECTADO: las reglas se prueban sin base de datos.
+ *   safety.ts      LAS SEIS REGLAS. `decideFlowSend` es la decisión completa y
+ *                  `nextAllowedSendAt` la ventana de silencio del CENTRO.
+ *   catalog.ts     Las cuatro piezas, con de dónde sale la señal de cada
+ *                  disparador. `catalog` lo importa también el editor.
+ *   validate.ts    `validateFlow`: que NO se pueda construir un flujo inválido.
+ *   conditions.ts  Las condiciones, sobre un fotograma del socio.
+ *   branching.ts   Las tres ramas. Y por qué «si responde» no tiene señal hoy.
  *
- *   enrollMember(flowId: string, memberId: string, now: Date): Promise<…>
- *     La puerta de entrada, con la regla 3 dentro.
+ * CON BASE DE DATOS:
  *
- *   sendFlowEmail(…): Promise<…>
- *     EL ÚNICO PUNTO DE SALIDA. Regla 1 y regla 6 dentro, en la misma
- *     transacción. Nada más en el repositorio manda correo de flujo.
- *
- *   validateFlow(draft): FlowValidationResult
- *     Que NO se pueda construir un flujo inválido. Se valida en el servidor,
- *     no solo en el formulario.
+ *   engine.ts      `sendFlowEmail` es EL ÚNICO PUNTO DE SALIDA: consulta el
+ *                  registro y RESERVA el hueco en la misma transacción, con la
+ *                  fila del socio bloqueada. `runFlowQueue` es la pasada del
+ *                  cron; `enrollMember` la puerta de entrada, con la regla 3.
+ *   triggers.ts    Los disparadores CABLEADOS a las señales que ya existen.
+ *   actions.ts     Las acciones que no escriben al socio, delegando en el
+ *                  módulo que ya sabe hacer cada cosa.
+ *   queries.ts     Listado, edición, pausa global y buzón de pruebas, CON EL
+ *                  ÁMBITO DE CENTRO DENTRO.
+ *   panel.ts       El armazón del embudo y el hueco TIPADO del objetivo, que
+ *                  rellena E3.
+ *   click-tokens.ts El enlace firmado que sostiene «si hace clic» sin píxel.
  *
  * Los DISPARADORES ya existen como señal calculada y se CABLEAN, no se
  * recalculan: alta (`Member.joinedAt`), ausencia (`retention.ts` +
@@ -87,6 +93,44 @@
  * `Member.delinquentSince`), cambio de estado (`member-lifecycle.ts`, M4),
  * cumpleaños (`birthday-jobs.ts`), formulario respondido (`member-forms.ts`,
  * M5) y valoración (`TrainerRating` / `Assessment`).
+ *
+ * LO QUE NO TIENE SEÑAL HOY, dicho aquí y no descubierto por quien venga
+ * detrás: «SI RESPONDE». En este repositorio no hay recepción de correo
+ * entrante —`mailer.ts` manda por la API de Brevo con un `Reply-To` del
+ * centro—, así que la respuesta del socio llega al buzón del gimnasio y no a la
+ * aplicación. `FlowEmailLog.repliedAt` solo lo marca una persona
+ * (`markFlowEmailReplied`), y el editor lo avisa al elegir esa rama. No se
+ * inventa la señal: eso sería peor que no tener la rama.
  */
 
-export {};
+export {
+  runFlowQueue,
+  runFlowEngineRule,
+  enrollMember,
+  sendFlowEmail,
+  recordFlowEmailClick,
+  markFlowEmailReplied,
+  type FlowRunReport,
+} from "@/lib/flows/engine";
+
+export { validateFlow, type FlowDraft, type FlowValidationResult } from "@/lib/flows/validate";
+
+export {
+  decideFlowSend,
+  nextAllowedSendAt,
+  isWithinQuietHours,
+  canEnrollAgain,
+  WEEKLY_CAP_DEFINITION,
+  WEEKLY_EMAIL_CAP_DAYS,
+  FLOW_REENTRY_DAYS,
+  QUIET_HOURS_START,
+  QUIET_HOURS_END,
+} from "@/lib/flows/safety";
+
+export {
+  flowFunnel,
+  refreshFlowGoals,
+  registerFlowGoalResolver,
+  type FlowFunnel,
+  type FlowGoalResolver,
+} from "@/lib/flows/panel";
