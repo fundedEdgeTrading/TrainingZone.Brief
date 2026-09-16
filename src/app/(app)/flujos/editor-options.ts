@@ -3,7 +3,7 @@ import type { ScopedUser } from "@/lib/center-scope";
 import { listTagOptions } from "@/lib/tags-queries";
 import { getAssessmentMilestones } from "@/lib/assessments/queries";
 import { centersForFlows } from "@/lib/flows/queries";
-import type { FlowEditorOptions } from "./flow-editor";
+import type { FlowEditorOptions } from "./editor-value";
 
 /**
  * Lo que el editor necesita para pintar sus desplegables. Sale de las fuentes

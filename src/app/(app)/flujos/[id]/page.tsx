@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { FLOW_STATUS_HELP, FLOW_STATUS_LABEL } from "@/lib/flows/catalog";
 import { getFlow, getFlowFunnel } from "@/lib/flows/queries";
-import { FlowEditor, type FlowEditorValue } from "../flow-editor";
+import { FlowEditor } from "../flow-editor";
+import type { FlowEditorValue } from "../editor-value";
 import { flowEditorOptions } from "../editor-options";
 import { FunnelCard } from "../funnel-card";
 

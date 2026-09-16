@@ -4,7 +4,8 @@ import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
 import { canManageMembers } from "@/lib/rbac";
 import { PageHeader } from "@/components/ui/page-header";
-import { FlowEditor, emptyFlowValue } from "../flow-editor";
+import { FlowEditor } from "../flow-editor";
+import { emptyFlowValue } from "../editor-value";
 import { flowEditorOptions } from "../editor-options";
 
 /** Montar un flujo desde cero. Nace en BORRADOR, siempre: encenderlo es otro gesto. */

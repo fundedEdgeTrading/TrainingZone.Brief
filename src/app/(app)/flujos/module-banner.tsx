@@ -58,7 +58,7 @@ export function FlowsModuleBanner({
           <p className="text-[13px] text-brand-ink mt-1">
             No sale ni un correo de ningún flujo.{" "}
             {queued === 0
-              ? "No hay nada esperando en la cola."
+              ? "No hay nadie esperando en la cola ahora mismo. Cuando reanudes, todo sigue por donde iba: no se pierde nada."
               : `${queued} ${queued === 1 ? "socio sigue" : "socios siguen"} en cola y ${queued === 1 ? "se reanudará" : "se reanudarán"} donde estaban: no se pierde nada.`}
           </p>
         </div>
