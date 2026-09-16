@@ -16,6 +16,9 @@ export const PUBLIC_PATHS = [
   // no tiene cuenta. Si el proxy lo rebotara a /login, el enlace no llevaría a
   // ninguna parte justo para las personas a las que va dirigido.
   "/formulario",
+  // R1 (E14-30) · el enlace del socio que invita a un amigo. Con barra final a
+  // propósito, como "/lead-form": "/r" a secas marcaría pública "/rrhh" entera.
+  "/r/",
   "/planes",
   "/demo-checkout",
   "/hazte-socio",
