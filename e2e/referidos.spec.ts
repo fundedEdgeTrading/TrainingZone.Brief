@@ -19,9 +19,20 @@ import { loginAs } from "./helpers";
  */
 
 const DIRECCION = "direccion@trainingzone.es";
-/** La demo es compartida: teléfono único por pasada para no chocar. */
-const PHONE = `6${Date.now().toString().slice(-8)}`;
-const FIRST_NAME = `Refe${Date.now().toString().slice(-5)}`;
+/**
+ * La demo es compartida y no se limpia entre pasadas, así que el referido de
+ * cada ejecución tiene que ser distinguible del de la anterior.
+ *
+ * El NOMBRE lleva la misma marca que el teléfono, y no una más corta: con los
+ * cinco últimos dígitos del reloj, dos pasadas separadas por menos de cien
+ * segundos generaban el MISMO nombre, y entonces el localizador de la fila
+ * —que busca por nombre— podía enganchar la recompensa de la pasada anterior,
+ * ya pagada, y leer un estado que no era el de este recorrido. Ocho dígitos no
+ * repiten hasta pasadas veintisiete horas.
+ */
+const STAMP = Date.now().toString().slice(-8);
+const PHONE = `6${STAMP}`;
+const FIRST_NAME = `Refe${STAMP}`;
 const FULL_NAME = `${FIRST_NAME} Invitado`;
 
 let referrerId = "";

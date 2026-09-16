@@ -46,7 +46,13 @@ export default async function ReferidosPage() {
     ambassadorReach(session.user),
   ]);
 
-  const open = rewards.filter((r) => r.status === "PENDING_VALIDATION" || r.status === "VALIDATED");
+  // Tres bandejas y no dos, porque son tres trabajos distintos: decidir, aplicar
+  // y consultar. Mezclar «pendiente de validar» con «validada» en una sola tabla
+  // las ordenaba por estado, así que al validar una fila se iba al final —con
+  // una cola de verdad, a otra página del listado— y quien acababa de validarla
+  // la perdía de vista justo cuando le tocaba pagarla.
+  const pending = rewards.filter((r) => r.status === "PENDING_VALIDATION");
+  const validated = rewards.filter((r) => r.status === "VALIDATED");
   const closed = rewards.filter((r) => r.status === "PAID" || r.status === "REJECTED");
 
   return (
@@ -86,14 +92,27 @@ export default async function ReferidosPage() {
 
       <section className="space-y-3">
         <SectionTitle
-          title="Recompensas pendientes"
-          subtitle="Pendiente de validar → validada → pagada. Ninguno de los dos saltos mueve dinero: quien la aplica es una persona."
+          title="Pendientes de validar"
+          subtitle="Comprobad que el alta es buena. Validar no mueve dinero: dice «esta es buena, aplicadla»."
         />
         <DataTable
           columns={REWARD_COLUMNS}
-          rows={open.map(toRewardRow)}
-          emptyTitle="Nada pendiente"
+          rows={pending.map(toRewardRow)}
+          emptyTitle="Nada que validar"
           emptyDescription="Cuando un referido se dé de alta, su recompensa aparecerá aquí con su tarea en el tablero."
+        />
+      </section>
+
+      <section className="space-y-3">
+        <SectionTitle
+          title="Validadas, a falta de aplicarlas"
+          subtitle="Descontad el importe del próximo recibo o cargad las sesiones, y marcadlas como pagadas. El sistema no lo hace solo, y no va a hacerlo."
+        />
+        <DataTable
+          columns={REWARD_COLUMNS}
+          rows={validated.map(toRewardRow)}
+          emptyTitle="Nada por aplicar"
+          emptyDescription="Aquí caen las recompensas ya validadas, hasta que alguien las aplique y lo deje anotado."
         />
       </section>
 

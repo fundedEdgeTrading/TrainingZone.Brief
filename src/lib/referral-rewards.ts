@@ -26,7 +26,7 @@
 import type { MemberState, Prisma, ReferralRewardBeneficiary, ReferralRewardKind } from "@prisma/client";
 
 import { isCenterInScope, centerScopeFor, type ScopedUser } from "@/lib/center-scope";
-import { createNotificationOnce, pickCenterTaskRecipient, resolveNotification } from "@/lib/notifications";
+import { createNotification, pickCenterTaskRecipient, resolveNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
 import {
   assessCodeValidityRule,
@@ -328,9 +328,25 @@ async function createReward(input: {
  * candidatos lo decide `pickCenterTaskRecipient`, que ya sabe quién tiene hueco
  * esta semana — no se abre un abanico de siete copias idénticas.
  *
- * Devuelve `null` cuando no hay a quién encargársela o cuando el tope semanal
- * la ha dejado para más adelante. La recompensa se escribe IGUALMENTE y se ve
- * en `/referidos`: el dinero prometido no depende de que quepa una tarea.
+ * NO PASA POR `createNotificationOnce`, y la razón importa: ese camino aplica el
+ * TOPE SEMANAL de tareas automáticas de M3, y este encargo no es de los que el
+ * tope puede frenar sin perderse.
+ *
+ * El tope está pensado —y así lo dice su propio comentario— para los DETECTORES
+ * del motor: reglas que miran el estado de hoy y vuelven a pasar cada noche, de
+ * modo que lo que no cabe esta semana lo escribe la próxima pasada. «No se ha
+ * descartado nada», dice, y es verdad PARA ELLAS. Esta tarea no es un detector:
+ * nace de un HECHO puntual —un alta concreta, una vez— y no hay cron que vuelva
+ * a mirarla. Si el tope se la come, no la escribe nadie nunca más, y lo que se
+ * queda sin avisar es dinero ya prometido a un socio.
+ *
+ * La deduplicación que `createNotificationOnce` aporta tampoco hace falta aquí,
+ * y por eso no se pierde nada: esto se llama UNA sola vez por recompensa, justo
+ * después de crearla, y crear la recompensa lo protege el
+ * `@@unique([leadId, beneficiary])` de la base de datos. Una recompensa, una
+ * tarea; no hay forma de escribir dos.
+ *
+ * Devuelve `null` solo cuando no hay ni una sola persona a quien encargársela.
  */
 async function openAdminTask(input: {
   orgId: string;
@@ -363,7 +379,7 @@ async function openAdminTask(input: {
   if (!recipientUserId) return null;
 
   const who = BENEFICIARY_LABEL[input.beneficiary].toLowerCase();
-  const result = await createNotificationOnce({
+  const task = await createNotification({
     orgId: input.orgId,
     recipientUserId,
     kind: "TASK",
@@ -380,7 +396,7 @@ async function openAdminTask(input: {
     entityId: input.rewardId,
     dueDate: new Date(Date.now() + REWARD_TASK_DUE_DAYS * MS_PER_DAY),
   });
-  return result.status === "capped" ? null : result.id;
+  return task.id;
 }
 
 /**

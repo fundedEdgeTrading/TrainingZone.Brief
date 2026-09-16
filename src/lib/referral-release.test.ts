@@ -262,3 +262,34 @@ test("el código caduca con la baja y vuelve con el socio, desde member-lifecycl
   assert.equal(back.revokedAt, null, "si vuelve, recupera el mismo código que ya compartió");
   assert.ok(await resolveReferralCode("ANA-TEST1"));
 });
+
+/* ------------------------------------------------------------------------- *
+ * El tope semanal de M3 no puede comerse esta tarea
+ * ------------------------------------------------------------------------- */
+
+test("la tarea de la recompensa se escribe aunque el tope semanal esté agotado", async () => {
+  // El tope de tareas AUTOMÁTICAS de M3 (E14-12) frena a los detectores del
+  // motor, que vuelven a pasar cada noche y reescriben lo que no cupo. Esta
+  // tarea no es un detector: nace de un alta concreta, una sola vez, y nadie
+  // vuelve a mirarla. Si el tope se la comiera, quedaría dinero prometido sin
+  // que a nadie se le encargue pagarlo.
+  const user = await prisma.user.findFirstOrThrow({ where: { orgId, role: "RECEPTION" } });
+  const cap = 15;
+  await prisma.notification.createMany({
+    data: Array.from({ length: cap + 5 }, (_, i) => ({
+      orgId,
+      recipientUserId: user.id,
+      kind: "TASK" as const,
+      title: `Relleno del tope ${i}`,
+      entityType: "MemberStallRisk",
+      entityId: `relleno-${i}`,
+    })),
+  });
+
+  const { leadId } = await bringAFriend("Iris", "600000208");
+  const reward = await prisma.referralReward.findFirstOrThrow({ where: { leadId, beneficiary: "REFERRER" } });
+  assert.ok(reward.notificationId, "con el tope agotado, la recompensa sigue abriendo su tarea");
+
+  const task = await prisma.notification.findUniqueOrThrow({ where: { id: reward.notificationId! } });
+  assert.equal(task.resolvedAt, null);
+});

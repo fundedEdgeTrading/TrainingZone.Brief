@@ -83,3 +83,57 @@ reexportan, así que los call sites de servidor siguen importando de un solo sit
 
 De paso hace literal lo que pedía el encargo: las tres reglas antifraude son
 lógica pura, en un módulo que **no tiene ni cómo ir a buscar un dato**.
+
+---
+
+## Apéndice · dos cosas que salieron de CI, y una es un fallo de producto
+
+Escritas aquí porque ninguna de las dos es de un fichero de R1 y el integrador
+tiene que verlas.
+
+### a) `e2e/etiquetas.spec.ts` (E1) se caía siempre que el recuento valía 1
+
+El pie del listado de socios **singulariza** (`members/page.tsx:350`):
+`{total} {total === 1 ? "socio" : "socios"} en total`. La aserción de E1 tenía
+el plural fijo:
+
+```ts
+await expect(page.getByText(`${impagoCount} socios en total`)).toBeVisible();
+```
+
+Así que el test fallaba **siempre** que hubiera exactamente un socio con la
+etiqueta «Impago», y pasaba el resto de las veces. Cuánta gente hay en impago en
+la demo cuando llega ese spec depende de lo que hayan hecho antes los specs de
+cobros, así que caía unas pasadas sí y otras no — y en la de este PR cayó.
+
+**Reproducido y arreglado**: dejando un solo socio en impago, el fallo sale
+idéntico al de CI (`Locator: getByText('1 socios en total')`); con la aserción
+singularizando igual que la pantalla, pasa con 1 y con 4. No se ha tocado lo que
+el test comprueba —el número sigue comparándose—, solo la gramática.
+
+**No lo causó R1**: se reproduce en cualquier rama poniendo el recuento a 1. Lo
+único que hizo este cambio fue mover los datos de la demo lo justo para que el
+recuento cayera en ese valor.
+
+### b) La tarea de la recompensa NO puede pasar por el tope semanal de M3
+
+Esto sí era un fallo de verdad, y lo destapó la propia suite al repetirse: con
+el tope de tareas automáticas agotado (`Organization.autoTaskWeeklyCapPerUser`),
+`createNotificationOnce` devolvía `capped` y **la recompensa se quedaba sin
+tarea**. Dinero prometido a un socio y nadie a quien se le encarga pagarlo.
+
+El tope de M3 está pensado para los DETECTORES del motor —lo dice su propio
+comentario: vuelven a pasar cada noche y reescriben lo que no cupo, así que «no
+se ha descartado nada»—. La tarea de una recompensa **no es un detector**: nace
+de un hecho puntual, una vez, y no hay cron que vuelva a mirarla.
+
+Arreglado dentro de `referral-rewards.ts`: se llama a `createNotification`
+directamente. La deduplicación que aportaba `createNotificationOnce` no hacía
+falta, y por eso no se pierde nada: la tarea se abre una sola vez por
+recompensa, justo después de crearla, y crear la recompensa lo protege el
+`@@unique([leadId, beneficiary])`. Hay un test que lo fija
+(`referral-release.test.ts`: «la tarea de la recompensa se escribe aunque el
+tope semanal esté agotado»).
+
+**No se ha tocado `notifications.ts` ni `tasks.ts`**, que son de M3: el tope
+sigue exactamente como estaba para todas las demás reglas.
