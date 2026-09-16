@@ -184,11 +184,23 @@ test.describe("R1 · referidos con recompensa, de punta a punta", () => {
     const lead = await prisma.lead.findFirstOrThrow({ where: { phone: PHONE }, select: { id: true, convertedMemberId: true } });
     const paymentsBefore = await prisma.payment.count({ where: { memberId: lead.convertedMemberId! } });
 
+    // OJO con el texto de estas dos esperas. `getByText("Pagada")` busca
+    // SUBCADENA y sin distinguir mayúsculas, así que casaba también con el
+    // botón «Marcar pagada» que ya estaba en la fila ANTES de pulsarlo: la
+    // aserción se cumplía sola, no esperaba a nada, y la lectura de la base de
+    // datos de más abajo adelantaba a la acción de servidor. En local la acción
+    // ganaba la carrera y el test pasaba; en CI, más lento, la perdía.
+    //
+    // Se espera a las dos cosas que sí significan que el salto ha cuajado: que
+    // el botón de la acción desaparezca de la fila y que el rótulo del estado
+    // sea EXACTAMENTE el nuevo.
     await rowOf("quien trae").getByRole("button", { name: "Validar" }).click();
-    await expect(rowOf("quien trae").getByText("Validada")).toBeVisible({ timeout: 15_000 });
+    await expect(rowOf("quien trae").getByRole("button", { name: "Validar" })).toHaveCount(0, { timeout: 15_000 });
+    await expect(rowOf("quien trae").getByText("Validada", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await rowOf("quien trae").getByRole("button", { name: "Marcar pagada" }).click();
-    await expect(rowOf("quien trae").getByText("Pagada")).toBeVisible({ timeout: 15_000 });
+    await expect(rowOf("quien trae").getByRole("button", { name: "Marcar pagada" })).toHaveCount(0, { timeout: 15_000 });
+    await expect(rowOf("quien trae").getByText("Pagada", { exact: true })).toBeVisible({ timeout: 15_000 });
 
     const paid = await prisma.referralReward.findFirstOrThrow({
       where: { leadId: lead.id, beneficiary: "REFERRER" },

@@ -137,3 +137,26 @@ tope semanal esté agotado»).
 
 **No se ha tocado `notifications.ts` ni `tasks.ts`**, que son de M3: el tope
 sigue exactamente como estaba para todas las demás reglas.
+
+### c) `getByText("Pagada")` casaba con el botón «Marcar pagada»
+
+Tercera pasada de CI, y esta era mía del todo. La espera después de marcar la
+recompensa como pagada era:
+
+```ts
+await expect(rowOf("quien trae").getByText("Pagada")).toBeVisible();
+```
+
+`getByText` con una cadena busca **subcadena y sin distinguir mayúsculas**, así
+que «Pagada» casaba con el botón **«Marcar pagada»** que ya estaba en la fila
+ANTES de pulsarlo. La aserción se cumplía sola, no esperaba a nada, y la lectura
+de la base de datos de la línea siguiente adelantaba a la acción de servidor: en
+local la acción ganaba la carrera y el test pasaba; en CI, más lento, la perdía
+y leía todavía `VALIDATED`.
+
+Comprobado con un caso mínimo —`getByText("Pagada")` casa con un
+`<button>Marcar pagada</button>`, y con `{ exact: true }` no—, y arreglado
+esperando a las dos cosas que sí significan que el salto ha cuajado: que el
+botón de la acción desaparezca de la fila y que el rótulo del estado sea
+exactamente el nuevo. Eso no se puede cumplir hasta que la escritura está
+confirmada y la página se ha revalidado.
