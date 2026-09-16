@@ -94,6 +94,24 @@
  * cumpleaños (`birthday-jobs.ts`), formulario respondido (`member-forms.ts`,
  * M5) y valoración (`TrainerRating` / `Assessment`).
  *
+ * ---------------------------------------------------------------------------
+ * PARA E3 · dos detalles de vocabulario antes de montar las semillas
+ * ---------------------------------------------------------------------------
+ * `src/lib/flows/seeds/referral-90-days.ts` lo dejó escrito R1 ANTES de que
+ * este motor existiera, así que su tipo `FlowSeed` es suyo y no coincide del
+ * todo con el del motor. Se dice aquí para que no se descubra depurando:
+ *
+ *   · la ESPERA de un paso es `FlowStep.waitDays`, en DÍAS, no en horas. La
+ *     semilla la escribe como `waitHours: 90 * 24`; son 90 días.
+ *   · la condición `TENURE` se configura con `{ months, direction: "min" |
+ *     "max" }`, no con `minMonths`.
+ *
+ * Y el hueco que R1 deja abierto —«valoración de 8 o más», que hoy no cabe en
+ * `FlowConditionType`— sigue abierto: `RATING_BELOW` es un DISPARADOR y es lo
+ * contrario de lo que pide ese flujo. La salida A que recomienda R1 (una
+ * etiqueta automática de E1 y aquí una condición `TAG`) no toca esquema y
+ * funciona con este motor tal cual está.
+ *
  * LO QUE NO TIENE SEÑAL HOY, dicho aquí y no descubierto por quien venga
  * detrás: «SI RESPONDE». En este repositorio no hay recepción de correo
  * entrante —`mailer.ts` manda por la API de Brevo con un `Reply-To` del
