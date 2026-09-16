@@ -48,6 +48,12 @@ export type NotificationRoute = { path: string; params?: Record<string, string> 
  * tiene pantalla de detalle propia, así que recibe el id como `openId` y
  * `leads.tsx` resalta esa tarjeta (`tone="accent"`) — no es una ficha
  * propia, pero ya no es "abre la lista y adivina cuál".
+ *
+ * Y el destino tiene que EXISTIR para quien lo va a tocar. La app conserva dos
+ * roles (socio y entrenador, D-M4): un destino de dirección aquí no es un
+ * enlace imperfecto, es un error de carga con el aviso ya marcado como hecho.
+ * Por eso la tabla de la app puede quedarse sin destino donde la web sí lo
+ * tiene — lo que no puede es apuntar a una pantalla que el rol no abre.
  */
 export function notificationRoute(
   entityType: string | null,
@@ -74,12 +80,15 @@ export function notificationRoute(
     case "Booking":
     case "ClassSession":
       return isMember ? { path: "/sesiones" } : { path: "/panel" };
-    // No hay pantalla de cobros propia en la app de staff (solo /dashboard
-    // resume ingresos y morosidad): es el destino más cercano que existe.
+    // Cobros: SIN destino para el personal de la app. Llevaban a `/dashboard`,
+    // que es de dirección (`/admin/dashboard` responde 403 a entrenador y a
+    // Entrenador Admin) y que además dejó de tener pestaña con el recorte a dos
+    // roles (D-M4, E13-01): el aviso abría una pantalla que solo sabía decir
+    // "no se pudo cargar". La morosidad y el cobro se resuelven en la web, que
+    // es donde vive esa superficie; aquí el aviso se lee y se marca hecho.
     case "Subscription":
-      return isMember ? { path: "/consumo" } : { path: "/dashboard", params: { subscriptionId: entityId } };
     case "Payment":
-      return isMember ? { path: "/consumo" } : { path: "/dashboard", params: { paymentId: entityId } };
+      return isMember ? { path: "/consumo" } : null;
     default:
       return null;
   }

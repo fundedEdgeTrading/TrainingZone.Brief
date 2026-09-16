@@ -17,17 +17,20 @@ import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import type { TrainerAgendaSession, TrainerPendingItem } from "@/api/types";
 
-/** El feedback se cierra 48 h después de la sesión (feedback-capture.ts). */
-const CLOSE_WINDOW_HOURS = 48;
 /** Segmentos de la barra de avance semanal del héroe. */
 const PROGRESS_SEGMENTS = 9;
 
 /**
- * Cola de feedback. Lo que ordena esta pantalla NO es el orden del día sino la
- * URGENCIA: el feedback caduca a las 48 h, y lo que está a punto de cerrarse es
- * lo único irrecuperable. Por eso el primer corte es «cierra en X h», en
- * `theme.critical`, y las sesiones de hoy que aún no han terminado van al final
- * con su acción deshabilitada: no se puede puntuar una sesión que no ha pasado.
+ * Cola de debrief: las sesiones ya terminadas a las que les falta el semáforo.
+ *
+ * La ventana real es la del servidor (`trainer-panel-queries.ts`): entran las
+ * sesiones de los ÚLTIMOS SIETE DÍAS con asistentes y sin debrief. Esta
+ * pantalla anunciaba en rojo que «el feedback se cierra 48 h después de la
+ * sesión» y pintaba una cuenta atrás — un plazo que no existe en ninguna parte
+ * del servidor, calculado además parseando el «hace 3h 20m» del texto: todo lo
+ * de más de dos días salía como «cierra en 0 h», o sea, perdido, cuando seguía
+ * estando perfectamente a mano. El corte ahora es el que importa de verdad: lo
+ * de hace más de un día primero, porque es lo que ya cuesta recordar.
  */
 export default function FeedbackQueueScreen() {
   const theme = useTheme();
@@ -35,19 +38,17 @@ export default function FeedbackQueueScreen() {
 
   const groups = useMemo(() => {
     if (!data) return [];
-    const closing: TrainerPendingItem[] = [];
-    const rest: TrainerPendingItem[] = [];
+    const older: TrainerPendingItem[] = [];
+    const today: TrainerPendingItem[] = [];
+    // `label` lo compone el servidor como «Hoy · 19:00» / «Ayer · 19:00» /
+    // «martes · 19:00»: el día sale de ahí, no de una cuenta hecha aquí sobre
+    // un texto pensado para leerse.
     for (const item of data.pendingDebriefs) {
-      (hoursLeft(item) <= 24 ? closing : rest).push(item);
+      (item.label.startsWith("Hoy") ? today : older).push(item);
     }
-    // El plazo del rótulo es el del MÁS URGENTE del grupo, no el del primero:
-    // `pendingDebriefs` viene de más reciente a más antiguo, así que `[0]` era
-    // justo el que más margen tenía y el corte anunciaba más horas de las que
-    // realmente quedaban.
-    const soonest = closing.length ? Math.min(...closing.map(hoursLeft)) : 0;
     return [
-      { key: "closing", label: closing.length ? `Cierra en ${Math.max(0, Math.round(soonest))} h` : "", urgent: true, items: closing },
-      { key: "rest", label: "Esta semana", urgent: false, items: rest },
+      { key: "older", label: "De días anteriores", urgent: true, items: older },
+      { key: "today", label: "De hoy", urgent: false, items: today },
     ].filter((group) => group.items.length > 0);
   }, [data]);
 
@@ -74,7 +75,7 @@ export default function FeedbackQueueScreen() {
   return (
     <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
       <FadeInUp>
-        <ScreenHeader kicker="FEEDBACK 1-10" title="Puntúa a tus socios" tight />
+        <ScreenHeader kicker="DEBRIEF DE SESIÓN" title="Cómo ha ido con cada uno" tight />
       </FadeInUp>
 
       {isLoading ? (
@@ -86,7 +87,7 @@ export default function FeedbackQueueScreen() {
           <HeroCard padding={17}>
             <Text style={[typo.kicker, { color: theme.onInk.muted }]}>ESTA SEMANA</Text>
             <Text style={[styles.heroTitle, { color: theme.onInk.text }]}>
-              {pending === 0 ? "Todo al día" : `${pending} ${pending === 1 ? "sesión" : "sesiones"} por puntuar`}
+              {pending === 0 ? "Todo al día" : `${pending} ${pending === 1 ? "sesión" : "sesiones"} sin semáforo`}
             </Text>
             <View style={styles.segments}>
               {Array.from({ length: PROGRESS_SEGMENTS }, (_, i) => (
@@ -97,7 +98,7 @@ export default function FeedbackQueueScreen() {
               {/* El marcador es de HOY, no de la semana: decirlo evita leer
                   «2 de 3» como si fuera el total de la cola de arriba. */}
               <Text style={[typo.rowMeta, { color: theme.onInk.secondary, flex: 1 }]}>
-                {totalToday === 0 ? "Sin sesiones terminadas hoy" : `${doneToday} de ${totalToday} de hoy puntuadas`}
+                {totalToday === 0 ? "Sin sesiones terminadas hoy" : `${doneToday} de ${totalToday} de hoy con semáforo`}
               </Text>
               {pending > 0 ? (
                 <Button
@@ -107,7 +108,7 @@ export default function FeedbackQueueScreen() {
                   size="sm"
                   onPress={() =>
                     router.push({
-                      pathname: "/feedback/[id]",
+                      pathname: "/brief/[id]",
                       params: { id: data.pendingDebriefs[0].sessionId, d: data.pendingDebriefs[0].occurrenceDate },
                     })
                   }
@@ -117,11 +118,11 @@ export default function FeedbackQueueScreen() {
           </HeroCard>
 
           {pending > 0 ? (
-            <View style={[styles.notice, { backgroundColor: theme.criticalBg, borderColor: theme.critical }]}>
-              <Icon name="alert" size={15} color={theme.critical} />
+            <View style={[styles.notice, { backgroundColor: theme.goldBg, borderColor: theme.gold }]}>
+              <Icon name="alert" size={15} color={theme.goldText} />
               <Text style={[typo.rowMetaSmall, { color: theme.textSecondary, flex: 1, lineHeight: 16 }]}>
-                El feedback se cierra {CLOSE_WINDOW_HOURS} h después de la sesión. Lo que se pasa de plazo no se puede
-                rellenar después.
+                Aquí entran las sesiones de los últimos siete días con asistentes y sin semáforo. Cuanto más tarde lo
+                pongas, menos te acordarás de cómo fue.
               </Text>
             </View>
           ) : null}
@@ -143,7 +144,7 @@ export default function FeedbackQueueScreen() {
             <Card style={{ gap: 8 }}>
               <Badge label="Al día" tone="good" dot />
               <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
-                No tienes feedback pendiente. Al terminar una sesión aparecerá aquí.
+                No tienes ningún debrief pendiente. Al terminar una sesión aparecerá aquí.
               </Text>
             </Card>
           ) : null}
@@ -164,20 +165,8 @@ export default function FeedbackQueueScreen() {
   );
 }
 
-/**
- * Horas que quedan hasta el cierre. `relative` viene del servidor como «hace 3h
- * 20m»: la cuenta se hace sobre eso, que es lo que hay, en vez de inventar un
- * instante en el cliente.
- */
-function hoursLeft(item: TrainerPendingItem): number {
-  const match = /hace\s+(\d+)\s*h/.exec(item.relative);
-  const elapsed = match ? Number(match[1]) : 0;
-  return Math.max(0, CLOSE_WINDOW_HOURS - elapsed);
-}
-
 function PendingRow({ item }: { item: TrainerPendingItem }) {
   const theme = useTheme();
-  const left = hoursLeft(item);
   const [time] = item.label.split(" · ").slice(-1);
 
   return (
@@ -193,15 +182,17 @@ function PendingRow({ item }: { item: TrainerPendingItem }) {
         <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
           {item.title}
         </Text>
-        <Text style={[typo.rowMeta, { color: left <= 12 ? theme.critical : theme.textMuted }]} numberOfLines={1}>
-          {item.detail} · cierra en {Math.round(left)} h
+        {/* `relative` («hace 3h 20m») lo compone el servidor: es cuánto hace
+            que terminó, no un plazo inventado en el cliente. */}
+        <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={1}>
+          {item.detail} · {item.relative}
         </Text>
       </View>
       <Button
-        title="Empezar"
+        title="Pasar lista"
         variant="gold"
         size="sm"
-        onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: item.sessionId, d: item.occurrenceDate } })}
+        onPress={() => router.push({ pathname: "/brief/[id]", params: { id: item.sessionId, d: item.occurrenceDate } })}
       />
     </Card>
   );

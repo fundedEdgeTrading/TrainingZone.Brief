@@ -20,12 +20,16 @@ export default function Index() {
     );
   }
 
-  // E12-08: organización suspendida (402 de /me) — antes esto se confundía
-  // con una sesión inválida y mandaba a login en blanco sin explicar nada.
-  if (state.status === "suspended") {
+  // Dos paradas con la sesión INTACTA, que antes acababan las dos en el login
+  // sin explicar nada: la organización suspendida (402 de /me, E12-08) y el
+  // arranque sin conexión. En las dos se conserva la sesión y se puede
+  // reintentar, que es lo único que hace falta cuando vuelve la cobertura.
+  if (state.status === "suspended" || state.status === "offline") {
     return (
       <View style={[styles.container, styles.suspended, { backgroundColor: theme.background }]}>
-        <Text style={[styles.title, { color: theme.text }]}>Servicio suspendido</Text>
+        <Text style={[styles.title, { color: theme.text }]}>
+          {state.status === "suspended" ? "Servicio suspendido" : "Sin conexión"}
+        </Text>
         <Text style={[styles.message, { color: theme.textMuted }]}>{state.message}</Text>
         <Button title="Reintentar" onPress={refresh} />
         <Button title="Cerrar sesión" variant="ghost" onPress={logout} />

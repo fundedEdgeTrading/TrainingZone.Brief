@@ -14,6 +14,7 @@ import type {
   BriefListResponse,
   CancelBookingResponse,
   DashboardResponse,
+  DebriefFeeling,
   EvolutionResponse,
   NotificationsResponse,
   OrganizationResponse,
@@ -30,9 +31,7 @@ import type {
   MembersResponse,
   MembershipsResponse,
   ProductsResponse,
-  SaveFeedbackInput,
   SaveProductInput,
-  SessionFeedbackResponse,
   StaffResponse,
   UpdateStaffInput,
   CapacityResponse,
@@ -187,15 +186,30 @@ export function useBriefDetail(sessionId: string, occurrenceDate?: string) {
 }
 
 /**
+ * Debrief de sesión (E3-07): color 🟢🟡🔴 más una frase opcional, el MISMO
+ * contrato que la web (`brief-card.tsx`). La nota viaja con el color porque el
+ * servidor guarda las dos cosas en la misma escritura.
+ *
  * `feeling: null` desmarca: la Booking vuelve a BOOKED en el servidor (E2-03),
  * en vez de quedarse solo en el estado local como antes.
  */
 export function useSaveDebrief(sessionId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ bookingId, feeling }: { bookingId: string; feeling: "GREEN" | "AMBER" | "RED" | null }) =>
+    mutationFn: ({
+      bookingId,
+      feeling,
+      note,
+    }: {
+      bookingId: string;
+      feeling: DebriefFeeling | null;
+      note?: string | null;
+    }) =>
       feeling
-        ? apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "POST", body: { bookingId, feeling } })
+        ? apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, {
+            method: "POST",
+            body: { bookingId, feeling, note: note?.trim() ? note.trim() : null },
+          })
         : apiRequest<{ saved: boolean }>(`/trainer/brief/${sessionId}/debrief`, { method: "DELETE", body: { bookingId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["brief-detail", sessionId] });
@@ -442,42 +456,13 @@ export function useRemoveStaff() {
   });
 }
 
-// ---------- Feedback 1-10 por socio (C4) ----------
-//
-// ⚠️ RETIRADO EN EL SERVIDOR POR E3-07. `/trainer/sessions/:id/feedback` responde
-// ahora 410: los ocho ejes salen del flujo de sala (el color de la sesión se
-// derivaba de su media, y eso creaba dos criterios incompatibles de `feeling`).
-// El color va por `/trainer/brief/:id/debrief` —🟢🟡🔴 más una frase opcional,
-// mismo contrato que la web— y los ejes se puntúan en la valoración periódica,
-// desde la ficha del socio en la web. La pantalla que usa estos dos hooks tiene
-// que retirarse: es trabajo de la pista de la app (E3-01 y siguientes).
-
-export function useSessionFeedback(sessionId: string, occurrenceDate?: string) {
-  return useQuery({
-    queryKey: ["session-feedback", sessionId, occurrenceDate ?? null],
-    queryFn: () =>
-      apiRequest<SessionFeedbackResponse>(
-        `/trainer/sessions/${sessionId}/feedback${occurrenceDate ? `?d=${occurrenceDate}` : ""}`
-      ),
-    enabled: Boolean(sessionId),
-  });
-}
-
-export function useSaveSessionFeedback(sessionId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: SaveFeedbackInput) =>
-      apiRequest<{ saved: boolean; feeling: string; average: number | null }>(
-        `/trainer/sessions/${sessionId}/feedback`,
-        { method: "POST", body: input }
-      ),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["session-feedback", sessionId] });
-      queryClient.invalidateQueries({ queryKey: ["trainer-panel"] });
-      queryClient.invalidateQueries({ queryKey: ["brief-detail", sessionId] });
-    },
-  });
-}
+// El feedback 1-10 por socio (C4) se RETIRÓ con E3-07: `/trainer/sessions/:id/
+// feedback` responde 410 en el servidor —los ocho ejes salían del flujo de sala
+// porque el color de la sesión se derivaba de su media, y eso creaba dos
+// criterios incompatibles de `feeling`—. El color va por `useSaveDebrief`
+// (🟢🟡🔴 más una frase, mismo contrato que la web) y los ejes se puntúan en la
+// valoración periódica desde la ficha del socio. Sus dos hooks y la pantalla
+// que los usaba se van con ellos: llamarlos solo producía un 410.
 
 // ---------- Socios del entrenador (rediseño móvil) ----------
 

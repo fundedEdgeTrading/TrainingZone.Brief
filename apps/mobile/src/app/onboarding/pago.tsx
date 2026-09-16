@@ -14,6 +14,7 @@ import { Button } from "@/components/Button";
 import { Icon } from "@/components/Icon";
 import { Divider } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
+import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
 import { formatEuros } from "@/utils/format";
 import { isRecurringPlanType } from "@/utils/plan-type";
@@ -32,7 +33,7 @@ export default function CheckoutScreen() {
   const toast = useToast();
   const { refresh } = useAuth();
   const { planId } = useLocalSearchParams<{ planId: string }>();
-  const { data } = useProducts();
+  const { data, isLoading, isError } = useProducts();
   const checkout = useCheckout();
   const [manualReason, setManualReason] = useState<string | null>(null);
 
@@ -76,7 +77,20 @@ export default function CheckoutScreen() {
         <Text style={[typo.cardTitle, { color: theme.text }]}>Confirmar y pagar</Text>
       </View>
 
-      {!product ? (
+      {/* El catálogo puede estar todavía en vuelo (se llega aquí con un enlace
+          directo, o tras recargar el bundle sobre esta pantalla). Sin este
+          caso, el primer fotograma acusaba al plan de no existir —«Ese plan ya
+          no está disponible»— cuando lo único que pasaba es que aún no había
+          llegado la respuesta. */}
+      {isLoading ? (
+        <SkeletonList rows={3} shape="card" note="Cargando tu plan…" />
+      ) : isError ? (
+        <EmptyState
+          icon="alert"
+          title="No se pudo cargar el plan"
+          description="Comprueba tu conexión y vuelve a entrar desde el catálogo."
+        />
+      ) : !product ? (
         <EmptyState icon="alert" title="Ese plan ya no está disponible" description="Vuelve al catálogo y elige otro." />
       ) : (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">

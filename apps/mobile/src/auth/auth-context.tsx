@@ -23,7 +23,16 @@ type AuthState =
    * a propósito: en cuanto la organización se reactive, `refresh()` vuelve
    * a `signedIn` sin pedir la contraseña otra vez.
    */
-  | { status: "suspended"; message: string };
+  | { status: "suspended"; message: string }
+  /**
+   * No se ha podido hablar con el servidor al arrancar (sin red, servidor
+   * caído, timeout). ANTES esto se trataba como una sesión inválida: se
+   * BORRABAN los tokens y la app mandaba a login. O sea, un túnel, un ascensor
+   * o un servidor lento en el momento de abrir la app te echaba de la sesión y
+   * te obligaba a teclear la contraseña otra vez, con la sesión perfectamente
+   * viva. Los tokens se conservan y la pantalla de arranque ofrece reintentar.
+   */
+  | { status: "offline"; message: string };
 
 type LoginOutcome =
   | { ok: true; user: MeResponse }
@@ -60,26 +69,44 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
   const [justSignedIn, setJustSignedIn] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      const { refreshToken } = await getStoredTokens();
-      if (!refreshToken) {
-        setState({ status: "signedOut" });
+  /**
+   * Resuelve la sesión guardada. Lo hace el arranque y lo repite `refresh()`,
+   * que es lo que ofrece el botón «Reintentar» de la pantalla de espera.
+   *
+   * La distinción que faltaba: `status: 0` es "no he podido preguntar" (red,
+   * timeout, TLS), no "la sesión no vale". Solo se borran los tokens cuando el
+   * servidor RESPONDE que la identidad no sirve.
+   */
+  const resolveSession = useCallback(async () => {
+    const { refreshToken } = await getStoredTokens();
+    if (!refreshToken) {
+      setState({ status: "signedOut" });
+      return;
+    }
+    try {
+      const me = await apiRequest<MeResponse>("/me");
+      setState({ status: "signedIn", user: me });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 402) {
+        // E12-08: organización con el servicio suspendido. Los tokens se
+        // conservan: en cuanto se reactive, este mismo camino vuelve a entrar.
+        setState({ status: "suspended", message: err.message });
         return;
       }
-      try {
-        const me = await apiRequest<MeResponse>("/me");
-        setState({ status: "signedIn", user: me });
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 402) {
-          setState({ status: "suspended", message: err.message });
-          return;
-        }
-        await clearTokens();
-        setState({ status: "signedOut" });
+      if (err instanceof ApiError && err.status === 0) {
+        setState({ status: "offline", message: err.message });
+        return;
       }
-    })();
+      await clearTokens();
+      setState({ status: "signedOut" });
+    }
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      await resolveSession();
+    })();
+  }, [resolveSession]);
 
   async function login(email: string, password: string, orgId?: string): Promise<LoginOutcome> {
     try {
@@ -107,20 +134,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   }
 
-  async function refresh() {
-    try {
-      const me = await apiRequest<MeResponse>("/me");
-      setState({ status: "signedIn", user: me });
-    } catch (err) {
-      // E12-08: un 402 sí es una respuesta real (organización suspendida), a
-      // diferencia de un fallo puntual de red — que conserva el estado
-      // actual y deja que el siguiente 401 real lo resuelva el refresh de
-      // token del cliente de API.
-      if (err instanceof ApiError && err.status === 402) {
-        setState({ status: "suspended", message: err.message });
-      }
-    }
-  }
+  /**
+   * Vuelve a leer /me. Lo usan el alta tras el pago y el «Reintentar» de las
+   * pantallas de espera, así que pasa por el mismo camino que el arranque: un
+   * 402 deja "suspendida", un fallo de red deja "sin conexión" —los dos con
+   * los tokens intactos— y solo una respuesta del servidor que rechaza la
+   * identidad cierra la sesión.
+   */
+  const refresh = resolveSession;
 
   async function logout() {
     const { refreshToken } = await getStoredTokens();
@@ -136,7 +157,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   const value = useMemo(
     () => ({ state, login, logout, refresh, justSignedIn, consumeJustSignedIn }),
-    [state, justSignedIn, consumeJustSignedIn]
+    [state, refresh, justSignedIn, consumeJustSignedIn]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
