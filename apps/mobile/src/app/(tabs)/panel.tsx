@@ -87,23 +87,23 @@ export default function TrainerTodayScreen() {
                   <View style={styles.pendingTitleRow}>
                     <View style={[styles.dot8, { backgroundColor: theme.warning }]} />
                     <Text style={[typo.cardTitleSmall, { color: theme.text }]}>
-                      {data.pendingDebriefs.length} {data.pendingDebriefs.length === 1 ? "sesión" : "sesiones"} sin feedback
+                      {data.pendingDebriefs.length} {data.pendingDebriefs.length === 1 ? "sesión" : "sesiones"} sin semáforo
                     </Text>
                   </View>
                   <Button
-                    title="Rellenar"
+                    title="Pasar lista"
                     variant="gold"
                     size="sm"
                     onPress={() =>
                       router.push({
-                        pathname: "/feedback/[id]",
+                        pathname: "/brief/[id]",
                         params: { id: data.pendingDebriefs[0].sessionId, d: data.pendingDebriefs[0].occurrenceDate },
                       })
                     }
                   />
                 </View>
-                {/* El plazo, no solo el número: el feedback se cierra 48 h
-                    después de la sesión y después ya no hay nada que rellenar. */}
+                {/* Cuál es la más antigua, no solo cuántas: es la que peor se
+                    recuerda, y la que conviene cerrar primero. */}
                 <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
                   La más antigua: {data.pendingDebriefs[data.pendingDebriefs.length - 1].label.toLowerCase()} ·{" "}
                   {data.pendingDebriefs[data.pendingDebriefs.length - 1].relative}
@@ -244,24 +244,15 @@ function Spotlight({ data }: { data: TrainerPanelResponse }) {
         </View>
       </View>
 
-      {/* Las dos acciones reales del minuto en que se abre esto, y son DOS
-          pantallas distintas: pasar lista es el feedback socio a socio (que
-          es donde se marca la asistencia) y el brief es el repaso previo de
-          adaptaciones. Las dos abrían el brief, así que «Pasar lista» no
-          llevaba a ninguna parte útil. */}
+      {/* Una sola acción, porque es una sola pantalla: el brief es el repaso de
+          adaptaciones ANTES y la lista DESPUÉS, con el semáforo de cada socio
+          (E3-07). «Pasar lista» apuntaba a la pantalla de ocho ejes, que el
+          servidor retiró con un 410: el botón principal del día no abría nada. */}
       <View style={styles.spotlightActions}>
         <Button
           onInk
-          title="Pasar lista"
+          title="Abrir el brief"
           variant="gold"
-          size="sm"
-          style={{ flex: 1 }}
-          onPress={() => router.push({ pathname: "/feedback/[id]", params: { id: spotlight.id, d: data.agendaDay } })}
-        />
-        <Button
-          onInk
-          title="Brief"
-          variant="outline"
           size="sm"
           style={{ flex: 1 }}
           onPress={() => router.push({ pathname: "/brief/[id]", params: { id: spotlight.id, d: data.agendaDay } })}

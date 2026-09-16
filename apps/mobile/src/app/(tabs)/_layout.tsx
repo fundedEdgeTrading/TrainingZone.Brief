@@ -59,7 +59,9 @@ const TAB_META: Record<TabName, { label: string; icon: IconName }> = {
   consumo: { label: "Consumo", icon: "wallet" },
   panel: { label: "Mi panel", icon: "activity" },
   brief: { label: "Brief", icon: "clipboard" },
-  feedback: { label: "Feedback", icon: "star" },
+  // E3-07: la pestaña lista las sesiones sin semáforo, y el semáforo se pone en
+  // el brief. «Feedback» prometía la puntuación por ejes, que ya no existe.
+  feedback: { label: "Debrief", icon: "star" },
   "staff-agenda": { label: "Agenda", icon: "calendar" },
   "mis-socios": { label: "Socios", icon: "users" },
   tareas: { label: "Tareas", icon: "clipboard" },
@@ -107,13 +109,14 @@ export default function TabsLayout() {
     );
   }
   if (state.status === "signedOut") return <Redirect href="/login" />;
-  // E12-08: una organización suspendida (402 de /me) no debería llegar aquí
-  // dentro —`index.tsx` la intercepta antes y pinta "Servicio suspendido"—,
-  // pero el tipo de `state` lo permite y sin esta guarda `state.user` de más
-  // abajo no compila. Si ocurre igualmente (p. ej. la sesión se suspende
-  // mientras ya se estaba dentro de las pestañas), se rebota a `/` para que
-  // pinte esa pantalla en vez de reventar leyendo un `user` que no existe.
-  if (state.status === "suspended") return <Redirect href="/" />;
+  // E12-08: una organización suspendida (402 de /me) —o un arranque sin
+  // conexión— no debería llegar aquí dentro: `index.tsx` los intercepta antes
+  // y pinta su pantalla. Pero el tipo de `state` lo permite y sin esta guarda
+  // `state.user` de más abajo no compila. Si ocurre igualmente (p. ej. la
+  // sesión se suspende mientras ya se estaba dentro de las pestañas), se
+  // rebota a `/` para que pinte esa pantalla en vez de reventar leyendo un
+  // `user` que no existe.
+  if (state.status === "suspended" || state.status === "offline") return <Redirect href="/" />;
   // Recorte a dos roles (D-M4, E13-01): antes de repartir pestañas, ni
   // siquiera se pregunta por ellas si el rol no es de los que la app
   // conserva — así no queda ni una pestaña ni una rejilla vacía para el resto.

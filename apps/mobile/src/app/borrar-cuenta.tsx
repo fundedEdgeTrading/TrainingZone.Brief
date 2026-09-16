@@ -116,7 +116,14 @@ export default function DeleteAccountScreen() {
   }
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} />}>
+    // `withTabBar={false}`: esta pantalla vive FUERA del grupo (tabs), así que
+    // no hay barra que absorba el área segura inferior y la reserva ella. Sin
+    // esto, el botón de pedir el borrado quedaba pisado por el indicador de
+    // gestos justo en la pantalla donde hay que leerlo entero antes de tocarlo.
+    <ScreenContainer
+      withTabBar={false}
+      refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={() => refetch()} tintColor={theme.gold} />}
+    >
       <FadeInUp>
         <ScreenHeader
           kicker="MI CUENTA"

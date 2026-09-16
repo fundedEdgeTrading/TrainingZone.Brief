@@ -83,21 +83,68 @@ describe("Session Brief · condiciones sin regla (T1 / E3-01)", () => {
 });
 
 describe("Session Brief · desmarcar asistencia (T2 / E2-03)", () => {
-  it("tocar el check dos veces envía la operación al servidor", async () => {
+  it("tocar el color ya elegido lo quita, y la operación llega al servidor", async () => {
     reply(
       "GET /trainer/brief/session-1",
       briefDetailResponse({
-        roster: [briefRosterEntry({ bookingId: "booking-1", debrief: { feeling: "GREEN" } })],
+        roster: [briefRosterEntry({ bookingId: "booking-1", debrief: { feeling: "GREEN", note: null } })],
       }),
     );
     reply("DELETE /trainer/brief/session-1/debrief", { saved: true });
 
     renderWithProviders(<BriefDetailScreen />);
 
-    const checkbox = await screen.findByLabelText("Quitar asistencia");
-    fireEvent.press(checkbox);
+    const selected = await screen.findByLabelText("Bien, seleccionado: tócalo otra vez para quitarlo");
+    fireEvent.press(selected);
 
     await waitFor(() => expect(lastRequest("DELETE /trainer/brief/session-1/debrief")).toBeDefined());
     expect(lastRequest("DELETE /trainer/brief/session-1/debrief")?.body).toEqual({ bookingId: "booking-1" });
+  });
+});
+
+/**
+ * E3-07 · el debrief de la app escribe lo mismo que el de la web: los TRES
+ * colores y la frase. Mientras la app solo sabía mandar GREEN, el matiz se
+ * remitía a una pantalla de ocho ejes que el servidor ya respondía con un 410.
+ */
+describe("Session Brief · debrief 🟢🟡🔴 (E3-07)", () => {
+  it("se puede marcar ÁMBAR, no solo verde", async () => {
+    reply("GET /trainer/brief/session-1", briefDetailResponse({ roster: [briefRosterEntry({ bookingId: "booking-1" })] }));
+    reply("POST /trainer/brief/session-1/debrief", { saved: true });
+
+    renderWithProviders(<BriefDetailScreen />);
+
+    fireEvent.press(await screen.findByLabelText("Regular"));
+
+    await waitFor(() => expect(lastRequest("POST /trainer/brief/session-1/debrief")).toBeDefined());
+    expect(lastRequest("POST /trainer/brief/session-1/debrief")?.body).toEqual({
+      bookingId: "booking-1",
+      feeling: "AMBER",
+      note: null,
+    });
+  });
+
+  it("la frase del debrief viaja con el color y se relee del servidor", async () => {
+    reply(
+      "GET /trainer/brief/session-1",
+      briefDetailResponse({
+        roster: [briefRosterEntry({ bookingId: "booking-1", debrief: { feeling: "RED", note: "Molestia en el hombro" } })],
+      }),
+    );
+    reply("POST /trainer/brief/session-1/debrief", { saved: true });
+
+    renderWithProviders(<BriefDetailScreen />);
+
+    // Se relee: sin esto el entrenador tenía que reescribirla en cada visita.
+    const note = await screen.findByDisplayValue("Molestia en el hombro");
+    fireEvent.changeText(note, "Molestia en el hombro, bajamos carga");
+    fireEvent(note, "blur");
+
+    await waitFor(() => expect(lastRequest("POST /trainer/brief/session-1/debrief")).toBeDefined());
+    expect(lastRequest("POST /trainer/brief/session-1/debrief")?.body).toEqual({
+      bookingId: "booking-1",
+      feeling: "RED",
+      note: "Molestia en el hombro, bajamos carga",
+    });
   });
 });

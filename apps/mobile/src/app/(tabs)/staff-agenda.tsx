@@ -765,7 +765,9 @@ function EpSlotSheet({
             keyboardType="numbers-and-punctuation"
           />
         </View>
-        <Stepper label="Minutos" value={durationMin} min={30} max={120} onChange={(v) => setDurationMin(v)} />
+        {/* De 15 en 15: son las duraciones reales de un hueco de EP (30, 45,
+            60, 90). De uno en uno, pasar de 60 a 90 eran treinta toques. */}
+        <Stepper label="Minutos" value={durationMin} min={30} max={120} step={15} onChange={(v) => setDurationMin(v)} />
       </View>
 
       <View style={{ gap: 6 }}>

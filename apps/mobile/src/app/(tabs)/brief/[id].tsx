@@ -12,14 +12,14 @@ import { HeroCard } from "@/components/HeroCard";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Avatar } from "@/components/Avatar";
+import { Field } from "@/components/Field";
 import { Icon } from "@/components/Icon";
-import { Divider, ListRow } from "@/components/Row";
 import { EmptyState } from "@/components/EmptyState";
 import { QueryErrorState } from "@/components/QueryErrorState";
 import { FadeInUp } from "@/components/FadeInUp";
 import { SkeletonList } from "@/components/Skeleton";
 import { useToast } from "@/components/Toast";
-import type { BriefCondition, BriefRosterEntry } from "@/api/types";
+import type { BriefCondition, BriefRosterEntry, DebriefFeeling } from "@/api/types";
 
 const LIGHT_RANK: Record<string, number> = { RED: 0, AMBER: 1, GREEN: 2 };
 
@@ -45,16 +45,20 @@ function conditionLabel(condition: BriefCondition): string {
 }
 
 /**
- * Session Brief: con quién estás a punto de entrenar y qué hay que adaptarle.
+ * Session Brief: con quién estás a punto de entrenar, qué hay que adaptarle y
+ * —al terminar— cómo ha ido con cada uno.
  *
  * El orden es lo que hace útil esta pantalla: PRIMERO quien requiere atención
  * (rojo, luego ámbar), y los socios sin restricción en una lista compacta al
  * final. Ordenado por nombre —como estaba— el rojo aparecía en la posición 5 de
  * 6 y se leía cuando la sesión ya había empezado.
  *
- * Un toque en el botón de asistencia guarda el debrief y marca asistencia, que
- * es lo que ya hacía el código; lo que cambia es que ahora ese botón se ve
- * desde la fila, sin desplegar nada.
+ * E3-07 · aquí se pasa lista. Antes era una casilla de sí/no que solo sabía
+ * escribir 🟢, y el matiz (regular/mal) se remitía a una pantalla de ocho ejes
+ * que el servidor ya había retirado con un 410: quien tocaba «Pasar lista» en
+ * su panel no llegaba a ninguna parte. Ahora el gesto es el MISMO que en la web
+ * —Bien / Regular / Mal más una frase opcional— y escribe por el mismo canal,
+ * así que el color significa lo mismo en las dos superficies.
  */
 export default function BriefDetailScreen() {
   const { id, d } = useLocalSearchParams<{ id: string; d?: string }>();
@@ -150,14 +154,11 @@ export default function BriefDetailScreen() {
               {rest.length > 0 ? (
                 <>
                   <SectionTitle label="Sin restricciones" />
-                  <Card tone="alt" padding={0} style={{ gap: 0 }}>
-                    {rest.map((entry, index) => (
-                      <View key={entry.bookingId} style={styles.listInset}>
-                        {index > 0 ? <Divider /> : null}
-                        <CompactRow entry={entry} sessionId={id} />
-                      </View>
-                    ))}
-                  </Card>
+                  {rest.map((entry, index) => (
+                    <FadeInUp key={entry.bookingId} delay={stagger(index)}>
+                      <RosterCard entry={entry} sessionId={id} compact />
+                    </FadeInUp>
+                  ))}
                 </>
               ) : null}
             </>
@@ -195,133 +196,179 @@ function LightCount({ color, value, label }: { color: string; value: number; lab
   );
 }
 
-/** Tarjeta completa: para quien lleva restricción, con la adaptación literal. */
-function RosterCard({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: string }) {
+/**
+ * Tarjeta de un socio del roster. `compact` es quien no lleva nada que adaptar:
+ * misma tarjeta sin el bloque de adaptaciones, para que pasar lista sea el
+ * mismo gesto en los dos grupos y no haya que buscarlo en dos sitios distintos.
+ */
+function RosterCard({ entry, sessionId, compact }: { entry: BriefRosterEntry; sessionId: string; compact?: boolean }) {
+  const theme = useTheme();
+  const accent = entry.light === "RED" ? theme.critical : entry.light === "AMBER" ? theme.warning : theme.good;
+  const name = `${entry.member.firstName} ${entry.member.lastName}`;
+
+  return (
+    <Card padding={0} style={styles.rosterCard}>
+      <View style={[styles.rosterBar, { backgroundColor: compact ? theme.separator : accent }]} />
+      <View style={styles.rosterBody}>
+        <View style={styles.rosterHeader}>
+          <Avatar name={name} size={compact ? 34 : 36} />
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
+              {name}
+            </Text>
+            <Text
+              style={[typo.rowMetaSmall, { color: compact ? theme.textMuted : accent }]}
+              numberOfLines={1}
+            >
+              {compact
+                ? entry.isNew
+                  ? "Primera sesión"
+                  : "Sin restricción activa"
+                : `${entry.light === "RED" ? "Evitar bloques marcados" : "Adaptar bloques marcados"}${
+                    entry.isNew ? " · primera sesión" : ""
+                  }`}
+            </Text>
+          </View>
+        </View>
+
+        {!compact
+          ? entry.matchedRules.map((rule, index) => (
+              <View key={`rule-${index}`} style={[styles.adaptation, { backgroundColor: theme.sheet }]}>
+                <Text style={[typo.rowTitleSmall, { color: theme.text }]}>{rule.blockArea}</Text>
+                {rule.adaptation ? (
+                  <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{rule.adaptation}</Text>
+                ) : null}
+              </View>
+            ))
+          : null}
+
+        {/* Condición declarada sin regla asignada (RB-SALUD-010, E3-01/E3-03):
+            no hay adaptación que pintar, pero no puede desaparecer del brief
+            como si no existiera — es justo la que más se salta hoy. Sin
+            descripción clínica (E3-05): solo tipo y zona. */}
+        {!compact
+          ? entry.unmatchedConditions.map((condition, index) => (
+              <View
+                key={`unmatched-${index}`}
+                style={[styles.adaptation, { backgroundColor: theme.sheet, borderWidth: 1, borderColor: theme.warning }]}
+              >
+                <Text style={[typo.rowTitleSmall, { color: theme.warning }]}>Condición sin regla asignada</Text>
+                <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>
+                  {conditionLabel(condition)}
+                </Text>
+              </View>
+            ))
+          : null}
+
+        <DebriefControl entry={entry} sessionId={sessionId} name={name} />
+      </View>
+    </Card>
+  );
+}
+
+/** Los tres colores del debrief, con el mismo rótulo que la web (E3-07). */
+const FEELINGS: { value: DebriefFeeling; label: string }[] = [
+  { value: "GREEN", label: "Bien" },
+  { value: "AMBER", label: "Regular" },
+  { value: "RED", label: "Mal" },
+];
+
+/**
+ * «¿Cómo ha ido la sesión?» — el gesto con el que se pasa lista.
+ *
+ * Un toque guarda el color Y marca la asistencia; el segundo toque sobre el
+ * color ya elegido la desmarca (E2-03: se manda al servidor, para que la
+ * reserva vuelva a BOOKED y el bono no quede consumido a ciegas).
+ *
+ * La frase es opcional y NO bloquea: se guarda al salir del campo, y solo
+ * cuando ya hay color, porque sin color no hay debrief que anotar.
+ */
+function DebriefControl({ entry, sessionId, name }: { entry: BriefRosterEntry; sessionId: string; name: string }) {
   const theme = useTheme();
   const toast = useToast();
-  const [feeling, setFeeling] = useState(entry.debrief?.feeling ?? null);
+  const [feeling, setFeeling] = useState<DebriefFeeling | null>(entry.debrief?.feeling ?? null);
+  const [note, setNote] = useState(entry.debrief?.note ?? "");
+  const [savedNote, setSavedNote] = useState(entry.debrief?.note ?? "");
   const saveDebrief = useSaveDebrief(sessionId);
-  const accent = entry.light === "RED" ? theme.critical : entry.light === "AMBER" ? theme.warning : theme.good;
 
-  function markAttendance() {
+  function tap(value: DebriefFeeling) {
     const previous = feeling;
-    // Un toque = asistió y el debrief queda en verde; el matiz (regular/mal) se
-    // afina en el feedback 1-10, que es donde hay ocho ejes para decirlo.
-    // El segundo toque desmarca: también se manda al servidor (E2-03), para
-    // que la Booking vuelva a BOOKED y el bono no quede consumido a ciegas.
-    const next = feeling ? null : "GREEN";
+    const next = feeling === value ? null : value;
     setFeeling(next);
     saveDebrief.mutate(
-      { bookingId: entry.bookingId, feeling: next },
+      { bookingId: entry.bookingId, feeling: next, note },
       {
-        onError: () => {
+        onError: (err) => {
           setFeeling(previous);
-          toast.show("No se pudo actualizar la asistencia.", "critical");
+          toast.show(err instanceof Error ? err.message : "No se pudo guardar el debrief.", "critical");
+        },
+      }
+    );
+  }
+
+  function saveNote() {
+    if (!feeling || note.trim() === savedNote.trim()) return;
+    const previous = savedNote;
+    setSavedNote(note);
+    saveDebrief.mutate(
+      { bookingId: entry.bookingId, feeling, note },
+      {
+        onError: (err) => {
+          setSavedNote(previous);
+          toast.show(err instanceof Error ? err.message : "No se pudo guardar la nota.", "critical");
         },
       }
     );
   }
 
   return (
-    <Card padding={0} style={styles.rosterCard}>
-      <View style={[styles.rosterBar, { backgroundColor: accent }]} />
-      <View style={styles.rosterBody}>
-        <View style={styles.rosterHeader}>
-          <Avatar name={`${entry.member.firstName} ${entry.member.lastName}`} size={36} />
-          <View style={{ flex: 1, gap: 3 }}>
-            <Text style={[typo.rowTitle, { color: theme.text }]} numberOfLines={1}>
-              {entry.member.firstName} {entry.member.lastName}
-            </Text>
-            <Text style={[typo.rowMetaSmall, { color: accent }]} numberOfLines={1}>
-              {entry.light === "RED" ? "Evitar bloques marcados" : "Adaptar bloques marcados"}
-              {entry.isNew ? " · primera sesión" : ""}
-            </Text>
-          </View>
-          <AttendanceButton checked={Boolean(feeling)} busy={saveDebrief.isPending} onPress={markAttendance} />
-        </View>
-
-        {entry.matchedRules.map((rule, index) => (
-          <View key={`rule-${index}`} style={[styles.adaptation, { backgroundColor: theme.sheet }]}>
-            <Text style={[typo.rowTitleSmall, { color: theme.text }]}>{rule.blockArea}</Text>
-            {rule.adaptation ? (
-              <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{rule.adaptation}</Text>
-            ) : null}
-          </View>
-        ))}
-
-        {/* Condición declarada sin regla asignada (RB-SALUD-010, E3-01/E3-03):
-            no hay adaptación que pintar, pero no puede desaparecer del brief
-            como si no existiera — es justo la que más se salta hoy. Sin
-            descripción clínica (E3-05): solo tipo y zona. */}
-        {entry.unmatchedConditions.map((condition, index) => (
-          <View
-            key={`unmatched-${index}`}
-            style={[styles.adaptation, { backgroundColor: theme.sheet, borderWidth: 1, borderColor: theme.warning }]}
-          >
-            <Text style={[typo.rowTitleSmall, { color: theme.warning }]}>Condición sin regla asignada</Text>
-            <Text style={[typo.rowMeta, { color: theme.textSecondary, lineHeight: 17 }]}>{conditionLabel(condition)}</Text>
-          </View>
-        ))}
+    <View style={[styles.debrief, { borderTopColor: theme.separator }]}>
+      <Text style={[typo.rowMetaSmall, { color: theme.textMuted }]}>¿Cómo ha ido la sesión?</Text>
+      <View style={styles.feelingRow} accessibilityRole="radiogroup" accessibilityLabel={`Debrief de ${name}`}>
+        {FEELINGS.map((option) => {
+          const selected = feeling === option.value;
+          const color =
+            option.value === "GREEN" ? theme.good : option.value === "AMBER" ? theme.warning : theme.critical;
+          return (
+            <Pressable
+              key={option.value}
+              accessibilityRole="radio"
+              accessibilityState={{ selected, busy: saveDebrief.isPending }}
+              accessibilityLabel={`${option.label}${selected ? ", seleccionado: tócalo otra vez para quitarlo" : ""}`}
+              disabled={saveDebrief.isPending}
+              onPress={() => tap(option.value)}
+              style={[
+                styles.feeling,
+                { borderColor: selected ? color : theme.border, backgroundColor: selected ? color : "transparent" },
+              ]}
+            >
+              {!selected ? <View style={[styles.feelingDot, { backgroundColor: color }]} /> : null}
+              <Text
+                style={[typo.buttonSmall, { color: selected ? theme.inkText : theme.textSecondary }]}
+                numberOfLines={1}
+              >
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-    </Card>
-  );
-}
 
-/** Fila compacta: para quien no lleva nada que adaptar. */
-function CompactRow({ entry, sessionId }: { entry: BriefRosterEntry; sessionId: string }) {
-  const toast = useToast();
-  const [feeling, setFeeling] = useState(entry.debrief?.feeling ?? null);
-  const saveDebrief = useSaveDebrief(sessionId);
-
-  return (
-    <ListRow
-      left={<Avatar name={`${entry.member.firstName} ${entry.member.lastName}`} size={34} />}
-      title={`${entry.member.firstName} ${entry.member.lastName}`}
-      meta={entry.isNew ? "Primera sesión" : undefined}
-      right={
-        <AttendanceButton
-          checked={Boolean(feeling)}
-          busy={saveDebrief.isPending}
-          onPress={() => {
-            const previous = feeling;
-            // Desmarcar también se manda al servidor (E2-03): dejarlo solo en
-            // estado local es lo que hacía que la reserva siguiera en ATTENDED
-            // para siempre y el check volviera a aparecer al recargar.
-            const next = feeling ? null : "GREEN";
-            setFeeling(next);
-            saveDebrief.mutate(
-              { bookingId: entry.bookingId, feeling: next },
-              {
-                onError: () => {
-                  setFeeling(previous);
-                  toast.show("No se pudo actualizar la asistencia.", "critical");
-                },
-              }
-            );
-          }}
+      {feeling ? (
+        <Field
+          placeholder="Una frase, si hace falta (opcional)"
+          value={note}
+          onChangeText={setNote}
+          onBlur={saveNote}
+          maxLength={600}
+          accessibilityLabel={`Nota del debrief de ${name}`}
         />
-      }
-    />
-  );
-}
-
-function AttendanceButton({ checked, busy, onPress }: { checked: boolean; busy: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked, busy }}
-      accessibilityLabel={checked ? "Quitar asistencia" : "Marcar asistencia"}
-      disabled={busy}
-      hitSlop={6}
-      onPress={onPress}
-      style={[
-        styles.attendance,
-        { borderColor: checked ? theme.good : theme.border, backgroundColor: checked ? theme.good : "transparent" },
-      ]}
-    >
-      <Icon name="check" size={16} color={checked ? theme.inkText : theme.textFaint} strokeWidth={checked ? 2.4 : 1.7} />
-    </Pressable>
+      ) : (
+        <Text style={[typo.rowMetaSmall, { color: theme.textFaint }]}>
+          Un toque guarda el debrief y marca la asistencia.
+        </Text>
+      )}
+    </View>
   );
 }
 
@@ -338,8 +385,22 @@ const styles = StyleSheet.create({
   rosterBody: { flex: 1, padding: 15, gap: 11 },
   rosterHeader: { flexDirection: "row", alignItems: "center", gap: 11 },
   adaptation: { borderRadius: radii.control, padding: 12, gap: 4 },
-  attendance: { width: 38, height: 38, borderRadius: radii.control, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  listInset: { paddingHorizontal: 14 },
+  debrief: { gap: 8, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 11, marginTop: 2 },
+  feelingRow: { flexDirection: "row", gap: 7 },
+  // 44 px de alto: los tres botones son el gesto principal de la pantalla y
+  // tienen que cumplir el mínimo táctil aunque se repartan el ancho entre tres.
+  feeling: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radii.control,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 6,
+  },
+  feelingDot: { width: 8, height: 8, borderRadius: 4 },
   floating: {
     flexDirection: "row",
     alignItems: "center",

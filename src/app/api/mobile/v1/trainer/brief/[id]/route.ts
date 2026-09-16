@@ -49,7 +49,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       // app pueda pintarlo en ámbar en vez de dejarlo en "Sin restricciones".
       unmatchedConditions: r.unmatchedConditions,
       light: r.light,
-      debrief: r.debrief ? { feeling: r.debrief.feeling } : null,
+      // E3-07: el debrief es color MÁS frase. Sin la frase, la app la pedía y
+      // no la volvía a enseñar nunca: el entrenador la reescribía cada vez.
+      debrief: r.debrief ? { feeling: r.debrief.feeling, note: r.debrief.note } : null,
     })),
   });
 }

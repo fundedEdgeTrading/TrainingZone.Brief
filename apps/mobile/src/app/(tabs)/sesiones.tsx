@@ -46,7 +46,14 @@ export default function MySessionsScreen() {
   const theme = useTheme();
   const toast = useToast();
   const [view, setView] = useState<View_>("proximas");
+  const [month, setMonth] = useState(currentMonth());
   const { data, isLoading, isError, refetch, isRefetching } = useAgenda();
+  // El calendario se pide aquí arriba —y no dentro de `CalendarView`— para que
+  // el «desliza hacia abajo para reintentar» de sus estados de error recargue
+  // ALGO: el `RefreshControl` es de esta pantalla, y solo sabía refrescar la
+  // agenda, así que en las vistas Calendario e Historial el gesto no hacía
+  // nada y el error no había forma de quitarlo sin salir de la pestaña.
+  const calendar = useMemberCalendar(month);
   const cancelBooking = useCancelBooking();
 
   const bookings = useMemo(() => (data?.upcomingBookings ?? []).filter((b) => !b.sessionCancelled), [data]);
@@ -78,7 +85,18 @@ export default function MySessionsScreen() {
   }
 
   return (
-    <ScreenContainer refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.gold} />}>
+    <ScreenContainer
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefetching || calendar.isRefetching}
+          onRefresh={() => {
+            refetch();
+            calendar.refetch();
+          }}
+          tintColor={theme.gold}
+        />
+      }
+    >
       <FadeInUp>
         <ScreenHeader kicker="MIS SESIONES" title="Lo que tienes reservado" tight />
       </FadeInUp>
@@ -96,9 +114,9 @@ export default function MySessionsScreen() {
       </FadeInUp>
 
       {view === "calendario" ? (
-        <CalendarView mode="month" />
+        <CalendarView mode="month" month={month} onMonthChange={setMonth} query={calendar} />
       ) : view === "historial" ? (
-        <CalendarView mode="history" />
+        <CalendarView mode="history" month={month} onMonthChange={setMonth} query={calendar} />
       ) : isLoading ? (
         <SkeletonList rows={3} shape="row" note="Cargando tus reservas…" />
       ) : isError || !data ? (
@@ -149,11 +167,20 @@ export default function MySessionsScreen() {
  * Realizada y No presentada— y `history` la misma información como lista,
  * para quien busca una sesión concreta y no un mes.
  */
-function CalendarView({ mode }: { mode: "month" | "history" }) {
+function CalendarView({
+  mode,
+  month,
+  onMonthChange,
+  query,
+}: {
+  mode: "month" | "history";
+  month: string;
+  onMonthChange: (month: string) => void;
+  query: ReturnType<typeof useMemberCalendar>;
+}) {
   const theme = useTheme();
-  const [month, setMonth] = useState(currentMonth());
   const [selected, setSelected] = useState<string>(todayIso());
-  const { data, isLoading, isError } = useMemberCalendar(month);
+  const { data, isLoading, isError } = query;
 
   // Al cambiar de mes hay que mover también el día elegido: se quedaba fijo en
   // hoy, así que en cualquier otro mes la rejilla no tenía ninguna casilla
@@ -161,7 +188,7 @@ function CalendarView({ mode }: { mode: "month" | "history" }) {
   // sesiones —ninguna— de un mes que ya no se estaba mirando.
   function goToMonth(delta: number) {
     const next = shiftMonth(month, delta);
-    setMonth(next);
+    onMonthChange(next);
     setSelected(next === currentMonth() ? todayIso() : `${next}-01`);
   }
 

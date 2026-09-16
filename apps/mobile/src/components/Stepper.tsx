@@ -3,18 +3,27 @@ import { useTheme, radii } from "@/theme/theme";
 import { fonts, tabular } from "@/theme/typography";
 import { Icon } from "./Icon";
 
-/** Contador − valor + (aforo, sesiones incluidas). El `+` va en dorado. */
+/**
+ * Contador − valor + (aforo, sesiones incluidas). El `+` va en dorado.
+ *
+ * `step` porque no todo lo que se cuenta va de uno en uno: la duración de un
+ * hueco de EP iba de 30 a 120 MINUTOS a pasos de 1, así que pasar de 60 a 90
+ * eran treinta toques y nadie lo hacía — se publicaba el hueco con la duración
+ * que viniera puesta.
+ */
 export function Stepper({
   value,
   onChange,
   min = 1,
   max = 99,
+  step = 1,
   label,
 }: {
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  step?: number;
   label?: string;
 }) {
   const theme = useTheme();
@@ -28,7 +37,7 @@ export function Stepper({
           accessibilityLabel="Restar"
           hitSlop={8}
           disabled={value <= min}
-          onPress={() => onChange(Math.max(min, value - 1))}
+          onPress={() => onChange(Math.max(min, value - step))}
           style={styles.control}
         >
           <Icon name="minus" size={16} color={value <= min ? theme.textFaint : theme.text} />
@@ -39,7 +48,7 @@ export function Stepper({
           accessibilityLabel="Sumar"
           hitSlop={8}
           disabled={value >= max}
-          onPress={() => onChange(Math.min(max, value + 1))}
+          onPress={() => onChange(Math.min(max, value + step))}
           style={styles.control}
         >
           <Icon name="plus" size={16} color={value >= max ? theme.textFaint : theme.gold} />

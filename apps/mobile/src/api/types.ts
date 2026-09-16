@@ -293,6 +293,9 @@ export type BriefCondition = {
   type: string;
 };
 
+/** E3-07: la gramática del debrief, la misma en web y app. */
+export type DebriefFeeling = "GREEN" | "AMBER" | "RED";
+
 export type BriefRosterEntry = {
   bookingId: string;
   member: { id: string; firstName: string; lastName: string; state: string };
@@ -304,7 +307,8 @@ export type BriefRosterEntry = {
   unmatchedConditions: BriefCondition[];
   matchedRules: { injuryZone: string; blockArea: string; light: string; adaptation: string | null }[];
   light: "RED" | "AMBER" | "GREEN" | null;
-  debrief: { feeling: "GREEN" | "AMBER" | "RED" } | null;
+  /** E3-07: color MÁS la frase opcional — las dos cosas se guardan juntas. */
+  debrief: { feeling: DebriefFeeling; note: string | null } | null;
 };
 
 export type BriefDetailResponse = {
@@ -649,7 +653,11 @@ export type UpdateStaffInput = {
   allocations?: { centerId: string; pct: number }[];
 };
 
-// ---------- Feedback 1-10 por socio (C4) ----------
+// ---------- Ejes de la valoración periódica ----------
+//
+// E3-07/E3-08: ya NO se puntúan al cerrar la sesión —ese endpoint responde 410—.
+// Se conservan aquí porque el histórico sigue viajando en la ficha del socio
+// (`TrainerMemberSession.scores`), que es donde se leen ahora.
 
 export type FeedbackAxis =
   | "rpe"
@@ -660,40 +668,6 @@ export type FeedbackAxis =
   | "pain"
   | "adherence"
   | "progress";
-
-export type FeedbackScores = Record<FeedbackAxis, number | null>;
-
-export type FeedbackMember = {
-  bookingId: string;
-  memberId: string;
-  name: string;
-  attended: boolean;
-  monthlyCount: number;
-  planNames: string[];
-  aptitude: { zone: string | null; light: "RED" | "AMBER" | "GREEN" } | null;
-  scores: FeedbackScores;
-  note: string | null;
-};
-
-export type SessionFeedbackResponse = {
-  session: {
-    id: string;
-    name: string;
-    classType: string;
-    startTime: string;
-    endTime: string;
-    centerName: string;
-    trainerName: string | null;
-    occurrenceDate: string;
-  };
-  members: FeedbackMember[];
-};
-
-export type SaveFeedbackInput = {
-  bookingId: string;
-  scores: Partial<FeedbackScores>;
-  note?: string | null;
-};
 
 /** F5 §6.3: la felicitación de cumpleaños, del mismo endpoint que consume la web. */
 export type BirthdayGreetingResponse = {

@@ -1,8 +1,9 @@
 import { Stack } from "expo-router";
 import { push } from "@/theme/motion";
 
-// Feedback 1-10 (C4): índice de sesiones a puntuar + flujo socio a socio.
-// Push a detalle: preset nativo a la duración del handoff (ver `push` en @/theme/motion).
+// Cola de debrief: índice de sesiones terminadas sin semáforo. El detalle es el
+// Session Brief (`/brief/[id]`), que es donde se pasa lista desde E3-07, así
+// que aquí ya no cuelga ninguna pantalla más.
 export default function FeedbackLayout() {
   return (
     <Stack
