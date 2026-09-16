@@ -3269,11 +3269,21 @@ async function main() {
     prisma.centerMembership.deleteMany(),
     prisma.retentionAlert.deleteMany(),
     prisma.sessionDebrief.deleteMany(),
+    // E3 · asientos de bono: cuelgan de Subscription (CASCADE) y de Booking
+    // (SET NULL), pero de Organization con RESTRICT, así que hay que borrarlos
+    // aquí o la organización no se va.
+    prisma.sessionLedger.deleteMany(),
     prisma.booking.deleteMany(),
     prisma.classSession.deleteMany(),
     prisma.sessionTemplate.deleteMany(),
+    // La disputa referencia Payment con RESTRICT.
+    prisma.paymentDispute.deleteMany(),
     prisma.payment.deleteMany(),
     prisma.subscription.deleteMany(),
+    // El mandato SEPA va DESPUÉS de Subscription —la FK es
+    // `Subscription.sepaMandateId`— y antes de Member, al que referencia con
+    // RESTRICT.
+    prisma.sepaMandate.deleteMany(),
     prisma.healthRecord.deleteMany(),
     prisma.aptitudeRule.deleteMany(),
     prisma.referenceRange.deleteMany(),
@@ -3283,12 +3293,41 @@ async function main() {
     // se veía porque siempre arranca con la base recién migrada.
     prisma.assessment.deleteMany(),
     prisma.performanceMetric.deleteMany(),
+    // Configuración de valoraciones (hitos, preguntas activadas y preguntas
+    // propias del centro): catálogo de organización con RESTRICT.
+    prisma.assessmentMilestone.deleteMany(),
+    prisma.assessmentQuestionToggle.deleteMany(),
+    prisma.assessmentCustomQuestion.deleteMany(),
     // El mesociclo cuelga en cadena: ejercicio → bloque → día → fase → mesociclo.
     prisma.mesocycleExercise.deleteMany(),
     prisma.mesocycleBlock.deleteMany(),
     prisma.mesocycleDay.deleteMany(),
     prisma.mesocyclePhase.deleteMany(),
     prisma.mesocycle.deleteMany(),
+    // E1 · etiquetas. `MemberTag` y `MemberTagEvent` caen por CASCADE al borrar
+    // Member, pero la DEFINICIÓN es catálogo de organización con RESTRICT: sin
+    // borrarla, `organization.deleteMany` revienta con
+    // "MemberTagDefinition_orgId_fkey". Y la definición solo se puede borrar
+    // cuando ya no queda ni asignación ni histórico apuntándola.
+    prisma.memberTagEvent.deleteMany(),
+    prisma.memberTag.deleteMany(),
+    prisma.memberTagDefinition.deleteMany(),
+    // E2 · flujos: pasos, condiciones, inscripciones y logs cuelgan del flujo
+    // por CASCADE, pero todos referencian Organization y Center con RESTRICT.
+    prisma.flowEmailLog.deleteMany(),
+    prisma.flowEnrollment.deleteMany(),
+    prisma.flowCondition.deleteMany(),
+    prisma.flowStep.deleteMany(),
+    prisma.flow.deleteMany(),
+    // Referidos: la recompensa referencia Member con RESTRICT (el socio que
+    // recomienda), no solo el Lead que cae por CASCADE.
+    prisma.referralReward.deleteMany(),
+    prisma.referralCode.deleteMany(),
+    prisma.referralProgramConfig.deleteMany(),
+    // Invitaciones a formularios de alta: RESTRICT contra Organization y Center.
+    prisma.memberFormInvite.deleteMany(),
+    // Solicitudes de borrado de cuenta: RESTRICT contra Member y User.
+    prisma.accountDeletionRequest.deleteMany(),
     // Tokens de refresco de la app nativa: cuelgan de User.
     prisma.mobileRefreshToken.deleteMany(),
     // Lead <-> Member forman un ciclo de FKs (Lead.convertedMemberId / Member.originLeadId):
@@ -3311,8 +3350,22 @@ async function main() {
     prisma.center.deleteMany(),
     // StripeAccount referencia orgId (RESTRICT): igual que Invitation.
     prisma.stripeAccount.deleteMany(),
+    // Catálogos y configuración de organización: todos con RESTRICT contra
+    // Organization. `freezeReason` y `cancelReason` además los siembra este
+    // mismo fichero, así que sin borrarlos la segunda pasada duplicaría.
+    prisma.retentionPolicy.deleteMany(),
+    prisma.freezeReason.deleteMany(),
+    prisma.cancelReason.deleteMany(),
+    prisma.stripeCoupon.deleteMany(),
+    prisma.stripePayout.deleteMany(),
     prisma.organization.deleteMany(),
     prisma.postalCodeArea.deleteMany(),
+    // Tablas sin FK: no bloquean el borrado, pero sobrevivir al reseed sí
+    // estorba. Un bloqueo por intentos fallidos seguiría vivo contra un email
+    // demo recién recreado, y un `evt_…` ya procesado haría que el reenvío del
+    // webhook se descarte por idempotencia contra datos que ya no existen.
+    prisma.accessAttempt.deleteMany(),
+    prisma.stripeWebhookEvent.deleteMany(),
   ], { timeout: 30000, maxWait: 30000 });
 
   // Referencia CP completo→barrio (BI-3): no depende de ninguna org. Cubre todas
