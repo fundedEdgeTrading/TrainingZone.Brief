@@ -116,7 +116,14 @@ test.describe("E14-23 · en el listado y en la ficha", () => {
     // El chip del filtro aplicado, y el recuento del pie: los socios con la
     // etiqueta, no todos.
     await expect(page.getByLabel(`Quitar filtro Etiqueta: ${AUTOMATIC_TAG_LABEL.impago}`)).toBeVisible();
-    await expect(page.getByText(`${impagoCount} socios en total`)).toBeVisible();
+    // El pie del listado SINGULARIZA (`members/page.tsx`: «1 socio en total»,
+    // «2 socios en total»), así que la aserción tiene que singularizar igual.
+    // Con el plural fijo, este test se caía SIEMPRE que el recuento valiera
+    // exactamente 1 —y cuánta gente hay en impago en la demo depende de lo que
+    // hayan hecho antes los specs de cobros, así que caía unas pasadas sí y
+    // otras no. Lo que se comprueba es el número, no la gramática.
+    const socios = impagoCount === 1 ? "socio" : "socios";
+    await expect(page.getByText(`${impagoCount} ${socios} en total`)).toBeVisible();
 
     // Y son los de verdad: todos los de la página llevan la píldora de impago.
     // La tabla se busca por su columna «Socio» y no con `tbody tr` a secas:

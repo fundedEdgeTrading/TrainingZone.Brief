@@ -6,6 +6,7 @@ import { createHealthRecordForLead } from "@/lib/health-access";
 import { LEAD_CONSENT_VERSION, resolveLeadHealthCapture } from "@/lib/consent";
 import { canCaptureLeadHealthData } from "@/lib/minors";
 import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
+import { releaseReferralRewardsForLead } from "@/lib/referral-rewards";
 
 /**
  * Ámbito de centro de un lead (center-scope.ts), igual que ya se aplica a
@@ -177,6 +178,17 @@ export type CreateLeadInput = {
   actor?: { userId: string; role: Role } | null; // null = autocompletado por el propio lead (formulario público)
   // Rediseño Leads: alta presencial con cierre inmediato ("Cerrado directamente").
   directClose?: { planId?: string | null } | null;
+  /**
+   * R1 · De quién viene. "Referido" como CANAL no necesita nada más —`channel`
+   * ya es texto y `LeadChannel` es configurable sin desplegar (RB-LEAD-004)—,
+   * así que lo único que faltaba era esto: el socio que lo trajo y el código
+   * concreto por el que entró. Se pasan aquí, en la creación del lead que YA
+   * existe, y no en un embudo paralelo: no hay segundo embudo ni tabla de
+   * referidos (D-L3-8). Los rellena `/r/[code]`; el resto del repositorio los
+   * deja en blanco y nada cambia.
+   */
+  referredByMemberId?: string | null;
+  referralCodeId?: string | null;
 };
 
 const POSTAL_CODE_RE = /^\d{5}$/; // RB-LEAD-010: CP español, 5 dígitos
@@ -213,6 +225,11 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
       birthDate: input.birthDate ?? null,
       channel: input.channel.trim(),
       ownerUserId: input.ownerUserId || null,
+      // R1 · de quién viene, en la misma escritura que el resto del lead: un
+      // update posterior dejaría una ventana en la que el lead existe sin
+      // embajador, y esa ventana decide dinero.
+      referredByMemberId: input.referredByMemberId ?? null,
+      referralCodeId: input.referralCodeId ?? null,
     },
   });
 
@@ -394,6 +411,14 @@ export async function confirmLeadClosureForMember(orgId: string, memberId: strin
       data: { state: "ACTIVE" },
     }),
   ]);
+
+  // R1 · EL ALTA es este momento, y es el único: aquí el lead pasa a CERRADO
+  // con su socio ya creado. Si el lead venía de un referido, aquí se LIBERA la
+  // recompensa — y liberar significa crear la tarea a administración, no mover
+  // dinero: `referral-rewards.ts` no toca un Payment, ni un recibo, ni un cupón
+  // de Stripe. Va fuera de la transacción y sin poder lanzar: el alta del socio
+  // no se deshace porque el programa de referidos tenga un mal día.
+  await releaseReferralRewardsForLead(orgId, lead.id);
 }
 
 /** Si el pago falla/cancela con un cierre en curso, el lead vuelve a SEGUIMIENTO con nota automática. */

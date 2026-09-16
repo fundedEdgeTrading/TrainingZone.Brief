@@ -81,6 +81,10 @@ import { getMemberFormStatus } from "@/lib/member-forms";
 // trae entero (consulta, ámbito de centro y permiso incluidos) para que la
 // ficha no crezca por esto.
 import MemberTagsSection from "../../etiquetas/member-tags-section";
+// R1 · el enlace de referido del socio. Mismo criterio que la sección de
+// etiquetas: el componente es de la pista de referidos y se trae entero
+// (consulta, ámbito de centro, permiso y muro de plan incluidos).
+import MemberReferralSection from "../../referidos/member-referral-section";
 
 const SERVICE_KIND_LABEL: Record<string, string> = { EP: "Personal Training", GROUP: "Grupos", ONLINE: "Online" };
 
@@ -653,6 +657,11 @@ export default async function MemberDetailPage({
               expiresAtLabel: formStatus.expiresAt ? fmtDay(formStatus.expiresAt) : null,
             }}
           />
+
+          {/* R1 (E14-30) · el enlace del socio, donde recepción lo va a buscar:
+              junto a sus datos de contacto y al formulario que también manda
+              ella. */}
+          <MemberReferralSection user={session.user} memberId={member.id} />
 
           <MemberDataPanel
             centers={centers}

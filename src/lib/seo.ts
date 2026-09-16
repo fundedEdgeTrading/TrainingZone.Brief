@@ -67,6 +67,10 @@ export const NOINDEX_PUBLIC_PATHS = [
   "/servicio-no-disponible",
   "/lead-form",
   "/hazte-socio/gracias",
+  // R1 (E14-30) · el enlace del referido. No lleva token firmado —el código
+  // está hecho para compartirse por WhatsApp— pero identifica a un socio
+  // concreto, y eso no pinta nada en una SERP.
+  "/r/",
   "/api/",
 ] as const;
 

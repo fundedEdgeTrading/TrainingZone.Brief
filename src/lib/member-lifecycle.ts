@@ -57,6 +57,12 @@ import type { MemberState, Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { isMemberInScope, type ScopedUser } from "@/lib/center-scope";
+// R1 · el código de referido caduca con la baja y vuelve con el socio. Se
+// engancha AQUÍ, que es el único punto de escritura de las transiciones de
+// estado, y no en otro sitio: un update suelto en otro fichero se lo salta.
+// Lo único que toca `syncReferralCodeWithMemberState` es `ReferralCode`; no
+// abre un segundo camino para cambiar el estado de nadie.
+import { syncReferralCodeWithMemberState } from "@/lib/referrals";
 
 // Los cuatro tipos y su lectura de pantalla viven en `member-kinds.ts`, sin
 // Prisma detrás, para que los componentes de cliente puedan usarlos. Se
@@ -337,6 +343,11 @@ export async function cancelMember(
       : []),
   ]);
 
+  // ANTIFRAUDE 3 de R1: el código de referido caduca con la baja. Se revoca,
+  // no se borra — un lead que entró con él ayer tiene que poder seguir
+  // señalando por dónde entró.
+  await syncReferralCodeWithMemberState(member.id, "CANCELLED");
+
   await logTransition(actor, member.id, "MEMBER_CANCELLED", {
     from: member.state,
     reasonId,
@@ -397,6 +408,9 @@ export async function reactivateMember(
         ]
       : []),
   ]);
+
+  // Vuelve: recupera su código de siempre, el que ya compartió por WhatsApp.
+  await syncReferralCodeWithMemberState(member.id, "ACTIVE");
 
   await logTransition(actor, member.id, "MEMBER_REACTIVATED", { from: member.state, subscriptionIds: ids });
   return { ok: true };
