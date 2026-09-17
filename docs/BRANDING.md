@@ -1,6 +1,12 @@
-# Branding — Training Zone
+# Branding y sistema de interfaz
 
-Especificaciones de identidad visual extraídas de `Manual de Identidad TZ — Beige (Edición 2025)`, listas para implementar como tokens de estilo en la aplicación.
+Dos cosas en un documento: la **identidad de marca** (§1–§3, extraída del `Manual
+de Identidad TZ — Beige, Edición 2025`) y **cómo está implementada** hoy en la web
+app y en la app nativa (§4–§6).
+
+Los tokens de este documento son la fuente; `src/app/globals.css` es donde viven
+de verdad, y `apps/mobile/src/theme/theme.ts` es su versión portada a la app
+nativa (con piel oscura por defecto, que es la decisión propia de la app).
 
 ## 1. Logotipo
 
@@ -8,10 +14,14 @@ El logotipo se compone de:
 - **Isotipo**: dos medias lunas (símbolo aislado, ver `public/` para el asset).
 - **Logotipo**: "Training" (tipografía Archivo) + "Zone" (tipografía Coolvetica, en negrita/condensada).
 
-Assets a preparar en `public/brand/`:
-- `logo-principal.svg` — negro sobre fondo claro (uso por defecto).
-- `logo-negativo.svg` — hueso (`#F4F0E8`) sobre fondo oscuro.
-- `isotipo.svg` — solo las medias lunas, para favicon, avatares, loaders, etc.
+Assets en `public/brand/`:
+- `tz-logo-black.png` — negro sobre fondo claro (uso por defecto).
+- `tz-logo-white.png` — hueso sobre fondo oscuro.
+
+En producto, el logo que se pinta **no es siempre el de Training Zone**: el
+NavBar muestra el del centro, si no el de la organización, y si ninguno tiene,
+el de **Apta**, la marca de la plataforma (`src/components/org-logo.tsx`,
+`src/lib/logo-image.ts`). Cada organización sube el suyo desde **Organización**.
 
 ### Construcción y proporción
 - El logotipo se construye sobre una retícula modular basada en una unidad `X` (altura del isotipo). Todos los márgenes y espaciados del lockup son múltiplos de `X`. No alterar las proporciones relativas entre isotipo y wordmark.
@@ -57,7 +67,7 @@ Assets a preparar en `public/brand/`:
 
 > Las referencias Pantone están pendientes de confirmación para producción impresa; no bloquean la implementación digital.
 
-### Tokens CSS sugeridos (Tailwind v4 / `globals.css`)
+### Tokens implementados (Tailwind v4 · `src/app/globals.css`)
 
 ```css
 @import "tailwindcss";
@@ -93,7 +103,18 @@ body {
 }
 ```
 
-Con esto, en Tailwind se puede usar `bg-tz-sand`, `text-tz-black`, `bg-surface`, `border-border`, etc.
+Sobre esos cuatro, `globals.css` define la familia `brand-*` que es la que usa
+el producto (`brand-bg`, `brand-card`, `brand-border`, `brand-text`,
+`brand-muted`…) más los tonos de estado —`good`, `warning`, `critical`, `trial`,
+`prospect`, `neutral`, `gold`, `info`— cada uno con su pareja `-bg`. **Un estado
+nunca se pinta con un `style` en línea**: se usa su tono.
+
+Reglas de Tailwind v4 que no se negocian: los tokens viven en `@theme inline`
+dentro de `globals.css` y **no existe `tailwind.config.js`**. Un token
+`--color-x` se usa como `bg-x`, `text-x`, `border-x`.
+
+Los colores de gráfica salen de `src/lib/chart-colors.ts`, no se eligen por
+pantalla.
 
 ## 3. Tipografía
 
@@ -107,17 +128,15 @@ Con esto, en Tailwind se puede usar `bg-tz-sand`, `text-tz-black`, `bg-surface`,
 
 > ⚠️ **Coolvetica no es una fuente open source/gratuita** (es de uso comercial vía Fontfabric u otros distribuidores). No está disponible en Google Fonts. Si el logotipo se implementa como texto real (no SVG), habrá que licenciar el archivo `.woff2` y auto-hospedarlo; de lo contrario, usar siempre el logotipo como SVG/imagen. Archivo y Poppins sí están disponibles en Google Fonts y se pueden cargar con `next/font/google`.
 
-### Implementación con `next/font` (sugerido)
+### Implementación
+
+`src/app/layout.tsx` carga **solo Poppins** con `next/font/google`: Archivo y
+Coolvetica pertenecen al lockup del logotipo, que se sirve como imagen, así que
+no hay motivo para descargarlas en cada visita.
 
 ```ts
 // src/app/layout.tsx
-import { Archivo, Poppins } from "next/font/google";
-
-const archivo = Archivo({
-  subsets: ["latin"],
-  variable: "--font-archivo",
-  display: "swap",
-});
+import { Poppins } from "next/font/google";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -143,7 +162,57 @@ body {
 - **Jerarquía tipográfica**: kicker en mayúsculas con tracking amplio (p. ej. "04 — COLORES CORPORATIVOS") en tamaño pequeño, seguido de un título grande en negrita (Poppins Bold/SemiBold), y texto de cuerpo en gris cálido/negro con peso regular.
 - **Fotografía**: imágenes reales del espacio (gimnasio), siempre con el logotipo superpuesto en una esquina inferior, respetando el área de seguridad.
 
-## 5. Resumen rápido de tokens
+## 5. Sistema de interfaz
+
+### 5.1 Primitivas
+
+Todo lo compartido vive en `src/components/ui/`. Antes de maquetar una pantalla
+nueva se mira si ya existe: `button`, `badge`, `field`, `data-table`,
+`page-header`, `empty-state`, `skeleton`, `drawer`, `toast`, `confirm-dialog`,
+`dropzone`, `filter-toolbar` / `filter-menu` / `filter-rail` / `column-filter`,
+`route-progress`, `brand-loader`, `count-up`, `celebrate`, `critical-error`,
+`action-form` y `whatsapp-button`.
+
+Cada pantalla tiene su `loading.tsx` con esqueletos: la navegación nunca se
+queda en blanco.
+
+### 5.2 Motion
+
+| Caso | Receta |
+|---|---|
+| Entrada de página | `tz-page` (0,45 s) |
+| Stagger de tarjetas o filas | `tz-fade-up` + retardos de 0,04 s, **máximo 6 elementos**; el resto sin retardo |
+| Hover en tarjetas | `-translate-y-[3px]` + `shadow-hover`, 200 ms `ease-out-soft` |
+| Botones | `active:scale-[0.97]`, 200 ms |
+| Hover en filas de tabla | solo `background-color`, 150 ms — sin desplazamiento |
+| Desplegables y paneles | `tz-fade-up` a 0,2 s |
+| Gráficas | `animationDuration={700}`, `animationEasing="ease-out"`, tooltip con el borde y la sombra de la tarjeta |
+| Feedback de acción | pendiente → spinner · éxito → check en tono `good` 1,5 s · error → banner tonal |
+
+**Prohibido:** parallax, animaciones en bucle infinito (salvo spinner y
+esqueleto), retardos de más de 0,5 s y animar el layout.
+
+### 5.3 Accesibilidad
+
+Es criterio de aceptación, no un repaso final:
+
+1. **Contraste AA** en todos los pares de badge (texto ≥ 4,5:1 sobre su `-bg`).
+   Los tonos actuales cumplen: no se aclaran.
+2. **Foco visible** en todo lo interactivo.
+3. **`aria-label` obligatorio** en botones de solo icono (semáforo del brief,
+   cerrar…).
+4. **Objetivo táctil mínimo de 40×40 px** en el portal: los socios lo usan en el
+   móvil.
+5. **`prefers-reduced-motion`**: con la preferencia activada la aplicación queda
+   estática pero plenamente funcional.
+6. Sin `<h1>` duplicados y sin emojis haciendo de semáforo.
+
+Hay tests que fijan parte de esto: `data-table-a11y`, `field-a11y`,
+`drawer-focus` y `select-required` en `src/components/ui/`.
+
+---
+
+## 6. Resumen rápido de tokens
 
 ```
 Negro          #1D1D1C
@@ -159,4 +228,5 @@ Tamaño mínimo impreso: 3,8 cm (~110px digital)
 ```
 
 ---
-*Fuente: Manual de Identidad TZ — Beige, Edición 2025.*
+*Identidad: Manual de Identidad TZ — Beige, Edición 2025. Implementación:
+`src/app/globals.css`, `src/components/ui/` y `apps/mobile/src/theme/`.*

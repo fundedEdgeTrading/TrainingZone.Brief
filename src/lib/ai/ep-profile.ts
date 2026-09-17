@@ -1,5 +1,5 @@
 /**
- * Los 6 valores de perfil Training Zone (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md
+ * Los 6 valores de perfil Training Zone (docs/PRODUCTO_GESTION.md §6.3
  * §2, §5). Fichero sin dependencias de Node aparte: lo importan tanto
  * `methodology.ts` y `mesocycle-schema.ts` (servidor) como el selector del
  * asistente de generación (cliente), y un módulo con `node:fs` no se puede

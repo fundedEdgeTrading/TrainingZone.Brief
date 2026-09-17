@@ -45,7 +45,7 @@ irreversible**: cambiarlo es editar una URL, no recementar un identificador
 de tienda. Por eso `apps/mobile/app.json` → `expo.extra.privacyPolicyUrl` SÍ
 lleva un valor hoy: `https://apta.app/privacidad`. No es una decisión nueva —
 es el dominio que ya aparece como ejemplo de trabajo en `src/lib/json-ld.test.ts`
-y en `docs/ARQUITECTURA_IDENTIDAD_VENTA_MULTITENANT.md` — pero **sigue sin estar
+— pero **sigue sin estar
 confirmado como el dominio real de producción**. `apps/mobile/src/store/metadata.ts`
 lee ese mismo valor de `app.json` (una sola fuente), así que confirmarlo es
 editar una línea en un sitio, no perseguirlo por el repositorio.

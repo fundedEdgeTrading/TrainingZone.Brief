@@ -22,7 +22,7 @@ type ProgressEntryLike = {
   metabolicAge: number | null;
 };
 
-// CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
+// CC1.4/CC2/CC3 (docs/PRODUCTO_GESTION.md §3.2): última toma con semáforo +
 // serie para la gráfica de evolución. Compartido entre la ficha del socio (vista entrenador)
 // y el portal del socio para no duplicar el cálculo de tiles/rangos.
 export async function buildCompositionView(

@@ -9,7 +9,7 @@ export function ageFromBirthDate(birthDate: Date | null): number | null {
 }
 
 /**
- * Rangos de referencia de composición corporal (docs/COMPOSICION_CORPORAL_TANITA.md §3/§8.1).
+ * Rangos de referencia de composición corporal (docs/PRODUCTO_GESTION.md §3.2).
  *
  * E3-09 · RB-SALUD-013: **ya no hay valores por defecto**. Los que había
  * —`bodyFatPct: { min: 8, max: 19 }`, unisex y sin edad— eran los del informe

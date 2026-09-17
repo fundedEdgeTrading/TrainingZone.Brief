@@ -1,5 +1,5 @@
 // Respuestas ancladas a las decisiones cerradas del catálogo comercial
-// (docs/PLAN_IMPLEMENTACION_APTA_COMERCIAL.md §1, D-8 a D-12): no prometen
+// (docs/PRODUCTO_COBROS.md §2, D-8 a D-12): no prometen
 // nada que el producto no haga todavía (p. ej. cancelación de autoservicio).
 /**
  * E9-07 · Exportado a propósito: el `FAQPage` del JSON-LD se genera de aquí, no
