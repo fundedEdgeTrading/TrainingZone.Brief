@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
+import { isValidPostalCode } from "@/lib/postal-codes";
 import { CONSENT_VERSION, CONSENT_FIELD, type ConsentKind } from "@/lib/consent";
 import {
   ACCOUNT_DELETION_PORTAL_PATH,
@@ -37,6 +38,16 @@ export async function updateMyProfileAction(formData: FormData): Promise<Profile
     return { ok: false, error: "El teléfono no tiene un formato válido." };
   }
 
+  // E5-08 dejó el CP fuera del muro de alta y lo mandó "al perfil", pero el
+  // campo nunca llegó aquí: el aviso del portal lo pedía y esta pantalla no lo
+  // guardaba, así que un socio dado de alta desde la web se quedaba sin CP para
+  // siempre mientras la ficha de dirección sí lo escribía. Misma regla de cinco
+  // dígitos que la ficha y que el lead — un CP a medias no cruza con el mapa.
+  const postalCode = optional(formData, "postalCode");
+  if (postalCode && !isValidPostalCode(postalCode)) {
+    return { ok: false, error: "El código postal debe tener 5 dígitos." };
+  }
+
   const photoUrl = optional(formData, "photoUrl");
 
   await prisma.member.update({
@@ -45,6 +56,7 @@ export async function updateMyProfileAction(formData: FormData): Promise<Profile
       phone,
       address: optional(formData, "address"),
       addressLine2: optional(formData, "addressLine2"),
+      postalCode,
       city: optional(formData, "city"),
       province: optional(formData, "province"),
       country: optional(formData, "country"),

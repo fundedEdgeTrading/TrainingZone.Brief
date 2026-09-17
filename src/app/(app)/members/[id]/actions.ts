@@ -25,6 +25,7 @@ import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
 import type { ConsentKind } from "@/lib/consent";
 import { revokeMemberConsent } from "@/lib/consent-access";
+import { isValidPostalCode } from "@/lib/postal-codes";
 import { ensureSuppressedMemberBucket, getSuppressionPlan } from "@/lib/member-suppression";
 import {
   deletePhotosOfEntries,
@@ -255,7 +256,6 @@ export async function setMemberNoteArchivedAction(noteId: string, archived: bool
 // onboarding. El estado (ACTIVE/FROZEN/...) tampoco: lo derivan las
 // suscripciones (lib/subscription-jobs.ts, billing/subscription-actions.ts).
 const SEXES: Sex[] = ["FEMALE", "MALE", "OTHER"];
-const POSTAL_CODE_RE = /^\d{5}$/; // CP español, 5 dígitos (mismo criterio que RB-LEAD-010)
 
 export async function updateMemberData(formData: FormData): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
@@ -274,7 +274,7 @@ export async function updateMemberData(formData: FormData): Promise<MemberAction
   if (!memberId || !firstName || !lastName || !email) {
     return { ok: false, error: "Completa el nombre, los apellidos y el email." };
   }
-  if (postalCode && !POSTAL_CODE_RE.test(postalCode)) {
+  if (postalCode && !isValidPostalCode(postalCode)) {
     return { ok: false, error: "El código postal debe tener 5 dígitos." };
   }
   const birthDate = birthRaw ? new Date(birthRaw) : null;

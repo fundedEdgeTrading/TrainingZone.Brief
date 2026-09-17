@@ -125,3 +125,15 @@ export function postalCodeCitiesLabel(): string {
   if (cities.length === 1) return cities[0];
   return `${cities.slice(0, -1).join(", ")} y ${cities[cities.length - 1]}`;
 }
+
+/**
+ * CP español: cinco dígitos (RB-LEAD-010). La regla estaba copiada en cada sitio
+ * que escribe un CP —ficha del socio y ficha del lead— y el tercero, el perfil
+ * del portal, se quedó sin ella. Vive aquí, junto a la tabla CP→barrio, porque
+ * quien valide un CP es también quien va a buscarle el barrio.
+ */
+export const POSTAL_CODE_RE = /^\d{5}$/;
+
+export function isValidPostalCode(value: string): boolean {
+  return POSTAL_CODE_RE.test(value.trim());
+}

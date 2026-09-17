@@ -51,7 +51,20 @@ export default async function PortalProfilePage() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* E5-08: el CP salió del muro de alta "para pedirlo desde el perfil" y
+                el aviso del portal lo sigue reclamando — este es ese sitio. */}
+            <Field label="Código postal" hint="Cinco dígitos.">
+              <Input
+                name="postalCode"
+                defaultValue={member.postalCode ?? ""}
+                inputMode="numeric"
+                maxLength={5}
+                pattern="[0-9]{5}"
+                placeholder="50008"
+                className="tz-nums"
+              />
+            </Field>
             <Field label="Ciudad">
               <Input name="city" defaultValue={member.city ?? ""} />
             </Field>
