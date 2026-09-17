@@ -53,6 +53,13 @@ export const PUBLIC_PATHS = [
   "/api/email",
   "/servicio-no-disponible",
   "/api/jobs",
+  // E2/E3 · la pasada de la COLA DE FLUJOS. Llegó con su propio workflow
+  // (`flujos-cron.yml`) y sin entrada aquí, así que el proxy la rebotaba a
+  // /login: el cron respondía con un 307 a la pantalla de inicio de sesión y la
+  // cola no se vaciaba NUNCA, sin que nada se pusiera rojo. No abre nada: el
+  // endpoint sigue fallando cerrado sin `JOBS_CRON_SECRET` y comparando el
+  // secreto en tiempo constante, igual que `/api/jobs`.
+  "/api/flujos/cron",
   "/api/stripe",
   "/api/checkout",
   "/api/hazte-socio",

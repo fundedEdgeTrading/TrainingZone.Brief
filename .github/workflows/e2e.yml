@@ -66,6 +66,12 @@ jobs:
       # datos, cifradas. Clave de usar y tirar del runner: en producción se
       # genera con `openssl rand -base64 32` y perderla es perder las fotos.
       PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
+      # E3 · `flujos.spec.ts` mueve el motor de flujos por su endpoint de verdad
+      # (`/api/flujos/cron`), que falla cerrado sin secreto. Sin esta variable el
+      # spec no falla: SE SALTA ENTERO, que es un verde que no prueba nada — el
+      # mismo punto ciego que ya tuvo el alta pago-primero antes del job
+      # `e2e-pago`. De usar y tirar, igual que el resto de este bloque.
+      JOBS_CRON_SECRET: cron-solo-para-ci
 
     steps:
       - uses: actions/checkout@v4
