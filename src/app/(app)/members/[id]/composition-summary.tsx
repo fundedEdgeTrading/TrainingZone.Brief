@@ -9,8 +9,8 @@ const STATUS_DOT: Record<RangeStatus, string> = {
 
 type Tile = { label: string; value: string | null; status?: RangeStatus; foot?: string | null };
 
-// CC1.4/CC2 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): tarjetas de la última toma con
-// semáforo contra el rango de referencia (docs/COMPOSICION_CORPORAL_TANITA.md §3).
+// CC1.4/CC2 (docs/PRODUCTO_GESTION.md §3.2): tarjetas de la última toma con
+// semáforo contra el rango de referencia (docs/PRODUCTO_GESTION.md §3.2).
 export function CompositionSummary({ tiles, measuredAt }: { tiles: Tile[]; measuredAt: string | null }) {
   const withValue = tiles.filter((t) => t.value != null);
   if (withValue.length === 0) return null;

@@ -3,8 +3,8 @@
 **Fecha:** 15 de septiembre de 2026
 **Base medida:** `main` en `13ed2f3`
 **Origen:** petición de negocio del 15-09-2026 (comparativa Apta ⟷ Harbiz ⟷ MyWellness)
-**Antecesores:** `docs/RUNBOOK_EJECUCION.md` y `docs/PROMPTS_PARALELIZACION_2026-09-08.md`
-— mismas reglas, mismo vocabulario, mismas ventanas de merge. Si algo no está
+**Reglas de trabajo:** `docs/TRABAJO_EN_PARALELO.md` — vocabulario, ventanas de
+merge, orden de integración y las tres reglas que no se rompen. Si algo no está
 aquí, está allí.
 
 Este documento es **lo que hay que lanzar, en qué orden y con qué prompt**. La
@@ -182,7 +182,7 @@ LEE SOLO ESTO:
   Payment, Notification, SessionLedger y Lead
 - src/lib/rbac.ts, FEATURE_BY_ROUTE y NAV_BY_ROLE
 - src/lib/email-preferences.ts, para no reinventar el consentimiento
-NO abras docs/HISTORIAS_USUARIO_2026-09-06.md: son 236 KB y no lo necesitas.
+Tu épica de docs/hu/ es autosuficiente: no necesitas ningún documento más.
 
 TU RAMA:
   git checkout main && git pull origin main && git checkout -b lote3/S2-costura

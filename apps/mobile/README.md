@@ -1,6 +1,6 @@
 # Training Zone — app móvil (portal del socio)
 
-App nativa descrita en `docs/APP_MOVIL_NATIVA_PLAN.md` y rediseñada según el
+App nativa —contrato de la API en `docs/APP_MOVIL.md`— rediseñada según el
 handoff "App móvil premium": cubre **F0** (API JSON con auth por token),
 **F1** (scaffold Expo, auth, navegación, design system), **F2** (portal del
 socio: actividad, reservar, mis sesiones con cuenta atrás, mis bonos,

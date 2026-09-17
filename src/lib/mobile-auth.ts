@@ -3,7 +3,7 @@ import { randomBytes, createHash } from "crypto";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-// F0 (docs/APP_MOVIL_NATIVA_PLAN.md §4): auth por token para la app nativa,
+// docs/APP_MOVIL.md §1.3: auth por token para la app nativa,
 // en paralelo a la sesión por cookie de NextAuth (que la app no puede leer).
 // Access token corto sin estado (no toca BD); refresh token opaco y rotatorio
 // persistido en MobileRefreshToken, para poder revocar sesiones de dispositivo.

@@ -1,151 +1,111 @@
-# TRAINING ZONE
+# Apta · Training Zone
 
-Plataforma de gestión para centros de entrenamiento. Implementación del MVP
-descrito en `TRAININGZONE_planfuncionaleimplementacion.md`, fases F0–F5
-(fundaciones, socios, agenda, cobros, salud + Session Brief, panel de
-control), más los diferenciadores G.1 (Session Loop), G.2 (Semáforo de
-Aptitud) y G.3 (Motor de retención).
+**Apta** es una plataforma de gestión para centros de entrenamiento personal y
+grupos reducidos. **Training Zone** es el cliente piloto y la marca de origen; en
+el código, `Organization` es cualquier cliente y Training Zone es una de ellas.
 
-## Stack
+Dos superficies sobre un solo backend:
 
-Next.js 16 (App Router) + TypeScript · PostgreSQL + Prisma 7 (driver
-adapter `@prisma/adapter-pg`) · Auth.js v5 · Tailwind CSS 4 · Recharts ·
-react-big-calendar.
+- **Web app** — Next.js 16 (App Router) + React 19 · PostgreSQL con Prisma 7 y el
+  driver adapter `@prisma/adapter-pg` · Auth.js v5 · Tailwind CSS 4 · Recharts ·
+  Leaflet · Stripe · Zod · SDK de Anthropic.
+- **App nativa** — Expo / React Native en `apps/mobile/`, que consume
+  `src/app/api/mobile/v1/**`.
 
-Se eligió Next.js/TypeScript en vez de .NET/Blazor (que también proponía el
-documento) por velocidad de iteración en este entorno; el documento original
-lo consideraba una alternativa igualmente válida (Parte B.2).
+## Qué hace
+
+| Área | En una línea |
+|---|---|
+| **Socios** | Ficha con consentimientos, estados reales, importación desde CSV y portal propio |
+| **Agenda** | Sesiones periódicas, aforo por centro, lista de espera, asistencia y no-show |
+| **Cobros** | Cuotas y bonos con Stripe Connect; el dinero va a la cuenta del gimnasio, **sin comisión de Apta** |
+| **Salud y aptitud** | Datos del art. 9 con acceso auditado, Semáforo de Aptitud, Session Brief y Debrief |
+| **Valoraciones** | Cuestionario configurable por centro, composición corporal y evolución |
+| **IA** | Generación de mesociclos con la metodología del centro, con cupo por plan |
+| **CRM y marketing** | Leads, etiquetas automáticas, flujos de email, referidos y anuncios |
+| **Dirección** | Panel con ingresos, ocupación, LTV, captación y mapa por barrios |
+| **Plataforma** | Multi-tenant, multi-centro, planes de licencia y consola de soporte |
 
 ## Puesta en marcha
 
 ```bash
-# 1. Postgres local (o cualquier instancia postgresql accesible)
 createdb trainingzone
-
-# 2. Variables de entorno
-cp .env.example .env   # y ajustar DATABASE_URL si hace falta
-
-# 3. Dependencias, esquema y datos de demo
+cp .env.example .env          # y ajustar DATABASE_URL
 npm install
 npx prisma migrate dev
 npm run db:seed
-
-# 4. Arrancar
-npm run dev
+npm run dev                   # http://localhost:3000 → /login
 ```
 
-Abrir `http://localhost:3000` — redirige a `/login`.
+Usuarios de demostración, contraseña `demo1234`:
 
-## Autenticación
+| Email | Rol |
+|---|---|
+| `direccion@trainingzone.es` | Dirección de organización |
+| `direccion.lajota@trainingzone.es` | Dirección de centro |
+| `marcos.iglesias@trainingzone.es` | Entrenador Admin |
+| `entrenador@trainingzone.es` | Entrenador |
+| `recepcion.lajota@trainingzone.es` | Recepción |
+| `rrhh@trainingzone.es` | RRHH |
+| `socio@trainingzone.es` | Socio |
+| `sergio@trainingzone.es` | Admin de plataforma |
 
-- **Login demo (activo):** Credentials provider validado contra la tabla
-  `User` (bcrypt). Es el que se usa para navegar la plataforma ahora mismo.
-- **Microsoft Entra ID (Azure AD):** el proveedor está declarado en
-  `src/auth.config.ts` y se activa solo si existen las variables
-  `AUTH_MICROSOFT_ENTRA_ID_ID` / `_SECRET` / `_ISSUER` en `.env`, que exigen
-  un **App Registration real en un tenant de Azure** — algo que no se puede
-  crear desde este entorno. En cuanto el cliente tenga su tenant, basta con
-  rellenar esas tres variables: no hace falta tocar código ni desplegar de
-  nuevo.
-- **Google (OAuth):** igual que Microsoft, declarado y listo pero **desactivado**
-  hasta que existan `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` (credenciales de
-  Google Cloud Console). El botón aparece en el login pero deshabilitado; en
-  cuanto se rellenen esas dos variables queda operativo, sin tocar código.
+La lista completa —dos usuarios por rol y centro— la imprime `npm run db:seed` al
+terminar.
 
-### Usuarios demo (contraseña: `demo1234`)
+## Comprobaciones
 
-| Email | Rol | Qué ver |
-|---|---|---|
-| `direccion@trainingzone.es` | Dirección de organización (Owner) | Panel de control, todos los centros, reglas de aptitud, auditoría |
-| `direccion.lajota@trainingzone.es` | Dirección de centro | Panel, socios, agenda, cobros, retención (ámbito de su centro) |
-| `marcos.iglesias@trainingzone.es` | Entrenador Admin | Aforo por defecto de su centro y ajuste de bonos |
-| `entrenador@trainingzone.es` | Entrenador (Dani Herrero) | Agenda, Session Brief + Debrief, semáforo de aptitud |
-| `recepcion.lajota@trainingzone.es` | Recepción | Socios, agenda, cobros — **sin acceso a datos de salud** |
-| `rrhh@trainingzone.es` | RRHH | Organización: alta de centros y personal, imputación multi-centro — **sin acceso a datos de salud** |
-| `socio@trainingzone.es` | Socio (Marta García López) | Portal: reservar clase, progreso, transparencia de adaptaciones |
-| `sergio@trainingzone.es` | Admin de plataforma | Soporte de Apta: organizaciones, anuncios y auditoría |
-
-Cada centro tiene **dos usuarios por rol** (dirección, entrenador admin,
-entrenador y recepción), para poder comprobar que el alcance se resuelve por
-persona y no por centro; los roles de ámbito de organización no se replican por
-centro (un único Owner y una pareja de RRHH). La lista completa la imprime
-`npm run db:seed` al terminar.
-
-### Logo por organización y centro
-
-**Logo en el NavBar:** cada organización (y opcionalmente cada centro) tiene un
-`logoUrl`. El NavBar muestra el del centro, si no el de la organización, y si
-ninguno tiene → el de **Apta** (la marca de la plataforma). Se gestiona desde el
-módulo **Organización** (marca de la organización y logo por centro).
-
-## Datos de demostración
-
-El seed genera **una única organización**, `TRAINING ZONE`, con sus 3 centros
-(La Jota y Puerta del Carmen en Zaragoza, y Santander), y para ella:
-
-- Socios con estados realistas (activo, moroso, congelado, prueba, baja)
-- ~6-7 meses de histórico + hasta 3 semanas futuras de sesiones, reservas,
-  check-ins, no-shows y lista de espera
-- Imputación de personal a centros (`CenterMembership`), con ejemplos de
-  entrenadores/dirección repartidos entre varios centros
-- Pagos con métodos variados (tarjeta, Bizum, efectivo, SEPA, transferencia)
-  y algunos morosos con recibos fallidos/pendientes
-- Registros de salud (lesiones, condiciones crónicas, alergias...) para ~1 de
-  cada 4 socios, con consentimiento y reglas del Semáforo de Aptitud
-- Bitácora de observaciones no clínicas del socio (`MemberNote`)
-- Debriefs post-sesión (🟢/🟡/🔴) para la mayoría de asistencias pasadas
-- Alertas de retención calculadas comparando la frecuencia reciente de cada
-  socio contra su línea base personal
-- Un log de auditoría con lecturas de datos de salud y aperturas de Session
-  Brief
-
-Para regenerar los datos desde cero: `npm run db:seed` (borra y vuelve a
-poblar todo).
+```bash
+npm run lint
+npx tsc --noEmit
+npm run test:unit
+npm run test:e2e      # Playwright: no lanzar la suite entera si hay sesiones en paralelo
+```
 
 ## Estructura
 
 ```
-prisma/schema.prisma       Modelo de dominio multi-tenant (orgId en cada tabla);
-                            CenterMembership (imputación de personal a centros)
-                            y MemberNote (bitácora de observaciones del socio)
-prisma/seed.ts              Generador de datos de demo
-src/auth.ts, auth.config.ts Auth.js: Credentials (demo) + Microsoft Entra ID (preparado)
-src/proxy.ts                 Proxy (antes "middleware"): exige sesión salvo /login
-src/lib/rbac.ts              Matriz de permisos por rol + navegación
-src/lib/guard.ts             requireRole() — guarda de página por rol
-src/lib/health-access.ts     Único punto de lectura de datos de salud + auditoría
-src/lib/retention.ts         Motor de retención (G.3): caída de frecuencia vs. línea base;
-                            lo dispara el cron y se lee en Socios y en la ficha
-src/app/(app)/...            Módulos: dashboard (+ mapa-barrios), members, agenda, brief,
-                            billing, health, audit, portal, organization
-src/app/api/mobile/v1/...    API JSON con auth por token para la app nativa (docs/APP_MOVIL_NATIVA_PLAN.md)
-apps/mobile/                 App nativa Expo/React Native (portal del socio) — ver apps/mobile/README.md
+prisma/schema.prisma        Modelo multi-tenant (orgId en cada tabla)
+src/proxy.ts                Exige sesión salvo rutas públicas
+src/lib/rbac.ts             Permisos por rol, navegación y gateo por ruta
+src/lib/center-scope.ts     Frontera de centro
+src/lib/entitlements.ts     Gateo por plan contratado
+src/lib/health-access.ts    Único punto de lectura de datos de salud + auditoría
+src/lib/*-queries.ts        Capa de consulta por módulo, filtrada por orgId
+src/app/(app)/…             Pantallas autenticadas
+src/app/api/mobile/v1/…     API JSON de la app nativa
+src/app/api/jobs/run        Todas las reglas temporales, en una pasada
+apps/mobile/                App nativa Expo
+docs/                       Documentación (empezar por docs/README.md)
 ```
 
-## Qué queda fuera de esta entrega (a propósito)
+## Documentación
 
-Siguiendo el propio documento (Parte H, riesgos 2 y 8):
+Empieza por **[`docs/README.md`](./docs/README.md)**, que es el índice.
 
-- **Facturación VERI\*FACTU** y pasarela de pago online (Stripe): el módulo
-  de Cobros aquí solo *registra* el cobro manualmente, no lo procesa ni
-  factura. Es una decisión de D3 en el documento, no un olvido.
-- **Integración del agente IA de Sergio / `IInsightProvider`** (F6): fuera
-  del alcance del MVP (F0–F5) por diseño.
-- **Onboarding multi-tenant self-service** (F7): la gestión *dentro* de una
-  organización ya está construida (módulo **Organización**: alta de centros y
-  personal, e imputación de cada persona a varios centros con rol y % de
-  dedicación vía `CenterMembership`). Lo que queda fuera es el alta
-  self-service de una organización externa nueva (signup de tenant + SSO).
+| Documento | Para qué |
+|---|---|
+| [Arquitectura](./docs/ARQUITECTURA.md) | Multi-tenant, identidad, permisos, invariantes |
+| [Producto · Gestión](./docs/PRODUCTO_GESTION.md) | Socios, salud, agenda, bonos, entrenador |
+| [Producto · Cobros](./docs/PRODUCTO_COBROS.md) | Stripe en sus dos planos |
+| [CRM y marketing](./docs/CRM_Y_MARKETING.md) | Leads, etiquetas, flujos, referidos, panel |
+| [SEO y captación](./docs/SEO_Y_CAPTACION.md) | Páginas públicas, indexación, medición |
+| [App móvil](./docs/APP_MOVIL.md) | Contrato de la API y la app Expo |
+| [Operaciones](./docs/OPERACIONES.md) | Entornos, cron, pruebas, despliegue |
+| [Reglas de negocio](./docs/CRM_REGLAS_NEGOCIO.md) | Catálogo `RB-*` |
 
-## Notas de seguridad / RGPD
+Dos fuentes que no son documentación pero se leen como tal: `.env.example`
+explica cada variable con su porqué, y `prisma/schema.prisma` está comentado
+modelo a modelo.
 
-- Los datos de salud (`HealthRecord`) solo se leen a través de
-  `getHealthRecordsForMember()` / `getSessionBrief()`, que aplican la matriz
-  de permisos (`canViewHealthData`) y dejan un registro append-only en
-  `AuditLog` en cada lectura (ver módulo **Auditoría**, solo Owner/Admin).
-- Recepción y el resto de roles sin autorización reciben `null` en vez de
-  los registros — nunca un error que revele si existen o no.
-- En producción, el propio documento (ADR-005) recomienda mover `health.*` a
-  un esquema separado con cifrado a nivel de columna; aquí vive en el mismo
-  esquema por simplicidad de la demo, pero el punto de acceso ya está
-  centralizado para poder hacer ese cambio sin tocar el resto de la app.
+## Antes de escribir código
+
+Lee `AGENTS.md`. Resumen de lo que más cuesta si se ignora:
+
+- Next.js 16, Prisma 7 y Tailwind 4 tienen APIs distintas de las anteriores.
+  Las guías están en `node_modules/next/dist/docs/`.
+- Toda lectura y escritura con `centerId` pasa por `isCenterInScope` /
+  `requireApiCenterScope` — **también en la API móvil**.
+- Todo acceso a datos de salud pasa por `health-access.ts` y deja `AuditLog`.
+- `prisma/schema.prisma` y `src/lib/rbac.ts` están **congelados**: si hace falta
+  tocarlos, se pide.

@@ -404,7 +404,7 @@ media 10,00 meses · mediana 8,79 · máximo 23,58
 
 **Socios importados:** en la base de demo, **cero**. `externalSource`, `externalId`,
 `mywellnessAccount` y `accountCreatedAt` están vacíos en los 71 socios. Las columnas existen
-en el esquema y el CSV de importación las rellena (`docs/IMPORTACION_SOCIOS_CSV.md`), pero
+en el esquema y el CSV de importación las rellena (`docs/PRODUCTO_GESTION.md` §1.4), pero
 **no tengo un solo caso real que medir**. La decisión sobre su `joinedAt` se tomará y se
 documentará en E14-05 como lo que es —una regla, no una conclusión de datos— y quedará
 dicho en la card que esos socios llevan una antigüedad heredada de otra plataforma.

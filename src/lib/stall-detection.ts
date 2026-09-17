@@ -14,7 +14,7 @@ export type StallSignals = {
 };
 
 // Umbral de "sin cambio apreciable" entre la primera y la última toma de composición del
-// periodo de mirada atrás (docs/COMPOSICION_CORPORAL_TANITA.md §2, RB-IA-007).
+// periodo de mirada atrás (RB-IA-007).
 const BODY_FAT_STALL_MARGIN = 0.5; // puntos %
 const MUSCLE_STALL_MARGIN = 0.3; // kg
 

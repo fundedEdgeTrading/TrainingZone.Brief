@@ -2564,7 +2564,7 @@ async function seedOrganization(cfg: OrgSeedConfig, passwordHash: string) {
     // salud ya firmados (ver arriba). 9 tomas a lo largo de ~5 meses (portal del socio +
     // ficha del entrenador necesitan una serie larga para que las gráficas de evolución y el
     // comparador antes/después se vean con datos reales en la demo). Las tomas Tanita
-    // (docs/COMPOSICION_CORPORAL_TANITA.md) llegan "importadas" con desglose segmental para
+    // (docs/PRODUCTO_GESTION.md §3.2) llegan "importadas" con desglose segmental para
     // poder demostrar ese flujo en el seed.
     await prisma.memberProgressEntry.createMany({
       data: [

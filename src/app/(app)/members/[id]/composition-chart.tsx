@@ -24,7 +24,7 @@ function CompositionTooltip({ active, payload, label }: TooltipContentProps) {
   );
 }
 
-// CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): evolución de peso vs. masa muscular vs.
+// CC3 (docs/PRODUCTO_GESTION.md §3.2): evolución de peso vs. masa muscular vs.
 // masa grasa a partir de la serie de MemberProgressEntry ya cargada en la ficha del socio.
 export function BodyCompositionChart({ points }: { points: Point[] }) {
   const withData = points.filter((p) => p.weightKg != null || p.muscleMassKg != null || p.fatMassKg != null);
