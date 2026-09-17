@@ -71,6 +71,14 @@ export default async function FlujoPage({ params }: { params: Promise<{ id: stri
             <Badge tone={flow.status === "ACTIVE" ? "good" : flow.status === "PAUSED" ? "warning" : "neutral"} dot={false}>
               <span title={FLOW_STATUS_HELP[flow.status]}>{FLOW_STATUS_LABEL[flow.status]}</span>
             </Badge>
+            {/* E3 · la única puerta al panel por flujo. Sin este enlace la
+                pantalla existe y no se puede llegar a ella más que a mano. */}
+            <Link
+              href={`/flujos/${flow.id}/panel`}
+              className="text-[13px] underline text-brand-muted hover:text-brand-ink"
+            >
+              Ver el embudo
+            </Link>
             <Link href="/flujos" className="text-[13px] underline text-brand-muted hover:text-brand-ink">
               Volver
             </Link>
