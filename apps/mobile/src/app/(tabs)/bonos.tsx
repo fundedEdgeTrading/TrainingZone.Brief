@@ -58,7 +58,7 @@ export default function MembershipsScreen() {
                 membership={membership}
                 expanded={expanded === membership.id}
                 onToggle={() => setExpanded((current) => (current === membership.id ? null : membership.id))}
-                consumption={data.consumption.filter((c) => c.planName === membership.planName)}
+                consumption={data.consumption.filter((c) => c.subscriptionId === membership.id)}
               />
             </FadeInUp>
           ))}

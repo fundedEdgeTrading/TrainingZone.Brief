@@ -18,6 +18,7 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { FadeInUp } from "@/components/FadeInUp";
 import { Skeleton } from "@/components/Skeleton";
 import { formatDayMonth } from "@/utils/format";
+import type { MembershipItem } from "@/api/types";
 
 /**
  * «Más»: la quinta pestaña de los dos roles. Sustituye a Perfil como índice.
@@ -170,12 +171,10 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
   const notifications = useNotifications();
   const unread = (notifications.data?.notifications ?? []).filter((n) => !n.resolvedAt).length;
 
-  // El bono que manda en la tarjeta es el numerado: es el que se agota y el
-  // único sobre el que hay una decisión que tomar (ampliar). Un ilimitado no
-  // necesita anillo.
-  const memberships_ = memberships.data?.memberships ?? [];
-  const bono = memberships_.find((m) => !m.unlimited) ?? memberships_[0];
-  const pct = bono && bono.total ? Math.round(((bono.remaining ?? 0) / bono.total) * 100) : 0;
+  // Todos los bonos vivos, cada uno con su tarjeta: un socio puede tener a la
+  // vez bono de entrenamiento personal y bono de grupos, y quedarse con el
+  // primero dejaba el saldo del otro sin enseñar en ninguna pantalla.
+  const bonos = memberships.data?.memberships ?? [];
 
   return (
     <ScreenContainer
@@ -191,7 +190,7 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
       }
     >
       <FadeInUp>
-        <ScreenHeader kicker="TU CUENTA Y TU BONO" title="Más" tight />
+        <ScreenHeader kicker={bonos.length > 1 ? "TU CUENTA Y TUS BONOS" : "TU CUENTA Y TU BONO"} title="Más" tight />
       </FadeInUp>
 
       {memberships.isLoading ? (
@@ -204,39 +203,12 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
             </View>
           </View>
         </Card>
-      ) : bono ? (
-        <FadeInUp delay={stagger(1)}>
-          <Card style={styles.bonoCard}>
-            <View style={styles.bonoTop}>
-              <ProgressRing progressPct={pct} size={88} strokeWidth={6} onInk={false}>
-                {bono.unlimited ? (
-                  <Text style={[styles.bonoValue, { color: theme.good }]}>∞</Text>
-                ) : (
-                  <>
-                    <Text style={[styles.bonoValue, { color: theme.text }]}>{bono.remaining ?? 0}</Text>
-                    <Text style={[typo.legend, { color: theme.textMuted }]}>DE {bono.total ?? 0}</Text>
-                  </>
-                )}
-              </ProgressRing>
-              <View style={{ flex: 1, gap: 5 }}>
-                <Text style={[typo.cardTitle, { color: theme.text }]} numberOfLines={2}>
-                  {bono.planName}
-                </Text>
-                <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={2}>
-                  {bono.renewsAt ? `Renueva el ${formatDayMonth(bono.renewsAt)}` : "Sin vencimiento"} · {bono.centerName}
-                </Text>
-                <View style={styles.badgeRow}>
-                  <Badge label={bono.status === "ACTIVE" ? "Activo" : "Congelado"} tone={bono.status === "ACTIVE" ? "good" : "warning"} />
-                  {bono.isRecurring ? <Badge label="Renovación automática" tone="gold" /> : null}
-                </View>
-              </View>
-            </View>
-            <View style={styles.bonoActions}>
-              <Button title="Ver consumo" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => router.push("/consumo")} />
-              <Button title="Ampliar" variant="gold" size="sm" style={{ flex: 1 }} onPress={() => router.push("/onboarding/planes")} />
-            </View>
-          </Card>
-        </FadeInUp>
+      ) : bonos.length > 0 ? (
+        bonos.map((bono, index) => (
+          <FadeInUp key={bono.id} delay={stagger(index + 1)}>
+            <BonoCard bono={bono} />
+          </FadeInUp>
+        ))
       ) : null}
 
       <FadeInUp delay={stagger(2)}>
@@ -280,6 +252,49 @@ function MemberMore({ name, email, image }: { name: string; email: string; image
 
       <AccountCard name={name} email={email} image={image} />
     </ScreenContainer>
+  );
+}
+
+/**
+ * Un bono del socio: anillo con lo que le queda, plan, vencimiento y estado.
+ * Hay una tarjeta por bono activo — entrenamiento personal y grupos son dos
+ * bonos distintos, con dos saldos distintos, y el socio tiene que ver los dos.
+ */
+function BonoCard({ bono }: { bono: MembershipItem }) {
+  const theme = useTheme();
+  const pct = bono.total ? Math.round(((bono.remaining ?? 0) / bono.total) * 100) : 0;
+
+  return (
+    <Card style={styles.bonoCard}>
+      <View style={styles.bonoTop}>
+        <ProgressRing progressPct={bono.unlimited ? 100 : pct} size={88} strokeWidth={6} onInk={false}>
+          {bono.unlimited ? (
+            <Text style={[styles.bonoValue, { color: theme.good }]}>∞</Text>
+          ) : (
+            <>
+              <Text style={[styles.bonoValue, { color: theme.text }]}>{bono.remaining ?? 0}</Text>
+              <Text style={[typo.legend, { color: theme.textMuted }]}>DE {bono.total ?? 0}</Text>
+            </>
+          )}
+        </ProgressRing>
+        <View style={{ flex: 1, gap: 5 }}>
+          <Text style={[typo.cardTitle, { color: theme.text }]} numberOfLines={2}>
+            {bono.planName}
+          </Text>
+          <Text style={[typo.rowMeta, { color: theme.textMuted }]} numberOfLines={2}>
+            {bono.renewsAt ? `Renueva el ${formatDayMonth(bono.renewsAt)}` : "Sin vencimiento"} · {bono.centerName}
+          </Text>
+          <View style={styles.badgeRow}>
+            <Badge label={bono.status === "ACTIVE" ? "Activo" : "Congelado"} tone={bono.status === "ACTIVE" ? "good" : "warning"} />
+            {bono.isRecurring ? <Badge label="Renovación automática" tone="gold" /> : null}
+          </View>
+        </View>
+      </View>
+      <View style={styles.bonoActions}>
+        <Button title="Ver consumo" variant="outline" size="sm" style={{ flex: 1 }} onPress={() => router.push("/consumo")} />
+        <Button title="Ampliar" variant="gold" size="sm" style={{ flex: 1 }} onPress={() => router.push("/onboarding/planes")} />
+      </View>
+    </Card>
   );
 }
 

@@ -12,6 +12,8 @@ import { FOCUSABLE_SELECTOR } from "@/components/ui/drawer";
 import { AccountMenuTrigger, initials } from "./account-menu";
 
 export type MemberBonoCard = {
+  /** Id de la suscripción: dos bonos del mismo plan son dos bonos distintos. */
+  id: string;
   serviceLabel: string;
   planName: string;
   /** Cuota recurrente (MONTHLY/ONLINE): se enseña el próximo cobro en vez de un progreso de sesiones. */
@@ -19,13 +21,14 @@ export type MemberBonoCard = {
   sessionsRemaining: number | null;
   sessionsIncluded: number | null;
   nextChargeLabel: string | null;
-} | null;
+};
 
 export type MemberSidebarData = {
   name: string;
   roleLabel: string;
   centerName: string;
-  bono: MemberBonoCard;
+  /** Todos los bonos activos del socio, no solo el último dado de alta. */
+  bonos: MemberBonoCard[];
 };
 
 const RAIL_KEY = "tz-nav-rail";
@@ -481,7 +484,7 @@ export default function Sidebar({
             );
           })}
 
-          {member?.bono && <BonoCard bono={member.bono} />}
+          {member && member.bonos.length > 0 && <BonoCard bonos={member.bonos} />}
         </nav>
 
         {tip && (
@@ -560,18 +563,42 @@ export default function Sidebar({
 /** 2·π·r con r = 40, el radio del anillo del bono. */
 const RING_CIRCUMFERENCE = 2 * Math.PI * 40;
 
-function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
-  // `bonoUsage` cuadra saldo y total: sin él, un bono al que recepción le ha
-  // añadido sesiones enseñaba "13 de 12" y el anillo lleno al 108 %.
-  const usage = bono.recurring ? null : bonoUsage(bono.sessionsIncluded, bono.sessionsRemaining);
-  const pct = usage && usage.total > 0 ? (usage.remaining / usage.total) * 100 : 0;
+/**
+ * Un socio puede tener varios bonos a la vez (entrenamiento personal y grupos,
+ * por ejemplo) y cada uno gasta su propio saldo: la tarjeta los lista todos.
+ * Antes enseñaba solo el primero y el otro bono no existía para el socio.
+ */
+function BonoCard({ bonos }: { bonos: MemberBonoCard[] }) {
+  const several = bonos.length > 1;
 
   return (
     <div className="mt-auto p-4 rounded-2xl bg-white border border-tz-linen">
       <div className="flex items-center gap-[7px] text-[10.5px] font-bold tracking-[.14em] uppercase text-gold">
         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: GOLD_DOT }} />
-        Tu bono
+        {several ? "Tus bonos" : "Tu bono"}
       </div>
+      {bonos.map((bono, i) => (
+        <BonoRow key={bono.id} bono={bono} compact={several} separated={i > 0} />
+      ))}
+      <Link
+        href="/portal/membresia?renovar=1"
+        className="mt-3.5 block rounded-[10px] bg-tz-black text-tz-bone text-[12.5px] font-extrabold tracking-[.03em] uppercase text-center py-[11px] px-3.5 transition-colors duration-150 hover:bg-brand-ink-soft"
+      >
+        {several ? "Renovar o ampliar →" : "Renovar bono →"}
+      </Link>
+    </div>
+  );
+}
+
+function BonoRow({ bono, compact, separated }: { bono: MemberBonoCard; compact: boolean; separated: boolean }) {
+  // `bonoUsage` cuadra saldo y total: sin él, un bono al que recepción le ha
+  // añadido sesiones enseñaba "13 de 12" y el anillo lleno al 108 %.
+  const usage = bono.recurring ? null : bonoUsage(bono.sessionsIncluded, bono.sessionsRemaining);
+  const pct = usage && usage.total > 0 ? (usage.remaining / usage.total) * 100 : 0;
+  const ringSize = compact ? 58 : 76;
+
+  return (
+    <div className={separated ? "mt-3.5 pt-3.5 border-t border-tz-linen" : ""}>
       <div className="text-[13.5px] font-bold text-tz-black mt-2 leading-[1.35]">
         {bono.serviceLabel}
         <br />
@@ -591,8 +618,8 @@ function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
             transición.
           */}
           <div className="flex items-center gap-3.5 mt-3">
-            <div className="relative w-[76px] h-[76px] shrink-0">
-              <svg width="76" height="76" viewBox="0 0 96 96" aria-hidden="true" className="-rotate-90">
+            <div className="relative shrink-0" style={{ width: ringSize, height: ringSize }}>
+              <svg width={ringSize} height={ringSize} viewBox="0 0 96 96" aria-hidden="true" className="-rotate-90">
                 <circle cx="48" cy="48" r="40" fill="none" stroke="var(--color-tz-sand)" strokeWidth="10" />
                 <circle
                   cx="48"
@@ -608,7 +635,9 @@ function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="font-display font-extrabold text-[19px] leading-none text-tz-black tz-nums">
+                <span
+                  className={`font-display font-extrabold leading-none text-tz-black tz-nums ${compact ? "text-[16px]" : "text-[19px]"}`}
+                >
                   {usage?.remaining ?? 0}
                 </span>
                 <span className="text-[9.5px] font-bold uppercase tracking-[.08em] text-muted mt-0.5">
@@ -622,12 +651,6 @@ function BonoCard({ bono }: { bono: NonNullable<MemberBonoCard> }) {
           </div>
         </>
       )}
-      <Link
-        href="/portal/membresia?renovar=1"
-        className="mt-3.5 block rounded-[10px] bg-tz-black text-tz-bone text-[12.5px] font-extrabold tracking-[.03em] uppercase text-center py-[11px] px-3.5 transition-colors duration-150 hover:bg-brand-ink-soft"
-      >
-        Renovar bono →
-      </Link>
     </div>
   );
 }

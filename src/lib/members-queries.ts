@@ -264,8 +264,10 @@ export {
   bonoUsage,
   effectiveSessionsIncluded,
   getSessionBalances,
+  memberBono,
+  memberBonos,
 } from "@/lib/session-balance";
-export type { ServiceKind, BonoUsage, SessionBalance } from "@/lib/session-balance";
+export type { ServiceKind, BonoUsage, SessionBalance, MemberBono } from "@/lib/session-balance";
 
 // RB-PERFIL-003: catálogo editable de objetivos concretos + asignación a un socio.
 export async function listClientGoalTemplates(orgId: string) {

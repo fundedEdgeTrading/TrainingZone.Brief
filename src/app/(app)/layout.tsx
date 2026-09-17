@@ -8,9 +8,8 @@ import { featuresForOrg, isPlatformOperational } from "@/lib/entitlements";
 import { listNotificationsForUser } from "@/lib/notifications";
 import { membershipsFor } from "@/lib/identity";
 import { getMemberForUser, getPendingSessionFeedbackCountForUser, getMemberUpcomingBookings, isLiveBooking } from "@/lib/portal-queries";
-import { isRecurring } from "@/lib/member-billing";
-import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
-import { effectiveSessionsIncluded } from "@/lib/session-balance";
+import { planNameWithoutService } from "@/lib/members-queries";
+import { effectiveSessionsIncluded, memberBonos } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
 import { logoUrlForTheme } from "@/lib/theme";
 import { TimezoneSync } from "@/components/timezone-sync";
@@ -110,27 +109,30 @@ export default async function AppLayout({
       ? `Training Zone · ${centerName}`
       : `${ROLE_LABEL[role]} · ${centerName || "Toda la organización"}`;
 
-  // Tarjeta de bono del sidebar premium (RB-VENTA): solo si hay suscripción activa.
+  // Tarjeta de bono del sidebar premium (RB-VENTA): solo si hay suscripción
+  // activa, y con TODOS los bonos vivos — quien tiene entrenamiento personal y
+  // grupos veía aquí solo el bono dado de alta más tarde, y del otro no sabía
+  // ni que existía.
   let memberSidebar: MemberSidebarData | undefined;
   if (role === "MEMBER" && member) {
-    const activeSub = member.subscriptions[0];
-    const serviceLabel = activeSub ? SERVICE_LABEL[planServiceKind(activeSub.plan.type) ?? "GROUP"] : "";
     memberSidebar = {
       name: name ?? email ?? "",
       roleLabel: ROLE_LABEL.MEMBER,
       centerName,
-      bono: activeSub
-        ? {
-            serviceLabel,
-            planName: planNameWithoutService(activeSub.plan.name, serviceLabel),
-            recurring: isRecurring(activeSub.plan.type),
-            sessionsRemaining: activeSub.sessionsRemaining,
-            sessionsIncluded: effectiveSessionsIncluded(activeSub),
-            nextChargeLabel: activeSub.endDate
-              ? activeSub.endDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
-              : null,
-          }
-        : null,
+      bonos: memberBonos(member.subscriptions).map((b) => {
+        const serviceLabel = b.bono.serviceLabel ?? SERVICE_LABEL.GROUP;
+        return {
+          id: b.id,
+          serviceLabel,
+          planName: planNameWithoutService(b.plan.name, serviceLabel),
+          recurring: b.bono.recurring,
+          sessionsRemaining: b.sessionsRemaining,
+          sessionsIncluded: effectiveSessionsIncluded(b),
+          nextChargeLabel: b.endDate
+            ? b.endDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })
+            : null,
+        };
+      }),
     };
   }
 

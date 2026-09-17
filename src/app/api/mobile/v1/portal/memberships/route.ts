@@ -70,6 +70,13 @@ export async function GET(req: NextRequest) {
     }),
     consumption: consumption.map((b) => ({
       bookingId: b.id,
+      /**
+       * De QUÉ bono salió la sesión. El nombre del plan no sirve para
+       * distinguirlos: un socio con dos bonos del mismo plan (o que renueva el
+       * suyo) vería el consumo de uno repetido en los dos. null = la reserva no
+       * consumió bono.
+       */
+      subscriptionId: b.subscriptionId,
       day: formatDateParam(b.occurrenceDate),
       sessionName: b.session.name,
       startTime: b.session.startTime,
