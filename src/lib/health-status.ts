@@ -8,7 +8,7 @@ import type { BadgeTone } from "@/components/ui/badge";
  * datos, esto son funciones puras que usan tanto la ficha del socio como el
  * Session Brief, el portal y los tests.
  *
- * Ver docs/SALUD_LESIONES_FASES.md.
+ * Ver docs/PRODUCTO_GESTION.md §2.
  */
 
 export const HEALTH_STATUS_LABEL: Record<HealthStatus, string> = {

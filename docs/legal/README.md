@@ -1,7 +1,7 @@
 # Expediente de cumplimiento · Apta / TrainingZone
 
 **Generado el 6 de septiembre de 2026** a partir del código de este repositorio.
-Desbloquea las siete historias que el [plan de paralelización](../PLAN_PARALELIZACION_2026-09-06.md) marca como dependientes de terceros: **E10-03, E10-04, E10-05, E10-06, E10-10, E10-15 y E13-03**.
+Desbloquea las siete historias marcadas como dependientes de terceros: **E10-03, E10-04, E10-05, E10-06, E10-10, E10-15 y E13-03**.
 
 > ## ⚠️ Todo lo que hay en esta carpeta es un BORRADOR DE TRABAJO
 >

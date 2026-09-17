@@ -8,7 +8,7 @@ import type { EpProfile } from "@/lib/ai/ep-profile";
  * por sección permite revisar el diff de una regla sin ruido y que la parte
  * estable del sistema siga cacheándose (`cache_control`): se concatena
  * siempre en el mismo orden con el mismo contenido, y el perfil es la única
- * pieza que cambia entre llamadas (ver docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2).
+ * pieza que cambia entre llamadas (ver docs/PRODUCTO_GESTION.md §6.3).
  *
  * Los valores de perfil viven en `ep-profile.ts` (sin `node:fs`, importable
  * también desde el cliente); este módulo es server-only por los `readFileSync`.

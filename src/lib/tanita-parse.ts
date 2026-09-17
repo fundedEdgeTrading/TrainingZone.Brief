@@ -2,7 +2,7 @@
 // (báscula TANITA Segmental Body Analyzer). No hay export a CSV en la app
 // móvil, solo este texto plano con formato "* Etiqueta: valor" + sublíneas
 // "- Segmento: valor" para el desglose por tronco/brazos/piernas — ver
-// docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md (CC5, vía "pegar texto").
+// docs/PRODUCTO_GESTION.md §3.2 (CC5, vía "pegar texto").
 //
 // Ejemplo de entrada real:
 //   * Peso: 68,55 kg

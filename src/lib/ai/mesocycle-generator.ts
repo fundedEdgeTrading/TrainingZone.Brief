@@ -18,7 +18,7 @@ import type { MesocycleBriefing } from "@/lib/health-access";
 import { scrubIdentifiers } from "@/lib/ai/pseudonymize";
 
 /**
- * Sistema por perfil (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2-3),
+ * Sistema por perfil (docs/PRODUCTO_GESTION.md §6.3),
  * memoizado: son ficheros estáticos del repo, así que el mismo perfil siempre
  * produce los mismos bytes y no hay nada que recalcular en cada llamada. El
  * mapa es lo que permite que "cinco prefijos cacheados, uno por grupo" (§2.1

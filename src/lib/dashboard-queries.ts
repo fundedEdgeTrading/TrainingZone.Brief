@@ -523,7 +523,7 @@ export async function getLtvAndTicket(orgId: string, opts: DashboardOpts = {}) {
    *
    * `Member.joinedAt` de un socio importado no es una fecha de alta de este
    * negocio: viene del CSV de la plataforma anterior (`externalSource` /
-   * `externalId`, ver `docs/IMPORTACION_SOCIOS_CSV.md`) y puede ser la fecha de
+   * `externalId`, ver `docs/PRODUCTO_GESTION.md` §1.4) y puede ser la fecha de
    * la importación o el alta en la otra casa. Con la primera, la permanencia
    * sale artificialmente corta para todo el que venía de antes; con la segunda,
    * se le estaría atribuyendo a este centro una lealtad que se ganó otro.

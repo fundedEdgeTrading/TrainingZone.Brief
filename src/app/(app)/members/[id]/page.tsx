@@ -409,7 +409,7 @@ export default async function MemberDetailPage({
     }))
   );
 
-  // CC1.4/CC2/CC3 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): última toma con semáforo +
+  // CC1.4/CC2/CC3 (docs/PRODUCTO_GESTION.md §3.2): última toma con semáforo +
   // serie para la gráfica de evolución, con el rango de referencia filtrado por sexo cuando
   // el centro lo tiene configurado.
   const canSeeProgress = progressEntries !== null;

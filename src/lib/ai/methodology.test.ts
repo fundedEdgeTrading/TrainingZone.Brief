@@ -7,7 +7,7 @@ import { buildMethodologySystem, EP_PROFILES, METHODOLOGY_VERSION } from "./meth
  * `buildMethodologySystem` es el prefijo cacheado (`cache_control`) del
  * sistema de generación: si dos llamadas para el mismo perfil no devuelven
  * exactamente los mismos bytes, el caché de Anthropic no se reutiliza y el
- * coste medido en la guía (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2.2)
+ * coste medido en la guía (docs/PRODUCTO_GESTION.md §6.3)
  * deja de cumplirse en silencio.
  */
 test("buildMethodologySystem es determinista para el mismo perfil", () => {
@@ -24,7 +24,7 @@ test("cada perfil produce un sistema no vacío", () => {
 
 test("los perfiles con contenido propio producen sistemas distintos entre sí", () => {
   // RENDIMIENTO_OPOSICIONES y RENDIMIENTO_ATLETA comparten a propósito el
-  // mismo fichero de perfil (docs/GUIA_AGENTE_GENERADOR_ENTRENAMIENTOS.md §2):
+  // mismo fichero de perfil (docs/PRODUCTO_GESTION.md §6.3):
   // se excluyen de la comparación de unicidad.
   const distinctProfiles = EP_PROFILES.filter((p) => p !== "RENDIMIENTO_ATLETA");
   const systems = distinctProfiles.map(buildMethodologySystem);

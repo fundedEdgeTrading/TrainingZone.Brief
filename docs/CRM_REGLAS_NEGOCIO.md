@@ -666,6 +666,7 @@ registro histórico; cada una ya está reflejada como regla concreta en su secci
 
 ---
 
-*Fin del documento. Con las decisiones de §11 ya cerradas, el siguiente paso es la
-**priorización e implementación de las funcionalidades restantes**, detallada en el documento
-complementario `CRM_IMPLEMENTACION_FUNCIONALIDADES.md`.*
+*Fin del documento. Este catálogo es la referencia de reglas; **cómo están
+implementadas** hoy se describe en [`PRODUCTO_GESTION.md`](./PRODUCTO_GESTION.md),
+[`PRODUCTO_COBROS.md`](./PRODUCTO_COBROS.md) y
+[`CRM_Y_MARKETING.md`](./CRM_Y_MARKETING.md), y el código las cita por su `RB-*`.*

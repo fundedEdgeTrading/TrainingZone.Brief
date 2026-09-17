@@ -607,8 +607,8 @@ export async function updateMemberPhoto(formData: FormData): Promise<MemberActio
   return { ok: true };
 }
 
-// Fotos + composición corporal. Dos consentimientos independientes (docs/COMPOSICION_CORPORAL_
-// IMPLEMENTACION.md CC1.2): las fotos siguen gateadas por consentImages; las métricas de
+// Fotos + composición corporal. Dos consentimientos independientes (docs/PRODUCTO_GESTION.md
+// §3.2, CC1.2): las fotos siguen gateadas por consentImages; las métricas de
 // composición (peso, % graso, bioimpedancia) son dato de salud Art. 9 y se gatean por
 // consentHealth, igual que HealthRecord — pueden guardarse sin foto y sin consentImages.
 const COMPOSITION_NUM_FIELDS = [
@@ -731,7 +731,7 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
   return { ok: true };
 }
 
-// CC5 (docs/COMPOSICION_CORPORAL_IMPLEMENTACION.md): la app My Tanita no exporta CSV, solo el
+// CC5 (docs/PRODUCTO_GESTION.md §3.2): la app My Tanita no exporta CSV, solo el
 // texto que comparte tras cada medición. En vez de un parser de fichero, el entrenador pega ese
 // texto y aquí se interpreta (src/lib/tanita-parse.ts) para crear la toma con source "TANITA".
 export async function importTanitaText(formData: FormData): Promise<MemberActionResult> {
