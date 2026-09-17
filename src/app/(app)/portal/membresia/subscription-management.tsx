@@ -23,6 +23,7 @@ export function SubscriptionManagement({
   centerName,
   centerPhone,
   cancelReasons,
+  planLabel,
   children,
 }: {
   recurring: boolean;
@@ -30,6 +31,13 @@ export function SubscriptionManagement({
   initialCancelAt: Date | null;
   centerName: string;
   centerPhone: string | null;
+  /**
+   * Producto sobre el que actúan estos botones, cuando el socio tiene más de
+   * uno. La baja y la congelación se aplican a UN bono —el último dado de
+   * alta—, así que con dos bonos hay que decir a cuál, o el socio cree que da
+   * de baja toda su membresía.
+   */
+  planLabel?: string | null;
   /** E14-15: catálogo `CancelReason` de la organización. El motivo es obligatorio. */
   cancelReasons: ReasonOption[];
   /** E5-06: bloque de congelación, montado por el caller — se mantiene fuera de este componente para no acoplarlo a Stripe/RB-PAGO-004. */
@@ -86,6 +94,22 @@ export function SubscriptionManagement({
       style={{ animationDelay: "0.14s" }}
     >
       <div className="font-display font-extrabold text-base uppercase text-brand-text">Gestionar mi suscripción</div>
+      {planLabel ? (
+        <p className="text-[13px] text-brand-muted mt-1.5">
+          Estas acciones afectan a <b className="text-brand-text">{planLabel}</b>. Para cualquier otro de tus productos,
+          habla con {centerName}
+          {centerPhone ? (
+            <>
+              {" "}
+              ·{" "}
+              <a href={`tel:${centerPhone}`} className="font-semibold text-brand-text underline underline-offset-2">
+                {centerPhone}
+              </a>
+            </>
+          ) : null}
+          .
+        </p>
+      ) : null}
 
       {!hasStripeCustomer ? (
         <p className="text-sm text-brand-muted mt-3 leading-[1.6]">

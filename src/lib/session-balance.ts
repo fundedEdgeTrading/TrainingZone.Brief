@@ -157,3 +157,63 @@ export function getSessionBalances(
     total: v.unlimited || v.total === 0 ? null : v.total,
   }));
 }
+
+/**
+ * RB-RES-006: UN bono del socio, listo para pintar — modalidad, rótulo y el
+ * reparto cuadrado de `bonoUsage`.
+ *
+ * Existe porque cada pantalla de "mi membresía" resolvía el bono del socio como
+ * `subscriptions[0]`: quien tenía bono de entrenamiento personal Y bono de
+ * grupos veía solo uno de los dos, y el saldo del otro no aparecía por ninguna
+ * parte. Un socio puede tener varios bonos activos a la vez (ya lo asume el
+ * motor de reserva en `activeBookingSubscriptions`), así que las pantallas los
+ * recorren en vez de quedarse con el primero.
+ */
+export type MemberBono = {
+  serviceKind: ServiceKind | null;
+  /** Rótulo de la modalidad desde la fuente única (`service-labels.ts`, E12-04). */
+  serviceLabel: string | null;
+  /** Cuota recurrente (MONTHLY/ONLINE): no se agota, no tiene saldo que enseñar. */
+  recurring: boolean;
+  /** Sin saldo que repartir: cuota mensual u online. */
+  unlimited: boolean;
+  remaining: number;
+  used: number;
+  total: number;
+};
+
+export function memberBono(sub: {
+  sessionsRemaining: number | null;
+  sessionsIncluded?: number | null;
+  plan: { type: string; sessionsIncluded?: number | null };
+}): MemberBono {
+  const kind = PLAN_TYPE_TO_SERVICE[sub.plan.type] ?? null;
+  const recurring = sub.plan.type === "MONTHLY" || sub.plan.type === "ONLINE";
+  const usage = bonoUsage(effectiveSessionsIncluded(sub), sub.sessionsRemaining);
+  return {
+    serviceKind: kind,
+    serviceLabel: kind ? serviceLabel(kind) : null,
+    recurring,
+    unlimited: usage == null,
+    remaining: usage?.remaining ?? 0,
+    used: usage?.used ?? 0,
+    total: usage?.total ?? 0,
+  };
+}
+
+/**
+ * Los bonos ACTIVE del socio, cada uno con su saldo, conservando el orden en
+ * que llegan (el más reciente primero, como los ordena `getMemberForUser`).
+ * Devuelve el bono JUNTO a la suscripción de la que sale, porque las pantallas
+ * necesitan además sus fechas, su plan y su id.
+ */
+export function memberBonos<
+  T extends {
+    status: string;
+    sessionsRemaining: number | null;
+    sessionsIncluded?: number | null;
+    plan: { type: string; sessionsIncluded?: number | null };
+  },
+>(subscriptions: T[]): (T & { bono: MemberBono })[] {
+  return subscriptions.filter((s) => s.status === "ACTIVE").map((s) => ({ ...s, bono: memberBono(s) }));
+}

@@ -9,7 +9,7 @@ import {
   getMemberUpcomingBookings,
   CANCEL_WINDOW_HOURS,
 } from "@/lib/portal-queries";
-import { getSessionBalances } from "@/lib/members-queries";
+import { getSessionBalances, memberBonos } from "@/lib/members-queries";
 import { getAnnouncementsForMember, registerAnnouncementViews } from "@/lib/announcements-queries";
 import { getPendingClientFeedback } from "@/lib/feedback-capture";
 import { resolveTimezone } from "@/lib/timezone";
@@ -49,7 +49,10 @@ export default async function PortalHomePage() {
   // RB-ANUN-003: contabilizar como vistos los anuncios que se le muestran.
   await registerAnnouncementViews(member.id, announcements.map((a) => a.id));
 
-  const activeSub = member.subscriptions[0];
+  // Todos los bonos vivos, no solo el último: un socio con bono de
+  // entrenamiento personal y bono de grupos tiene dos productos contratados y
+  // los dos cuentan.
+  const bonos = memberBonos(member.subscriptions);
   const balances = getSessionBalances(
     member.subscriptions.map((s) => ({
       status: s.status,
@@ -110,19 +113,22 @@ export default async function PortalHomePage() {
           <ActivityChart data={activity} />
         </Card>
 
-        <Card title="Tu plan" delay={0.12}>
-          {activeSub ? (
-            <div className="bg-brand-ink rounded-xl px-[18px] py-4">
-              <div className="font-display font-extrabold text-xl text-tz-bone uppercase">
-                {activeSub.plan.name}
-              </div>
-              <div className="text-[13px] text-brand-muted-2 mt-1">
-                Activo desde el {activeSub.startDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
-              </div>
-              <div className="inline-flex items-center gap-1.5 mt-3 bg-brand-ink-circle rounded-full px-[11px] py-[5px] text-xs font-semibold text-white">
-                <span className="w-[7px] h-[7px] rounded-full bg-pay-ok" />
-                Al corriente de pago
-              </div>
+        <Card title={bonos.length > 1 ? "Tus planes" : "Tu plan"} delay={0.12}>
+          {bonos.length > 0 ? (
+            <div className="flex flex-col gap-2.5">
+              {bonos.map((b) => (
+                <div key={b.id} className="bg-brand-ink rounded-xl px-[18px] py-4">
+                  <div className="font-display font-extrabold text-xl text-tz-bone uppercase">{b.plan.name}</div>
+                  <div className="text-[13px] text-brand-muted-2 mt-1">
+                    Activo desde el {b.startDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
+                    {b.bono.unlimited ? "" : ` · te quedan ${b.bono.remaining} de ${b.bono.total} sesiones`}
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 mt-3 bg-brand-ink-circle rounded-full px-[11px] py-[5px] text-xs font-semibold text-white">
+                    <span className="w-[7px] h-[7px] rounded-full bg-pay-ok" />
+                    Al corriente de pago
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <p className="text-sm text-brand-muted">Sin plan activo.</p>

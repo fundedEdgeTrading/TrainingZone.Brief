@@ -11,14 +11,13 @@ import {
 } from "@/lib/portal-queries";
 import { getActiveMembershipPlans } from "@/lib/public-membership-queries";
 import { isRecurring } from "@/lib/member-billing";
-import { planServiceKind, planNameWithoutService } from "@/lib/members-queries";
-import { bonoUsage, effectiveSessionsIncluded } from "@/lib/session-balance";
+import { planNameWithoutService } from "@/lib/members-queries";
+import { memberBonos } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
 import { zonedToday } from "@/lib/date-utils";
 import PurchasePlanButton from "./purchase-plan-button";
 import { RenewalModal } from "./renewal-modal";
 import { PendingSessionsRating } from "./pending-sessions";
-import { SERVICE_LABEL } from "@/lib/service-labels";
 import { getMemberBillingSnapshot } from "./billing-view";
 import { ReceiptDownloadButton } from "./receipt-download-button";
 import { SubscriptionManagement } from "./subscription-management";
@@ -94,23 +93,34 @@ export default async function PortalMembresiaPage({
     listCancelReasons(session.user.orgId),
   ]);
 
-  const activeSub = member.subscriptions[0];
-  const kind = activeSub ? planServiceKind(activeSub.plan.type) : undefined;
-  const recurring = activeSub ? isRecurring(activeSub.plan.type) : false;
-  // Saldo y total salen de `bonoUsage`, que los cuadra: con `sessionsIncluded`
-  // pelado, un bono con sesiones añadidas a mano se leía "13 de 12".
-  const usage = activeSub ? bonoUsage(effectiveSessionsIncluded(activeSub), activeSub.sessionsRemaining) : null;
-  const sessionsIncluded = usage?.total ?? 0;
-  const sessionsRemaining = usage?.remaining ?? 0;
-  const sessionsPct = sessionsIncluded > 0 ? (sessionsRemaining / sessionsIncluded) * 100 : 0;
+  // Un socio puede tener varios bonos activos a la vez —entrenamiento personal
+  // y grupos, por ejemplo—, y cada uno lleva su propio saldo, su caducidad y su
+  // renovación. Esta pantalla los enseña TODOS: mientras resolvía el bono como
+  // `subscriptions[0]`, el segundo bono no aparecía en ninguna parte y sus
+  // sesiones parecían perdidas.
+  const bonos = memberBonos(member.subscriptions);
+  const activeSub = bonos[0] ?? null;
+  const several = bonos.length > 1;
+  // Con un solo producto la cuota mensual no necesita tarjeta de saldo (no se
+  // agota); con varios sí sale, para que el socio pueda contar sus productos y
+  // le cuadren con lo que ve aquí.
+  const heroBonos = several ? bonos : bonos.filter((b) => !b.bono.recurring);
   const trainerFirstName = trainerName?.split(" ")[0] ?? null;
 
-  // El plan que coincide con la suscripción activa va primero y se etiqueta
-  // como renovación de lo que ya tiene, en vez de una compra nueva.
-  const sortedPlans = activeSub
-    ? [...plans].sort((a, b) => (a.id === activeSub.planId ? -1 : b.id === activeSub.planId ? 1 : 0))
-    : plans;
-  const renewPlan = activeSub ? (plans.find((p) => p.id === activeSub.planId) ?? null) : null;
+  // El aviso de "te quedas sin sesiones" es de UN bono concreto: el numerado
+  // que peor anda. Con dos bonos, mirar solo el primero dejaba al socio sin
+  // aviso justo en el que estaba agotando.
+  const lowestBono = bonos
+    .filter((b) => !b.bono.recurring && !b.bono.unlimited)
+    .reduce<(typeof bonos)[number] | null>((low, b) => (!low || b.bono.remaining < low.bono.remaining ? b : low), null);
+
+  // Los planes que el socio ya tiene contratados van primero y se etiquetan
+  // como renovación de lo suyo, en vez de una compra nueva.
+  const ownedPlanIds = new Set(bonos.map((b) => b.planId));
+  const sortedPlans = [...plans].sort(
+    (a, b) => Number(ownedPlanIds.has(b.id)) - Number(ownedPlanIds.has(a.id))
+  );
+  const renewPlan = lowestBono ? (plans.find((p) => p.id === lowestBono.planId) ?? null) : null;
 
   const pendingItems = pending.map((p) => {
     const dateLabel = relativeDayLabel(p.sessionDate, today);
@@ -165,17 +175,32 @@ export default async function PortalMembresiaPage({
           <div>
             <div className="inline-flex items-center gap-2 font-display font-bold text-[11px] tracking-[.16em] uppercase text-apta-gold">
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "linear-gradient(135deg,#e3cfa2,#b58e52)" }} />
-              Producto contratado
+              {several ? "Productos contratados" : "Producto contratado"}
             </div>
             <div className="font-display font-extrabold text-[28px] sm:text-[34px] leading-[1.05] text-white mt-3.5 uppercase tracking-[-.01em]">
-              {activeSub
-                ? [kind ? SERVICE_LABEL[kind] : null, planNameWithoutService(activeSub.plan.name, kind ? SERVICE_LABEL[kind] : null)]
-                    .filter(Boolean)
-                    .join(" · ")
-                : "Sin membresía activa"}
+              {!activeSub
+                ? "Sin membresía activa"
+                : several
+                  ? "Tu membresía"
+                  : [activeSub.bono.serviceLabel, planNameWithoutService(activeSub.plan.name, activeSub.bono.serviceLabel)]
+                      .filter(Boolean)
+                      .join(" · ")}
             </div>
             <p className="text-sm text-brand-muted-2 mt-3.5 max-w-[440px] leading-[1.55]">
-              {activeSub ? (
+              {!activeSub ? (
+                "Elige un plan más abajo para activar tu acceso."
+              ) : several ? (
+                <>
+                  Tienes {bonos.length} productos activos a la vez y cada uno lleva su propio saldo: gastar una sesión
+                  de uno no toca el otro.
+                  {trainerName ? (
+                    <>
+                      {" "}
+                      Tu entrenador asignado es <b className="text-tz-bone">{trainerName}</b>.
+                    </>
+                  ) : null}
+                </>
+              ) : (
                 <>
                   Activo desde el {activeSub.startDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}
                   {trainerName ? (
@@ -186,10 +211,10 @@ export default async function PortalMembresiaPage({
                   ) : (
                     "."
                   )}{" "}
-                  {recurring ? "Cuota mensual mientras no des de baja." : "Renovación manual cuando agotes las sesiones."}
+                  {activeSub.bono.recurring
+                    ? "Cuota mensual mientras no des de baja."
+                    : "Renovación manual cuando agotes las sesiones."}
                 </>
-              ) : (
-                "Elige un plan más abajo para activar tu acceso."
               )}
             </p>
           </div>
@@ -210,34 +235,65 @@ export default async function PortalMembresiaPage({
             </div>
           )}
         </div>
+        {/* Una tarjeta por bono: el socio que tiene entrenamiento personal y
+            grupos ve los DOS saldos, no el del bono que se dio de alta último. */}
         <div className="relative z-10 flex flex-col gap-3">
-          {!recurring && (
-            <div className="bg-white/[.06] border border-white/[.16] rounded-2xl px-5 py-[18px]">
-              <div className="text-[11px] font-bold tracking-[.1em] uppercase text-brand-muted">Sesiones restantes</div>
-              <div className="flex items-baseline gap-2 mt-2">
-                <span className="font-display font-extrabold text-[40px] leading-none text-white tabular-nums">{sessionsRemaining}</span>
-                <span className="text-base font-bold text-brand-muted-2">de {sessionsIncluded}</span>
+          {heroBonos.map((b) => {
+            const pct = b.bono.total > 0 ? (b.bono.remaining / b.bono.total) * 100 : 0;
+            return (
+              <div key={b.id} className="bg-white/[.06] border border-white/[.16] rounded-2xl px-5 py-[18px]">
+                <div className="text-[11px] font-bold tracking-[.1em] uppercase text-brand-muted">
+                  {several ? b.bono.serviceLabel ?? "Sesiones restantes" : "Sesiones restantes"}
+                </div>
+                {several && (
+                  <div className="text-[12.5px] font-semibold text-brand-muted-2 mt-1 leading-[1.35]">
+                    {planNameWithoutService(b.plan.name, b.bono.serviceLabel)}
+                  </div>
+                )}
+                {b.bono.unlimited ? (
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="font-display font-extrabold text-[34px] leading-none text-white">∞</span>
+                    <span className="text-base font-bold text-brand-muted-2">sesiones</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-baseline gap-2 mt-2">
+                      <span
+                        className={`font-display font-extrabold leading-none text-white tabular-nums ${several ? "text-[32px]" : "text-[40px]"}`}
+                      >
+                        {b.bono.remaining}
+                      </span>
+                      <span className="text-base font-bold text-brand-muted-2">de {b.bono.total}</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/[.14] overflow-hidden mt-3">
+                      <div
+                        className="h-full rounded-full"
+                        style={{ width: `${pct}%`, background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" }}
+                      />
+                    </div>
+                  </>
+                )}
+                <div className="text-xs text-brand-muted mt-2">
+                  {b.bono.recurring
+                    ? "Cuota mensual · sesiones sin límite"
+                    : b.endDate
+                      ? `Caducan el ${b.endDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}`
+                      : "Sin fecha de caducidad"}
+                </div>
               </div>
-              <div className="h-1.5 rounded-full bg-white/[.14] overflow-hidden mt-3">
-                <div
-                  className="h-full rounded-full"
-                  style={{ width: `${sessionsPct}%`, background: "linear-gradient(90deg,var(--color-good),var(--color-apta-gold))" }}
-                />
-              </div>
-              <div className="text-xs text-brand-muted mt-2">
-                {activeSub?.endDate
-                  ? `Caducan el ${activeSub.endDate.toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" })}`
-                  : "Sin fecha de caducidad"}
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
       </div>
 
       {/* E5-02: lo que hoy faltaba — cuánto paga, cuándo se le cobra y sus recibos. */}
       {billing.hasSubscription && (
         <div className="bg-white border border-brand-border rounded-2xl p-[22px] tz-fade-up" style={{ animationDelay: "0.06s" }}>
-          <div className="font-display font-extrabold text-base uppercase text-brand-text">Tu cuota</div>
+          {/* Con varios productos contratados hay que decir de cuál es este
+              importe: el desglose de cobro es de UNA suscripción. */}
+          <div className="font-display font-extrabold text-base uppercase text-brand-text">
+            {several && billing.planName ? `Tu cuota · ${billing.planName}` : "Tu cuota"}
+          </div>
           <div className="mt-3.5 flex flex-col gap-2.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[13px] text-brand-muted">Importe</span>
@@ -301,6 +357,7 @@ export default async function PortalMembresiaPage({
           centerName={member.primaryCenter.name}
           centerPhone={member.primaryCenter.phone}
           cancelReasons={cancelReasons}
+          planLabel={several ? billing.planName : null}
         >
           {/* E5-06: congelar/reanudar el bono desde el propio portal. */}
           {freezePolicy && (
@@ -325,7 +382,7 @@ export default async function PortalMembresiaPage({
         ) : (
           <div className="flex flex-col gap-2.5">
             {sortedPlans.map((plan) => {
-              const isCurrent = activeSub?.planId === plan.id;
+              const isCurrent = ownedPlanIds.has(plan.id);
               return (
                 <div
                   key={plan.id}
@@ -357,12 +414,12 @@ export default async function PortalMembresiaPage({
         )}
       </div>
 
-      {activeSub && !recurring && (
+      {lowestBono && (
         <Suspense fallback={null}>
           <RenewalModal
-            subscriptionId={activeSub.id}
-            sessionsRemaining={sessionsRemaining}
-            sessionsIncluded={sessionsIncluded}
+            subscriptionId={lowestBono.id}
+            sessionsRemaining={lowestBono.bono.remaining}
+            sessionsIncluded={lowestBono.bono.total}
             trainerFirstName={trainerFirstName}
             renewPlan={renewPlan ? { id: renewPlan.id, name: renewPlan.name, priceLabel: euros(renewPlan.priceCents) } : null}
           />

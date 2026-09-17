@@ -35,7 +35,12 @@ export default function ConsumptionScreen() {
   const [filter, setFilter] = useState<Filter>("all");
   const { data, isLoading, isError, refetch, isRefetching } = useConsumption();
 
-  const bono = data?.balances.find((b) => !b.unlimited) ?? data?.balances[0];
+  // Un socio puede tener varios bonos a la vez (entrenamiento personal y
+  // grupos, por ejemplo) y cada uno lleva su propio saldo: se enseñan todos.
+  // Quedarse con el primero escondía el saldo del otro bono — el mismo fallo
+  // que tenía "Mi membresía" en la web.
+  const balances = data?.balances ?? [];
+  const severalBonos = balances.length > 1;
 
   const groups = useMemo(() => {
     const movements = (data?.movements ?? []).filter((m) =>
@@ -89,24 +94,33 @@ export default function ConsumptionScreen() {
             <SkeletonList rows={5} shape="row" note="Cargando tus movimientos…" />
           ) : data ? (
             <>
-              {bono ? (
+              {balances.length > 0 ? (
                 <FadeInUp delay={stagger(1)}>
                   <Card style={{ gap: 14 }}>
-                    <View style={styles.balanceHeader}>
-                      <View style={{ flex: 1, gap: 3 }}>
-                        <Text style={[styles.balanceValue, { color: theme.text }]}>
-                          {bono.unlimited ? "∞" : `${bono.remaining ?? 0}/${bono.total ?? 0}`}
-                        </Text>
-                        <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
-                          Disponibles
-                          {bono.renewsAt ? ` · renueva el ${formatDayMonth(bono.renewsAt)}` : ""}
-                        </Text>
+                    {balances.map((bono, index) => (
+                      <View
+                        key={bono.subscriptionId}
+                        style={[
+                          styles.balanceHeader,
+                          index > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border, paddingTop: 12 } : null,
+                        ]}
+                      >
+                        <View style={{ flex: 1, gap: 3 }}>
+                          <Text style={[styles.balanceValue, { color: theme.text }]}>
+                            {bono.unlimited ? "∞" : `${bono.remaining ?? 0}/${bono.total ?? 0}`}
+                          </Text>
+                          <Text style={[typo.rowMeta, { color: theme.textMuted }]}>
+                            {severalBonos ? `${bono.planName} · disponibles` : "Disponibles"}
+                            {bono.renewsAt ? ` · renueva el ${formatDayMonth(bono.renewsAt)}` : ""}
+                          </Text>
+                        </View>
                       </View>
-                    </View>
+                    ))}
                     {/* E2-15: las dos cifras salen del mismo libro mayor que el
                         listado de abajo, así que no pueden contradecirlo. Antes la
                         tarjeta decía "5 gastadas de 12", el resumen "0 gastadas" y
-                        el listado no tenía ni una línea de consumo. */}
+                        el listado no tenía ni una línea de consumo. Cuentan TODOS
+                        los bonos, igual que el listado. */}
                     <View style={styles.counters}>
                       <Counter label="Gastadas" value={data.summary.spent} color={theme.text} />
                       <Counter label="Devueltas" value={data.summary.returned} color={theme.good} />

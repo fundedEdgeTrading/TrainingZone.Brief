@@ -521,6 +521,8 @@ export type MembershipItem = {
 
 export type ConsumptionItem = {
   bookingId: string;
+  /** Bono que pagó la sesión (null = no consumió bono). Distingue dos bonos del mismo plan. */
+  subscriptionId: string | null;
   day: string;
   sessionName: string;
   startTime: string;

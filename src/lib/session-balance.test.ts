@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bonoUsage, effectiveSessionsIncluded, getSessionBalances } from "./session-balance";
+import { bonoUsage, effectiveSessionsIncluded, getSessionBalances, memberBonos } from "./session-balance";
 
 // Lo que el socio ve en "Reservar clase" son tres cifras a la vez: las que le
 // quedan, las gastadas y el total del bono. Si no cuadran entre sí (el caso de
@@ -112,4 +112,49 @@ test("getSessionBalances: solo cuentan los bonos activos", () => {
     { remaining: balances[0].remaining, used: balances[0].used, total: balances[0].total },
     { remaining: 4, used: 8, total: 12 }
   );
+});
+
+// El fallo reportado: un socio con bono de entrenamiento personal Y bono de
+// grupos solo veía uno de los dos en "Mi membresía", porque las pantallas
+// resolvían su bono como `subscriptions[0]`. Los dos bonos existen y cada uno
+// lleva su propio saldo.
+test("memberBonos: devuelve TODOS los bonos activos, cada uno con su saldo y su modalidad", () => {
+  const bonos = memberBonos([sub("PERSONAL_TRAINING", 8, 3), sub("SESSION_PACK", 12, 10)]);
+
+  assert.equal(bonos.length, 2);
+  assert.deepEqual(
+    bonos.map((b) => [b.bono.serviceKind, b.bono.remaining, b.bono.total]),
+    [
+      ["EP", 3, 8],
+      ["GROUP", 10, 12],
+    ]
+  );
+  assert.deepEqual(
+    bonos.map((b) => b.bono.serviceLabel),
+    ["Entrenamiento personal", "Grupos reducidos"]
+  );
+});
+
+test("memberBonos: dos bonos de la MISMA modalidad siguen siendo dos bonos", () => {
+  // No es lo mismo que `getSessionBalances`, que los agrega: aquí cada bono se
+  // enseña por separado porque caduca por separado y se renueva por separado.
+  const bonos = memberBonos([sub("SESSION_PACK", 12, 2), sub("SESSION_PACK", 4, 4)]);
+  assert.deepEqual(bonos.map((b) => b.bono.remaining), [2, 4]);
+});
+
+test("memberBonos: la cuota mensual entra como ilimitada y sin saldo que repartir", () => {
+  const [cuota] = memberBonos([sub("MONTHLY", null, null)]);
+  assert.equal(cuota.bono.unlimited, true);
+  assert.equal(cuota.bono.recurring, true);
+  assert.equal(cuota.bono.remaining, 0);
+});
+
+test("memberBonos: los bonos que no están activos no se enseñan", () => {
+  const bonos = memberBonos([
+    sub("SESSION_PACK", 12, 4),
+    sub("PERSONAL_TRAINING", 8, 8, "FROZEN"),
+    sub("PERSONAL_TRAINING", 8, 8, "CANCELLED"),
+  ]);
+  assert.equal(bonos.length, 1);
+  assert.equal(bonos[0].bono.serviceKind, "GROUP");
 });
