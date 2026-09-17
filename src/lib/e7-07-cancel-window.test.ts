@@ -69,7 +69,16 @@ function wallClockIn(timezone: string, instant: Date) {
   // El día suelto se guarda a medianoche LOCAL DEL SERVIDOR (es como lo escribe
   // toda la aplicación), y la hora viaja aparte como reloj de pared del centro.
   const day = new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")));
-  return { day, startTime: `${get("hour")}:${get("minute")}` };
+  // `hour12: false` devuelve 24 (no 0) para la medianoche en algunas versiones
+  // de ICU — la de Node 20, que es el que corre en CI. Sin normalizarlo, la
+  // clase de un centro cuya hora de pared es 00:xx se montaba como "24:59" y
+  // `zonedTimeToInstant` la resolvía al día SIGUIENTE: U4 caía con "la clase se
+  // ha montado en ... en vez de ...", pero solo cuando CI corría entre las
+  // 05:00 y las 06:00 UTC, que es cuando en Lima es medianoche pasada. Es la
+  // misma normalización que ya hacen `zonedParts` (date-utils.ts) y
+  // `flows/safety.ts` sobre el mismo defecto de ICU.
+  const hour = String(Number(get("hour")) % 24).padStart(2, "0");
+  return { day, startTime: `${hour}:${get("minute")}` };
 }
 
 let seq = 0;
