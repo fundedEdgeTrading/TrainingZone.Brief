@@ -67,6 +67,17 @@ export async function createStripeCheckoutAction(formData: FormData): Promise<Ch
   const memberId = String(formData.get("memberId") ?? "");
   const planId = String(formData.get("planId") ?? "");
   if (!memberId || !planId) return { ok: false, error: "Selecciona un socio y un plan." };
+  // HU-ST-29 §5.1 · `memberId` llega del `FormData` del cliente, igual que en
+  // `registerManualPayment` — pero esta acción, a diferencia de su vecina, no
+  // comprobaba el ámbito de centro de quien cobra: recepción de un centro podía
+  // abrir un cobro a nombre de un socio de otro centro de la organización. Que
+  // el formulario solo liste sus socios no es frontera (una server action se
+  // invoca sin pasar por la interfaz), así que la comprobación va aquí.
+  //
+  // Hoy el dinero acaba en la misma cuenta conectada (una por organización), así
+  // que el daño es de atribución. En cuanto haya una cuenta por centro, esta
+  // misma línea es la que evita que el cobro entre en la cuenta equivocada.
+  if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
   // E12-07: createCheckoutSession (stripe-checkout.ts) era una línea que
   // llamaba a esto mismo, con este como único consumidor.
   return createMemberCheckout({

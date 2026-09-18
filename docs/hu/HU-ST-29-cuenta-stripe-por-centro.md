@@ -1,6 +1,13 @@
 # HU-ST-29 · Cuenta Stripe distinta por centro dentro de una organización
 
-> **Estado: borrador de plan, NO aprobado, NO iniciado.** Este documento sintetiza
+> **Estado: §5 APLICADO; el resto sigue siendo borrador, NO aprobado, NO iniciado.**
+> Lo único ejecutado de esta HU son las dos correcciones de ámbito de centro del
+> §5, que el propio documento pedía aplicar «ya, independientemente de si se hace
+> el multi-cuenta» (ver §9). El diseño multi-cuenta del §4 **no** se ha empezado:
+> sigue bloqueado por la pregunta de negocio del §2, sin respuesta, y por el freeze
+> de `prisma/schema.prisma`. Detalle de lo aplicado, al final del §5.
+>
+> Este documento sintetiza
 > el trabajo de cuatro agentes (`stripe-pagos`, `negocio-producto`,
 > `cumplimiento-normativo`, `ciberseguridad`) sobre una petición de dirección:
 > poder vincular una cuenta de Stripe distinta a cada centro de una misma
@@ -177,6 +184,24 @@ centros en cuanto exista más de una cuenta):
    reasignaría silenciosamente su identidad de facturación (`stripeCustomerId`)
    a la cuenta de un centro ajeno.
 
+### 5.bis · Estado: aplicado
+
+Las dos correcciones están **hechas**, sin tocar ningún fichero congelado:
+
+- **§5.1** — `createStripeCheckoutAction` llama a `memberIsInScope` antes de
+  abrir el cobro y devuelve `OUT_OF_CENTER_SCOPE`, exactamente igual que
+  `registerManualPayment`, su acción vecina en el mismo fichero.
+- **§5.2** — la rama de socio ya existente del checkout público resuelve el
+  centro con `resolveExistingMemberCheckoutCenter` (`src/lib/member-billing.ts`)
+  en vez de copiar el segmento de la URL: el centro de la URL solo vale si el
+  socio ya tiene relación con él (es su centro habitual o tiene allí un bono);
+  si no, la venta cae a su propio centro habitual. Es el patrón que ya seguían
+  los checkouts móviles (§7.4). No se rechaza la compra: RB-AGENDA-003 admite
+  bonos en varios centros de la organización, y cambiar de centro es legítimo —
+  lo que no puede es decidirlo un anónimo desde una URL.
+- Cobertura en `src/lib/hu-st-29-ambito-cobro.test.ts`, incluido el caso
+  legítimo de RB-AGENDA-003 para que la corrección no lo cierre por el camino.
+
 ## 6 · Requisitos legales que condicionan el diseño (`cumplimiento-normativo`)
 
 - **CN-05 (crítico)**: si hay sociedades distintas detrás de los centros, el
@@ -235,8 +260,7 @@ centros en cuanto exista más de una cuenta):
 arquitectura no trivial que solo se justifica si la pregunta del §2 se
 responde "necesidad dura" con un centro real identificado. Mientras tanto:
 
-- Aplicar ya las dos correcciones de seguridad del §5 (bajo coste, cierran un
-  vector real de fuga cross-center independientemente de esta HU).
+- ~~Aplicar ya las dos correcciones de seguridad del §5~~ — **hecho**, ver §5.bis.
 - Llevar el checklist del §8 a dirección y al integrador antes de tocar
   `prisma/schema.prisma`.
 - Si la respuesta es "necesidad blanda", cerrar esta HU y resolver con un
