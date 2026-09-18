@@ -293,6 +293,46 @@ export async function createMemberCheckout(params: {
 }
 
 /**
+ * HU-ST-29 §5.2 · Con qué centro se atribuye una venta de la landing pública
+ * (`/hazte-socio/[orgSlug]/[centerSlug]`) cuando el email ya es de un socio.
+ *
+ * Esa ruta es **pública y anónima**: nadie ha demostrado ser el socio cuyo email
+ * se escribe en el formulario, y el centro venía del segmento de la URL sin
+ * comprobar que tuviera relación alguna con él. Cualquiera que conozca el email
+ * de un socio podía, por tanto, provocar una venta atribuida al centro
+ * equivocado — y con una cuenta de Stripe por centro (§4 de la HU) eso además
+ * reasignaría en silencio su identidad de facturación (`stripeCustomerId`) a la
+ * cuenta de un centro ajeno, porque `createMemberCheckout` recrea el cliente en
+ * cuanto la cuenta conectada no coincide.
+ *
+ * La regla, deliberadamente conservadora: el centro de la URL solo vale si el
+ * socio YA tiene relación con él —es su centro habitual, o tiene allí algún
+ * bono—. Si no, la venta cae a su propio centro habitual, que es el patrón que
+ * ya siguen los checkouts móviles (§7.4): el centro sale del registro del socio,
+ * nunca de un parámetro que manda el cliente.
+ *
+ * No se rechaza la compra: un socio que cambia de centro es un caso legítimo y
+ * frecuente, y RB-AGENDA-003 admite bonos en varios centros de la organización a
+ * la vez. Lo que no puede es decidirlo un anónimo desde una URL.
+ */
+export async function resolveExistingMemberCheckoutCenter(params: {
+  memberId: string;
+  primaryCenterId: string;
+  requestedCenterId: string;
+}): Promise<string> {
+  const { memberId, primaryCenterId, requestedCenterId } = params;
+  if (requestedCenterId === primaryCenterId) return requestedCenterId;
+
+  // `memberId` ya viene acotado por organización desde el llamante, así que
+  // acotar por socio basta para que el bono también lo esté.
+  const bonoEnEseCentro = await prisma.subscription.findFirst({
+    where: { memberId, centerId: requestedCenterId },
+    select: { id: true },
+  });
+  return bonoEnEseCentro ? requestedCenterId : primaryCenterId;
+}
+
+/**
  * HU-ST-04 · El `Payment` PENDING del bono puntual, sin duplicar.
  *
  * La clave de idempotencia hace que un segundo intento dentro de la ventana de

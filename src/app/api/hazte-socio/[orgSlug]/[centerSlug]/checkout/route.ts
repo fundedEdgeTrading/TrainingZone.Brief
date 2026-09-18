@@ -3,7 +3,11 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getPublicMembershipContext } from "@/lib/public-membership-queries";
-import { createMemberCheckout, createProspectMemberCheckout } from "@/lib/member-billing";
+import {
+  createMemberCheckout,
+  createProspectMemberCheckout,
+  resolveExistingMemberCheckoutCenter,
+} from "@/lib/member-billing";
 
 /**
  * Checkout público anónimo de socio (D1/Plano 2, landing `/hazte-socio`). Mismo patrón que
@@ -50,14 +54,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ org
 
   // RB-ALTA-003: un pago con un email que ya es socio de esta organización
   // actualiza su ficha (renovación/segundo bono), no crea una segunda.
-  const existingMember = await prisma.member.findFirst({ where: { orgId: ctx.organization.id, email }, select: { id: true } });
+  const existingMember = await prisma.member.findFirst({
+    where: { orgId: ctx.organization.id, email },
+    select: { id: true, primaryCenterId: true },
+  });
 
   const result = existingMember
     ? await createMemberCheckout({
         orgId: ctx.organization.id,
         memberId: existingMember.id,
         planId: plan.id,
-        centerId: ctx.center.id,
+        // HU-ST-29 §5.2: esta ruta es pública y anónima — el email no prueba
+        // nada, así que el centro del segmento de URL solo se acepta si el socio
+        // ya tiene relación con él. Ver `resolveExistingMemberCheckoutCenter`.
+        centerId: await resolveExistingMemberCheckoutCenter({
+          memberId: existingMember.id,
+          primaryCenterId: existingMember.primaryCenterId,
+          requestedCenterId: ctx.center.id,
+        }),
         origin: "landing",
       })
     : await createProspectMemberCheckout({
