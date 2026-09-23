@@ -1,7 +1,7 @@
 "use server";
 
-import { getPublicLeadFormContext } from "@/lib/public-lead-queries";
-import { createLead, type CreateLeadInput, type LeadWriteResult } from "@/lib/leads-queries";
+import { getPublicLeadFormContext, validatePublicLeadChoice } from "@/lib/public-lead-queries";
+import { createLead, type LeadWriteResult } from "@/lib/leads-queries";
 
 export async function submitPublicLead(
   orgSlug: string,
@@ -10,6 +10,13 @@ export async function submitPublicLead(
 ): Promise<LeadWriteResult> {
   const ctx = await getPublicLeadFormContext(orgSlug, centerSlug);
   if (!ctx) return { ok: false, error: "Centro no encontrado." };
+  // QA-ALTA-20 · canal, sexo y estado de la organización, contra el contexto
+  // fresco (no el cacheado de la página).
+  const choice = validatePublicLeadChoice(ctx, {
+    channel: String(formData.get("channel") ?? ""),
+    sex: String(formData.get("sex") ?? ""),
+  });
+  if (!choice.ok) return choice;
 
   return createLead({
     orgId: ctx.organization.id,
@@ -21,11 +28,11 @@ export async function submitPublicLead(
     postalCode: String(formData.get("postalCode") ?? ""),
     occupation: String(formData.get("occupation") ?? ""),
     hasChildren: formData.get("hasChildren") ? formData.get("hasChildren") === "yes" : null,
-    sex: (String(formData.get("sex") ?? "") || null) as CreateLeadInput["sex"],
+    sex: choice.sex,
     goals: String(formData.get("goals") ?? ""),
     hasTrainedBefore: formData.get("hasTrainedBefore") === "yes",
     hasTrainedNote: String(formData.get("hasTrainedNote") ?? "") || null,
-    channel: String(formData.get("channel") ?? ""),
+    channel: choice.channel,
     // E10-12: obligatoria en el formulario público. Sin ella no se sabe si
     // quien lo rellena es menor, y `createLead` bloquea la captura de salud.
     birthDate: formData.get("birthDate") ? new Date(String(formData.get("birthDate"))) : null,
