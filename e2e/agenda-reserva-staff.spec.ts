@@ -25,9 +25,12 @@ test.describe("F11 — Reserva de plaza desde la agenda", () => {
     socio = await createBookingMember({ tag: "staffbooking", service: "GROUP" });
 
     const trainer = await prisma.user.findFirstOrThrow({ where: { email: "entrenador@trainingzone.es" } });
+    // A tres días vista: cancelar tiene que caer FUERA de la ventana de
+    // cancelación para que el bono vuelva (QA-RES-02). Con "mañana a las 12"
+    // el resultado dependía de la hora a la que corriera la suite.
     day = new Date();
     day.setHours(0, 0, 0, 0);
-    day.setDate(day.getDate() + 1);
+    day.setDate(day.getDate() + 3);
     if (day.getDay() === 0) day.setDate(day.getDate() + 1); // el centro no abre en domingo
 
     const session = await prisma.classSession.create({
