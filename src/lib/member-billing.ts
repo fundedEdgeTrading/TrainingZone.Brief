@@ -533,6 +533,20 @@ function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): Subscr
   }
 }
 
+/**
+ * STR-04 · Una congelación del socio es un `pause_collection` en Stripe, y
+ * durante ella Stripe mantiene `status: "active"`: solo deja de cobrar. Con el
+ * mapeo a secas, el primer `customer.subscription.updated` tras congelar
+ * devolvía la cuota a ACTIVE y el socio seguía reservando sin pagar. Solo se
+ * convierte lo que habría sido ACTIVE: un cobro fallido o una baja mandan.
+ */
+function applyPauseCollection<T extends SubscriptionStatus>(
+  status: T,
+  pauseCollection: Stripe.Subscription.PauseCollection | null | undefined
+): T | "PAUSED" {
+  return pauseCollection != null && status === "ACTIVE" ? "PAUSED" : status;
+}
+
 /** `customer.subscription.created` / `.updated`. */
 export async function reconcileMemberSubscriptionUpserted(orgId: string, subscription: Stripe.Subscription) {
   // HU-ST-12/RB-PAGO-025 · Con un adeudo directo en vuelo, Stripe manda esta
@@ -541,7 +555,10 @@ export async function reconcileMemberSubscriptionUpserted(orgId: string, subscri
   // frena en PENDING_CONFIRMATION hasta que llegue el desenlace del cobro
   // (`async_payment_succeeded` o `invoice.paid`).
   const awaiting = await isAwaitingAsyncSettlement(subscription.id);
-  const status = holdAsyncSubscriptionStatus(mapStripeSubscriptionStatus(subscription.status), awaiting);
+  const status = applyPauseCollection(
+    holdAsyncSubscriptionStatus(mapStripeSubscriptionStatus(subscription.status), awaiting),
+    subscription.pause_collection
+  );
   const item = subscription.items.data[0];
   const endDate = item?.current_period_end ? new Date(item.current_period_end * 1000) : undefined;
 

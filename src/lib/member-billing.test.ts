@@ -289,3 +289,20 @@ test("STR-03 · un centerId de otra organización en el metadata cae al centro h
   const sub = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId: id } });
   assert.equal(sub.centerId, member.primaryCenterId);
 });
+
+test("STR-04 · una cuota congelada con pause_collection sigue PAUSED aunque Stripe diga active", async () => {
+  const f = await createFixture("pausa");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(f.stripeSubscriptionId, meta, { pause_collection: { behavior: "void", resumes_at: null } })
+  );
+  let sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.status, "PAUSED", "Stripe mantiene status=active durante la pausa");
+
+  // Al reanudar, Stripe quita `pause_collection`: vuelve a ACTIVE.
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.status, "ACTIVE");
+});
