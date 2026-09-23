@@ -26,6 +26,7 @@ import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
 import type { ConsentKind } from "@/lib/consent";
 import { revokeMemberConsent } from "@/lib/consent-access";
 import { isValidPostalCode } from "@/lib/postal-codes";
+import { evaluateAgeAdmission } from "@/lib/minors";
 import { ensureSuppressedMemberBucket, getSuppressionPlan } from "@/lib/member-suppression";
 import {
   deletePhotosOfEntries,
@@ -270,6 +271,24 @@ export async function setMemberNoteArchivedAction(noteId: string, archived: bool
 // suscripciones (lib/subscription-jobs.ts, billing/subscription-actions.ts).
 const SEXES: Sex[] = ["FEMALE", "MALE", "OTHER"];
 
+/**
+ * QA-ALTA-08: lo que el entrenador puede tocar de la ficha. Todo lo demás
+ * (identidad, email de acceso, fecha de nacimiento, contacto, dirección,
+ * centro) es dato administrativo y exige `canManageMembers`. El formulario es
+ * el mismo para todos y manda todos los campos, así que al entrenador no se le
+ * rechaza por enviarlos: se le rechaza si intenta CAMBIAR alguno.
+ */
+const SPORT_FIELDS = ["sex", "occupation"] as const;
+
+const EMAIL_LOCKED_ERROR =
+  "Este socio ya activó su cuenta y el email es su usuario de acceso (puede serlo también en otros centros). " +
+  "No se cambia desde la ficha: hace falta verificar la nueva dirección con el propio socio.";
+
+/** "yyyy-mm-dd" de una fecha guardada a medianoche UTC, para comparar con el `<input type="date">`. */
+function isoDay(date: Date | null): string {
+  return date ? date.toISOString().slice(0, 10) : "";
+}
+
 export async function updateMemberData(formData: FormData): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const text = (key: string) => String(formData.get(key) ?? "").trim();
@@ -298,21 +317,116 @@ export async function updateMemberData(formData: FormData): Promise<MemberAction
 
   const member = await prisma.member.findFirst({
     where: { id: memberId, orgId: session.user.orgId },
-    select: { id: true, primaryCenterId: true },
+    select: {
+      id: true,
+      userId: true,
+      primaryCenterId: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+      birthDate: true,
+      address: true,
+      addressLine2: true,
+      postalCode: true,
+      city: true,
+      province: true,
+      country: true,
+      emergencyContact: true,
+      sex: true,
+      occupation: true,
+      guardianName: true,
+      guardianEmail: true,
+      guardianIdDocument: true,
+      guardianConsentAt: true,
+      guardianEvidence: true,
+      organization: { select: { allowsMinors: true, minimumAgeYears: true } },
+    },
   });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
   if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
-  // El email identifica al socio dentro de la organización (y es su login en el
-  // portal): no puede chocar con el de otro socio del mismo tenant.
-  const dup = await prisma.member.findFirst({
-    where: { orgId: session.user.orgId, email, id: { not: memberId } },
-    select: { id: true },
-  });
-  if (dup) return { ok: false, error: "Ya existe otro socio con ese email." };
+  const sport = { sex: sexRaw ? (sexRaw as Sex) : null, occupation: optional("occupation") };
+  const admin = {
+    firstName,
+    lastName,
+    email,
+    phone: optional("phone"),
+    birthDate,
+    address: optional("address"),
+    addressLine2: optional("addressLine2"),
+    postalCode,
+    city: optional("city"),
+    province: optional("province"),
+    country: optional("country"),
+    emergencyContact: optional("emergencyContact"),
+  };
+  const sportChanged = SPORT_FIELDS.filter((key) => sport[key] !== member[key]);
+  const emailChanged = email !== member.email.trim().toLowerCase();
+  const birthDateChanged = birthRaw !== isoDay(member.birthDate);
+  const centerChanged = Boolean(centerId) && centerId !== member.primaryCenterId;
+  const adminChanged = [
+    ...(Object.keys(admin) as (keyof typeof admin)[]).filter((key) => {
+      if (key === "email") return emailChanged;
+      if (key === "birthDate") return birthDateChanged;
+      return (admin[key] ?? null) !== (member[key] ?? null);
+    }),
+    ...(centerChanged ? ["primaryCenterId"] : []),
+  ];
+
+  if (!canManageMembers(session.user.role)) {
+    if (adminChanged.length) {
+      return {
+        ok: false,
+        error:
+          "Los datos administrativos del socio (nombre, email, fecha de nacimiento, contacto, dirección y centro) " +
+          "los cambia recepción o dirección. Tú puedes editar el sexo y la profesión.",
+      };
+    }
+    await prisma.member.update({ where: { id: memberId }, data: sport });
+    await auditMemberUpdated(session.user, memberId, sportChanged);
+    revalidatePath(`/members/${memberId}`);
+    return { ok: true };
+  }
+
+  if (emailChanged) {
+    // Decisión QA-ALTA-08: con la cuenta ya activada NO se cambia. El email es
+    // la credencial de una Identity que puede tener membresías en otras
+    // organizaciones (RB-ID-003): reescribirla desde la ficha de un centro
+    // cambiaría el acceso de esa persona en todos ellos, y bastaría con poner
+    // un correo propio y pedir "recuperar contraseña" para quedarse la cuenta.
+    // Sin cuenta activa sí se cambia (ver la invitación, más abajo).
+    if (member.userId) return { ok: false, error: EMAIL_LOCKED_ERROR };
+
+    // El email identifica al socio dentro de la organización (y es su login en
+    // el portal): no puede chocar con el de otro socio del mismo tenant.
+    const dup = await prisma.member.findFirst({
+      where: { orgId: session.user.orgId, email, id: { not: memberId } },
+      select: { id: true },
+    });
+    if (dup) return { ok: false, error: "Ya existe otro socio con ese email." };
+  }
+
+  if (birthDateChanged) {
+    // La edad decide si el alta necesitaba tutor o si el centro la admite: la
+    // misma función pura del alta (`minors.ts`), nunca una copia. Si no, bastaba
+    // con dar de alta con una fecha de adulto y corregirla después.
+    const admission = evaluateAgeAdmission({
+      birthDate,
+      policy: member.organization,
+      guardian: {
+        name: member.guardianName,
+        email: member.guardianEmail,
+        idDocument: member.guardianIdDocument,
+        consentAt: member.guardianConsentAt,
+        evidence: member.guardianEvidence,
+      },
+    });
+    if (!admission.ok) return { ok: false, error: admission.message };
+  }
 
   let primaryCenterId = member.primaryCenterId;
-  if (centerId && centerId !== member.primaryCenterId) {
+  if (centerChanged) {
     const center = await prisma.center.findFirst({
       where: { id: centerId, orgId: session.user.orgId },
       select: { id: true },
@@ -324,41 +438,43 @@ export async function updateMemberData(formData: FormData): Promise<MemberAction
     primaryCenterId = center.id;
   }
 
-  await prisma.member.update({
-    where: { id: memberId },
-    data: {
-      firstName,
-      lastName,
-      email,
-      phone: optional("phone"),
-      birthDate,
-      sex: sexRaw ? (sexRaw as Sex) : null,
-      occupation: optional("occupation"),
-      address: optional("address"),
-      addressLine2: optional("addressLine2"),
-      postalCode,
-      city: optional("city"),
-      province: optional("province"),
-      country: optional("country"),
-      emergencyContact: optional("emergencyContact"),
-      primaryCenterId,
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.member.update({
+      where: { id: memberId },
+      data: { ...admin, ...sport, primaryCenterId },
+    });
+    if (emailChanged) {
+      // La invitación pendiente se va con el email nuevo y con un token nuevo:
+      // el enlace que ya salió hacia la dirección vieja (a menudo mal escrita,
+      // o sea, de otra persona) deja de valer. Para mandarlo a la buena está
+      // "Reenviar bienvenida", que genera y envía uno nuevo.
+      await tx.invitation.updateMany({
+        where: { memberId, orgId: session.user.orgId, type: "MEMBER", usedAt: null },
+        data: { email, token: generateInvitationToken(), expiresAt: invitationExpiry() },
+      });
+    }
   });
-
-  await prisma.auditLog.create({
-    data: {
-      orgId: session.user.orgId,
-      actorUserId: session.user.id,
-      action: "MEMBER_UPDATED",
-      entityType: "Member",
-      entityId: memberId,
-      memberId,
-    },
-  });
+  await auditMemberUpdated(session.user, memberId, [...adminChanged, ...sportChanged]);
 
   revalidatePath(`/members/${memberId}`);
   revalidatePath("/members");
   return { ok: true };
+}
+
+async function auditMemberUpdated(user: { id: string; orgId: string }, memberId: string, fields: string[]) {
+  await prisma.auditLog.create({
+    data: {
+      orgId: user.orgId,
+      actorUserId: user.id,
+      action: "MEMBER_UPDATED",
+      entityType: "Member",
+      entityId: memberId,
+      memberId,
+      // Qué campos, nunca sus valores: el log es append-only y no es sitio para
+      // copiar un email o una dirección.
+      metadata: { fields },
+    },
+  });
 }
 
 // RB-AGENDA-003: añade un bono más a un socio que ya tiene ficha (EP y
