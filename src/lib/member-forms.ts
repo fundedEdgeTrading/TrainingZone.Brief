@@ -875,13 +875,16 @@ async function submitForLead(
     return { ok: false, error: "Falta responder «Objetivo principal»." };
   }
 
-  const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { firstName: true, lastName: true } });
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: { firstName: true, lastName: true, goals: true },
+  });
 
   await prisma.$transaction(async (tx) => {
     await tx.lead.update({
       where: { id: leadId },
       data: {
-        goals: answers.goals,
+        goals: mergeLeadGoals(lead?.goals ?? "", answers.goalParts),
         hasTrainedBefore: answers.hasTrainedBefore,
         ...(answers.hasTrainedNote ? { hasTrainedNote: answers.hasTrainedNote } : {}),
         ...(ctx.birthDate ? { birthDate: ctx.birthDate } : {}),
@@ -958,10 +961,23 @@ function leadAnswersOf(raw: unknown) {
 
   return {
     objetivoPrincipal,
-    goals: partes.join(" · ").slice(0, 2000),
+    goalParts: partes,
     hasTrainedBefore: experiencia.haEntrenadoAntes === true,
     hasTrainedNote: text(experiencia.ejerciciosNoTolera).slice(0, 500) || null,
   };
+}
+
+/**
+ * QA-ALTA-21: el formulario COMPLETA los objetivos del lead, no los sustituye.
+ * Lo que recepción o la captación pública ya apuntaron ("Ponerme en forma") es
+ * tan dato del lead como lo que contesta ahora; antes se machacaba entero. Se
+ * añade cada parte que no constara ya (sin distinguir mayúsculas), en orden.
+ */
+export function mergeLeadGoals(existing: string, parts: string[]): string {
+  const current = existing.trim();
+  const known = current.toLowerCase();
+  const missing = parts.filter((part) => part && !known.includes(part.toLowerCase()));
+  return [current, ...missing].filter(Boolean).join(" · ").slice(0, 2000);
 }
 
 /** Los cuatro consentimientos de `Member`, y solo los que se han otorgado. */

@@ -599,3 +599,23 @@ test("la caducidad se calcula sobre el momento del envío", () => {
   const ahora = new Date("2026-09-15T08:00:00.000Z");
   assert.equal(memberFormExpiry(ahora).toISOString(), "2026-09-29T08:00:00.000Z");
 });
+
+test("QA-ALTA-21 · el formulario de un lead añade los objetivos que falten, sin sustituir los que ya tenía", async () => {
+  await sendMemberForm({ orgId, target: { kind: "lead", leadId }, sentByUserId: receptionId });
+  const token = await tokenDelUltimoEnvio();
+
+  const resultado = await submitMemberForm({
+    token,
+    answers: {
+      // El primero ya constaba (con otras mayúsculas): no se repite.
+      perfil: { objetivoPrincipal: "ponerme en forma", objetivoSecundario: "Correr una media maratón" },
+      experiencia: {},
+    },
+    birthDate: "1990-03-15",
+    consents: { health: true },
+  });
+  assert.deepEqual(resultado, { ok: true });
+
+  const lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
+  assert.equal(lead.goals, "Ponerme en forma · Correr una media maratón");
+});
