@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { parseOpeningHours } from "@/lib/opening-hours";
 import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
 import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
-import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
+import { canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
 import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
@@ -25,18 +25,8 @@ import {
   setMembershipPlanActive as archiveMembershipPlan,
   type SaveMembershipPlanInput,
 } from "@/lib/membership-plans";
+import { CENTER_SCOPED, resolveStaffRole } from "./staff-roles";
 
-const STAFF_ROLES: Role[] = [
-  "OWNER",
-  "CENTER_DIRECTOR",
-  "TRAINER",
-  "TRAINER_ADMIN",
-  "RECEPTION",
-  "HR_MANAGER",
-  "PLATFORM_ADMIN",
-];
-// Roles ligados a un centro (exigen imputación). El resto son de ámbito organización.
-const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
 
 function slugify(s: string) {
   return s
@@ -320,13 +310,14 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
   const roleRaw = String(formData.get("role") ?? "");
   const primaryCenterId = String(formData.get("primaryCenterId") ?? "") || null;
 
-  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!name || !email || !role) return { ok: false, error: "Completa el nombre, el email y el rol." };
+  if (!name || !email || !roleRaw) return { ok: false, error: "Completa el nombre, el email y el rol." };
 
-  // RRHH no puede crear administración de la organización (evita escalada de privilegios).
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
-    return { ok: false, error: "No tienes permiso para crear ese rol." };
+  // QA-ALTA-01: RRHH no crea dirección, y solo soporte de Apta crea soporte de Apta.
+  const roleCheck = await resolveStaffRole(session.user, roleRaw);
+  if (!roleCheck.ok) {
+    return { ok: false, error: roleCheck.status === 403 ? "No tienes permiso para crear ese rol." : "Completa el nombre, el email y el rol." };
   }
+  const role = roleCheck.role;
 
   // RB-ID-001: la comprobación es POR ORGANIZACIÓN. Que el email exista en otro
   // gimnasio de Apta no es un conflicto: se le añadirá una membresía aquí.
@@ -412,16 +403,17 @@ export async function updateStaffUser(formData: FormData): Promise<OrgActionResu
   const primaryCenterId = String(formData.get("primaryCenterId") ?? "") || null;
   const visibleInApp = String(formData.get("visibleInApp") ?? "") === "on";
 
-  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!userId || !name || !role) return { ok: false, error: "Completa el nombre y el rol." };
+  if (!userId || !name || !roleRaw) return { ok: false, error: "Completa el nombre y el rol." };
 
   const target = await findStaffInScope(session.user, userId);
   if (!target) return { ok: false, error: "No se ha encontrado esa persona en tu plantilla." };
 
   // Escalada de privilegios, en sus dos formas: dársela a otro y dártela a ti.
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
-    return { ok: false, error: "No tienes permiso para asignar ese rol." };
+  const roleCheck = await resolveStaffRole(session.user, roleRaw);
+  if (!roleCheck.ok) {
+    return { ok: false, error: roleCheck.status === 403 ? "No tienes permiso para asignar ese rol." : "Completa el nombre y el rol." };
   }
+  const role = roleCheck.role;
   // Dirección de centro solo reparte roles de centro. Con RRHH fuera de esta
   // lista, ascender a alguien a RRHH sería sacarlo de su propio alcance: un
   // rol de ámbito organización al que ya no podría ni volver a bajar.
@@ -533,13 +525,14 @@ export async function assignUserToCenter(formData: FormData): Promise<OrgActionR
   const roleRaw = String(formData.get("role") ?? "");
   const allocationRaw = String(formData.get("allocationPct") ?? "").trim();
 
-  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!userId || !centerId || !role) return { ok: false, error: "Selecciona la persona, el centro y el rol." };
+  if (!userId || !centerId || !roleRaw) return { ok: false, error: "Selecciona la persona, el centro y el rol." };
 
   // RRHH no puede imputar a nadie con administración de la organización (evita escalada de privilegios).
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
-    return { ok: false, error: "No tienes permiso para asignar ese rol." };
+  const roleCheck = await resolveStaffRole(session.user, roleRaw);
+  if (!roleCheck.ok) {
+    return { ok: false, error: roleCheck.status === 403 ? "No tienes permiso para asignar ese rol." : "Selecciona la persona, el centro y el rol." };
   }
+  const role = roleCheck.role;
 
   const allocationPct = allocationRaw
     ? Math.min(100, Math.max(0, Math.round(Number(allocationRaw))))

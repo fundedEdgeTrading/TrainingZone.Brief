@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canManageStaff, canManageOrg, ROLE_LABEL } from "@/lib/rbac";
+import { canManageStaff, ROLE_LABEL } from "@/lib/rbac";
 import { staffScopeFilter } from "@/lib/staff-queries";
 import { centerScopeFor } from "@/lib/center-scope";
 import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
@@ -10,17 +10,18 @@ import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk, apiError } from "../_lib/response";
+import { CENTER_SCOPED, resolveStaffRole } from "@/app/(app)/organization/staff-roles";
 
 // D6/D7 del handoff: equipo de la organización con foto, rol e imputación a
 // centros (`CenterMembership.allocationPct`).
 const READ_ROLES: Role[] = ["OWNER", "PLATFORM_ADMIN", "HR_MANAGER", "CENTER_DIRECTOR"];
-const STAFF_ROLES: Role[] = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"];
-const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Completa el nombre."),
   email: z.string().trim().toLowerCase().email("El email no es válido."),
-  role: z.enum(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION", "HR_MANAGER", "PLATFORM_ADMIN"]),
+  // El catálogo de roles y quién puede dar cada uno los decide `resolveStaffRole`,
+  // la misma política que la web (QA-ALTA-01): aquí solo se exige que venga.
+  role: z.string().trim().min(1, "Elige un rol."),
   centerId: z.string().trim().nullable().optional(),
 });
 
@@ -109,13 +110,12 @@ export async function POST(req: NextRequest) {
 
   const parsed = createSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return apiError(parsed.error.issues[0]?.message ?? "Datos inválidos.", 400);
-  const { name, email, role, centerId: requestedCenterId } = parsed.data;
+  const { name, email, role: requestedRole, centerId: requestedCenterId } = parsed.data;
 
-  // RRHH no puede crear administración de la organización (evita escalada de privilegios).
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(claims.role)) {
-    return apiError("No tienes permiso para crear ese rol.", 403);
-  }
-  if (!STAFF_ROLES.includes(role)) return apiError("Ese rol no existe.", 400);
+  // RRHH no crea dirección, y solo soporte de Apta crea soporte de Apta.
+  const roleCheck = await resolveStaffRole({ role: claims.role, orgId: claims.orgId }, requestedRole);
+  if (!roleCheck.ok) return apiError(roleCheck.error, roleCheck.status);
+  const role = roleCheck.role;
 
   // RB-ID-001: la comprobación de duplicado es POR ORGANIZACIÓN.
   const duplicate = await prisma.user.findUnique({
