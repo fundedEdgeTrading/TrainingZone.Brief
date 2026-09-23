@@ -207,6 +207,15 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
   }
   if (!input.channel.trim()) return { ok: false, error: "Selecciona el canal de origen." };
 
+  // QA-ALTA-03 · Todo lo que puede hacer fallar el cierre directo se comprueba
+  // ANTES de escribir el lead: si no, cada reintento del formulario dejaba un
+  // lead huérfano más con los mismos datos.
+  if (input.directClose) {
+    const email = input.email?.trim();
+    if (!email) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };
+    if (await memberEmailTaken(input.orgId, email)) return { ok: false, error: MEMBER_EMAIL_TAKEN };
+  }
+
   const lead = await prisma.lead.create({
     data: {
       orgId: input.orgId,
@@ -273,14 +282,16 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
     },
   });
 
+  // "Cerrado directamente" INICIA el alta, igual que el "Ha cerrado" del
+  // embudo: el lead queda en conversión con su socio en TRIAL y solo pasa a
+  // CERRADO —y solo entonces libera la recompensa del referido— cuando se
+  // confirma el cobro (RB-LEAD-005, `confirmLeadClosureForMember`).
   if (input.directClose) {
-    if (!input.email?.trim()) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };
     const converted = await initiateLeadConversion(input.orgId, lead.id, {
       planId: input.directClose.planId ?? null,
       closeType: "DIRECTO",
     });
     if (!converted.ok) return converted;
-    await confirmLeadClosureForMember(input.orgId, converted.memberId);
   }
 
   return { ok: true, leadId: lead.id };
@@ -330,6 +341,19 @@ export async function addLeadNote(orgId: string, leadId: string, authorUserId: s
   return { ok: true as const };
 }
 
+const MEMBER_EMAIL_TAKEN = "Ya existe un socio con ese email.";
+
+// Sin distinguir mayúsculas: el alta de socios guarda el email en minúsculas y
+// el lead lo guarda tal como se tecleó; con igualdad exacta "Ana@" y "ana@"
+// pasaban por personas distintas.
+async function memberEmailTaken(orgId: string, email: string) {
+  const dup = await prisma.member.findFirst({
+    where: { orgId, email: { equals: email.trim(), mode: "insensitive" } },
+    select: { id: true },
+  });
+  return dup !== null;
+}
+
 /**
  * RB-LEAD-005/007 — "Ha cerrado" del entrenador INICIA el alta (crea el Member en TRIAL
  * y traslada todos los datos del lead), pero el Lead solo pasa a CERRADO cuando se
@@ -345,8 +369,7 @@ export async function initiateLeadConversion(
   if (lead.convertedMemberId) return { ok: false as const, error: "Este lead ya tiene un alta en curso." };
   if (!lead.email) return { ok: false as const, error: "Se necesita un email para crear el acceso del cliente." };
 
-  const dup = await prisma.member.findFirst({ where: { orgId, email: lead.email }, select: { id: true } });
-  if (dup) return { ok: false as const, error: "Ya existe un socio con ese email." };
+  if (await memberEmailTaken(orgId, lead.email)) return { ok: false as const, error: MEMBER_EMAIL_TAKEN };
 
   const { member } = await prisma.$transaction(async (tx) => {
     const { member, invitation } = await createMemberWithInvitation(tx, {
