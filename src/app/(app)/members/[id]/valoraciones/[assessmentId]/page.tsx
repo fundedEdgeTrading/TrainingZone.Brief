@@ -2,6 +2,7 @@ import Link from "next/link";
 import { resolveTimezone } from "@/lib/timezone";
 import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { requireRole, memberIsInScope } from "@/lib/guard";
 import { getAssessment, getAssessmentConfig, parseAnswers } from "@/lib/assessments/queries";
 import { getScreeningDraftForMember } from "@/lib/health-access";
@@ -50,7 +51,7 @@ export default async function AssessmentDetailPage({
   const { id, assessmentId } = await params;
   const timeZone = await resolveTimezone();
 
-  const [assessment, config, screeningDraft] = await Promise.all([
+  const [assessment, config, screeningDraft, memberConsents] = await Promise.all([
     getAssessment(session.user.orgId, assessmentId),
     getAssessmentConfig(session.user.orgId),
     // E3-06: la revisión llega precargada con lo que ya consta declarado, para
@@ -61,6 +62,9 @@ export default async function AssessmentDetailPage({
       actorUserId: session.user.id,
       actorRole: session.user.role,
     }),
+    // QA-ALTA-05: el formulario arranca con la autorización de imagen que ya
+    // consta, para que cerrar la valoración no parezca retirarla.
+    prisma.member.findFirst({ where: { id, orgId: session.user.orgId }, select: { consentImages: true } }),
   ]);
   if (!assessment || assessment.memberId !== id) notFound();
   if (!(await memberIsInScope(session.user, id))) notFound();
@@ -119,6 +123,7 @@ export default async function AssessmentDetailPage({
             config={config}
             draft={memberDraft}
             screeningDraft={screeningDraft}
+            consentImagesGranted={memberConsents?.consentImages ?? false}
           />
         </>
       ) : !answers ? (

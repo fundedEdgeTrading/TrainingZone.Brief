@@ -162,13 +162,20 @@ export async function saveAssessment({
       // La autorización de imagen reutiliza los campos que ya existen en Member.
       await tx.member.update({
         where: { id: memberId },
-        data: {
-          consentHealth: true,
-          consentHealthAt: now,
-          consentImages: initial.cierre.autorizacionImagen,
-          consentImagesAt: initial.cierre.autorizacionImagen ? now : null,
-        },
+        data: { consentHealth: true, consentHealthAt: now },
       });
+      // QA-ALTA-05: la valoración solo puede DAR la autorización de imagen,
+      // nunca retirarla. Una casilla sin marcar no es una revocación: retirar
+      // es un acto propio del socio, con su auditoría (`consent-access.ts`).
+      // Antes, cerrar la valoración con la casilla en blanco borraba lo que el
+      // socio había firmado en su onboarding. Si ya constaba, tampoco se mueve
+      // la fecha: la del consentimiento es la de cuándo se dio.
+      if (initial.cierre.autorizacionImagen) {
+        await tx.member.updateMany({
+          where: { id: memberId, consentImages: false },
+          data: { consentImages: true, consentImagesAt: now },
+        });
+      }
     }
 
     // Peso: misma serie que composición corporal, no una segunda gráfica paralela.
