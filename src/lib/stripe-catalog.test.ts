@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
 import {
   catalogPriceKey,
+  ensurePlanPriceForAccount,
   isPendingStripeSync,
   readPlanSnapshot,
   syncPlanToStripe,
@@ -329,4 +330,52 @@ test("CON-03: importe A → B → A en el mismo día deja un Price ACTIVO vendib
     [a2.priceId],
     "un solo Price activo por producto"
   );
+});
+
+test("CON-04: ensurePlanPriceForAccount crea el Price, lo guarda y archiva el anterior", async () => {
+  const fx = await fixture("puerta");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Bono 10", type: "SESSION_PACK", priceCents: 8900, sessionsIncluded: 10 },
+  });
+
+  const first = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  const guardado = await prisma.membershipPlan.findUniqueOrThrow({ where: { id: plan.id } });
+  assert.equal(guardado.stripePriceId, first.priceId);
+  assert.equal(guardado.stripeAccountId, "acct_fake");
+
+  // Espejo al día: segunda llamada sin crear nada.
+  const again = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(again.ok && again.priceId, first.priceId);
+  assert.equal(prices.length, 1);
+
+  // Cambio de importe con Stripe caído: el plan se invalidó en local y el
+  // `before` se perdió. La puerta crea el nuevo y archiva el que seguía activo.
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { priceCents: 9900, stripePriceId: null } });
+  const next = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(next.ok, true);
+  if (!next.ok) return;
+  assert.notEqual(next.priceId, first.priceId);
+  assert.equal(prices.find((p) => p.id === first.priceId)!.active, false, "archivado, no borrado");
+  assert.equal(prices.find((p) => p.id === next.priceId)!.active, true);
+  assert.equal(prices.find((p) => p.id === next.priceId)!.recurring, null, "un bono es un pago único");
+});
+
+test("CON-04: ensurePlanPriceForAccount respeta la organización y el archivado", async () => {
+  const fx = await fixture("puerta-ambito");
+  const otra = await fixture("puerta-otra");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Cuota", type: "MONTHLY", priceCents: 4900 },
+  });
+
+  const ajena = await ensurePlanPriceForAccount(otra.orgId, plan.id, resolver);
+  assert.deepEqual(ajena, { ok: false, error: "Plan no encontrado." });
+
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { active: false } });
+  const archivado = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(archivado.ok, false);
+  assert.equal(prices.length, 0, "no se crea nada en Stripe para un plan que no se vende");
 });

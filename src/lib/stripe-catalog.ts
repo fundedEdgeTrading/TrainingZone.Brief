@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { stripeForOrg } from "@/lib/stripe";
 import { isRecurring } from "@/lib/plan-recurrence";
 import { idempotencyKey, productKey } from "@/lib/stripe-idempotency";
+import { PLAN_ARCHIVED_ERROR } from "@/lib/member-billing";
 
 /**
  * HU-ST-08 / RB-VENTA-007 · Sincronización real del catálogo con Stripe.
@@ -127,6 +128,55 @@ export async function syncPlanToStripe(
     // `ensureStripePrice`.
     console.error("[stripe-catalog] no se pudo sincronizar el plan con Stripe", { orgId, planId, error });
     return { state: "failed", error: "No se pudo sincronizar el producto con Stripe." };
+  }
+}
+
+/**
+ * CON-04 · **La única puerta** para obtener el Price activo de un plan en la
+ * cuenta conectada de su organización. Checkout de recepción, portal del socio,
+ * landing y renovaciones deben pasar por aquí (P2 migra `ensureStripePrice`).
+ *
+ * - Plan acotado por `orgId`: un `planId` de otra organización es "no encontrado".
+ * - Plan archivado: no se vende (mismo mensaje que el resto de puertas).
+ * - Espejo al día en esta cuenta: se devuelve sin llamar a Stripe (RB-VENTA-002,
+ *   el espejo es perezoso: nada de `prices.retrieve` por venta).
+ * - Si falta o la cuenta conectada cambió: producto al día, Price nuevo con
+ *   clave versionada (CON-03) y **archivado** del anterior, nunca borrado.
+ */
+export async function ensurePlanPriceForAccount(
+  orgId: string,
+  planId: string,
+  resolve: CatalogStripeResolver = stripeForOrg
+): Promise<{ ok: true; priceId: string; productId: string; accountId: string } | { ok: false; error: string }> {
+  // El plan antes que la pasarela: que esté archivado no depende de Stripe.
+  const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId } });
+  if (!plan) return { ok: false, error: "Plan no encontrado." };
+  if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
+
+  const resolved = await resolve(orgId);
+  if (!resolved.ok) return { ok: false, error: resolved.error };
+  const { stripe, accountId } = resolved;
+
+  if (plan.stripePriceId && plan.stripeProductId && plan.stripeAccountId === accountId) {
+    return { ok: true, priceId: plan.stripePriceId, productId: plan.stripeProductId, accountId };
+  }
+
+  try {
+    const productId = await ensureProduct(stripe, accountId, plan);
+    const priceId = await ensurePrice(stripe, accountId, plan, productId, {
+      priceCents: plan.priceCents,
+      stripeProductId: plan.stripeProductId,
+      stripePriceId: plan.stripePriceId,
+      stripeAccountId: plan.stripeAccountId,
+    });
+    await prisma.membershipPlan.update({
+      where: { id: plan.id },
+      data: { stripeProductId: productId, stripePriceId: priceId, stripeAccountId: accountId },
+    });
+    return { ok: true, priceId, productId, accountId };
+  } catch (error) {
+    console.error("[stripe-catalog] no se pudo asegurar el precio del plan", { orgId, planId, error });
+    return { ok: false, error: "No se pudo preparar el precio del producto en Stripe." };
   }
 }
 
