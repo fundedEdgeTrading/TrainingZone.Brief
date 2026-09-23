@@ -35,6 +35,9 @@ after(async () => {
   await prisma.auditLog.deleteMany({ where: { orgId: { in: await orgIdsOfThisTest() } } });
   await prisma.invitation.deleteMany({ where: { email: { contains: SLUG } } });
   await prisma.user.deleteMany({ where: { email: { contains: SLUG } } });
+  const ids = await orgIdsOfThisTest();
+  await prisma.leadChannel.deleteMany({ where: { orgId: { in: ids } } });
+  await prisma.noCloseReason.deleteMany({ where: { orgId: { in: ids } } });
   await prisma.organization.deleteMany({ where: { slug: { contains: SLUG } } });
   await prisma.identity.deleteMany({ where: { email: { contains: SLUG } } });
   await prisma.$disconnect();
