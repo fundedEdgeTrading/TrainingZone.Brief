@@ -7,6 +7,7 @@ import { createSubscriptionFromPlan } from "@/lib/subscriptions";
 // STR-01: la recarga de sesiones de la renovación, en la transacción del cobro.
 import { refillOnRenewal } from "@/lib/stripe-renewal";
 import { publicOrigin } from "@/lib/site";
+import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 // HU-ST-02: la resolución del id de suscripción de una factura es la misma para
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
 // shape legado.
@@ -379,6 +380,38 @@ export async function resolveExistingMemberCheckoutCenter(params: {
     select: { id: true },
   });
   return bonoEnEseCentro ? requestedCenterId : primaryCenterId;
+}
+
+/**
+ * STR-07 · Centro al que se atribuye una venta de recepción.
+ *
+ * `createStripeCheckoutAction` no pasaba centro y todo caía en el habitual del
+ * socio: con dos centros, lo que recepción de B vendía en su mostrador aparecía
+ * en la caja de A. El centro sale, por este orden:
+ *
+ *   1. del que elige quien vende, si es de su organización y de su ámbito
+ *      (`isCenterInScope`); si no lo es, se rechaza — nunca se cambia en
+ *      silencio por otro;
+ *   2. del centro base de quien vende (donde está el mostrador);
+ *   3. de ninguno: `undefined` deja que `createMemberCheckout` use el centro
+ *      habitual del socio, como hasta ahora (dirección de organización sin
+ *      centro base).
+ */
+export async function resolveStaffCheckoutCenter(
+  user: ScopedUser,
+  requestedCenterId: string | null
+): Promise<{ ok: true; centerId: string | undefined } | { ok: false }> {
+  const candidate = requestedCenterId || user.centerId;
+  if (!candidate) return { ok: true, centerId: undefined };
+
+  const center = await prisma.center.findFirst({ where: { id: candidate, orgId: user.orgId }, select: { id: true } });
+  const allowed = center != null && (await isCenterInScope(user, center.id));
+  if (allowed) return { ok: true, centerId: candidate };
+  // El centro base de la sesión fuera de ámbito no es una elección de nadie:
+  // no bloquea la venta, cae al habitual del socio.
+  if (!requestedCenterId) return { ok: true, centerId: undefined };
+  // El mensaje lo pone la acción (`CENTER_OUT_OF_SCOPE`, guard.ts).
+  return { ok: false };
 }
 
 /**

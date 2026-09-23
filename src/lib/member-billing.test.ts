@@ -1,6 +1,7 @@
 import "dotenv/config";
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import {
@@ -9,6 +10,7 @@ import {
   reconcileMemberInvoicePaymentFailed,
   reconcileMemberSubscriptionDeleted,
   reconcileMemberSubscriptionUpserted,
+  resolveStaffCheckoutCenter,
 } from "@/lib/member-billing";
 
 /**
@@ -358,4 +360,44 @@ test("STR-05 · pause_collection con fecha de vuelta llega a pauseUntil y se lim
   await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
   sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
   assert.equal(sub.pauseUntil, null);
+});
+
+test("STR-07 · la venta en recepción queda en el centro elegido, validado con el ámbito de quien vende", async () => {
+  const f = await createFixture("recepcion-centro");
+  const member = await prisma.member.findUniqueOrThrow({ where: { id: f.memberId } });
+  const centroA = member.primaryCenterId;
+  const centroB = (await prisma.center.create({ data: { orgId: f.orgId, name: "B", slug: `${SUFFIX}-recepcion-centro-b` } })).id;
+  const ajena = await createFixture("recepcion-centro-ajena");
+  const centroAjeno = (await prisma.member.findUniqueOrThrow({ where: { id: ajena.memberId } })).primaryCenterId;
+
+  const email = `${SUFFIX}-recepcion-b@example.com`;
+  await prisma.identity.deleteMany({ where: { email } });
+  const identity = await prisma.identity.create({ data: { email, passwordHash: "no-usable-en-tests" } });
+  const user = await prisma.user.create({
+    data: { orgId: f.orgId, identityId: identity.id, name: "Recepción B", email, role: "RECEPTION", centerId: centroB },
+  });
+  const recepcionB = { id: user.id, role: "RECEPTION" as const, orgId: f.orgId, centerId: centroB };
+  const direccion = { id: "no-existe", role: "OWNER" as const, orgId: f.orgId, centerId: null };
+
+  try {
+    // Elegido y dentro de su ámbito.
+    assert.deepEqual(await resolveStaffCheckoutCenter(recepcionB, centroB), { ok: true, centerId: centroB });
+    // Sin elegir: el centro donde trabaja quien vende, no el habitual del socio.
+    assert.deepEqual(await resolveStaffCheckoutCenter(recepcionB, null), { ok: true, centerId: centroB });
+    // Un centro de su organización al que no está imputada: fuera.
+    assert.equal((await resolveStaffCheckoutCenter(recepcionB, centroA)).ok, false);
+    // Dirección de organización manda en todos sus centros, nunca en otra org.
+    assert.deepEqual(await resolveStaffCheckoutCenter(direccion, centroA), { ok: true, centerId: centroA });
+    assert.equal((await resolveStaffCheckoutCenter(direccion, centroAjeno)).ok, false);
+    // Sin centro elegido ni centro base: lo decide `createMemberCheckout` (el habitual del socio).
+    assert.deepEqual(await resolveStaffCheckoutCenter(direccion, null), { ok: true, centerId: undefined });
+  } finally {
+    await prisma.user.delete({ where: { id: user.id } });
+    await prisma.identity.delete({ where: { id: identity.id } });
+  }
+
+  // Y la acción de recepción lo usa: antes no pasaba ningún centro.
+  const accion = readFileSync("src/app/(app)/billing/actions.ts", "utf8");
+  assert.match(accion, /resolveStaffCheckoutCenter\(session\.user/);
+  assert.match(accion, /centerId: center\.centerId/);
 });
