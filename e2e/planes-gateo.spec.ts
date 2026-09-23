@@ -33,7 +33,8 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
 
     await contratar.first().click();
     await expect(page).toHaveURL(/\/demo-checkout\?plan=/);
-    await expect(page.getByText(/Stripe no está configurado en este entorno/)).toBeVisible();
+    // PROD-01: la pantalla ya no depende de que falte Stripe, sino del modo demo.
+    await expect(page.getByRole("heading", { name: "Entorno de demostración" })).toBeVisible();
   });
 
   test("con plan Élite, dirección ve los módulos premium en el menú", async ({ page }) => {
