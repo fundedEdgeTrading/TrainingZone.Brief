@@ -147,3 +147,20 @@ test("QA-ALTA-05 · la valoración sí puede DAR la autorización de imagen", as
   assert.equal(member.consentImages, true);
   assert.ok(member.consentImagesAt);
 });
+
+test("QA-ALTA-14 · un doble cierre simultáneo no duplica peso, marcas ni objetivos", async () => {
+  const answers = initialAnswers(false);
+  const results = await Promise.all([close(answers), close(answers)]);
+
+  assert.equal(results.filter((r) => r.ok).length, 1, "solo uno de los dos cierres cuenta");
+  assert.equal(await prisma.memberProgressEntry.count({ where: { memberId } }), 1, "un solo peso");
+  assert.equal(await prisma.performanceMetric.count({ where: { orgId, memberId } }), 1, "una sola marca");
+  assert.equal(await prisma.clientGoal.count({ where: { orgId, memberId } }), 2, "los dos objetivos, una vez");
+});
+
+test("QA-ALTA-14 · cerrar una valoración ya cerrada no vuelve a propagar nada", async () => {
+  assert.equal((await close(initialAnswers(false))).ok, true);
+  const second = await close(initialAnswers(false));
+  assert.deepEqual(second, { ok: false, error: "Esta valoración ya está completada." });
+  assert.equal(await prisma.memberProgressEntry.count({ where: { memberId } }), 1);
+});
