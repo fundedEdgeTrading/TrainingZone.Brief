@@ -45,13 +45,21 @@ async function reconcileCheckoutCompleted(orgId: string, session: Stripe.Checkou
   // crear el bono— es justo lo que abriría el acceso sin haber cobrado, así
   // que se aplaza hasta `checkout.session.async_payment_succeeded`, que vuelve
   // a entrar por esta misma función con la sesión ya pagada.
-  if (isAsyncPaymentPending(session)) {
-    await holdAsyncCheckout(orgId, session);
-    return { ok: true };
-  }
-
   const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
   const meta = session.metadata ?? {};
+
+  if (isAsyncPaymentPending(session)) {
+    await holdAsyncCheckout(orgId, session);
+    // CHK-04 · El prospecto de la landing no puede esperar a la liquidación
+    // para existir: su cuota recurrente tiene que estar ya en la base cuando
+    // llegue `async_payment_succeeded` (que la busca y, si no está, reintenta
+    // sin fin), y su bono puntual necesita un `Payment` que conciliar. Nace
+    // SIN acceso: cuota en PENDING_CONFIRMATION, bono sin crear.
+    if (!meta.memberId && meta.prospectEmail) {
+      return provisionMemberFromLandingCheckout(orgId, session, paymentIntentId, { settled: false });
+    }
+    return { ok: true };
+  }
 
   if (meta.memberId) {
     await reconcileMemberCheckoutSession(orgId, meta.memberId, session, paymentIntentId);
@@ -59,7 +67,7 @@ async function reconcileCheckoutCompleted(orgId: string, session: Stripe.Checkou
   }
 
   if (meta.prospectEmail) {
-    return provisionMemberFromLandingCheckout(orgId, session, paymentIntentId);
+    return provisionMemberFromLandingCheckout(orgId, session, paymentIntentId, { settled: true });
   }
 
   // Ni memberId ni prospectEmail: no debería darse (todo checkout de socio pasa
@@ -151,11 +159,17 @@ async function reconcileMemberCheckoutSession(
  *   1. El socio (con su cuota, si es recurrente), en una transacción.
  *   2. Bono puntual: un `Payment` de la sesión y, sobre él, el camino común de
  *      `reconcileMemberCheckoutSession` (PAID + bono + libro mayor, atómico).
+ *   3. CHK-04 · Con el cobro confirmado, el socio pasa a ACTIVE.
+ *
+ * `settled: false` es un adeudo SEPA en vuelo (RB-PAGO-025): se hacen los
+ * pasos 1 y 2 hasta el `Payment` PENDING, sin conciliarlo y sin activar a
+ * nadie. `async_payment_succeeded` vuelve a entrar aquí con `settled: true`.
  */
 async function provisionMemberFromLandingCheckout(
   orgId: string,
   session: Stripe.Checkout.Session,
-  paymentIntentId: string | null
+  paymentIntentId: string | null,
+  opts: { settled: boolean }
 ): Promise<ReconcileResult> {
   const meta = session.metadata ?? {};
   const email = meta.prospectEmail?.trim().toLowerCase();
@@ -179,7 +193,7 @@ async function provisionMemberFromLandingCheckout(
   //    socio dándose de alta por otra vía mientras el pago estaba en curso,
   //    no debe crear una segunda ficha (RB-ALTA-003).
   const existing = await prisma.member.findFirst({ where: { orgId, email }, select: { id: true } });
-  const memberId = existing?.id ?? (await createLandingMember(orgId, session, plan, center, email));
+  const memberId = existing?.id ?? (await createLandingMember(orgId, session, plan, center, email, opts));
   await rememberStripeCustomer(orgId, memberId, session);
 
   // 2. Bono puntual. El `Payment` se crea PENDING y lo concilia el camino
@@ -200,7 +214,18 @@ async function provisionMemberFromLandingCheckout(
       });
     }
   }
+  if (!opts.settled) return { ok: true };
   await reconcileMemberCheckoutSession(orgId, memberId, session, paymentIntentId);
+
+  // 3. `createMemberWithInvitation` crea al socio en TRIAL y solo
+  //    `confirmLeadClosureForMember` lo activaba, y eso únicamente si venía de
+  //    un lead: quien pagaba en /hazte-socio se quedaba de prueba para siempre.
+  //    Solo se promociona desde TRIAL/PROSPECT: un socio existente moroso o
+  //    congelado no cambia de estado por comprar desde la landing.
+  await prisma.member.updateMany({
+    where: { id: memberId, orgId, state: { in: ["TRIAL", "PROSPECT"] } },
+    data: { state: "ACTIVE" },
+  });
   return { ok: true };
 }
 
@@ -240,7 +265,8 @@ async function createLandingMember(
   session: Stripe.Checkout.Session,
   plan: MembershipPlan,
   center: { id: string; name: string; address: string | null },
-  email: string
+  email: string,
+  opts: { settled: boolean }
 ): Promise<string> {
   const meta = session.metadata ?? {};
   const firstName = meta.prospectFirstName?.trim() || "Nuevo";
@@ -266,9 +292,13 @@ async function createLandingMember(
       // manual, `reconcileMemberSubscriptionUpserted` no encontraría a quién
       // asignar la Subscription de Stripe cuando llegue `customer.subscription.created`.
       const stripeSubscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-      if (stripeSubscriptionId) {
-        await tx.subscription.update({ where: { id: subscription.id }, data: { stripeSubscriptionId } });
-      }
+      // RB-PAGO-025: con el adeudo en vuelo la cuota nace sin acceso.
+      // `holdAsyncCheckout` ya ha corrido, pero entonces esta fila no existía
+      // y no ha podido bajarla él.
+      await tx.subscription.update({
+        where: { id: subscription.id },
+        data: { ...(stripeSubscriptionId ? { stripeSubscriptionId } : {}), ...(opts.settled ? {} : { status: "PENDING_CONFIRMATION" }) },
+      });
     }
     return created;
   });

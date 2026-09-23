@@ -5,6 +5,7 @@ import Stripe from "stripe";
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reconcileConnectCheckoutCompleted } from "@/lib/stripe-checkout";
+import { reconcileAsyncPayment } from "@/lib/stripe-mandate";
 import { POST } from "@/app/api/stripe/webhook/route";
 
 // Igual que `stripe-webhook-dispatch.test.ts`: la ruta lee las dos variables en
@@ -300,4 +301,83 @@ test("CHK-03: también en un bono puntual con cliente, y la reentrega no lo pisa
   const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
   assert.equal(member.stripeCustomerId, `cus_${SUFFIX}-cliente-bono`);
   assert.equal(member.stripeAccountId, f.accountId);
+});
+
+// ---------------------------------------------------------------------------
+// CHK-04 · Quien paga en /hazte-socio no se queda en TRIAL (RB-PAGO-025)
+// ---------------------------------------------------------------------------
+
+test("CHK-04: bono puntual pagado con tarjeta → socio ACTIVE con su bono", async () => {
+  const f = await createLandingFixture("tarjeta-bono");
+  const result = await reconcileConnectCheckoutCompleted(f.orgId, landingSession(f, "tarjeta-bono"));
+  assert.equal(result.ok, true);
+
+  const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  assert.equal(member.state, "ACTIVE", "ha pagado: es cliente, no prueba");
+  const bono = await prisma.subscription.findFirstOrThrow({ where: { memberId: member.id } });
+  assert.equal(bono.status, "ACTIVE");
+});
+
+test("CHK-04: cuota recurrente pagada con tarjeta → socio ACTIVE y cuota ACTIVE", async () => {
+  const f = await createLandingFixture("tarjeta-cuota", "MONTHLY");
+  const session = landingSession(f, "tarjeta-cuota", { mode: "subscription", subscription: `sub_${SUFFIX}-tarjeta-cuota` });
+  await reconcileConnectCheckoutCompleted(f.orgId, session);
+
+  const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  assert.equal(member.state, "ACTIVE");
+  const cuota = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId: `sub_${SUFFIX}-tarjeta-cuota` } });
+  assert.equal(cuota.status, "ACTIVE");
+  assert.equal(cuota.memberId, member.id);
+});
+
+test("CHK-04: cuota por SEPA en vuelo → PENDING_CONFIRMATION y, al liquidar, ACTIVE", async () => {
+  const f = await createLandingFixture("sepa-cuota", "MONTHLY");
+  const stripeSubscriptionId = `sub_${SUFFIX}-sepa-cuota`;
+  const session = landingSession(f, "sepa-cuota", { mode: "subscription", subscription: stripeSubscriptionId, payment_status: "unpaid" });
+
+  const result = await reconcileConnectCheckoutCompleted(f.orgId, session);
+  assert.equal(result.ok, true);
+
+  const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  assert.notEqual(member.state, "ACTIVE", "el débito está en vuelo: todavía no es cliente");
+  let cuota = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId } });
+  assert.equal(cuota.status, "PENDING_CONFIRMATION", "RB-PAGO-025: sin acceso hasta liquidar");
+
+  // Días después: sin la fila local, este evento reintentaba sin fin.
+  const settled = await reconcileAsyncPayment(
+    f.orgId,
+    { ...session, payment_status: "paid" } as Stripe.Checkout.Session,
+    "checkout.session.async_payment_succeeded"
+  );
+  assert.equal(settled.ok, true);
+  cuota = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId } });
+  assert.equal(cuota.status, "ACTIVE");
+});
+
+test("CHK-04: bono puntual por SEPA en vuelo → sin bono ni ACTIVE hasta liquidar", async () => {
+  const f = await createLandingFixture("sepa-bono");
+  const session = landingSession(f, "sepa-bono", { payment_status: "unpaid" });
+
+  await reconcileConnectCheckoutCompleted(f.orgId, session);
+  await reconcileConnectCheckoutCompleted(f.orgId, session); // reentrega: nada se duplica
+
+  let member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  assert.notEqual(member.state, "ACTIVE");
+  let payment = await prisma.payment.findUniqueOrThrow({ where: { stripeCheckoutSessionId: session.id } });
+  assert.equal(payment.status, "PENDING");
+  assert.equal(await prisma.subscription.count({ where: { memberId: member.id } }), 0, "el bono no se crea antes de cobrar");
+
+  const settled = await reconcileAsyncPayment(
+    f.orgId,
+    { ...session, payment_status: "paid" } as Stripe.Checkout.Session,
+    "checkout.session.async_payment_succeeded"
+  );
+  assert.equal(settled.ok, true);
+
+  member = await prisma.member.findUniqueOrThrow({ where: { id: member.id } });
+  assert.equal(member.state, "ACTIVE");
+  payment = await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
+  assert.equal(payment.status, "PAID");
+  assert.ok(payment.subscriptionId, "liquidado el adeudo, el bono existe");
+  assert.equal(await prisma.member.count({ where: { orgId: f.orgId } }), 1);
 });
