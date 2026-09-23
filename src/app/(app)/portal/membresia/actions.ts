@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { getMemberForUser } from "@/lib/portal-queries";
-import { createMemberCheckout } from "@/lib/member-billing";
+import { createMemberCheckout, type MemberCheckoutResult } from "@/lib/member-billing";
 import { submitTrainerRating } from "@/lib/trainer-rating-access";
 
 async function currentMember() {
@@ -14,7 +14,10 @@ async function currentMember() {
   return { session, member };
 }
 
-export type PortalBillingResult = { ok: true; url: string } | { ok: false; error: string };
+// STR-02: el mismo tipo que `createMemberCheckout`, `code` incluido. Con
+// `ALREADY_SUBSCRIBED` la pantalla ofrece adelantar la renovación (P4) en vez de
+// un segundo checkout; con un tipo propio sin `code`, el portal no podía verlo.
+export type PortalBillingResult = MemberCheckoutResult;
 
 /** F6: compra/recarga de bono desde el propio portal — mismo motor de checkout que recepción y la landing pública. */
 export async function purchasePlan(planId: string): Promise<PortalBillingResult> {

@@ -19,6 +19,8 @@ export type SaveAssessmentResult =
   | { ok: true; assessmentId: string; healthRecordsCreated: number }
   | { ok: false; error: string };
 
+const ALREADY_COMPLETED = "Esta valoración ya está completada.";
+
 type ScreeningHealthRecord = {
   type: HealthRecordType;
   zoneCode: InjuryZone | null;
@@ -144,17 +146,24 @@ export async function saveAssessment({
   if (!assessment) return { ok: false, error: "No se ha encontrado esa valoración." };
   // Una valoración completada es una foto de un día: no se reabre, se crea la
   // siguiente. Además evita duplicar los registros de salud ya propagados.
-  if (assessment.completedAt) return { ok: false, error: "Esta valoración ya está completada." };
+  if (assessment.completedAt) return { ok: false, error: ALREADY_COMPLETED };
 
   const { kind, memberId } = assessment;
   const now = new Date();
   const initial = isInitialAnswers(kind, answers) ? answers : null;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.assessment.update({
-      where: { id: assessmentId },
+  const closed = await prisma.$transaction(async (tx) => {
+    // QA-ALTA-14: la comprobación de arriba no basta ante un doble clic — las
+    // dos peticiones la pasan antes de que ninguna escriba, y las dos
+    // propagaban peso, marcas y objetivos. El cierre es condicional: solo gana
+    // quien encuentra la valoración todavía abierta (Postgres reevalúa el
+    // `where` tras esperar el bloqueo de fila de la otra). Es la primera
+    // escritura de la transacción, así que salir aquí no deja nada a medias.
+    const { count } = await tx.assessment.updateMany({
+      where: { id: assessmentId, orgId, completedAt: null },
       data: { answers, completedAt: now, filledByUserId: actorUserId },
     });
+    if (count === 0) return false;
 
     if (initial) {
       // Los dos consentimientos son booleanos separados con fecha propia: el
@@ -162,13 +171,20 @@ export async function saveAssessment({
       // La autorización de imagen reutiliza los campos que ya existen en Member.
       await tx.member.update({
         where: { id: memberId },
-        data: {
-          consentHealth: true,
-          consentHealthAt: now,
-          consentImages: initial.cierre.autorizacionImagen,
-          consentImagesAt: initial.cierre.autorizacionImagen ? now : null,
-        },
+        data: { consentHealth: true, consentHealthAt: now },
       });
+      // QA-ALTA-05: la valoración solo puede DAR la autorización de imagen,
+      // nunca retirarla. Una casilla sin marcar no es una revocación: retirar
+      // es un acto propio del socio, con su auditoría (`consent-access.ts`).
+      // Antes, cerrar la valoración con la casilla en blanco borraba lo que el
+      // socio había firmado en su onboarding. Si ya constaba, tampoco se mueve
+      // la fecha: la del consentimiento es la de cuándo se dio.
+      if (initial.cierre.autorizacionImagen) {
+        await tx.member.updateMany({
+          where: { id: memberId, consentImages: false },
+          data: { consentImages: true, consentImagesAt: now },
+        });
+      }
     }
 
     // Peso: misma serie que composición corporal, no una segunda gráfica paralela.
@@ -221,7 +237,9 @@ export async function saveAssessment({
         });
       }
     }
+    return true;
   });
+  if (!closed) return { ok: false, error: ALREADY_COMPLETED };
 
   // Fuera de la transacción a propósito: health-access.ts es el punto único de
   // escritura de salud (permisos + consentimiento + auditoría) y usa su propio

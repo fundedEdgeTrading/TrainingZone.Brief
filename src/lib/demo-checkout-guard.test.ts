@@ -30,7 +30,13 @@ function formData(email: string) {
   return data;
 }
 
-let originalKey: string | undefined;
+let originalDemoMode: string | undefined;
+
+/** PROD-01: el modo demo es explícito (`DEMO_MODE`), ya no "falta STRIPE_SECRET_KEY". */
+function setDemoMode(on: boolean) {
+  if (on) process.env.DEMO_MODE = "true";
+  else delete process.env.DEMO_MODE;
+}
 
 /** El alta crea organización + credencial OWNER + invitación: se borra entero. */
 async function wipe() {
@@ -43,25 +49,27 @@ async function wipe() {
     const users = await prisma.user.findMany({ where: { orgId }, select: { identityId: true } });
     await prisma.user.deleteMany({ where: { orgId } });
     await prisma.identity.deleteMany({ where: { id: { in: users.map((u) => u.identityId) } } });
+    await prisma.leadChannel.deleteMany({ where: { orgId } });
+    await prisma.noCloseReason.deleteMany({ where: { orgId } });
     await prisma.organization.delete({ where: { id: orgId } });
   }
 }
 
 before(async () => {
-  originalKey = process.env.STRIPE_SECRET_KEY;
+  originalDemoMode = process.env.DEMO_MODE;
   await wipe();
 });
 
 afterEach(wipe);
 
 after(async () => {
-  if (originalKey === undefined) delete process.env.STRIPE_SECRET_KEY;
-  else process.env.STRIPE_SECRET_KEY = originalKey;
+  if (originalDemoMode === undefined) delete process.env.DEMO_MODE;
+  else process.env.DEMO_MODE = originalDemoMode;
   await prisma.$disconnect();
 });
 
-test("E1-11 · con STRIPE_SECRET_KEY presente, la action devuelve error y no crea nada", async () => {
-  process.env.STRIPE_SECRET_KEY = "sk_test_e1_11";
+test("E1-11 · con el modo demo apagado, la action devuelve error y no crea nada", async () => {
+  setDemoMode(false);
 
   const result = await confirmDemoCheckoutAction(PLAN, formData(EMAIL));
   assert.equal(result.ok, false);
@@ -71,22 +79,22 @@ test("E1-11 · con STRIPE_SECRET_KEY presente, la action devuelve error y no cre
 });
 
 test("E1-11 · el corte va ANTES de mirar el plan: un plan inexistente da igual", async () => {
-  process.env.STRIPE_SECRET_KEY = "sk_test_e1_11";
+  setDemoMode(false);
 
-  // Con Stripe activo esta action no existe para nadie, sea cual sea el plan.
+  // Fuera del modo demo esta action no existe para nadie, sea cual sea el plan.
   const result = await confirmDemoCheckoutAction("plan-que-no-existe", formData(EMAIL));
   assert.equal(result.ok, false);
 });
 
 test("E1-11 · en modo demo el comportamiento actual no cambia", async () => {
-  delete process.env.STRIPE_SECRET_KEY;
+  setDemoMode(true);
 
   const result = await confirmDemoCheckoutAction(PLAN, formData(`demo-${Date.now()}@example.com`));
-  assert.equal(result.ok, true, "sin Stripe, el alta de demostración sigue funcionando");
+  assert.equal(result.ok, true, "en modo demo, el alta de demostración sigue funcionando");
 });
 
 test("E1-11 · el cupo Fundador se sigue comprobando, después de esta", async () => {
-  delete process.env.STRIPE_SECRET_KEY;
+  setDemoMode(true);
   const originalEnabled = process.env.PLATFORM_PLAN_FUNDADOR_ENABLED;
   process.env.PLATFORM_PLAN_FUNDADOR_ENABLED = "false";
 

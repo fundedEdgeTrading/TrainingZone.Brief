@@ -3,12 +3,24 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// INF-02 · Este fichero solo lo lee la CLI de Prisma (`migrate deploy`,
+// `studio`…); la aplicación se conecta por su cuenta con DATABASE_URL
+// (src/lib/prisma.ts). En producción son DOS roles distintos: las migraciones
+// corren con el PROPIETARIO de la base (DATABASE_MIGRATION_URL) y la app con
+// `apta_app`, que no lo es. Si la app fuera la propietaria, el
+// `REVOKE UPDATE, DELETE ON "AuditLog"` de E10-14 no la afectaría y el log
+// dejaría de ser append-only para ella. Orden de creación de los roles:
+// docs/OPERACIONES.md §7.2.
+//
+// `||` y no `??`: `.env.example` declara las variables como cadena vacía, y una
+// DATABASE_MIGRATION_URL="" debe caer a DATABASE_URL, no dejar a Prisma sin URL.
+// En local y en CI hay una sola conexión y basta con DATABASE_URL.
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DATABASE_MIGRATION_URL"] || process.env["DATABASE_URL"],
   },
 });

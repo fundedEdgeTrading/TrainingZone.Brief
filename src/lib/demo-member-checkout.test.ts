@@ -20,8 +20,8 @@ import { ledgerBalance, ledgerReconciles } from "@/lib/session-ledger";
  * producto que se enseña en una demo —bono, saldo, reserva— quedaba
  * inalcanzable.
  *
- * Este entorno NO tiene `STRIPE_SECRET_KEY` (el CI la deja sin definir a
- * propósito), así que es exactamente el escenario de la historia.
+ * PROD-01: el modo demo ya no se deduce de que falte `STRIPE_SECRET_KEY`; se
+ * pide con `DEMO_MODE="true"`. El fichero lo activa y lo restaura al acabar.
  */
 
 const SLUG = "e2e-demo-member-checkout";
@@ -72,14 +72,22 @@ async function cleanup() {
   }
 }
 
-before(cleanup);
+let originalDemoMode: string | undefined;
+
+before(async () => {
+  originalDemoMode = process.env.DEMO_MODE;
+  process.env.DEMO_MODE = "true";
+  await cleanup();
+});
 after(async () => {
+  if (originalDemoMode === undefined) delete process.env.DEMO_MODE;
+  else process.env.DEMO_MODE = originalDemoMode;
   await cleanup();
   await prisma.$disconnect();
 });
 
 test("sin Stripe configurado, la compra de socio cae al checkout de demostración", async () => {
-  assert.equal(isDemoModeActive(), true, "este entorno no tiene STRIPE_SECRET_KEY: es el escenario de la historia");
+  assert.equal(isDemoModeActive(), true, "DEMO_MODE=true: es el escenario de la historia");
   const fx = await fixture("cae");
 
   const result = await createMemberCheckout({

@@ -54,7 +54,10 @@ export async function createBookingMember({
 
   const result = await completeMemberOnboarding(invitation.token, {
     password: MEMBER_PASSWORD,
-    consentHealth: false,
+    // QA-ALTA-09: el servidor exige el contrato y el consentimiento de salud
+    // para activar la cuenta, igual que el formulario de onboarding.
+    consentContract: true,
+    consentHealth: true,
     consentImages: false,
     consentMarketing: false,
     consentAI: false,

@@ -2,7 +2,15 @@ import "dotenv/config";
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
-import { isPendingStripeSync, syncPlanToStripe } from "@/lib/stripe-catalog";
+import {
+  catalogPriceKey,
+  ensurePlanPriceForAccount,
+  isPendingStripeSync,
+  readPlanSnapshot,
+  syncPlanToStripe,
+  type CatalogStripe,
+  type CatalogStripeResolver,
+} from "@/lib/stripe-catalog";
 import { saveMembershipPlan, setMembershipPlanActive } from "@/lib/membership-plans";
 import { createMemberCheckout, createProspectMemberCheckout, ensureStripePrice } from "@/lib/member-billing";
 
@@ -209,4 +217,185 @@ test("sincronizar un plan que no existe no revienta", async () => {
   const result = await syncPlanToStripe(fx.orgId, "plan_que_no_existe", null);
   // Sin STRIPE_SECRET_KEY en este entorno el corte llega antes, en `stripeForOrg`.
   assert.ok(result.state === "pending" || result.state === "failed");
+});
+
+// ---------- CON-03 / CON-04: con una pasarela de mentira ----------
+
+/**
+ * Stripe de mentira con lo que importa aquí: los Price son inmutables, se
+ * archivan con `active:false`, y una clave de idempotencia repetida devuelve
+ * LA MISMA respuesta que la primera vez (como el de verdad durante 24 h),
+ * aunque ese Price esté ya archivado.
+ */
+type FakePrice = {
+  id: string;
+  product: string;
+  active: boolean;
+  currency: string;
+  unit_amount: number;
+  billing_scheme: "per_unit";
+  transform_quantity: null;
+  recurring: { interval: string; interval_count: number; usage_type: "licensed" } | null;
+};
+
+function fakeCatalogStripe() {
+  const prices: FakePrice[] = [];
+  const byKey = new Map<string, string>();
+  let productSeq = 0;
+  const stripe = {
+    products: {
+      create: async () => ({ id: `prod_${++productSeq}` }),
+      update: async (id: string) => ({ id }),
+    },
+    prices: {
+      list: async (params: { product: string; active?: boolean }) => ({
+        data: prices
+          .filter((p) => p.product === params.product && (params.active === undefined || p.active === params.active))
+          .map((p) => ({ ...p })),
+      }),
+      create: async (
+        params: { product: string; unit_amount: number; currency: string; recurring?: { interval: string } },
+        opts: { idempotencyKey?: string }
+      ) => {
+        const cachedId = opts.idempotencyKey ? byKey.get(opts.idempotencyKey) : undefined;
+        if (cachedId) return { ...prices.find((p) => p.id === cachedId)! };
+        const price: FakePrice = {
+          id: `price_${prices.length + 1}`,
+          product: params.product,
+          active: true,
+          currency: params.currency,
+          unit_amount: params.unit_amount,
+          billing_scheme: "per_unit",
+          transform_quantity: null,
+          recurring: params.recurring ? { interval: params.recurring.interval, interval_count: 1, usage_type: "licensed" } : null,
+        };
+        prices.push(price);
+        if (opts.idempotencyKey) byKey.set(opts.idempotencyKey, price.id);
+        return { ...price };
+      },
+      update: async (id: string, params: { active?: boolean }) => {
+        const price = prices.find((p) => p.id === id)!;
+        if (params.active !== undefined) price.active = params.active;
+        return { ...price };
+      },
+    },
+  };
+  const resolver: CatalogStripeResolver = async () => ({
+    ok: true,
+    stripe: stripe as unknown as CatalogStripe,
+    accountId: "acct_fake",
+  });
+  return { prices, resolver };
+}
+
+/** Lo que hace `saveMembershipPlan` al cambiar el importe, con la pasarela de mentira. */
+async function cambiarImporte(orgId: string, planId: string, priceCents: number, resolver: CatalogStripeResolver) {
+  const before = await readPlanSnapshot(orgId, planId);
+  await prisma.membershipPlan.update({ where: { id: planId }, data: { priceCents, stripePriceId: null } });
+  return syncPlanToStripe(orgId, planId, before, null, resolver);
+}
+
+test("CON-03: la clave del Price cambia con el Price al que sustituye", () => {
+  assert.notEqual(
+    catalogPriceKey("org_1", "plan_1", 4900, true, null),
+    catalogPriceKey("org_1", "plan_1", 4900, true, "price_B"),
+    "volver a 49 € desde 59 € no puede reutilizar la clave del primer 49 €"
+  );
+  assert.equal(
+    catalogPriceKey("org_1", "plan_1", 4900, true, "price_B"),
+    catalogPriceKey("org_1", "plan_1", 4900, true, "price_B"),
+    "el doble clic sigue colisionando"
+  );
+});
+
+test("CON-03: importe A → B → A en el mismo día deja un Price ACTIVO vendible", async () => {
+  const fx = await fixture("aba");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Cuota", type: "MONTHLY", priceCents: 4900 },
+  });
+
+  const a = await syncPlanToStripe(fx.orgId, plan.id, null, null, resolver);
+  assert.equal(a.state, "synced");
+  const b = await cambiarImporte(fx.orgId, plan.id, 5900, resolver);
+  assert.equal(b.state, "synced");
+  const a2 = await cambiarImporte(fx.orgId, plan.id, 4900, resolver);
+  assert.equal(a2.state, "synced");
+  if (a.state !== "synced" || b.state !== "synced" || a2.state !== "synced") return;
+
+  const vendible = prices.find((p) => p.id === a2.priceId)!;
+  assert.equal(vendible.active, true, "el checkout falla con un Price archivado");
+  assert.equal(vendible.unit_amount, 4900);
+  assert.notEqual(a2.priceId, a.priceId, "el Price A original está archivado y no se reutiliza");
+  // RB-VENTA-007: los anteriores quedan archivados, nunca borrados.
+  assert.equal(prices.length, 3);
+  assert.deepEqual(
+    prices.filter((p) => p.active).map((p) => p.id),
+    [a2.priceId],
+    "un solo Price activo por producto"
+  );
+});
+
+test("CON-04: ensurePlanPriceForAccount crea el Price, lo guarda y archiva el anterior", async () => {
+  const fx = await fixture("puerta");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Bono 10", type: "SESSION_PACK", priceCents: 8900, sessionsIncluded: 10 },
+  });
+
+  const first = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(first.ok, true);
+  if (!first.ok) return;
+  const guardado = await prisma.membershipPlan.findUniqueOrThrow({ where: { id: plan.id } });
+  assert.equal(guardado.stripePriceId, first.priceId);
+  assert.equal(guardado.stripeAccountId, "acct_fake");
+
+  // Espejo al día: segunda llamada sin crear nada.
+  const again = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(again.ok && again.priceId, first.priceId);
+  assert.equal(prices.length, 1);
+
+  // Cambio de importe con Stripe caído: el plan se invalidó en local y el
+  // `before` se perdió. La puerta crea el nuevo y archiva el que seguía activo.
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { priceCents: 9900, stripePriceId: null } });
+  const next = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(next.ok, true);
+  if (!next.ok) return;
+  assert.notEqual(next.priceId, first.priceId);
+  assert.equal(prices.find((p) => p.id === first.priceId)!.active, false, "archivado, no borrado");
+  assert.equal(prices.find((p) => p.id === next.priceId)!.active, true);
+  assert.equal(prices.find((p) => p.id === next.priceId)!.recurring, null, "un bono es un pago único");
+});
+
+test("CON-04: ensurePlanPriceForAccount respeta la organización y el archivado", async () => {
+  const fx = await fixture("puerta-ambito");
+  const otra = await fixture("puerta-otra");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Cuota", type: "MONTHLY", priceCents: 4900 },
+  });
+
+  const ajena = await ensurePlanPriceForAccount(otra.orgId, plan.id, resolver);
+  assert.deepEqual(ajena, { ok: false, error: "Plan no encontrado." });
+
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { active: false } });
+  const archivado = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(archivado.ok, false);
+  assert.equal(prices.length, 0, "no se crea nada en Stripe para un plan que no se vende");
+});
+
+test("CON-03: un reintento tras perder el guardado local reutiliza el Price, no crea otro", async () => {
+  const fx = await fixture("reintento");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Cuota", type: "MONTHLY", priceCents: 4900 },
+  });
+  const first = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(first.ok, true);
+  // Se pierde el espejo local (p. ej. el update de Prisma falló tras crear en Stripe).
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { stripePriceId: null } });
+  const retry = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(retry.ok && first.ok && retry.priceId === first.priceId, true);
+  assert.equal(prices.length, 1);
+  assert.equal(prices[0].active, true, "no se archiva el propio Price que se reutiliza");
 });

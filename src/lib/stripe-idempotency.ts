@@ -29,10 +29,11 @@
  *
  * | Clave | Dónde | Qué protege |
  * |---|---|---|
- * | `product:<orgId>:<planId>:v1` | `ensureStripePrice` | un solo Product por plan |
+ * | `product:<orgId>:<planId>:v1` | `syncPlanToStripe` (stripe-catalog.ts) | un solo Product por plan |
+ * | `product_lazy:<orgId>:<planId>:v1` | `ensureStripePrice` | un solo Product por plan en el espejo perezoso (STR-06) |
  * | `price:<orgId>:<planId>_<importe>:v1` | `ensureStripePrice` | un solo Price por (plan, importe) |
  * | `customer:<orgId>:<memberId>:v1` | `createMemberCheckout` | un solo cliente por socio |
- * | `checkout:<orgId>:<memberId>_<planId>_<ventana>:v1` | `createMemberCheckout` | un solo checkout por venta |
+ * | `checkout:<orgId>:<memberId>_<planId>_<origen>_<centerId>_<ventana>:v1` | `createMemberCheckout` | un solo checkout por venta (STR-06) |
  * | `checkout:<orgId>:<email>_<planId>_<ventana>:v1` | `createProspectMemberCheckout` | un solo checkout por prospecto |
  * | `customer:platform:<orgId>:v1` | `createPlatformCheckoutSession` | un solo cliente de licencia por org |
  * | `checkout:platform:<orgId>_<planCode>_<ventana>:v1` | `createPlatformCheckoutSession` | un solo checkout de licencia |
@@ -109,9 +110,41 @@ export function customerKey(orgId: string, memberId: string) {
   return idempotencyKey("customer", orgId, memberId);
 }
 
-/** `checkout:<orgId>:<memberId>_<planId>_<ventana>:v1` */
-export function memberCheckoutKey(orgId: string, memberId: string, planId: string, at?: Date) {
-  return idempotencyKey("checkout", orgId, [memberId, planId, checkoutWindow(at)]);
+/**
+ * STR-06 · `product_lazy:<orgId>:<planId>:v1` — el Product que crea el espejo
+ * perezoso (`ensureStripePrice`) cuando el plan aún no está en Stripe.
+ *
+ * NO puede compartir clave con `productKey`: el catálogo crea el Product con
+ * descripción, imágenes y `active`, y el espejo perezoso solo con el nombre.
+ * Stripe responde con error de idempotencia a una clave reutilizada con otros
+ * parámetros, así que si el catálogo sincronizaba y en las 24 h siguientes se
+ * vendía por el camino perezoso (o al revés), la venta fallaba.
+ */
+export function lazyProductKey(orgId: string, planId: string) {
+  return idempotencyKey("product_lazy", orgId, planId);
+}
+
+/** Por qué puerta entra una venta de socio. Parte de la clave del checkout. */
+export type MemberCheckoutSource = "portal" | "reception" | "mobile" | "public";
+
+/**
+ * `checkout:<orgId>:<memberId>_<planId>_<origen>_<centerId>_<ventana>:v1`
+ *
+ * STR-06 · El origen y el centro entran en la clave: recepción y el propio socio
+ * abriendo el mismo plan a la vez compartían sesión (o recibían un error de
+ * idempotencia, porque el `success_url` cambia de una puerta a otra), y una
+ * venta del mismo plan en otro centro reutilizaba la del primero con su
+ * `metadata.centerId`.
+ */
+export function memberCheckoutKey(
+  orgId: string,
+  memberId: string,
+  planId: string,
+  source: MemberCheckoutSource,
+  centerId: string,
+  at?: Date
+) {
+  return idempotencyKey("checkout", orgId, [memberId, planId, source, centerId, checkoutWindow(at)]);
 }
 
 /** `checkout:<orgId>:<email>_<planId>_<ventana>:v1` — el prospecto aún no tiene id. */

@@ -78,11 +78,13 @@ function Checkbox({
   checked,
   onChange,
   required,
+  disabled,
 }: {
   label: React.ReactNode;
   checked: boolean;
   onChange: (v: boolean) => void;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label className="flex gap-3 items-start text-sm text-brand-text cursor-pointer">
@@ -90,6 +92,7 @@ function Checkbox({
         type="checkbox"
         checked={checked}
         required={required}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
         className="w-[17px] h-[17px] mt-0.5 accent-tz-black cursor-pointer shrink-0"
       />
@@ -137,6 +140,7 @@ export function AssessmentForm({
   config = DEFAULT_ASSESSMENT_CONFIG,
   draft = null,
   screeningDraft = null,
+  consentImagesGranted = false,
 }: {
   assessmentId: string;
   memberId: string;
@@ -160,6 +164,12 @@ export function AssessmentForm({
    * se resuelve con fecha, nunca se borra.
    */
   screeningDraft?: ScreeningAnswers | null;
+  /**
+   * QA-ALTA-05: ¿el socio ya autorizó el uso de imagen (onboarding, portal)?
+   * La casilla arranca así y, si ya constaba, no se puede desmarcar aquí: la
+   * valoración solo puede dar la autorización, retirarla es cosa del socio.
+   */
+  consentImagesGranted?: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -237,7 +247,7 @@ export function AssessmentForm({
   // que el resto de campos numéricos del formulario.
   const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
   const [consentimientoParq, setConsentimientoParq] = useState(false);
-  const [autorizacionImagen, setAutorizacionImagen] = useState(false);
+  const [autorizacionImagen, setAutorizacionImagen] = useState(consentImagesGranted);
 
   function toggleZone(zone: PainZone) {
     setZonasDolor((zs) => (zs.includes(zone) ? zs.filter((z) => z !== zone) : [...zs, zone]));
@@ -860,10 +870,16 @@ export function AssessmentForm({
               <Checkbox
                 checked={autorizacionImagen}
                 onChange={setAutorizacionImagen}
+                disabled={consentImagesGranted}
                 label={
                   <span>
                     <span className="font-bold">Autorización de imagen</span> — fotos de evolución en su ficha y su
                     portal. Voluntaria y revocable en cualquier momento desde el portal del socio.
+                    {consentImagesGranted && (
+                      <span className="block text-brand-muted mt-0.5">
+                        Ya la tiene dada. Si quiere retirarla, se hace desde sus consentimientos, no desde la valoración.
+                      </span>
+                    )}
                   </span>
                 }
               />

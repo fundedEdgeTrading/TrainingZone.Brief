@@ -46,7 +46,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
     include: {
       organization: { select: { name: true, logoUrl: true } },
       member: { select: { firstName: true, lastName: true, email: true, primaryCenter: { select: { name: true } } } },
-      user: { select: { name: true, email: true, role: true } },
+      user: { select: { name: true, email: true, role: true, identity: { select: { passwordSetAt: true } } } },
     },
   });
 
@@ -58,12 +58,19 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
   const orgLogoUrl = invitation.organization.logoUrl || "/brand/tz-logo-white.png";
 
   if (invitation.type === "MEMBER" && invitation.member) {
+    // RB-ID-003 (QA-ALTA-09): si ese email ya tiene contraseña en Apta, no se
+    // le pide otra — entra con la suya. Mismo criterio que aplica la acción.
+    const identity = await prisma.identity.findUnique({
+      where: { email: invitation.member.email.trim().toLowerCase() },
+      select: { passwordSetAt: true },
+    });
     return (
       <OnboardingForm
         token={token}
         type="MEMBER"
         firstName={invitation.member.firstName}
         email={invitation.member.email}
+        hasPassword={Boolean(identity?.passwordSetAt)}
         orgName={orgName}
         orgLogoUrl={orgLogoUrl}
         contextLabel={invitation.member.primaryCenter.name}
@@ -81,6 +88,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
         type={invitation.type}
         firstName={firstName}
         email={invitation.user.email}
+        hasPassword={Boolean(invitation.user.identity.passwordSetAt)}
         orgName={orgName}
         orgLogoUrl={orgLogoUrl}
         contextLabel={ROLE_LABEL[invitation.user.role]}

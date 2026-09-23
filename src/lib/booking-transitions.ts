@@ -1,10 +1,10 @@
 import type { BookingStatus } from "@prisma/client";
 
 /**
- * Máquina de estados de una reserva. Costura del trimestre: los CUATRO puntos
- * de escritura del estado de una reserva (agenda de staff, portal del socio,
- * descarte de asistente y captura de falta) pasan por aquí en vez de escribir
- * el estado a pelo, que es como se coló la transición que no debería existir.
+ * Máquina de estados de una reserva. Costura del trimestre: TODOS los puntos
+ * de escritura del estado de una reserva —la lista única es
+ * `BOOKING_WRITE_POINTS`, más abajo— pasan por aquí en vez de escribir el
+ * estado a pelo, que es como se coló la transición que no debería existir.
  *
  * Lo que esto impide, y antes no impedía nada:
  *
@@ -117,10 +117,10 @@ export type BookingTransitionCheck = { ok: true } | { ok: false; error: string }
  * hace rato sobre una reserva que alguien acaba de cancelar. Eso se contesta
  * con un mensaje —409 en la API— y no con un 500.
  *
- * Es el único envoltorio: los CUATRO puntos de escritura entran por aquí. La
- * historia lo dice sin rodeos —cuatro parches separados vuelven a divergir— y
- * es justo lo que pasó (`markBookingNoShow` sí validaba el estado de partida;
- * las otras cuatro vías, ninguna).
+ * Es el único envoltorio: todos los puntos de `BOOKING_WRITE_POINTS` entran
+ * por aquí. La historia lo dice sin rodeos —parches separados vuelven a
+ * divergir— y es justo lo que pasó (`markBookingNoShow` sí validaba el estado
+ * de partida; las demás vías, ninguna).
  */
 export function checkBookingTransition(from: BookingStatus, to: BookingStatus): BookingTransitionCheck {
   try {
@@ -131,3 +131,68 @@ export function checkBookingTransition(from: BookingStatus, to: BookingStatus): 
     throw error;
   }
 }
+
+/**
+ * QA-RES-09 · La lista ÚNICA de puntos que escriben el estado de una reserva.
+ *
+ * Había dos, en dos comentarios de este mismo fichero, y no coincidían: una
+ * hablaba de "agenda de staff, portal, descarte y captura de falta" y la otra
+ * de "debrief web, debrief app, feedback de ejes y check-in". Con dos listas,
+ * cada arreglo cubría la suya y las vías de la otra se quedaban fuera.
+ *
+ * Es dato y no comentario para que se pueda exigir: `booking-transitions-
+ * writes.test.ts` recorre esta lista y falla si un punto no tiene su ejercicio
+ * sobre filas reales. Un punto de escritura nuevo se añade AQUÍ, y el test
+ * obliga a probarlo.
+ *
+ * La web y la app comparten función en cada punto (el debrief de la app llama
+ * a `setSessionDebrief`, la cancelación de la app a `cancelBookingForMember`…),
+ * así que la paridad no añade entradas. El endpoint de ocho ejes de la app ya
+ * no escribe (responde 410 desde E3-07) y por eso no está.
+ */
+export const BOOKING_WRITE_POINTS = [
+  {
+    id: "agenda-check-in",
+    writer: "toggleCheckIn",
+    file: "src/app/(app)/agenda/session/[id]/actions.ts",
+    to: ["ATTENDED", "BOOKED"],
+  },
+  {
+    id: "debrief",
+    writer: "setSessionDebrief / clearSessionDebrief",
+    file: "src/lib/session-debrief.ts",
+    to: ["ATTENDED", "BOOKED"],
+  },
+  {
+    id: "no-show",
+    writer: "markBookingNoShow / clearBookingNoShow",
+    file: "src/lib/agenda-queries.ts",
+    to: ["NO_SHOW", "ATTENDED", "BOOKED"],
+  },
+  {
+    id: "portal-cancel",
+    writer: "cancelBookingForMember",
+    file: "src/lib/portal-queries.ts",
+    to: ["CANCELLED"],
+  },
+  {
+    id: "portal-claim",
+    writer: "bookSessionForMember (reclamo desde la lista de espera)",
+    file: "src/lib/portal-queries.ts",
+    to: ["BOOKED"],
+  },
+  {
+    id: "staff-cancel",
+    writer: "cancelSessionBooking",
+    file: "src/lib/agenda-queries.ts",
+    to: ["CANCELLED"],
+  },
+  {
+    id: "discard",
+    writer: "discardAttendeeAsStaff (decisión en attendee-discard.ts)",
+    file: "src/lib/agenda-queries.ts",
+    to: ["CANCELLED"],
+  },
+] as const satisfies readonly { id: string; writer: string; file: string; to: readonly BookingStatus[] }[];
+
+export type BookingWritePointId = (typeof BOOKING_WRITE_POINTS)[number]["id"];

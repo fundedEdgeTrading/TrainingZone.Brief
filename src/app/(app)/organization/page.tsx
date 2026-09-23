@@ -531,9 +531,11 @@ function staffToRow(
             centerId: u.centerId,
             visibleInApp: u.visibleInApp,
             deactivated,
+            invitationPending: !active,
           }}
           canEdit={options.canEdit}
           canDelete={options.canDelete}
+          canResend={options.canAssign}
         />
       ),
     },

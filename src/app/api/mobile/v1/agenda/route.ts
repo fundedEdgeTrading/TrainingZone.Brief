@@ -1,13 +1,13 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCentersForUser } from "@/lib/agenda-queries";
+import { getCentersForUser, listMembersBookableInCenter } from "@/lib/agenda-queries";
 import { listAssignableStaff } from "@/lib/org-queries";
-import { listActiveMembersForSelect } from "@/lib/members-queries";
 import { canManageEpSlots } from "@/lib/rbac";
 import { formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { expandOccurrences, isSameDay, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { requireApiRole } from "../_lib/api-session";
+import { requireApiCenterScope } from "../_lib/api-guards";
 import { apiOk } from "../_lib/response";
 
 const STAFF_AGENDA_ROLES = ["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"] as const;
@@ -28,6 +28,14 @@ export async function GET(req: NextRequest) {
   const requested = centerParam && allowed.has(centerParam) ? centerParam : null;
   const base = claims.centerId && allowed.has(claims.centerId) ? claims.centerId : null;
   const centerId = requested ?? base ?? centers[0]?.id ?? null;
+  // Invariante del trimestre: toda lectura con `centerId` pasa por la guarda de
+  // centro, también en la API móvil. Hoy `centerId` sale ya de los centros
+  // imputados, así que no debería cortar nunca; está para que un cambio en la
+  // elección de arriba no convierta este endpoint en otra vía sin ámbito.
+  if (centerId) {
+    const scope = await requireApiCenterScope(claims, centerId);
+    if (!scope.ok) return scope.response;
+  }
 
   const dateParam = req.nextUrl.searchParams.get("date");
   const day = dateParam ? parseDateParam(dateParam) : zonedNow(await resolveTimezoneForCenter(centerId));
@@ -51,7 +59,11 @@ export async function GET(req: NextRequest) {
           orderBy: { startTime: "asc" },
         }),
         listAssignableStaff(claims.orgId, ["TRAINER", "TRAINER_ADMIN"], centerId),
-        listActiveMembersForSelect(claims.orgId),
+        // QA-RES-07: el selector de cliente de la franja de EP, con el mismo
+        // criterio que la web — socios con bono de EP activo EN ESTE centro.
+        // `listActiveMembersForSelect(orgId)` devolvía los de toda la
+        // organización: un entrenador de A veía y podía elegir socios de B.
+        listMembersBookableInCenter(claims.orgId, centerId, "EP"),
       ])
     : [[], [], []];
 

@@ -1,46 +1,370 @@
-# Blueprint de Render.
+# Blueprint de Render · producción y staging (INF-01).
 #
-# El cron programado del día a día vive en GitHub Actions
-# (.github/workflows/jobs-cron.yml), que es gratis. Este fichero es el
-# equivalente en Render para cuando el piloto esté en marcha y la puntualidad
-# importe: los cron de Actions se retrasan y a veces se saltan ejecuciones.
+# Se aplica con New → Blueprint en el dashboard de Render, apuntando a este
+# repositorio. Declara DOS entornos idénticos que solo difieren en el nombre,
+# el plan y la forma de desplegar:
 #
-# NO está activo por defecto. Para encenderlo: New → Blueprint en el dashboard
-# de Render, apuntando a este repo. Si lo activas, DESACTIVA el workflow de
-# Actions o las reglas se ejecutarán dos veces al día.
+#   producción  trainingzone-web          + trainingzone-db
+#   staging     trainingzone-web-staging  + trainingzone-db-staging
+#
+# Lo que no se puede declarar aquí (roles de la base de datos, valores de los
+# secretos, dominio) está en docs/OPERACIONES.md §7, en el orden en que hay que
+# hacerlo. EL ORDEN IMPORTA: los roles de BD van ANTES del primer despliegue, o
+# el REVOKE de AuditLog no protege nada.
+#
+# ─── Por qué cada decisión ──────────────────────────────────────────────────
+#
+# · Plan de pago en web y BD. El gratuito duerme el servicio (arranque en frío
+#   de ~1 min: un socio que abre la app ve un error) y la BD gratuita caduca y
+#   no tiene copias de seguridad.
+#
+# · `preDeployCommand: npx prisma migrate deploy`. Corre DESPUÉS del build y
+#   ANTES de sustituir la instancia que atiende: si la migración falla, el
+#   despliegue se aborta y sigue sirviendo la versión anterior. Nunca
+#   `migrate dev` ni `migrate reset`, y NUNCA `npm run db:seed` (vacía la base
+#   entera). Migra con DATABASE_MIGRATION_URL (el propietario), no con el rol de
+#   la aplicación: ver prisma.config.ts.
+#
+# · Disco persistente en /var/data. Las fotos de progreso viven en disco,
+#   cifradas (src/lib/progress-photos.ts). Sin disco, el sistema de ficheros de
+#   Render es efímero y las fotos SE PIERDEN EN CADA DESPLIEGUE. Un disco obliga
+#   a UNA sola instancia y a un corte de segundos en cada despliegue (Render no
+#   monta el disco en dos instancias a la vez): asumible para dos centros.
+#
+# · `healthCheckPath: /api/health`. Render no da por bueno un despliegue hasta
+#   que esa ruta responde 2xx. Mientras la pista P1 (endurecimiento de
+#   producción) no integre /api/health en main, el despliegue NO pasará el
+#   health check. Es intencionado: no se sale a producción sin él.
+#
+# · Todas las variables con `sync: false`. Render pide el valor en el dashboard
+#   al crear el Blueprint y no lo guarda aquí: NINGÚN secreto va en el repo. La
+#   única excepción es PROGRESS_PHOTO_DIR, que no es secreta y tiene que casar
+#   con el `mountPath` del disco declarado en este mismo fichero.
+#
+# · DATABASE_URL NO sale de `fromDatabase`. Eso daría a la aplicación la
+#   cadena del PROPIETARIO de la base, y sobre el propietario el `REVOKE UPDATE,
+#   DELETE ON "AuditLog"` no tiene efecto (E10-14). La app se conecta con el rol
+#   `apta_app`, que se crea a mano (OPERACIONES.md §7.2).
+#
+# · NO se declara NODE_ENV. Si valiera `production` durante el build, `npm ci`
+#   se saltaría las devDependencies (TypeScript, Tailwind) y el build fallaría.
+#   `next build` y `next start` ya fijan el modo producción por su cuenta.
+#
+# · El cron diario NO se declara. Lo disparan los workflows de GitHub Actions
+#   (jobs-cron.yml y flujos-cron.yml); tenerlo también aquí haría que las
+#   reglas corrieran dos veces al día. El servicio equivalente está al final de
+#   la sección `services`, comentado, con las instrucciones para el relevo.
+#
+# · Las dos listas de variables tienen que ser IGUALES. Lo comprueba CI (job
+#   `infra` de .github/workflows/e2e.yml): una variable añadida solo en
+#   producción es un staging que no prueba lo que se va a desplegar.
+
 services:
-  - type: cron
-    name: trainingzone-jobs-diario
-    # Imagen pública con curl: construir la app entera para hacer una petición
-    # HTTP sería pagar un build de varios minutos por cada ejecución.
-    runtime: image
-    image:
-      url: docker.io/curlimages/curl:latest
-    plan: starter
+  # ──────────────────────────── PRODUCCIÓN ────────────────────────────────────
+  - type: web
+    name: trainingzone-web
+    runtime: node
     region: frankfurt
-
-    # 05:00 UTC. Render evalúa en UTC y no aplica el cambio de hora: son las
-    # 07:00 en Madrid en verano y las 06:00 en invierno. Se elige de madrugada
-    # para que el desfase estacional nunca mueva la ejecución al día anterior.
-    schedule: "0 5 * * *"
-
-    # Mismo contrato que el workflow: secreto en cabecera (no en la query
-    # string, que acaba en los logs) y el 207 tratado como fallo, porque
-    # significa que alguna regla reventó y `curl -f` no lo detectaría.
-    dockerCommand: >-
-      sh -c '
-      code=$(curl -sS -o /tmp/r.json -w "%{http_code}" --max-time 300 --retry 2 --retry-delay 30
-      -H "x-cron-secret: $JOBS_CRON_SECRET" "$APP_URL/api/jobs/run");
-      cat /tmp/r.json;
-      echo "HTTP $code";
-      test "$code" = "200"
-      '
-
+    # 2 GB de RAM: `next build` con este árbol no cabe con holgura en 512 MB.
+    plan: standard
+    branch: main
+    # Producción se despliega a mano (Manual Deploy) después de validar el
+    # mismo commit en staging: OPERACIONES.md §7.4. Un merge en main no debe
+    # llegar solo a los socios.
+    autoDeployTrigger: "off"
+    # El disco persistente impide escalar horizontalmente.
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    preDeployCommand: npx prisma migrate deploy
+    healthCheckPath: /api/health
+    disk:
+      name: progress-photos
+      mountPath: /var/data
+      sizeGB: 10
     envVars:
-      # `sync: false` hace que Render pida el valor en el dashboard en vez de
-      # guardarlo aquí. El secreto NUNCA va en el repo, y tiene que coincidir
-      # con el del servicio web o el endpoint responde 401.
+      # Base de datos · roles en OPERACIONES.md §7.2
+      - key: DATABASE_URL # rol apta_app (NO el propietario)
+        sync: false
+      - key: DATABASE_MIGRATION_URL # propietario: solo lo usa `prisma migrate deploy`
+        sync: false
+      - key: DATA_RETENTION_DATABASE_URL # rol apta_mantenimiento
+        sync: false
+      - key: DATA_REGION # "frankfurt": si no coincide, el servidor no arranca
+        sync: false
+      # Fotos de progreso
+      - key: PROGRESS_PHOTO_KEY # guardarla también FUERA de Render: perderla es perder las fotos
+        sync: false
+      - key: PROGRESS_PHOTO_DIR
+        value: /var/data/progress-photos
+      # Autenticación y URLs públicas
+      - key: AUTH_SECRET
+        sync: false
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+      - key: AUTH_MICROSOFT_ENTRA_ID_ID
+        sync: false
+      - key: AUTH_MICROSOFT_ENTRA_ID_SECRET
+        sync: false
+      - key: AUTH_MICROSOFT_ENTRA_ID_ISSUER
+        sync: false
+      - key: AUTH_GOOGLE_ID
+        sync: false
+      - key: AUTH_GOOGLE_SECRET
+        sync: false
+      # Trabajos programados (mismo valor que el secreto de GitHub Actions)
       - key: JOBS_CRON_SECRET
         sync: false
-      - key: APP_URL
+      # Stripe
+      - key: STRIPE_SECRET_KEY
         sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_CONNECT_CLIENT_ID
+        sync: false
+      - key: STRIPE_CONNECT_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ESENCIAL_MES
+        sync: false
+      - key: STRIPE_PRICE_ESENCIAL_ANO
+        sync: false
+      - key: STRIPE_PRICE_AVANZADO_MES
+        sync: false
+      - key: STRIPE_PRICE_AVANZADO_ANO
+        sync: false
+      - key: STRIPE_PRICE_ELITE_MES
+        sync: false
+      - key: STRIPE_PRICE_ELITE_ANO
+        sync: false
+      - key: STRIPE_PRICE_FUNDADOR
+        sync: false
+      - key: PLATFORM_PLAN_FUNDADOR_ENABLED
+        sync: false
+      - key: PLATFORM_PLAN_FUNDADOR_MAX_SEATS
+        sync: false
+      - key: PLATFORM_PLAN_FUNDADOR_CLOSES_AT
+        sync: false
+      # Reglas de negocio que sirve el servidor
+      - key: CANCELLATION_WINDOW_HOURS
+        sync: false
+      - key: SEPA_PRENOTIFICATION_DAYS
+        sync: false
+      - key: SEPA_PRENOTIFICATION_AGREED_IN_WRITING
+        sync: false
+      # Correo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_FROM_EMAIL
+        sync: false
+      - key: EMAIL_POSTAL_ADDRESS
+        sync: false
+      # IA (vacías mientras no haya DPA firmado)
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_DEMO_ORG_SLUGS # "__ninguna__" en producción: vacía equivale a training-zone
+        sync: false
+      - key: AI_DPA_SIGNED_AT
+        sync: false
+      # Arranque de la plataforma (scripts/bootstrap-plataforma.ts)
+      - key: PLATFORM_ORG_SLUG
+        sync: false
+      - key: PLATFORM_ADMIN_EMAIL
+        sync: false
+      # Web pública y enlaces de la app nativa
+      - key: NEXT_PUBLIC_ANALYTICS_DOMAIN
+        sync: false
+      - key: NEXT_PUBLIC_ANALYTICS_SRC
+        sync: false
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
+      - key: NEXT_PUBLIC_LOGO_HOSTS
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: IOS_BUNDLE_ID
+        sync: false
+      - key: ANDROID_PACKAGE_NAME
+        sync: false
+      - key: ANDROID_SHA256_CERT_FINGERPRINTS
+        sync: false
+
+  # ───────────────────────────── STAGING ──────────────────────────────────────
+  # Igual que producción salvo nombre, disco y despliegue automático. Su propia
+  # base de datos y Stripe en MODO TEST: nunca las claves live aquí.
+  - type: web
+    name: trainingzone-web-staging
+    runtime: node
+    region: frankfurt
+    plan: standard
+    branch: main
+    # Staging despliega solo, pero únicamente cuando CI ha pasado en main.
+    autoDeployTrigger: checksPass
+    numInstances: 1
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    preDeployCommand: npx prisma migrate deploy
+    healthCheckPath: /api/health
+    disk:
+      name: progress-photos-staging
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_MIGRATION_URL
+        sync: false
+      - key: DATA_RETENTION_DATABASE_URL
+        sync: false
+      - key: DATA_REGION
+        sync: false
+      - key: PROGRESS_PHOTO_KEY
+        sync: false
+      - key: PROGRESS_PHOTO_DIR
+        value: /var/data/progress-photos
+      - key: AUTH_SECRET
+        sync: false
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+      - key: AUTH_MICROSOFT_ENTRA_ID_ID
+        sync: false
+      - key: AUTH_MICROSOFT_ENTRA_ID_SECRET
+        sync: false
+      - key: AUTH_MICROSOFT_ENTRA_ID_ISSUER
+        sync: false
+      - key: AUTH_GOOGLE_ID
+        sync: false
+      - key: AUTH_GOOGLE_SECRET
+        sync: false
+      - key: JOBS_CRON_SECRET
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_CONNECT_CLIENT_ID
+        sync: false
+      - key: STRIPE_CONNECT_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ESENCIAL_MES
+        sync: false
+      - key: STRIPE_PRICE_ESENCIAL_ANO
+        sync: false
+      - key: STRIPE_PRICE_AVANZADO_MES
+        sync: false
+      - key: STRIPE_PRICE_AVANZADO_ANO
+        sync: false
+      - key: STRIPE_PRICE_ELITE_MES
+        sync: false
+      - key: STRIPE_PRICE_ELITE_ANO
+        sync: false
+      - key: STRIPE_PRICE_FUNDADOR
+        sync: false
+      - key: PLATFORM_PLAN_FUNDADOR_ENABLED
+        sync: false
+      - key: PLATFORM_PLAN_FUNDADOR_MAX_SEATS
+        sync: false
+      - key: PLATFORM_PLAN_FUNDADOR_CLOSES_AT
+        sync: false
+      - key: CANCELLATION_WINDOW_HOURS
+        sync: false
+      - key: SEPA_PRENOTIFICATION_DAYS
+        sync: false
+      - key: SEPA_PRENOTIFICATION_AGREED_IN_WRITING
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_FROM_EMAIL
+        sync: false
+      - key: EMAIL_POSTAL_ADDRESS
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: AI_DEMO_ORG_SLUGS
+        sync: false
+      - key: AI_DPA_SIGNED_AT
+        sync: false
+      - key: PLATFORM_ORG_SLUG
+        sync: false
+      - key: PLATFORM_ADMIN_EMAIL
+        sync: false
+      - key: NEXT_PUBLIC_ANALYTICS_DOMAIN
+        sync: false
+      - key: NEXT_PUBLIC_ANALYTICS_SRC
+        sync: false
+      - key: GOOGLE_SITE_VERIFICATION
+        sync: false
+      - key: NEXT_PUBLIC_LOGO_HOSTS
+        sync: false
+      - key: APPLE_TEAM_ID
+        sync: false
+      - key: IOS_BUNDLE_ID
+        sync: false
+      - key: ANDROID_PACKAGE_NAME
+        sync: false
+      - key: ANDROID_SHA256_CERT_FINGERPRINTS
+        sync: false
+
+  # ─────────────────── RELEVO DEL CRON (INACTIVO A PROPÓSITO) ─────────────────
+  # El cron diario lo dispara .github/workflows/jobs-cron.yml, que es gratis. Si
+  # algún día la puntualidad importa (los cron de Actions se retrasan y a veces
+  # se saltan ejecuciones), se descomenta este bloque Y SE DESACTIVA EL WORKFLOW
+  # en el mismo cambio, o las reglas se ejecutarán dos veces al día.
+  #
+  # - type: cron
+  #   name: trainingzone-jobs-diario
+  #   # Imagen pública con curl: construir la app entera para hacer una petición
+  #   # HTTP sería pagar un build de varios minutos por cada ejecución.
+  #   runtime: image
+  #   image:
+  #     url: docker.io/curlimages/curl:latest
+  #   plan: starter
+  #   region: frankfurt
+  #   # 05:00 UTC. Render evalúa en UTC y no aplica el cambio de hora: son las
+  #   # 07:00 en Madrid en verano y las 06:00 en invierno. De madrugada para que
+  #   # el desfase estacional nunca mueva la ejecución al día anterior.
+  #   schedule: "0 5 * * *"
+  #   # Mismo contrato que el workflow: secreto en cabecera (no en la query
+  #   # string, que acaba en los logs) y el 207 tratado como fallo, porque
+  #   # significa que alguna regla reventó y `curl -f` no lo detectaría.
+  #   dockerCommand: >-
+  #     sh -c '
+  #     code=$(curl -sS -o /tmp/r.json -w "%{http_code}" --max-time 300 --retry 2 --retry-delay 30
+  #     -H "x-cron-secret: $JOBS_CRON_SECRET" "$APP_URL/api/jobs/run");
+  #     cat /tmp/r.json;
+  #     echo "HTTP $code";
+  #     test "$code" = "200"
+  #     '
+  #   envVars:
+  #     - key: JOBS_CRON_SECRET
+  #       sync: false
+  #     - key: APP_URL
+  #       sync: false
+
+databases:
+  # Postgres 16 en Frankfurt, igual que CI (postgres:16) y que lo declarado en
+  # DATA_REGION y en /privacidad. Los planes de pago de Render incluyen copias
+  # automáticas con recuperación a un instante (PITR); el rollback de
+  # OPERACIONES.md §7.5 se apoya en ellas.
+  #
+  # `ipAllowList: []` = sin acceso desde internet, solo desde la red privada de
+  # Render. Para crear los roles (§7.2) se abre temporalmente la IP de quien lo
+  # hace en el dashboard y se vuelve a cerrar al terminar.
+  - name: trainingzone-db
+    region: frankfurt
+    plan: basic-1gb
+    postgresMajorVersion: "16"
+    databaseName: trainingzone
+    user: trainingzone_owner
+    ipAllowList: []
+
+  - name: trainingzone-db-staging
+    region: frankfurt
+    plan: basic-256mb
+    postgresMajorVersion: "16"
+    databaseName: trainingzone_staging
+    user: trainingzone_owner
+    ipAllowList: []

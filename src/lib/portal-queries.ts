@@ -7,13 +7,13 @@ import {
   chargeSessionToSubscription,
   claimWaitlistedBooking,
   pickBookingSubscription,
-  refundSessionToSubscription,
   shouldNotifyVacancy,
 } from "@/lib/session-booking";
 import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDateParam, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { resequenceWaitlist } from "@/lib/waitlist";
 import { refundSession } from "@/lib/session-ledger";
+import { checkBookingTransition, statusesThatCanReach } from "@/lib/booking-transitions";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { getOwnProgressEntries } from "@/lib/health-access";
@@ -631,6 +631,30 @@ export async function bookSessionForMember(
   const gate = await bookingGateForMember(member.id, { surface: "member" });
   if (!gate.allowed) return { ok: false as const, error: gate.reason };
 
+  try {
+    return await bookInTransaction(member, sessionId, occurrenceDateParam);
+  } catch (error) {
+    if (error instanceof NoBalanceRollback) return { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
+    throw error;
+  }
+}
+
+/**
+ * Sale de la transacción de la reserva para deshacerla cuando el cobro, que ya
+ * va DESPUÉS de escribir la reserva (QA-RES-08), no se aplica.
+ */
+class NoBalanceRollback extends Error {
+  constructor() {
+    super(NO_BALANCE_ERROR);
+    this.name = "NoBalanceRollback";
+  }
+}
+
+async function bookInTransaction(
+  member: MemberForBooking,
+  sessionId: string,
+  occurrenceDateParam?: string | null
+): Promise<BookingResult> {
   return prisma.$transaction(async (tx) => {
     // Bloquea la fila de la sesión para serializar reservas concurrentes: sin
     // este lock, dos peticiones simultáneas pueden leer el mismo aforo libre y
@@ -742,36 +766,34 @@ export async function bookSessionForMember(
     }
     const chargeSubscriptionId = choice.subscriptionId;
 
-    // Va ANTES de escribir la reserva para poder abortar sin dejar nada a medias.
-    if (
-      chargeSubscriptionId &&
-      !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId: cls.orgId, reason: "BOOKING" }))
-    ) {
-      return { ok: false as const, needsTopUp: true, error: NO_BALANCE_ERROR };
-    }
+    // QA-RES-08: primero la reserva y después el cobro, con SU `bookingId`. Al
+    // revés, el asiento `BOOKING` del libro nacía sin reserva y el bono no podía
+    // decir qué clase consumió la sesión. Si el cobro no se aplica (otro
+    // descuento concurrente agotó el saldo), se lanza para deshacer la
+    // transacción entera: la reserva recién escrita no puede quedarse sin cobrar.
+    const chargeFor = async (bookingId: string) => {
+      if (!chargeSubscriptionId) return;
+      const charged = await chargeSessionToSubscription(tx, chargeSubscriptionId, {
+        orgId: cls.orgId,
+        bookingId,
+        reason: "BOOKING",
+      });
+      if (!charged) throw new NoBalanceRollback();
+    };
 
     if (claimingOwnWaitlistSpot) {
       // RB-RES-007: el aviso de plaza sale para toda la lista a la vez, así que
       // el paso a BOOKED solo cuenta si la reserva SIGUE en espera. Sin esa
       // condición dentro del UPDATE, dos personas avisadas del mismo hueco se
-      // lo quedaban las dos y la clase acababa sobrevendida.
+      // lo quedaban las dos y la clase acababa sobrevendida. Como se cobra
+      // después, quien llega tarde no llega a pagar nada: ya no hace falta
+      // devolverle un cobro con asiento de corrección.
       const claimed = await claimWaitlistedBooking(tx, existing!.id, chargeSubscriptionId);
-      if (claimed) await resequenceWaitlist(tx, sessionId, occurrenceDate);
       if (!claimed) {
-        // Otra persona de la lista se ha adelantado: se deshace el descuento
-        // para no cobrarle una sesión que no ha llegado a reservar.
-        // No es una cancelación: es deshacer un cobro que no llegó a comprar
-        // nada, así que el asiento va como corrección.
-        if (chargeSubscriptionId) {
-          await refundSessionToSubscription(tx, chargeSubscriptionId, {
-            orgId: cls.orgId,
-            bookingId: existing!.id,
-            reason: "CORRECTION",
-            note: "La plaza reclamada se la quedó otra persona.",
-          });
-        }
         return { ok: false as const, error: "Esa plaza ya la ha reclamado otra persona: sigues en la lista de espera." };
       }
+      await chargeFor(existing!.id);
+      await resequenceWaitlist(tx, sessionId, occurrenceDate);
       return { ok: true as const, waitlisted: false };
     }
 
@@ -786,7 +808,7 @@ export async function bookSessionForMember(
       where: { sessionId, occurrenceDate, status: "WAITLISTED" },
     });
 
-    await tx.booking.create({
+    const created = await tx.booking.create({
       data: {
         sessionId,
         occurrenceDate,
@@ -795,7 +817,9 @@ export async function bookSessionForMember(
         waitlistPosition: overCapacity ? waitlistedCount + 1 : null,
         subscriptionId: chargeSubscriptionId,
       },
+      select: { id: true },
     });
+    await chargeFor(created.id);
 
     return { ok: true as const, waitlisted: overCapacity };
   });
@@ -821,9 +845,12 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   // Solo se cancela lo que sigue vivo. Sin este filtro, el `bookingId` que
   // recibe la acción (y el endpoint móvil) permitía marcar como CANCELLED una
   // reserva ya asistida y borrar así el histórico de asistencia del socio.
-  if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
-    return { ok: false, error: "Esta reserva ya no está activa." };
-  }
+  // QA-RES-09: lo decide la máquina de estados, no una lista propia. Cancelar
+  // una ya cancelada no es "re-marcarla" (que la máquina acepta): no hay nada
+  // vivo que cancelar.
+  if (booking.status === "CANCELLED") return { ok: false, error: "Esta reserva ya no está activa." };
+  const transition = checkBookingTransition(booking.status, "CANCELLED");
+  if (!transition.ok) return { ok: false, error: transition.error };
   // RB-RES-012: zona del centro, nunca la del cliente. De ella dependen tanto
   // "la clase ya ha empezado" como la ventana de penalización que decide si se
   // devuelve el bono — y es la misma que usó la lectura para pintar el
@@ -861,7 +888,7 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   // pasaran las dos y devolvieran el bono por duplicado.
   const cancelled = await prisma.$transaction(async (tx) => {
     const applied = await tx.booking.updateMany({
-      where: { id: bookingId, status: { in: ["BOOKED", "WAITLISTED"] } },
+      where: { id: bookingId, status: { in: statusesThatCanReach("CANCELLED") } },
       data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
     });
     if (applied.count === 0) return false;

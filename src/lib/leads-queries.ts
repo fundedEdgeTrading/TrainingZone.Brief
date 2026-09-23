@@ -1,12 +1,15 @@
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import type { LeadCloseType, LeadStatus, Role, Sex } from "@prisma/client";
 import { createMemberWithInvitation } from "@/lib/invitations";
 import { createNotificationOnce } from "@/lib/notifications";
 import { createHealthRecordForLead } from "@/lib/health-access";
 import { LEAD_CONSENT_VERSION, resolveLeadHealthCapture } from "@/lib/consent";
-import { canCaptureLeadHealthData } from "@/lib/minors";
+import { canCaptureLeadHealthData, evaluateAgeAdmission } from "@/lib/minors";
 import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
+import { canManageLeads } from "@/lib/rbac";
 import { releaseReferralRewardsForLead } from "@/lib/referral-rewards";
+import { sendMemberWelcome } from "@/lib/member-welcome";
 
 /**
  * Ámbito de centro de un lead (center-scope.ts), igual que ya se aplica a
@@ -207,6 +210,17 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
   }
   if (!input.channel.trim()) return { ok: false, error: "Selecciona el canal de origen." };
 
+  // QA-ALTA-03 · Todo lo que puede hacer fallar el cierre directo se comprueba
+  // ANTES de escribir el lead: si no, cada reintento del formulario dejaba un
+  // lead huérfano más con los mismos datos.
+  if (input.directClose) {
+    const email = input.email?.trim();
+    if (!email) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };
+    if (await memberEmailTaken(input.orgId, email)) return { ok: false, error: MEMBER_EMAIL_TAKEN };
+    const ageError = await conversionAgeError(input.orgId, input.birthDate);
+    if (ageError) return { ok: false, error: ageError };
+  }
+
   const lead = await prisma.lead.create({
     data: {
       orgId: input.orgId,
@@ -273,22 +287,35 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
     },
   });
 
+  // "Cerrado directamente" INICIA el alta, igual que el "Ha cerrado" del
+  // embudo: el lead queda en conversión con su socio en TRIAL y solo pasa a
+  // CERRADO —y solo entonces libera la recompensa del referido— cuando se
+  // confirma el cobro (RB-LEAD-005, `confirmLeadClosureForMember`).
   if (input.directClose) {
-    if (!input.email?.trim()) return { ok: false, error: "El email es obligatorio para cerrar el alta directamente." };
     const converted = await initiateLeadConversion(input.orgId, lead.id, {
       planId: input.directClose.planId ?? null,
       closeType: "DIRECTO",
     });
     if (!converted.ok) return converted;
-    await confirmLeadClosureForMember(input.orgId, converted.memberId);
   }
 
   return { ok: true, leadId: lead.id };
 }
 
 export async function assignLeadOwner(orgId: string, leadId: string, ownerUserId: string) {
-  const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true, centerId: true } });
   if (!lead) return { ok: false as const, error: "Lead no encontrado." };
+  // QA-ALTA-19 · El id llega del cliente: el responsable tiene que ser personal
+  // en activo de ESTA organización, con permiso para llevar leads y con el
+  // centro del lead en su ámbito — si no, el lead queda asignado a alguien que
+  // no puede ni abrirlo y la alerta de "sin responsable" se apaga en falso.
+  const owner = await prisma.user.findFirst({
+    where: { id: ownerUserId, orgId, deactivatedAt: null },
+    select: { id: true, role: true, orgId: true, centerId: true },
+  });
+  if (!owner || !canManageLeads(owner.role) || !(await isCenterInScope(owner, lead.centerId))) {
+    return { ok: false as const, error: "El responsable tiene que ser alguien del equipo con acceso al centro del lead." };
+  }
   await prisma.lead.update({ where: { id: leadId }, data: { ownerUserId } });
   // RB-LEAD-009: la alerta de "sin responsable" se resuelve automáticamente al asignarse uno.
   await prisma.notification.updateMany({
@@ -330,6 +357,47 @@ export async function addLeadNote(orgId: string, leadId: string, authorUserId: s
   return { ok: true as const };
 }
 
+// QA-ALTA-19 · el tipo de cierre llega en un FormData: se valida, no se castea.
+const leadCloseTypeSchema = z.enum(["EMBUDO", "DIRECTO", "ONLINE"]);
+
+export function parseLeadCloseType(
+  raw: FormDataEntryValue | null
+): { ok: true; closeType: LeadCloseType } | { ok: false; error: string } {
+  const value = typeof raw === "string" && raw !== "" ? raw : "EMBUDO";
+  const parsed = leadCloseTypeSchema.safeParse(value);
+  if (!parsed.success) return { ok: false, error: "Tipo de cierre no válido." };
+  return { ok: true, closeType: parsed.data };
+}
+
+const MEMBER_EMAIL_TAKEN = "Ya existe un socio con ese email.";
+
+// Sin distinguir mayúsculas: el alta de socios guarda el email en minúsculas y
+// el lead lo guarda tal como se tecleó; con igualdad exacta "Ana@" y "ana@"
+// pasaban por personas distintas.
+async function memberEmailTaken(orgId: string, email: string) {
+  const dup = await prisma.member.findFirst({
+    where: { orgId, email: { equals: email.trim(), mode: "insensitive" } },
+    select: { id: true },
+  });
+  return dup !== null;
+}
+
+async function conversionAgeError(orgId: string, birthDate: Date | null | undefined): Promise<string | null> {
+  if (!birthDate) return null;
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { allowsMinors: true, minimumAgeYears: true },
+  });
+  if (!org) return "No se ha encontrado la organización.";
+  const admission = evaluateAgeAdmission({ birthDate, policy: org, guardian: null });
+  if (admission.ok) return null;
+  const hint =
+    admission.reason === "falta_consentimiento_del_tutor"
+      ? " Da el alta desde Socios, donde se recogen los datos del tutor."
+      : "";
+  return `${admission.message}${hint}`;
+}
+
 /**
  * RB-LEAD-005/007 — "Ha cerrado" del entrenador INICIA el alta (crea el Member en TRIAL
  * y traslada todos los datos del lead), pero el Lead solo pasa a CERRADO cuando se
@@ -345,8 +413,25 @@ export async function initiateLeadConversion(
   if (lead.convertedMemberId) return { ok: false as const, error: "Este lead ya tiene un alta en curso." };
   if (!lead.email) return { ok: false as const, error: "Se necesita un email para crear el acceso del cliente." };
 
-  const dup = await prisma.member.findFirst({ where: { orgId, email: lead.email }, select: { id: true } });
-  if (dup) return { ok: false as const, error: "Ya existe un socio con ese email." };
+  if (await memberEmailTaken(orgId, lead.email)) return { ok: false as const, error: MEMBER_EMAIL_TAKEN };
+
+  // QA-ALTA-06 · Con fecha de nacimiento, la conversión respeta la misma
+  // política de edad que el alta manual (E10-12). Aquí no hay forma de
+  // recoger el consentimiento acreditable del tutor, así que un menor admitido
+  // se da de alta desde Socios, donde sí se piden sus datos. Sin fecha no se
+  // bloquea: el lead de recepción puede no tenerla y el onboarding la pide.
+  const ageError = await conversionAgeError(orgId, lead.birthDate);
+  if (ageError) return { ok: false as const, error: ageError };
+
+  // El consentimiento comercial del lead no tiene columna en `Lead`: consta en
+  // `AuditLog` (E10-01). La última respuesta es la que vale.
+  const marketingSource = await prisma.auditLog.findFirst({
+    where: { orgId, action: "LEAD_MARKETING_CONSENT_RECORDED", entityType: "Lead", entityId: lead.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, createdAt: true, metadata: true },
+  });
+  const marketingGranted =
+    (marketingSource?.metadata as { granted?: unknown } | null | undefined)?.granted === true;
 
   const { member } = await prisma.$transaction(async (tx) => {
     const { member, invitation } = await createMemberWithInvitation(tx, {
@@ -356,6 +441,7 @@ export async function initiateLeadConversion(
       lastName: lead.lastName,
       email: lead.email!,
       phone: lead.phone,
+      birthDate: lead.birthDate, // QA-ALTA-06 · sin ella el socio pierde la política de edad
       // El bono del cierre de lead, si lo hay, nace en el mismo centro del lead
       // (RB-LEAD-005): el flujo de conversión no ofrece elegir otro centro.
       bonos: opts.planId ? [{ planId: opts.planId, centerId: lead.centerId }] : [],
@@ -377,6 +463,33 @@ export async function initiateLeadConversion(
         ownerUserId: opts.closeType === "ONLINE" ? null : undefined,
       },
     });
+    // RB-LEAD-007 · los objetivos del lead son el primer objetivo del socio:
+    // la ficha los enseña (y la IA los lee) desde `ClientGoal`, igual que un
+    // "objetivo personalizado" añadido a mano.
+    if (lead.goals.trim()) {
+      await tx.clientGoal.create({ data: { orgId, memberId: member.id, label: lead.goals.trim(), isTemplate: false } });
+    }
+    // El consentimiento comercial se hereda con su prueba: fecha de la
+    // respuesta original y un AuditLog que apunta a ella (art. 7.1 RGPD).
+    if (marketingSource) {
+      if (marketingGranted) {
+        await tx.member.update({
+          where: { id: member.id },
+          data: { consentMarketing: true, consentMarketingAt: marketingSource.createdAt },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId: null,
+          action: "MEMBER_MARKETING_CONSENT_FROM_LEAD",
+          entityType: "Member",
+          entityId: member.id,
+          memberId: member.id,
+          metadata: { leadId: lead.id, sourceAuditLogId: marketingSource.id, granted: marketingGranted },
+        },
+      });
+    }
     // RB-LEAD-007: traslada lesiones/patologías (sin recapturar) y bitácora.
     await tx.healthRecord.updateMany({ where: { leadId: lead.id }, data: { leadId: null, memberId: member.id } });
     const notes = await tx.leadNote.findMany({ where: { leadId: lead.id } });
@@ -392,6 +505,15 @@ export async function initiateLeadConversion(
     }
     return { member, invitation };
   });
+
+  // QA-ALTA-04 · Sin este envío el socio nacía con una invitación que nadie le
+  // mandaba. Fuera de la transacción y sin poder tumbar la conversión: el alta
+  // ya está hecha, y "Reenviar bienvenida" en la ficha es la vía de rescate.
+  try {
+    await sendMemberWelcome(member.id);
+  } catch (error) {
+    console.error("[leads] error enviando la bienvenida del lead convertido:", error);
+  }
 
   return { ok: true as const, memberId: member.id };
 }

@@ -15,6 +15,7 @@ import { withSignedPhotoUrls } from "@/lib/progress-photos";
 import type { EpProfile } from "@/lib/ai/ep-profile";
 import { parseAnswers } from "@/lib/assessments/queries";
 import { injuryZoneLabel } from "@/lib/injury-zones";
+import type { BriefCondition, BriefRule } from "@/lib/brief-queries";
 import { scrubAll, scrubIdentifiers } from "@/lib/ai/pseudonymize";
 import {
   ASSESSMENT_KIND_LABEL,
@@ -165,6 +166,67 @@ export async function getClinicalDetailForMember({
   });
 
   return records;
+}
+
+/**
+ * Semáforo de aptitud del panel del entrenador (`/trainer`, QA-RES-06). Lo
+ * mismo que lee el Session Brief —zona del catálogo, lado y tipo, y las reglas
+ * de la organización— para una lista de socios, con una sola entrada en
+ * `AuditLog` por lectura del panel.
+ *
+ * SIN `description`: el panel pinta color, rótulo y adaptación, igual que el
+ * brief (E3-05). El detalle clínico se pide aparte, con
+ * `getClinicalDetailForMember`, que deja su propio rastro.
+ *
+ * Roles sin autorización reciben `null` y no dejan rastro: no se ha leído nada.
+ */
+export async function getAptitudeInputsForTrainerPanel({
+  orgId,
+  actorUserId,
+  actorRole,
+  memberIds,
+}: {
+  orgId: string;
+  actorUserId: string;
+  actorRole: Role;
+  memberIds: string[];
+}): Promise<{ conditionsByMember: Map<string, BriefCondition[]>; rules: BriefRule[] } | null> {
+  if (!canViewHealthData(actorRole)) return null;
+  if (memberIds.length === 0) return { conditionsByMember: new Map(), rules: [] };
+
+  const [records, rules] = await Promise.all([
+    // Vigentes (ACTIVE / IN_REHAB / CHRONIC), como el brief: la fase solo
+    // decide si el registro cuenta; la luz la pone la regla.
+    prisma.healthRecord.findMany({
+      where: { memberId: { in: memberIds }, member: { orgId }, status: { in: OPEN_HEALTH_STATUSES } },
+      select: { memberId: true, zone: true, zoneCode: true, side: true, type: true },
+    }),
+    prisma.aptitudeRule.findMany({
+      where: { orgId },
+      select: { injuryZone: true, zoneCode: true, side: true, blockArea: true, light: true, adaptation: true },
+    }),
+  ]);
+
+  const conditionsByMember = new Map<string, BriefCondition[]>();
+  for (const r of records) {
+    if (!r.memberId) continue;
+    const list = conditionsByMember.get(r.memberId) ?? [];
+    list.push({ zone: r.zone, zoneCode: r.zoneCode, side: r.side, type: r.type });
+    conditionsByMember.set(r.memberId, list);
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      orgId,
+      actorUserId,
+      action: "TRAINER_PANEL_HEALTH_READ",
+      entityType: "Member",
+      entityId: actorUserId,
+      metadata: { memberIds },
+    },
+  });
+
+  return { conditionsByMember, rules };
 }
 
 /**

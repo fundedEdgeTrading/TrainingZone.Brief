@@ -2,6 +2,7 @@ import Link from "next/link";
 import { resolveTimezone } from "@/lib/timezone";
 import { formatInstantDate } from "@/lib/date-utils";
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { requireRole, memberIsInScope } from "@/lib/guard";
 import { getAssessment, getAssessmentConfig, parseAnswers } from "@/lib/assessments/queries";
 import { getScreeningDraftForMember } from "@/lib/health-access";
@@ -50,7 +51,7 @@ export default async function AssessmentDetailPage({
   const { id, assessmentId } = await params;
   const timeZone = await resolveTimezone();
 
-  const [assessment, config, screeningDraft] = await Promise.all([
+  const [assessment, config, screeningDraft, memberFacts] = await Promise.all([
     getAssessment(session.user.orgId, assessmentId),
     getAssessmentConfig(session.user.orgId),
     // E3-06: la revisión llega precargada con lo que ya consta declarado, para
@@ -60,6 +61,13 @@ export default async function AssessmentDetailPage({
       orgId: session.user.orgId,
       actorUserId: session.user.id,
       actorRole: session.user.role,
+    }),
+    // QA-ALTA-05: el formulario arranca con la autorización de imagen que ya
+    // consta, para que cerrar la valoración no parezca retirarla. La profesión
+    // vive en la ficha (`Member.occupation`), no en `answers`.
+    prisma.member.findFirst({
+      where: { id, orgId: session.user.orgId },
+      select: { consentImages: true, occupation: true },
     }),
   ]);
   if (!assessment || assessment.memberId !== id) notFound();
@@ -119,6 +127,7 @@ export default async function AssessmentDetailPage({
             config={config}
             draft={memberDraft}
             screeningDraft={screeningDraft}
+            consentImagesGranted={memberFacts?.consentImages ?? false}
           />
         </>
       ) : !answers ? (
@@ -151,6 +160,7 @@ export default async function AssessmentDetailPage({
                   <Row label="Edad" value={answers.perfil.edad} />
                   <Row label="Sexo" value={answers.perfil.sexo} />
                   <Row label="Altura" value={`${answers.perfil.alturaCm} cm`} />
+                  <Row label="Profesión" value={memberFacts?.occupation} />
                   <Row label="Objetivo principal" value={answers.perfil.objetivoPrincipal} />
                   <Row label="Objetivo secundario" value={answers.perfil.objetivoSecundario} />
                   <Row label="Motivación real" value={answers.perfil.motivacionReal} />

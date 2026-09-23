@@ -78,7 +78,7 @@ test.describe("F4 — Productos y puesta en marcha", () => {
     await expect(page.getByRole("heading", { name: /Pon en marcha tu centro|Todo listo/ })).toBeVisible();
     // Con el seed hay centros, equipo y socios: esos pasos salen completados.
     await expect(page.getByText("Tu primer centro")).toBeVisible();
-    // Ocho desde E9-15, que añadió el paso "enlaces" (las URLs públicas del centro).
-    await expect(page.getByText(/de 8 completados/)).toBeVisible();
+    // Nueve: E9-15 añadió "enlaces" (las URLs públicas del centro) y QA-ALTA-02 "canales".
+    await expect(page.getByText(/de 9 completados/)).toBeVisible();
   });
 });

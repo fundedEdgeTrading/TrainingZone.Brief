@@ -152,10 +152,11 @@ test.describe("Alta pago-primero completa: compra → puesta en marcha de la org
 
     // El NIF/razón social llegan de `customer_details` de Stripe: el paso
     // "fiscal" ya está resuelto sin que el director haya hecho nada todavía.
-    // Ocho pasos desde E9-15, que añadió "enlaces" (las URLs públicas del
-    // centro) a los siete que había. El total viaja en el texto, así que
+    // Nueve pasos: E9-15 añadió "enlaces" (las URLs públicas del centro) a los
+    // siete que había y QA-ALTA-02 "canales", que ya sale hecho porque el alta
+    // siembra los canales de captación. El total viaja en el texto, así que
     // cualquier paso nuevo vuelve a romper aquí: es el aviso, no un estorbo.
-    await expect(page.getByText("1 de 8 completados")).toBeVisible();
+    await expect(page.getByText("2 de 9 completados")).toBeVisible();
     const centroItem = page.locator("li", { hasText: "Tu primer centro" });
     await expect(centroItem.getByText("Necesario", { exact: true })).toBeVisible();
   });
@@ -286,8 +287,8 @@ test.describe("Alta pago-primero completa: compra → puesta en marcha de la org
     await expect(page.getByText("Socio creado")).toBeVisible({ timeout: 15_000 });
 
     await page.goto("/puesta-en-marcha");
-    await expect(page.getByText("6 de 8 completados")).toBeVisible();
-    // Quedan dos de los ocho: conectar cobros (sin credenciales de Stripe
+    await expect(page.getByText("7 de 9 completados")).toBeVisible();
+    // Quedan dos de los nueve: conectar cobros (sin credenciales de Stripe
     // Connect en este entorno) y los enlaces públicos, que E9-15 dio por hecho
     // solo cuando hay algún centro PUBLICADO y aquí ninguno lo está todavía.
     const stripeItem = page.locator("li", { hasText: "Conectar Stripe" });

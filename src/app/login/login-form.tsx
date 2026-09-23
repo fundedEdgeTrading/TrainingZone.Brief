@@ -7,68 +7,21 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Field, Input } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { resolveLoginTargets, type LoginTarget } from "./actions";
-
-const DEMO_USERS = [
-  {
-    email: "direccion@trainingzone.es",
-    label: "Carmen — Dirección",
-    desc: "Ámbito global, todos los centros",
-  },
-  {
-    email: "direccion.lajota@trainingzone.es",
-    label: "Dirección de centro",
-    desc: "P&L y operativa de su centro",
-  },
-  {
-    email: "entrenador@trainingzone.es",
-    label: "Dani — Entrenador",
-    desc: "Agenda, Session Brief y Debrief",
-  },
-  {
-    email: "marcos.iglesias@trainingzone.es",
-    label: "Marcos — Entrenador Admin",
-    desc: "Entrenador con aforo del centro y ajuste de bonos",
-  },
-  {
-    email: "laura.gimeno@trainingzone.es",
-    label: "Laura — Entrenadora",
-    desc: "Otro entrenador, mismo centro (La Jota)",
-  },
-  {
-    email: "recepcion.lajota@trainingzone.es",
-    label: "Recepción",
-    desc: "Socios, agenda y cobros (sin datos de salud)",
-  },
-  {
-    email: "socio@trainingzone.es",
-    label: "Marta — Socia",
-    desc: "Bono de grupos + bono de EP (uno de cada)",
-  },
-  {
-    email: "socio.grupos@trainingzone.es",
-    label: "Nuria — Socia",
-    desc: "Solo bono de grupos reducidos",
-  },
-  {
-    email: "socio.ep@trainingzone.es",
-    label: "Álvaro — Socio",
-    desc: "Solo bono de entrenamiento personal",
-  },
-  {
-    email: "sergio@trainingzone.es",
-    label: "Sergio — Admin plataforma",
-    desc: "Soporte de Apta: organizaciones, anuncios y auditoría",
-  },
-];
-
-const DEMO_PASSWORD = "demo1234";
+import type { DemoAccess } from "./demo-users";
 
 function initials(label: string) {
   const parts = label.replace(/—.*$/, "").trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase();
 }
 
-export default function LoginForm({ demoModeActive }: { demoModeActive: boolean }) {
+/**
+ * PROD-01: el panel demo llega como DATOS desde el servidor (`demoAccess`), y
+ * solo si el modo demo está encendido. Antes la lista de usuarios sembrados y
+ * su contraseña eran constantes de este componente de cliente: el panel no se
+ * pintaba en producción, pero las credenciales viajaban igual en el JS público.
+ */
+export default function LoginForm({ demoAccess }: { demoAccess: DemoAccess | null }) {
+  const demoModeActive = demoAccess !== null;
   const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") ?? "/dashboard";
@@ -244,23 +197,23 @@ export default function LoginForm({ demoModeActive }: { demoModeActive: boolean 
       {/* E8-16: el panel de acceso demo (usuarios sembrados con contraseña
           compartida a la vista) no puede salir en producción — es la primera
           pantalla de un producto que se vende como premium. */}
-      {demoModeActive && (
+      {demoModeActive && demoAccess && (
         <>
           <div className="hidden lg:block bg-tz-linen/70" />
 
           <div>
             <p className="text-xs font-medium text-muted mb-2">
               O entra directamente como un usuario demo (contraseña:{" "}
-              <code className="bg-tz-sand px-1 rounded">{DEMO_PASSWORD}</code>):
+              <code className="bg-tz-sand px-1 rounded">{demoAccess.password}</code>):
             </p>
             <div className="space-y-1.5">
-              {DEMO_USERS.map((u, i) => (
+              {demoAccess.users.map((u, i) => (
                 <button
                   key={u.email}
                   type="button"
                   disabled={loading}
                   aria-busy={loading}
-                  onClick={() => doSignIn(u.email, DEMO_PASSWORD)}
+                  onClick={() => doSignIn(u.email, demoAccess.password)}
                   className="w-full flex items-center gap-3 text-left rounded-control border border-tz-linen hover:border-brand-border-hover hover:bg-tz-bone hover:-translate-y-0.5 hover:shadow-card px-3 py-2 short:py-1.5 transition-[transform,box-shadow,border-color,background-color] duration-150 tz-fade-up"
                   style={{ animationDelay: `${0.1 + i * 0.05}s` }}
                 >

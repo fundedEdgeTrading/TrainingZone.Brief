@@ -134,3 +134,40 @@ test("E4-30 · plan con sesiones incluidas comprado por Stripe: 8, no ilimitado"
 
   await prisma.subscription.delete({ where: { id: created.id } });
 });
+
+test("STR-08 · si el asiento del libro falla, el bono no queda creado a medias", async () => {
+  const plan = await prisma.membershipPlan.findUniqueOrThrow({ where: { id: fx.planId } });
+  const before = await prisma.subscription.count({ where: { memberId: fx.memberId } });
+
+  // Un firmante que no existe hace fallar el asiento (clave ajena de
+  // `actorUserId`) DESPUÉS de crear la fila del bono. Con dos escrituras sueltas
+  // quedaba un bono con 8 sesiones y un libro vacío: el cuadre roto de E2-15.
+  await assert.rejects(
+    createSubscriptionFromPlan(prisma, {
+      memberId: fx.memberId,
+      centerId: fx.centerId,
+      plan,
+      actorUserId: "usuario-que-no-existe",
+    })
+  );
+
+  const afterCount = await prisma.subscription.count({ where: { memberId: fx.memberId } });
+  assert.equal(afterCount, before, "la suscripción y su asiento se crean juntos o no se crea ninguno");
+});
+
+test("STR-08 · dentro de una transacción ajena, usa esa transacción", async () => {
+  const plan = await prisma.membershipPlan.findUniqueOrThrow({ where: { id: fx.planId } });
+  const before = await prisma.subscription.count({ where: { memberId: fx.memberId } });
+
+  // La transacción del llamante se deshace después de crear el bono: si
+  // `createSubscriptionFromPlan` abriera la suya propia con `prisma`, el bono
+  // sobreviviría al rollback del llamante.
+  await assert.rejects(
+    prisma.$transaction(async (tx) => {
+      await createSubscriptionFromPlan(tx, { memberId: fx.memberId, centerId: fx.centerId, plan });
+      throw new Error("rollback del llamante");
+    })
+  );
+
+  assert.equal(await prisma.subscription.count({ where: { memberId: fx.memberId } }), before);
+});
