@@ -5,8 +5,10 @@
  * su propio módulo en vez de colarse como un parámetro más de
  * `CANCEL_WINDOW_HOURS` (portal-queries.ts):
  *
- * - El socio cancela con su ventana (`CANCELLATION_WINDOW_HOURS`, 24 h por
- *   defecto y 12 h en la copia de la app): fuera de ella pierde la sesión.
+ * - El socio cancela con la ventana del centro, leída SIEMPRE del servidor
+ *   (`CANCELLATION_WINDOW_HOURS`, 24 h si no se configura): fuera de ella
+ *   pierde la sesión. La app ya no tiene copia propia: recibe
+ *   `cancelWindowHours` de la API, igual que el portal.
  * - El entrenador que saca a alguien de un grupo reducido tiene una ventana
  *   propia de 24 h. Con más margen, la sesión vuelve al bono; dentro de las
  *   24 h previas se consume igualmente, porque la plaza ya no se puede
