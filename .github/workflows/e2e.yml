@@ -40,7 +40,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trainingzone?schema=public
-      AUTH_SECRET: ci-secret-no-usar-en-produccion
       NEXTAUTH_URL: http://localhost:3000
       # RB-RES-005: fijada explícitamente para que la ventana de cancelación no
       # dependa del entorno del runner.
@@ -62,10 +61,9 @@ jobs:
       # es justamente el comportamiento que la historia pide. Se declara aquí
       # para que CI ejercite el camino real en vez de una excepción.
       DATA_REGION: frankfurt
-      # E10-20: las fotos de composición corporal viven fuera de la base de
-      # datos, cifradas. Clave de usar y tirar del runner: en producción se
-      # genera con `openssl rand -base64 32` y perderla es perder las fotos.
-      PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
+      # E10-20 / PROD-02: AUTH_SECRET, PROGRESS_PHOTO_KEY y PROGRESS_PHOTO_DIR
+      # se generan en cada ejecución (paso «Secretos de usar y tirar»): el
+      # arranque en producción rechaza los valores publicados en el repositorio.
       # E3 · `flujos.spec.ts` mueve el motor de flujos por su endpoint de verdad
       # (`/api/flujos/cron`), que falla cerrado sin secreto. Sin esta variable el
       # spec no falla: SE SALTA ENTERO, que es un verde que no prueba nada — el
@@ -75,6 +73,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # PROD-02 · `next start` corre en modo producción y no arranca con secretos
+      # de ejemplo publicados en el repositorio ni sin directorio de fotos. Se
+      # generan por ejecución: de usar y tirar de verdad.
+      - name: Secretos de usar y tirar (PROD-02)
+        run: |
+          AUTH_SECRET=$(openssl rand -base64 48)
+          PROGRESS_PHOTO_KEY=$(openssl rand -base64 32)
+          echo "::add-mask::$AUTH_SECRET"
+          echo "::add-mask::$PROGRESS_PHOTO_KEY"
+          mkdir -p "$RUNNER_TEMP/fotos"
+          {
+            echo "AUTH_SECRET=$AUTH_SECRET"
+            echo "PROGRESS_PHOTO_KEY=$PROGRESS_PHOTO_KEY"
+            echo "PROGRESS_PHOTO_DIR=$RUNNER_TEMP/fotos"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -124,8 +138,16 @@ jobs:
       - name: Tests unitarios y cobertura
         run: npm run test:unit:coverage
 
+      # PROD-01 · Este job prueba la demo sin Stripe (planes-gateo.spec.ts, login
+      # con usuarios de demo…). El modo demo ya no se deduce de que falte
+      # STRIPE_SECRET_KEY: se pide explícitamente, y en producción (`next start`)
+      # con la segunda bandera. Solo en build y e2e: los tests unitarios corren
+      # sin él y cada uno lo enciende donde lo necesita.
       - name: Build
         run: npm run build
+        env:
+          DEMO_MODE: "true"
+          ALLOW_DEMO_IN_PRODUCTION: "true"
 
       - name: Instalar Chromium
         run: npx playwright install --with-deps chromium
@@ -133,6 +155,9 @@ jobs:
       # `npm run start` lo arranca el propio webServer de playwright.config.ts.
       - name: Tests e2e
         run: npm run test:e2e
+        env:
+          DEMO_MODE: "true"
+          ALLOW_DEMO_IN_PRODUCTION: "true"
 
       - name: Guardar informe de fallos
         if: failure()
@@ -180,7 +205,6 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/trainingzone?schema=public
-      AUTH_SECRET: ci-secret-no-usar-en-produccion
       NEXTAUTH_URL: http://localhost:3000
       # RB-RES-005: fijada explícitamente para que la ventana de cancelación no
       # dependa del entorno del runner.
@@ -191,18 +215,41 @@ jobs:
       # es justamente el comportamiento que la historia pide. Se declara aquí
       # para que CI ejercite el camino real en vez de una excepción.
       DATA_REGION: frankfurt
-      # E10-20: las fotos de composición corporal viven fuera de la base de
-      # datos, cifradas. Clave de usar y tirar del runner: en producción se
-      # genera con `openssl rand -base64 32` y perderla es perder las fotos.
-      PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
+      # E10-20 / PROD-02: AUTH_SECRET, PROGRESS_PHOTO_KEY y PROGRESS_PHOTO_DIR
+      # se generan en cada ejecución (paso «Secretos de usar y tirar»): el
+      # arranque en producción rechaza los valores publicados en el repositorio.
       # De usar y tirar, solo para este job: es justo lo que `verify` omite a
       # propósito. Sin llamada real a Stripe — ver el comentario del job.
       STRIPE_SECRET_KEY: sk_test_solo_para_ci_0000
       STRIPE_WEBHOOK_SECRET: whsec_solo_para_ci_0000
       JOBS_CRON_SECRET: cron-solo-para-ci
+      # PROD-02 · Fuera del modo demo, producción exige la configuración
+      # completa. Valores de relleno: ningún spec habla con Stripe Connect ni
+      # con Brevo (el mailer devuelve ok:false y lo registra, PROD-03).
+      STRIPE_CONNECT_WEBHOOK_SECRET: whsec_connect_solo_para_ci_0000
+      STRIPE_CONNECT_CLIENT_ID: ca_solo_para_ci_0000
+      BREVO_API_KEY: xkeysib-solo-para-ci
+      BREVO_FROM_EMAIL: ci@apta.invalid
+      NEXT_PUBLIC_SITE_URL: https://ci.apta.invalid
 
     steps:
       - uses: actions/checkout@v4
+
+      # PROD-02 · `next start` corre en modo producción y no arranca con secretos
+      # de ejemplo publicados en el repositorio ni sin directorio de fotos. Se
+      # generan por ejecución: de usar y tirar de verdad.
+      - name: Secretos de usar y tirar (PROD-02)
+        run: |
+          AUTH_SECRET=$(openssl rand -base64 48)
+          PROGRESS_PHOTO_KEY=$(openssl rand -base64 32)
+          echo "::add-mask::$AUTH_SECRET"
+          echo "::add-mask::$PROGRESS_PHOTO_KEY"
+          mkdir -p "$RUNNER_TEMP/fotos"
+          {
+            echo "AUTH_SECRET=$AUTH_SECRET"
+            echo "PROGRESS_PHOTO_KEY=$PROGRESS_PHOTO_KEY"
+            echo "PROGRESS_PHOTO_DIR=$RUNNER_TEMP/fotos"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -326,15 +373,41 @@ jobs:
       DATABASE_MIGRATION_URL: postgresql://trainingzone_owner:owner-ci@localhost:5432/trainingzone?schema=public
       DATABASE_URL: postgresql://apta_app:app-ci@localhost:5432/trainingzone?schema=public
       DATA_RETENTION_DATABASE_URL: postgresql://apta_mantenimiento:mant-ci@localhost:5432/trainingzone?schema=public
-      AUTH_SECRET: ci-secret-no-usar-en-produccion
       NEXTAUTH_URL: http://localhost:3000
       CANCELLATION_WINDOW_HOURS: "24"
       DATA_REGION: frankfurt
-      PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
       JOBS_CRON_SECRET: cron-solo-para-ci
+      # Producción de verdad, sin modo demo: la configuración completa que exige
+      # PROD-02, con valores de relleno (aquí solo se arranca y se pide /api/health).
+      STRIPE_SECRET_KEY: sk_test_solo_para_ci_0000
+      STRIPE_WEBHOOK_SECRET: whsec_solo_para_ci_0000
+      # PROD-02 · Fuera del modo demo, producción exige la configuración
+      # completa. Valores de relleno: ningún spec habla con Stripe Connect ni
+      # con Brevo (el mailer devuelve ok:false y lo registra, PROD-03).
+      STRIPE_CONNECT_WEBHOOK_SECRET: whsec_connect_solo_para_ci_0000
+      STRIPE_CONNECT_CLIENT_ID: ca_solo_para_ci_0000
+      BREVO_API_KEY: xkeysib-solo-para-ci
+      BREVO_FROM_EMAIL: ci@apta.invalid
+      NEXT_PUBLIC_SITE_URL: https://ci.apta.invalid
 
     steps:
       - uses: actions/checkout@v4
+
+      # PROD-02 · `next start` corre en modo producción y no arranca con secretos
+      # de ejemplo publicados en el repositorio ni sin directorio de fotos. Se
+      # generan por ejecución: de usar y tirar de verdad.
+      - name: Secretos de usar y tirar (PROD-02)
+        run: |
+          AUTH_SECRET=$(openssl rand -base64 48)
+          PROGRESS_PHOTO_KEY=$(openssl rand -base64 32)
+          echo "::add-mask::$AUTH_SECRET"
+          echo "::add-mask::$PROGRESS_PHOTO_KEY"
+          mkdir -p "$RUNNER_TEMP/fotos"
+          {
+            echo "AUTH_SECRET=$AUTH_SECRET"
+            echo "PROGRESS_PHOTO_KEY=$PROGRESS_PHOTO_KEY"
+            echo "PROGRESS_PHOTO_DIR=$RUNNER_TEMP/fotos"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
