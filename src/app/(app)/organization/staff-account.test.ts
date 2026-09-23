@@ -124,3 +124,18 @@ test("QA-ALTA-10 · no reenvía la invitación de alguien de otra organización"
   );
   assert.equal(result, null);
 });
+
+test("QA-ALTA-10 · dos reenvíos a la vez (doble clic) no revientan y dejan una sola invitación", async () => {
+  const email = `doble@${SLUG}.example.com`;
+  const { user } = await prisma.$transaction((tx) =>
+    createStaffAccount(tx, { orgId, name: "Doble", email, role: "TRAINER", centerId })
+  );
+  // Pool caliente para que las dos transacciones se solapen de verdad; en frío
+  // la primera confirma antes de que la segunda empiece.
+  await Promise.all(Array.from({ length: 10 }, () => prisma.$queryRaw`SELECT 1 AS x FROM pg_sleep(0.05)`));
+  const results = await Promise.all(
+    [0, 1].map(() => prisma.$transaction((tx) => reissueStaffInvitation(tx, { orgId, userId: user.id, email })))
+  );
+  assert.ok(results.some(Boolean));
+  assert.equal(await prisma.invitation.count({ where: { userId: user.id } }), 1);
+});

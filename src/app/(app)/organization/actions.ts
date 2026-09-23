@@ -397,7 +397,9 @@ export async function resendStaffInvitation(userId: string): Promise<OrgActionRe
     }
     return fresh;
   });
-  if (!invitation) return { ok: false, error: "Esa persona ya ha activado su acceso: no hay invitación que reenviar." };
+  if (!invitation) {
+    return { ok: false, error: "No hay invitación pendiente que reenviar: ya ha activado su acceso o se acaba de reenviar." };
+  }
 
   revalidatePath("/organization");
   const mail = await sendStaffInvite({

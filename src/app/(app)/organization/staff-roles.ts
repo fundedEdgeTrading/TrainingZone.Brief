@@ -103,6 +103,11 @@ export async function createStaffAccount(
  *
  * Devuelve `null` si la persona ya aceptó (o nunca tuvo invitación): no hay
  * nada que reenviar y una invitación nueva le reabriría el onboarding.
+ *
+ * El borrado es condicional y se mira cuántas filas quitó: con dos reenvíos a
+ * la vez (doble clic) ambos leen la misma pendiente, y el segundo esperaba al
+ * bloqueo del primero para borrar una fila que ya no existía — un 500.
+ * Ahora ese segundo no hace nada: el primero ya reenvió.
  */
 export async function reissueStaffInvitation(
   tx: Prisma.TransactionClient,
@@ -113,7 +118,8 @@ export async function reissueStaffInvitation(
     select: { id: true },
   });
   if (!previous) return null;
-  await tx.invitation.delete({ where: { id: previous.id } });
+  const removed = await tx.invitation.deleteMany({ where: { id: previous.id, usedAt: null } });
+  if (removed.count === 0) return null;
   return tx.invitation.create({
     data: {
       orgId: params.orgId,
