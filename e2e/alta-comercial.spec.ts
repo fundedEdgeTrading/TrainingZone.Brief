@@ -61,6 +61,8 @@ test.describe("F3 — Alta pago-primero", () => {
         const users = await prisma.user.findMany({ where: { orgId: org.id }, select: { identityId: true } });
         await prisma.user.deleteMany({ where: { orgId: org.id } });
         await prisma.identity.deleteMany({ where: { id: { in: users.map((u) => u.identityId) } } });
+        await prisma.leadChannel.deleteMany({ where: { orgId: org.id } });
+        await prisma.noCloseReason.deleteMany({ where: { orgId: org.id } });
         await prisma.organization.delete({ where: { id: org.id } });
       }
     } finally {

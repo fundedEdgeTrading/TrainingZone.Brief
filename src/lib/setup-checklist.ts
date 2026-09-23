@@ -40,17 +40,20 @@ export async function getPublicCenterLinks(orgId: string) {
 }
 
 export async function getSetupChecklist(orgId: string): Promise<SetupStep[]> {
-  const [org, centers, plans, staff, members, stripeAccount, publishedCenters] = await Promise.all([
+  const [org, centers, plans, staff, members, stripeAccount, publishedCenters, leadChannels] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: orgId },
       select: { taxId: true, billingName: true, logoUrl: true },
     }),
     prisma.center.count({ where: { orgId } }),
     prisma.membershipPlan.count({ where: { orgId, active: true } }),
-    prisma.user.count({ where: { orgId, role: { not: "OWNER" } } }),
+    // QA-ALTA-16 · Personal en activo: ni el propio director, ni los socios
+    // (que también son `User` al activar su acceso), ni soporte, ni las bajas.
+    prisma.user.count({ where: { orgId, role: { notIn: ["OWNER", "MEMBER", "PLATFORM_ADMIN"] }, deactivatedAt: null } }),
     prisma.member.count({ where: { orgId } }),
     prisma.stripeAccount.findUnique({ where: { orgId }, select: { chargesEnabled: true } }),
     prisma.center.count({ where: { orgId, publicPage: true } }),
+    prisma.leadChannel.count({ where: { orgId, active: true } }),
   ]);
 
   return [
@@ -111,6 +114,17 @@ export async function getSetupChecklist(orgId: string): Promise<SetupStep[]> {
       hint: "La URL donde tus socios se dan de alta y la del formulario que embebes en tu web.",
       done: publishedCenters > 0,
       href: "/puesta-en-marcha#enlaces-publicos",
+      blocking: false,
+    },
+    {
+      // QA-ALTA-02 · Sin un canal activo el formulario público de leads no se
+      // puede enviar. El alta ya los siembra; el paso avisa si dirección los
+      // desactiva todos.
+      id: "canales",
+      label: "Canales de captación",
+      hint: "De dónde llegan tus interesados: Instagram, web, referidos… Se eligen al crear cada lead.",
+      done: leadChannels > 0,
+      href: "/leads",
       blocking: false,
     },
     {

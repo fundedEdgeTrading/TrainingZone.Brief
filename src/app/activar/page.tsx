@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isPlatformOperational } from "@/lib/entitlements";
 import { listPurchasablePlans } from "@/lib/platform-plans";
+import { SIGNUP_HELD_FOR_SUPPORT } from "@/lib/provisioning";
 import { PlanCheckoutButton, ResendVerificationButton, ResendActivationButton } from "./checkout-buttons";
 
 // El estado depende del webhook, que puede llegar después que el comprador.
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 const STATUS_COPY: Record<string, { title: string; body: string }> = {
   PENDING_PAYMENT: {
     title: "Activa tu plataforma",
-    body: "Tu organización está creada. Falta elegir un plan para empezar a usar Apta.",
+    body: "Tu organización está creada. Falta elegir un plan para empezar a usar Training Zone.",
   },
   PAST_DUE: {
     title: "Hay un problema con tu último cobro",
@@ -54,16 +55,31 @@ export default async function ActivarPage({
       where: { provisioningSessionId: params.session_id },
       select: { name: true, billingEmail: true },
     });
+    // QA-ALTA-13 · Alta retenida porque el email ya dirige una organización:
+    // no va a llegar ningún enlace, y "estamos confirmando tu pago" mentiría.
+    const held = org
+      ? null
+      : await prisma.auditLog.findFirst({
+          where: { action: SIGNUP_HELD_FOR_SUPPORT, entityType: "CheckoutSession", entityId: params.session_id },
+          select: { id: true },
+        });
 
     return (
       <Card>
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Pago recibido</p>
           <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
-            {org ? "Tu plataforma está lista" : "Estamos confirmando tu pago"}
+            {org ? "Tu plataforma está lista" : held ? "Ya tienes una organización con este email" : "Estamos confirmando tu pago"}
           </h1>
           <p className="text-sm text-muted mt-2">
-            {org ? (
+            {held ? (
+              <>
+                Hemos recibido tu pago, pero ese email ya dirige una organización en Training Zone, así que no
+                hemos creado otra ni hemos cambiado la que tienes. Nuestro equipo de soporte revisará el cobro y
+                se pondrá en contacto contigo. Si querías cambiar de plan, inicia sesión y hazlo desde tu
+                organización.
+              </>
+            ) : org ? (
               <>
                 Te hemos enviado un enlace a <b>{org.billingEmail}</b> para que elijas tu contraseña y
                 empieces a configurar {org.name}.
@@ -76,10 +92,18 @@ export default async function ActivarPage({
             )}
           </p>
         </div>
-        <ResendActivationButton sessionId={params.session_id} />
-        <p className="text-xs text-faint">
-          Si el correo no aparece, revisa la carpeta de spam antes de volver a pedirlo.
-        </p>
+        {held ? (
+          <Link href="/login" className="block text-sm text-muted underline">
+            Iniciar sesión →
+          </Link>
+        ) : (
+          <>
+            <ResendActivationButton sessionId={params.session_id} />
+            <p className="text-xs text-faint">
+              Si el correo no aparece, revisa la carpeta de spam antes de volver a pedirlo.
+            </p>
+          </>
+        )}
       </Card>
     );
   }
@@ -141,7 +165,7 @@ export default async function ActivarPage({
           </div>
         ) : (
           <p className="text-sm text-brand-muted bg-tz-sand border border-brand-border rounded-control p-4">
-            Todavía no hay planes de precio configurados en este entorno. Contacta con Apta para activar tu cuenta.
+            Todavía no hay planes de precio configurados en este entorno. Contacta con Training Zone para activar tu cuenta.
           </p>
         )
       ) : (

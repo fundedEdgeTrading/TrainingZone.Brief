@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { OrgLogo } from "@/components/org-logo";
 import { getCachedPublicLeadFormContext } from "@/lib/public-lead-queries";
+import { isPlatformOperational } from "@/lib/entitlements";
 import { GENERIC_CENTER_METADATA, centerLeadFormMetadata } from "@/lib/public-center-seo";
 import { PublicLeadForm } from "./public-lead-form";
 
@@ -48,7 +49,9 @@ export default async function PublicLeadFormPage({
 }) {
   const { orgSlug, centerSlug } = await params;
   const ctx = await getCachedPublicLeadFormContext(orgSlug, centerSlug);
-  if (!ctx) notFound();
+  // QA-ALTA-20 · Una organización no operativa no recibe leads: mejor no
+  // enseñar un formulario que la action va a rechazar al enviarlo.
+  if (!ctx || !isPlatformOperational(ctx.organization.platformStatus)) notFound();
 
   return (
     <div className="min-h-dvh bg-tz-bone flex items-center justify-center p-4 sm:p-8">

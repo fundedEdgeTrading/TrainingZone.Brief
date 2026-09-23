@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type Stripe from "stripe";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ensureIdentity } from "@/lib/identity";
 import { getPlatformPlan } from "@/lib/platform-plans";
@@ -10,6 +11,7 @@ import {
 } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderOwnerActivationEmail } from "@/lib/emails/templates";
+import { createNotificationOnce } from "@/lib/notifications";
 
 /**
  * Alta de la organización a partir de un pago confirmado (RB-ALTA-001). Es el
@@ -36,6 +38,48 @@ type ProvisionInput = {
   subscriptionId: string | null;
   periodEnd: Date | null;
 };
+
+/**
+ * QA-ALTA-02 · Catálogos comerciales con los que nace toda organización. Sin
+ * ellos el formulario público de leads enseña un select obligatorio vacío y
+ * `createLead` rechaza cualquier alta por falta de canal: el embudo nacía roto
+ * hasta que dirección encontrara el panel de configuración. Son un punto de
+ * partida; dirección los edita sin desplegar (RB-LEAD-004/011).
+ */
+export const DEFAULT_LEAD_CHANNELS = [
+  "Instagram",
+  "Facebook",
+  "Google",
+  "Web",
+  "Referido",
+  "Paso por el centro",
+  "Teléfono",
+  "Otro",
+] as const;
+
+export const DEFAULT_NO_CLOSE_REASONS = ["Precio", "Horario", "Distancia", "Se va a otro centro", "No responde", "Otro"] as const;
+
+/**
+ * Crea solo lo que falta, comparando sin mayúsculas: un reintento no duplica,
+ * y un canal que dirección desactivó no resucita (cuenta como existente). El
+ * esquema no tiene único por `(orgId, label)` —está congelado—, así que la
+ * idempotencia la garantiza esta comprobación dentro de la transacción del alta.
+ */
+export async function ensureDefaultLeadCatalogs(tx: Prisma.TransactionClient, orgId: string) {
+  const missing = (existing: { label: string }[], defaults: readonly string[]) => {
+    const have = new Set(existing.map((row) => row.label.trim().toLowerCase()));
+    return defaults.filter((label) => !have.has(label.toLowerCase())).map((label) => ({ orgId, label }));
+  };
+
+  const [channels, reasons] = await Promise.all([
+    tx.leadChannel.findMany({ where: { orgId }, select: { label: true } }),
+    tx.noCloseReason.findMany({ where: { orgId }, select: { label: true } }),
+  ]);
+  const newChannels = missing(channels, DEFAULT_LEAD_CHANNELS);
+  const newReasons = missing(reasons, DEFAULT_NO_CLOSE_REASONS);
+  if (newChannels.length) await tx.leadChannel.createMany({ data: newChannels });
+  if (newReasons.length) await tx.noCloseReason.createMany({ data: newReasons });
+}
 
 function ownerInvitationExpiry() {
   return new Date(Date.now() + OWNER_INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -119,22 +163,27 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
     provisioningSessionId: input.provisioningSessionId,
   };
 
-  // 2. RB-ALTA-003: si ese email ya dirige una organización, se le actualiza el
-  //    plan en vez de crearle una segunda. Comprar dos veces no debe partir sus
-  //    datos en dos instalaciones.
+  // 2. RB-ALTA-003 + QA-ALTA-13: si ese email ya dirige una organización, el
+  //    alta se RETIENE para soporte y no se toca nada. Antes se le cambiaba el
+  //    plan y se le pisaba la suscripción de Stripe a esa organización: el
+  //    checkout de alta no autentica a nadie, así que bastaba con pagar con el
+  //    email de otro director. Crear una segunda organización tampoco vale:
+  //    parte sus datos en dos instalaciones y le cobra dos suscripciones. El
+  //    cambio de plan legítimo va por `applyPlanChangeFromCheckout`, que lleva
+  //    el `orgId` de una sesión autenticada.
   const existingOwner = await prisma.user.findFirst({
     where: { email, role: "OWNER" },
-    select: { orgId: true, identityId: true },
+    select: { orgId: true },
   });
   if (existingOwner) {
-    await prisma.organization.update({ where: { id: existingOwner.orgId }, data: platformFields });
+    await holdSignupForSupport({ ...input, email, planCode: plan.code, orgId: existingOwner.orgId });
     return { ok: true, created: false, orgId: existingOwner.orgId, activationUrl: null };
   }
 
   const orgName = billingName || email.split("@")[0];
 
-  // 3. Organización + credencial + membresía OWNER + invitación de activación,
-  //    todo o nada.
+  // 3. Organización + catálogos comerciales + credencial + membresía OWNER +
+  //    invitación de activación, todo o nada.
   const { orgId, token } = await prisma.$transaction(async (tx) => {
     const org = await tx.organization.create({
       data: {
@@ -146,6 +195,7 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
         ...platformFields,
       },
     });
+    await ensureDefaultLeadCatalogs(tx, org.id);
 
     // Sin contraseña utilizable: la fija el director al canjear su enlace.
     const identity = await ensureIdentity(tx, { email });
@@ -197,6 +247,64 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
   }
 
   return { ok: true, created: true, orgId, activationUrl };
+}
+
+/** Acción de `AuditLog` de un alta pagada que soporte tiene que resolver a mano. */
+export const SIGNUP_HELD_FOR_SUPPORT = "PLATFORM_SIGNUP_HELD_FOR_SUPPORT";
+
+/**
+ * QA-ALTA-13 · Alta pagada que no se aplica sola. Queda en `AuditLog` de la
+ * organización que ya dirige ese email (con la sesión, el cliente y la
+ * suscripción de Stripe, que es lo que soporte necesita para enlazarla o
+ * reembolsarla) y se avisa a soporte de plataforma. Idempotente por sesión de
+ * checkout: Stripe reenvía el evento y el aviso no se duplica. `/activar`
+ * lee este registro para no dejar al comprador ante un "confirmando tu pago"
+ * eterno (RB-ALTA-002).
+ */
+async function holdSignupForSupport(input: ProvisionInput & { email: string; planCode: string; orgId: string }) {
+  const already = await prisma.auditLog.findFirst({
+    where: { action: SIGNUP_HELD_FOR_SUPPORT, entityType: "CheckoutSession", entityId: input.provisioningSessionId },
+    select: { id: true },
+  });
+  if (already) return;
+
+  await prisma.auditLog.create({
+    data: {
+      orgId: input.orgId,
+      actorUserId: null,
+      action: SIGNUP_HELD_FOR_SUPPORT,
+      entityType: "CheckoutSession",
+      entityId: input.provisioningSessionId,
+      metadata: {
+        email: input.email,
+        planCode: input.planCode,
+        customerId: input.customerId,
+        subscriptionId: input.subscriptionId,
+        reason: "El email del comprador ya dirige una organización.",
+      },
+    },
+  });
+  console.error(
+    `[provisioning] alta ${input.provisioningSessionId} retenida para soporte: ${input.email} ya dirige la organización ${input.orgId}`
+  );
+
+  const support = await prisma.user.findMany({
+    where: { role: "PLATFORM_ADMIN", deactivatedAt: null },
+    select: { id: true, orgId: true },
+  });
+  for (const admin of support) {
+    await createNotificationOnce({
+      orgId: admin.orgId,
+      recipientUserId: admin.id,
+      kind: "ALERT",
+      title: "Alta pagada retenida: el email ya dirige una organización",
+      body:
+        `${input.email} ha pagado un alta nueva (plan ${input.planCode}) y ya es director/a de otra organización. ` +
+        "No se ha tocado nada: enlaza la suscripción a su organización o reembólsala desde Stripe.",
+      entityType: "CheckoutSession",
+      entityId: input.provisioningSessionId,
+    });
+  }
 }
 
 export async function provisionOrganizationFromCheckout(
@@ -387,6 +495,7 @@ export async function createAssistedOrganization(input: {
         platformPlan: plan.code,
       },
     });
+    await ensureDefaultLeadCatalogs(tx, org.id);
 
     const identity = await ensureIdentity(tx, { email });
     const owner = await tx.user.create({

@@ -43,6 +43,8 @@ async function wipe() {
     const users = await prisma.user.findMany({ where: { orgId }, select: { identityId: true } });
     await prisma.user.deleteMany({ where: { orgId } });
     await prisma.identity.deleteMany({ where: { id: { in: users.map((u) => u.identityId) } } });
+    await prisma.leadChannel.deleteMany({ where: { orgId } });
+    await prisma.noCloseReason.deleteMany({ where: { orgId } });
     await prisma.organization.delete({ where: { id: orgId } });
   }
 }

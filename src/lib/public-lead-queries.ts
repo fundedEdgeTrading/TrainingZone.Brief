@@ -1,7 +1,9 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 
+import type { PlatformStatus, Sex } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { isPlatformOperational } from "@/lib/entitlements";
 import { PUBLIC_CENTER_SELECT, PUBLIC_CENTER_REVALIDATE } from "@/lib/public-membership-queries";
 import { centerPublicTag } from "@/lib/public-center-seo";
 
@@ -19,7 +21,7 @@ export const getPublicLeadFormContext = cache(async function getPublicLeadFormCo
 ) {
   const organization = await prisma.organization.findUnique({
     where: { slug: orgSlug },
-    select: { id: true, name: true, slug: true, logoUrl: true },
+    select: { id: true, name: true, slug: true, logoUrl: true, platformStatus: true },
   });
   if (!organization) return null;
 
@@ -49,4 +51,37 @@ export function getCachedPublicLeadFormContext(orgSlug: string, centerSlug: stri
     ["public-lead-context", orgSlug, centerSlug],
     { revalidate: PUBLIC_CENTER_REVALIDATE, tags: [centerPublicTag(orgSlug, centerSlug)] }
   )();
+}
+
+const SEX_VALUES: readonly Sex[] = ["FEMALE", "MALE", "OTHER"];
+
+export type PublicLeadChoice = { ok: true; channel: string; sex: Sex | null } | { ok: false; error: string };
+
+/**
+ * QA-ALTA-20 · Lo que el visitante elige en el formulario público, validado
+ * contra el contexto fresco del centro. La action no tiene sesión y el
+ * FormData viaja por la red: el `required` del select no protege nada.
+ *
+ * - Solo recibe leads una organización operativa (`isPlatformOperational`, el
+ *   mismo criterio que abre la app): una suspendida o cancelada no puede seguir
+ *   acumulando datos personales que nadie va a atender.
+ * - El canal tiene que ser uno ACTIVO de ESTA organización (`ctx.channels` ya
+ *   viene filtrado por las dos cosas).
+ * - El sexo, uno del enum o vacío ("prefiero no decirlo"); cualquier otro
+ *   valor reventaba en Prisma con un 500.
+ */
+export function validatePublicLeadChoice(
+  ctx: { organization: { platformStatus: PlatformStatus }; channels: { label: string }[] },
+  input: { channel: string; sex: string }
+): PublicLeadChoice {
+  if (!isPlatformOperational(ctx.organization.platformStatus)) {
+    return { ok: false, error: "Este centro no está recibiendo solicitudes en este momento." };
+  }
+  const channel = input.channel.trim();
+  if (!ctx.channels.some((c) => c.label === channel)) {
+    return { ok: false, error: "Selecciona cómo nos has conocido." };
+  }
+  const sex = input.sex.trim();
+  if (sex && !SEX_VALUES.includes(sex as Sex)) return { ok: false, error: "Selecciona una opción válida en «Sexo»." };
+  return { ok: true, channel, sex: sex ? (sex as Sex) : null };
 }
