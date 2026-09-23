@@ -16,11 +16,17 @@ const COOKIES = [
     purpose: "Tu zona horaria, detectada por el navegador — para que las horas de tus clases y tus cuentas atrás sean las tuyas, no las del servidor.",
     duration: "1 año.",
   },
+  {
+    name: "tz_stripe_connect",
+    purpose:
+      "Solo para dirección, al pulsar «Conectar cobros con Stripe»: un código de un solo uso que comprueba que la conexión la terminas tú, y no alguien que intente enlazar tu gimnasio a su cuenta de Stripe.",
+    duration: "10 minutos, y se borra al volver de Stripe.",
+  },
 ];
 
 /**
  * E10-22/CN-15: acreditar por escrito que hoy no hace falta un banner de
- * cookies — verificado: cero analítica, cero GTM, cero píxeles. Solo las dos
+ * cookies — verificado: cero analítica, cero GTM, cero píxeles. Solo las
  * técnicas de abajo, ninguna de las cuales exige consentimiento (Art. 22
  * LSSI / considerando 25 de la Directiva ePrivacy: exentas las
  * estrictamente necesarias para el servicio que el usuario pide).
@@ -70,8 +76,8 @@ export default function CookiesPage() {
           </h2>
           <p className="text-sm leading-relaxed text-brand-text-2">
             Un banner de consentimiento hace falta para cookies de analítica, publicidad o cualquier cosa que perfile
-            tu navegación. Las dos de arriba son <b>estrictamente técnicas</b>: existen para que la aplicación
-            funcione (mantener tu sesión, mostrarte la hora que toca), no para medirte ni seguirte. Hoy no usamos
+            tu navegación. Las de arriba son <b>estrictamente técnicas</b>: existen para que la aplicación
+            funcione (mantener tu sesión, mostrarte la hora que toca, conectar tu cuenta de cobro de forma segura), no para medirte ni seguirte. Hoy no usamos
             analítica, ni Google Tag Manager, ni píxeles de ningún proveedor — así que no hay nada de lo que pedirte
             permiso.
           </p>
