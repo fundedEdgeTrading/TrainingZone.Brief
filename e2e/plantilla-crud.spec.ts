@@ -55,6 +55,11 @@ test.describe("Plantilla — edición y baja (RB-RRHH-014)", () => {
     const edited = await prisma.user.findUniqueOrThrow({ where: { id: staff.userId } });
     expect(edited.name).toBe(`${staff.name} (editada)`);
 
+    // Se recarga antes de buscar la fila: la tabla vuelve sola a la primera
+    // página tras guardar, y si la fila estaba en otra, `staffRow` podía darla
+    // por buena justo antes de ese repintado y el clic se quedaba sin fila.
+    await page.goto("/organization");
+
     // No ha dado clases, ni cobrado, ni escrito nada: no hay histórico que
     // conservar, así que la baja borra la fila y libera su email.
     await darDeBaja(page, await staffRow(page, staff.email));
