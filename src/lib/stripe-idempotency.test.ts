@@ -8,6 +8,7 @@ import {
   CHECKOUT_WINDOW_MS,
   customerKey,
   idempotencyKey,
+  lazyProductKey,
   memberCheckoutKey,
   platformCheckoutKey,
   platformCustomerKey,
@@ -35,14 +36,15 @@ test("la clave sigue el patrón <recurso>:<orgId>:<entidad>:<versión>", () => {
 
   for (const key of [
     productKey("org_1", "plan_1"),
+    lazyProductKey("org_1", "plan_1"),
     priceKey("org_1", "plan_1", 4900, true),
     customerKey("org_1", "mem_1"),
-    memberCheckoutKey("org_1", "mem_1", "plan_1"),
+    memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1"),
     prospectCheckoutKey("org_1", "Ana@Example.com", "plan_1"),
     platformCustomerKey("org_1"),
     platformCheckoutKey("org_1", "AVANZADO_MES"),
   ]) {
-    assert.match(key, /^[a-z]+:[^:]+:[^:]+:v\d+$/, `clave fuera de patrón: ${key}`);
+    assert.match(key, /^[a-z_]+:[^:]+:[^:]+:v\d+$/, `clave fuera de patrón: ${key}`);
   }
 });
 
@@ -52,22 +54,43 @@ test("dos intentos del mismo checkout en la misma ventana comparten clave", () =
   const mediaHoraDespues = new Date(at.getTime() + 3 * CHECKOUT_WINDOW_MS);
 
   assert.equal(
-    memberCheckoutKey("org_1", "mem_1", "plan_1", at),
-    memberCheckoutKey("org_1", "mem_1", "plan_1", cincoMinutosDespues),
+    memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at),
+    memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", cincoMinutosDespues),
     "un doble clic de recepción no puede abrir dos sesiones de cobro"
   );
   assert.notEqual(
-    memberCheckoutKey("org_1", "mem_1", "plan_1", at),
-    memberCheckoutKey("org_1", "mem_1", "plan_1", mediaHoraDespues),
+    memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at),
+    memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", mediaHoraDespues),
     "media hora después es una venta nueva, no un reintento"
   );
 });
 
 test("el checkout de un socio no se confunde con el de otro ni con otro plan", () => {
   const at = new Date("2026-09-06T10:00:00Z");
-  assert.notEqual(memberCheckoutKey("org_1", "mem_1", "plan_1", at), memberCheckoutKey("org_1", "mem_2", "plan_1", at));
-  assert.notEqual(memberCheckoutKey("org_1", "mem_1", "plan_1", at), memberCheckoutKey("org_1", "mem_1", "plan_2", at));
-  assert.notEqual(memberCheckoutKey("org_1", "mem_1", "plan_1", at), memberCheckoutKey("org_2", "mem_1", "plan_1", at));
+  assert.notEqual(memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at), memberCheckoutKey("org_1", "mem_2", "plan_1", "portal", "ctr_1", at));
+  assert.notEqual(memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at), memberCheckoutKey("org_1", "mem_1", "plan_2", "portal", "ctr_1", at));
+  assert.notEqual(memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at), memberCheckoutKey("org_2", "mem_1", "plan_1", "portal", "ctr_1", at));
+});
+
+test("STR-06 · el mismo socio y plan desde otra puerta u otro centro no comparte checkout", () => {
+  const at = new Date("2026-09-06T10:00:00Z");
+  const portal = memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at);
+  // Recepción y el propio socio a la vez, en la misma ventana: con la misma
+  // clave, Stripe devolvía a recepción la sesión del portal (o respondía con un
+  // error de idempotencia si los parámetros diferían, p. ej. el success_url).
+  for (const source of ["reception", "mobile", "public"] as const) {
+    assert.notEqual(portal, memberCheckoutKey("org_1", "mem_1", "plan_1", source, "ctr_1", at), source);
+  }
+  // Recepción vendiendo el mismo plan en el centro B no reutiliza la sesión del A.
+  assert.notEqual(portal, memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_2", at));
+  assert.equal(portal, memberCheckoutKey("org_1", "mem_1", "plan_1", "portal", "ctr_1", at));
+});
+
+test("STR-06 · el Product del espejo perezoso no reutiliza la clave del catálogo", () => {
+  // El catálogo (stripe-catalog.ts) crea el Product con descripción, imágenes y
+  // `active`; el espejo perezoso, solo con el nombre. Stripe rechaza reutilizar
+  // una clave con parámetros distintos, así que compartirla rompía la venta.
+  assert.notEqual(lazyProductKey("org_1", "plan_1"), productKey("org_1", "plan_1"));
 });
 
 test("el email del prospecto se normaliza antes de entrar en la clave", () => {

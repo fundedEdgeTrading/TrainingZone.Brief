@@ -22,9 +22,10 @@ import { isRecurring } from "@/lib/plan-recurrence";
 // idempotencia. El patrón y el registro de claves están en el módulo.
 import {
   customerKey,
+  lazyProductKey,
   memberCheckoutKey,
+  type MemberCheckoutSource,
   priceKey,
-  productKey,
   prospectCheckoutKey,
 } from "@/lib/stripe-idempotency";
 // HU-ST-12/RB-PAGO-025: el freno de "cobro asíncrono en vuelo". Un adeudo SEPA
@@ -60,6 +61,14 @@ const LIVE_RECURRING_STATUSES: SubscriptionStatus[] = ["ACTIVE", "PENDING_CONFIR
 // F5: la regla de recurrencia vive en `plan-recurrence.ts` (ver allí por qué), y
 // se sigue reexportando desde aquí: es donde la buscan todos los call sites.
 export { isRecurring } from "@/lib/plan-recurrence";
+
+/** STR-06: el nombre de cada puerta en la clave de idempotencia del checkout. */
+const CHECKOUT_SOURCE_BY_ORIGIN = {
+  staff: "reception",
+  portal: "portal",
+  mobile: "mobile",
+  landing: "public",
+} as const satisfies Record<string, MemberCheckoutSource>;
 
 /** HU-ST-08: mismo mensaje en las tres puertas de venta (recepción, portal, landing). */
 export const PLAN_ARCHIVED_ERROR = "Ese producto está archivado y ya no se puede vender.";
@@ -141,13 +150,18 @@ export async function ensureStripePrice(orgId: string, planId: string): Promise<
 
   const accountMatches = plan.stripeAccountId === accountId;
   const recurringPlan = isRecurring(plan.type);
+  // STR-06 · Clave propia (`lazyProductKey`), no la del catálogo: los parámetros
+  // son otros y Stripe rechaza reutilizar una clave con parámetros distintos.
+  // TODO(P5): cuando stripe-catalog.ts exporte `ensurePlanPriceForAccount`,
+  // delegar en ella el Product y el Price y borrar este camino, para que haya
+  // un solo creador del espejo.
   const productId =
     accountMatches && plan.stripeProductId
       ? plan.stripeProductId
       : (
           await stripe.products.create(
             { name: plan.name },
-            { stripeAccount: accountId, idempotencyKey: productKey(orgId, plan.id) }
+            { stripeAccount: accountId, idempotencyKey: lazyProductKey(orgId, plan.id) }
           )
         ).id;
 
@@ -191,7 +205,9 @@ export async function createMemberCheckout(params: {
   memberId: string;
   planId: string;
   soldByUserId?: string;
-  origin: "staff" | "portal" | "landing";
+  // "mobile" (STR-06): la app nativa. Vuelve al mismo sitio que "portal", pero
+  // es otra puerta y lleva su propia clave de idempotencia.
+  origin: "staff" | "portal" | "landing" | "mobile";
   // Centro donde queda el bono/suscripción (RB-AGENDA-003): si se omite (los
   // call sites de F5 no lo pasaban), cae al centro habitual del socio — así no
   // se rompe ningún call site existente.
@@ -230,7 +246,8 @@ export async function createMemberCheckout(params: {
   }
 
   const centerId = params.centerId ?? member.primaryCenterId;
-  const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
+  const returnPath =
+    origin === "portal" || origin === "mobile" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
 
   // HU-ST-11/RB-PAGO-024: sin `STRIPE_SECRET_KEY` no hay cobro real posible en
   // NINGUNO de los dos planos. El de licencia ya caía a `/demo-checkout`; el de
@@ -298,7 +315,10 @@ export async function createMemberCheckout(params: {
       // `customer.subscription.created` para reconstruir el contexto sin adivinar.
       ...(recurring ? { subscription_data: { metadata: { orgId, memberId, planId, centerId } } } : {}),
     },
-    { stripeAccount: accountId, idempotencyKey: memberCheckoutKey(orgId, memberId, planId) }
+    {
+      stripeAccount: accountId,
+      idempotencyKey: memberCheckoutKey(orgId, memberId, planId, CHECKOUT_SOURCE_BY_ORIGIN[origin], centerId),
+    }
   );
 
   if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
