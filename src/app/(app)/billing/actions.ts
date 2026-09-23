@@ -2,11 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE } from "@/lib/guard";
+import { requireRole, memberIsInScope, OUT_OF_CENTER_SCOPE, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import type { PaymentMethod } from "@prisma/client";
 import { confirmLeadClosureForMember } from "@/lib/leads-queries";
 import type { CheckoutResult } from "@/lib/stripe-checkout";
-import { createMemberCheckout } from "@/lib/member-billing";
+import { createMemberCheckout, resolveStaffCheckoutCenter } from "@/lib/member-billing";
 import { createPaymentWithReceipt } from "@/lib/payments";
 import { logWhatsappContactOpened } from "@/lib/whatsapp-contact";
 
@@ -78,6 +78,11 @@ export async function createStripeCheckoutAction(formData: FormData): Promise<Ch
   // que el daño es de atribución. En cuanto haya una cuenta por centro, esta
   // misma línea es la que evita que el cobro entre en la cuenta equivocada.
   if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
+  // STR-07 · El centro de la venta: el elegido en el formulario (validado con
+  // el ámbito de quien cobra) o, si no llega, el centro base de quien vende.
+  // Antes no se pasaba y todo caía en el centro habitual del socio.
+  const center = await resolveStaffCheckoutCenter(session.user, String(formData.get("centerId") ?? "") || null);
+  if (!center.ok) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   // E12-07: createCheckoutSession (stripe-checkout.ts) era una línea que
   // llamaba a esto mismo, con este como único consumidor.
   return createMemberCheckout({
@@ -86,6 +91,7 @@ export async function createStripeCheckoutAction(formData: FormData): Promise<Ch
     planId,
     soldByUserId: session.user.id,
     origin: "staff",
+    centerId: center.centerId,
   });
 }
 

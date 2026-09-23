@@ -2,9 +2,12 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripeForOrg } from "@/lib/stripe";
 import { createPaymentWithReceipt } from "@/lib/payments";
-import type { PlanType, SubscriptionStatus } from "@prisma/client";
+import { Prisma, type PlanType, type SubscriptionStatus } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+// STR-01: la recarga de sesiones de la renovación, en la transacción del cobro.
+import { refillOnRenewal } from "@/lib/stripe-renewal";
 import { publicOrigin } from "@/lib/site";
+import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 // HU-ST-02: la resolución del id de suscripción de una factura es la misma para
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
 // shape legado.
@@ -20,9 +23,10 @@ import { isRecurring } from "@/lib/plan-recurrence";
 // idempotencia. El patrón y el registro de claves están en el módulo.
 import {
   customerKey,
+  lazyProductKey,
   memberCheckoutKey,
+  type MemberCheckoutSource,
   priceKey,
-  productKey,
   prospectCheckoutKey,
 } from "@/lib/stripe-idempotency";
 // HU-ST-12/RB-PAGO-025: el freno de "cobro asíncrono en vuelo". Un adeudo SEPA
@@ -38,11 +42,34 @@ import {
   retriesExhausted,
 } from "@/lib/stripe-dunning";
 
-export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
+export type MemberCheckoutErrorCode = "ALREADY_SUBSCRIBED";
+
+export type MemberCheckoutResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string; code?: MemberCheckoutErrorCode };
+
+/** STR-02: mismo mensaje en todas las puertas de venta. */
+export const ALREADY_SUBSCRIBED_ERROR =
+  "Ya tienes una cuota mensual activa. Se renueva sola cada mes: no hace falta volver a pagarla.";
+
+/**
+ * STR-02 · Estados en los que una suscripción recurrente sigue viva en Stripe y
+ * volverá a cobrar: la activa, la que espera a que liquide un adeudo SEPA y la
+ * congelada (con `pause_collection` Stripe no la cancela, solo deja de cobrar).
+ */
+const LIVE_RECURRING_STATUSES: SubscriptionStatus[] = ["ACTIVE", "PENDING_CONFIRMATION", "PAUSED"];
 
 // F5: la regla de recurrencia vive en `plan-recurrence.ts` (ver allí por qué), y
 // se sigue reexportando desde aquí: es donde la buscan todos los call sites.
 export { isRecurring } from "@/lib/plan-recurrence";
+
+/** STR-06: el nombre de cada puerta en la clave de idempotencia del checkout. */
+const CHECKOUT_SOURCE_BY_ORIGIN = {
+  staff: "reception",
+  portal: "portal",
+  mobile: "mobile",
+  landing: "public",
+} as const satisfies Record<string, MemberCheckoutSource>;
 
 /** HU-ST-08: mismo mensaje en las tres puertas de venta (recepción, portal, landing). */
 export const PLAN_ARCHIVED_ERROR = "Ese producto está archivado y ya no se puede vender.";
@@ -124,13 +151,18 @@ export async function ensureStripePrice(orgId: string, planId: string): Promise<
 
   const accountMatches = plan.stripeAccountId === accountId;
   const recurringPlan = isRecurring(plan.type);
+  // STR-06 · Clave propia (`lazyProductKey`), no la del catálogo: los parámetros
+  // son otros y Stripe rechaza reutilizar una clave con parámetros distintos.
+  // TODO(P5): cuando stripe-catalog.ts exporte `ensurePlanPriceForAccount`,
+  // delegar en ella el Product y el Price y borrar este camino, para que haya
+  // un solo creador del espejo.
   const productId =
     accountMatches && plan.stripeProductId
       ? plan.stripeProductId
       : (
           await stripe.products.create(
             { name: plan.name },
-            { stripeAccount: accountId, idempotencyKey: productKey(orgId, plan.id) }
+            { stripeAccount: accountId, idempotencyKey: lazyProductKey(orgId, plan.id) }
           )
         ).id;
 
@@ -174,7 +206,9 @@ export async function createMemberCheckout(params: {
   memberId: string;
   planId: string;
   soldByUserId?: string;
-  origin: "staff" | "portal" | "landing";
+  // "mobile" (STR-06): la app nativa. Vuelve al mismo sitio que "portal", pero
+  // es otra puerta y lleva su propia clave de idempotencia.
+  origin: "staff" | "portal" | "landing" | "mobile";
   // Centro donde queda el bono/suscripción (RB-AGENDA-003): si se omite (los
   // call sites de F5 no lo pasaban), cae al centro habitual del socio — así no
   // se rompe ningún call site existente.
@@ -200,8 +234,21 @@ export async function createMemberCheckout(params: {
   // que la pasarela: no depende de que haya Stripe configurado.
   if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
 
+  // STR-02 · "Renovar" en el portal abría otro checkout recurrente aunque la
+  // cuota ya se renovara sola, y el socio acababa con dos suscripciones en
+  // Stripe cobrándole dos veces al mes. Va aquí, antes del modo demo y de la
+  // pasarela, porque es la puerta común de recepción, portal, landing y móvil.
+  if (isRecurring(plan.type)) {
+    const live = await prisma.subscription.findFirst({
+      where: { memberId: member.id, stripeSubscriptionId: { not: null }, status: { in: LIVE_RECURRING_STATUSES } },
+      select: { id: true },
+    });
+    if (live) return { ok: false, error: ALREADY_SUBSCRIBED_ERROR, code: "ALREADY_SUBSCRIBED" };
+  }
+
   const centerId = params.centerId ?? member.primaryCenterId;
-  const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
+  const returnPath =
+    origin === "portal" || origin === "mobile" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
 
   // HU-ST-11/RB-PAGO-024: sin `STRIPE_SECRET_KEY` no hay cobro real posible en
   // NINGUNO de los dos planos. El de licencia ya caía a `/demo-checkout`; el de
@@ -269,7 +316,10 @@ export async function createMemberCheckout(params: {
       // `customer.subscription.created` para reconstruir el contexto sin adivinar.
       ...(recurring ? { subscription_data: { metadata: { orgId, memberId, planId, centerId } } } : {}),
     },
-    { stripeAccount: accountId, idempotencyKey: memberCheckoutKey(orgId, memberId, planId) }
+    {
+      stripeAccount: accountId,
+      idempotencyKey: memberCheckoutKey(orgId, memberId, planId, CHECKOUT_SOURCE_BY_ORIGIN[origin], centerId),
+    }
   );
 
   if (!checkoutSession.url) return { ok: false, error: "Stripe no devolvió una URL de checkout." };
@@ -330,6 +380,38 @@ export async function resolveExistingMemberCheckoutCenter(params: {
     select: { id: true },
   });
   return bonoEnEseCentro ? requestedCenterId : primaryCenterId;
+}
+
+/**
+ * STR-07 · Centro al que se atribuye una venta de recepción.
+ *
+ * `createStripeCheckoutAction` no pasaba centro y todo caía en el habitual del
+ * socio: con dos centros, lo que recepción de B vendía en su mostrador aparecía
+ * en la caja de A. El centro sale, por este orden:
+ *
+ *   1. del que elige quien vende, si es de su organización y de su ámbito
+ *      (`isCenterInScope`); si no lo es, se rechaza — nunca se cambia en
+ *      silencio por otro;
+ *   2. del centro base de quien vende (donde está el mostrador);
+ *   3. de ninguno: `undefined` deja que `createMemberCheckout` use el centro
+ *      habitual del socio, como hasta ahora (dirección de organización sin
+ *      centro base).
+ */
+export async function resolveStaffCheckoutCenter(
+  user: ScopedUser,
+  requestedCenterId: string | null
+): Promise<{ ok: true; centerId: string | undefined } | { ok: false }> {
+  const candidate = requestedCenterId || user.centerId;
+  if (!candidate) return { ok: true, centerId: undefined };
+
+  const center = await prisma.center.findFirst({ where: { id: candidate, orgId: user.orgId }, select: { id: true } });
+  const allowed = center != null && (await isCenterInScope(user, center.id));
+  if (allowed) return { ok: true, centerId: candidate };
+  // El centro base de la sesión fuera de ámbito no es una elección de nadie:
+  // no bloquea la venta, cae al habitual del socio.
+  if (!requestedCenterId) return { ok: true, centerId: undefined };
+  // El mensaje lo pone la acción (`CENTER_OUT_OF_SCOPE`, guard.ts).
+  return { ok: false };
 }
 
 /**
@@ -504,6 +586,62 @@ function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): Subscr
   }
 }
 
+/**
+ * STR-04 · Una congelación del socio es un `pause_collection` en Stripe, y
+ * durante ella Stripe mantiene `status: "active"`: solo deja de cobrar. Con el
+ * mapeo a secas, el primer `customer.subscription.updated` tras congelar
+ * devolvía la cuota a ACTIVE y el socio seguía reservando sin pagar. Solo se
+ * convierte lo que habría sido ACTIVE: un cobro fallido o una baja mandan.
+ */
+function applyPauseCollection<T extends SubscriptionStatus>(
+  status: T,
+  pauseCollection: Stripe.Subscription.PauseCollection | null | undefined
+): T | "PAUSED" {
+  return pauseCollection != null && status === "ACTIVE" ? "PAUSED" : status;
+}
+
+/**
+ * STR-05 · Las bajas y las pausas que el socio pide en el Billing Portal de
+ * Stripe solo llegaban como `status`, y ni la ficha ni el portal sabían que la
+ * cuota tenía fecha de fin o de vuelta.
+ *
+ * Solo se BORRA lo que vino de Stripe: recepción puede programar una baja
+ * (`scheduleCancellation`) o congelar (FROZEN + `pauseUntil`) solo en local, y
+ * cualquier `customer.subscription.updated` posterior —una renovación, un
+ * cambio de tarjeta— la habría borrado. Una baja se reconoce como de Stripe si
+ * coincide con su fin de periodo (`cancel_at_period_end`, que es lo que ofrecen
+ * el Billing Portal y el portal propio); una pausa, por el estado PAUSED, que
+ * solo escribe este reconciliador.
+ */
+function syncCancellationAndPause(
+  subscription: Stripe.Subscription,
+  existing: { status: SubscriptionStatus; cancelAt: Date | null; pauseUntil: Date | null },
+  periodEnd: Date | undefined
+): { cancelAt?: Date | null; pauseUntil?: Date | null } {
+  const data: { cancelAt?: Date | null; pauseUntil?: Date | null } = {};
+
+  const stripeCancelAt = subscription.cancel_at
+    ? new Date(subscription.cancel_at * 1000)
+    : subscription.cancel_at_period_end
+      ? (periodEnd ?? null)
+      : null;
+  if (stripeCancelAt) {
+    data.cancelAt = stripeCancelAt;
+  } else if (existing.cancelAt && periodEnd && existing.cancelAt.getTime() === periodEnd.getTime()) {
+    data.cancelAt = null;
+  }
+
+  const pause = subscription.pause_collection;
+  if (pause) {
+    // `resumes_at` null = congelación indefinida, igual que en el schema.
+    data.pauseUntil = pause.resumes_at ? new Date(pause.resumes_at * 1000) : null;
+  } else if (existing.status === "PAUSED" && existing.pauseUntil) {
+    data.pauseUntil = null;
+  }
+
+  return data;
+}
+
 /** `customer.subscription.created` / `.updated`. */
 export async function reconcileMemberSubscriptionUpserted(orgId: string, subscription: Stripe.Subscription) {
   // HU-ST-12/RB-PAGO-025 · Con un adeudo directo en vuelo, Stripe manda esta
@@ -512,18 +650,28 @@ export async function reconcileMemberSubscriptionUpserted(orgId: string, subscri
   // frena en PENDING_CONFIRMATION hasta que llegue el desenlace del cobro
   // (`async_payment_succeeded` o `invoice.paid`).
   const awaiting = await isAwaitingAsyncSettlement(subscription.id);
-  const status = holdAsyncSubscriptionStatus(mapStripeSubscriptionStatus(subscription.status), awaiting);
+  const status = applyPauseCollection(
+    holdAsyncSubscriptionStatus(mapStripeSubscriptionStatus(subscription.status), awaiting),
+    subscription.pause_collection
+  );
   const item = subscription.items.data[0];
   const endDate = item?.current_period_end ? new Date(item.current_period_end * 1000) : undefined;
 
   const existing = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId: subscription.id },
-    select: { id: true, member: { select: { orgId: true } } },
+    select: { id: true, status: true, cancelAt: true, pauseUntil: true, member: { select: { orgId: true } } },
   });
 
   if (existing) {
     if (existing.member.orgId !== orgId) return; // aislamiento: la suscripción no es de esta org
-    await prisma.subscription.update({ where: { id: existing.id }, data: { status, ...(endDate ? { endDate } : {}) } });
+    await prisma.subscription.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        ...(endDate ? { endDate } : {}),
+        ...syncCancellationAndPause(subscription, existing, endDate),
+      },
+    });
     return;
   }
 
@@ -547,21 +695,36 @@ export async function reconcileMemberSubscriptionUpserted(orgId: string, subscri
   ]);
   if (!member || !plan) return;
 
+  // STR-03 · El centro de la venta viaja en `subscription_data.metadata.centerId`
+  // (lo pone `createMemberCheckout`, y en recepción es el centro elegido). Se
+  // ignoraba y la cuota caía siempre en el centro habitual, así que la caja de
+  // un segundo centro nunca veía sus cuotas. El webhook no tiene usuario con el
+  // que aplicar `isCenterInScope`: la frontera aquí es la organización del
+  // evento, y un centro que no sea de ella se descarta.
+  const centerId = await resolveSubscriptionCenterId(orgId, meta.centerId, member.primaryCenterId);
+
   const startDate = item?.current_period_start ? new Date(item.current_period_start * 1000) : new Date();
 
   await createSubscriptionFromPlan(prisma, {
     memberId: member.id,
     plan,
-    // El checkout de socio no pide centro (el plan MONTHLY/ONLINE es de
-    // organización, no de un centro concreto): arranca en el centro habitual
-    // del socio, igual que cualquier bono se puede reasignar luego a mano si
-    // hiciera falta.
-    centerId: member.primaryCenterId,
+    centerId,
     startDate,
     endDate,
     status,
     stripeSubscriptionId: subscription.id,
   });
+}
+
+/** STR-03: el centro del metadata si es de la organización; si no, el habitual del socio. */
+async function resolveSubscriptionCenterId(
+  orgId: string,
+  requestedCenterId: string | undefined,
+  primaryCenterId: string
+): Promise<string> {
+  if (!requestedCenterId || requestedCenterId === primaryCenterId) return primaryCenterId;
+  const center = await prisma.center.findFirst({ where: { id: requestedCenterId, orgId }, select: { id: true } });
+  return center ? center.id : primaryCenterId;
 }
 
 /** `customer.subscription.deleted`. */
@@ -577,8 +740,9 @@ export type ReconcileResult = { ok: true } | { ok: false; retry: boolean; error:
 
 export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.Invoice): Promise<ReconcileResult> {
   if (!invoice.id) return { ok: true };
+  const invoiceId = invoice.id;
   const already = await prisma.payment.findUnique({
-    where: { stripeInvoiceId: invoice.id },
+    where: { stripeInvoiceId: invoiceId },
     select: { id: true, status: true },
   });
   // Solo una fila YA COBRADA significa reentrega del mismo evento. Una fila en
@@ -607,58 +771,88 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
 
   const periodEnd = resolveInvoicePeriodEnd(invoice);
 
-  // HU-ST-23: el desglose necesita saber SOBRE QUÉ cobro se apunta, y las dos
-  // ramas de abajo lo conocen por vías distintas.
-  let paymentId: string | undefined = already?.id;
-
-  if (already) {
-    // El recibo ya existe del intento fallido: se actualiza en vez de crear un
-    // segundo, que además chocaría con la unicidad de `stripeInvoiceId`.
-    await prisma.payment.update({
-      where: { id: already.id },
-      data: {
-        status: "PAID",
-        amountCents: invoice.amount_paid,
-        date: new Date(),
-        notes: "Factura recurrente Stripe (cobrada tras un intento fallido)",
-      },
+  // STR-01 · El cobro, la recarga de sesiones de la renovación y el estado de
+  // la suscripción van en UNA transacción: un `Payment` PAID sin recarga deja al
+  // socio pagando una cuota sin sesiones, y una recarga sin `Payment` hace que
+  // la reentrega del evento (que ya no ve el cobro) recargue otra vez.
+  //
+  // Dos entregas concurrentes del mismo evento chocan en la unicidad de
+  // `stripeInvoiceId`: la segunda transacción se deshace entera (recarga
+  // incluida) y su reintento ve el `Payment` PAID y sale.
+  const paymentId = await withUniqueRetry(async (attempt) => {
+    const current = attempt === 0 ? already : await prisma.payment.findUnique({
+      where: { stripeInvoiceId: invoiceId },
+      select: { id: true, status: true },
     });
-  } else {
-    paymentId = (
-      await createPaymentWithReceipt({
-        orgId,
-        memberId: subscription.memberId,
+    if (current?.status === "PAID") return null;
+
+    return prisma.$transaction(async (tx) => {
+      // HU-ST-23: el desglose necesita saber SOBRE QUÉ cobro se apunta, y las
+      // dos ramas de abajo lo conocen por vías distintas.
+      let id: string;
+      if (current) {
+        // El recibo ya existe del intento fallido: se actualiza en vez de crear
+        // un segundo, que además chocaría con la unicidad de `stripeInvoiceId`.
+        await tx.payment.update({
+          where: { id: current.id },
+          data: {
+            status: "PAID",
+            amountCents: invoice.amount_paid,
+            date: new Date(),
+            notes: "Factura recurrente Stripe (cobrada tras un intento fallido)",
+          },
+        });
+        id = current.id;
+      } else {
+        id = (
+          await createPaymentWithReceiptInTx(tx, attempt, {
+            orgId,
+            memberId: subscription.memberId,
+            subscriptionId: subscription.id,
+            amountCents: invoice.amount_paid,
+            method: "STRIPE",
+            status: "PAID",
+            date: new Date(),
+            stripeInvoiceId: invoiceId,
+            notes: "Factura recurrente Stripe",
+          })
+        ).id;
+      }
+
+      // Solo en renovación (`subscription_cycle`, y `subscription_update` del
+      // adelanto de P4); idempotente por factura. Deja también el `endDate`.
+      await refillOnRenewal(tx, {
         subscriptionId: subscription.id,
-        amountCents: invoice.amount_paid,
-        method: "STRIPE",
-        status: "PAID",
-        date: new Date(),
-        stripeInvoiceId: invoice.id,
-        notes: "Factura recurrente Stripe",
-      })
-    ).id;
-  }
+        invoiceId,
+        billingReason: invoice.billing_reason,
+        periodEnd,
+      });
+
+      await tx.subscription.update({
+        where: { id: subscription.id },
+        data: { status: "ACTIVE", ...(periodEnd ? { endDate: periodEnd } : {}) },
+      });
+      return id;
+    });
+  });
+  // Otra entrega concurrente ya lo concilió entero.
+  if (!paymentId) return { ok: true };
 
   // HU-ST-27 (petición de P5): el descuento de la factura, sobre el `Payment`
   // que acaba de escribirse — es el punto común de las dos ramas de arriba
   // (recibo que ya existía de un intento fallido, y recibo nuevo).
-  if (paymentId) await recordInvoiceDiscount(orgId, invoice, paymentId);
+  await recordInvoiceDiscount(orgId, invoice, paymentId);
 
   // HU-ST-23 (P4) · Punto de enganche del desglose bruto/comisión/neto. Hoy no
   // hace nada y NO puede lanzar: es un apunte contable colgado del camino del
   // cobro, y tumbar aquí haría que Stripe reintentase un `invoice.paid` que ya
   // estaba bien. El desglose se reconstruye después; el cobro no.
-  if (paymentId) await recordBalanceBreakdown(paymentId, resolveInvoiceChargeId(invoice));
+  await recordBalanceBreakdown(paymentId, resolveInvoiceChargeId(invoice));
 
   // HU-ST-12: `invoice.paid` es el otro desenlace posible de un adeudo directo
   // en vuelo (el primero es `checkout.session.async_payment_succeeded`). El
   // dinero ya ha entrado, así que el freno de RB-PAGO-025 se levanta aquí.
   if (stripeSubscriptionId) await releaseAsyncHold(orgId, stripeSubscriptionId, true);
-
-  await prisma.subscription.update({
-    where: { id: subscription.id },
-    data: { status: "ACTIVE", ...(periodEnd ? { endDate: periodEnd } : {}) },
-  });
 
   // El aviso a recepción lo abrió `reconcileMemberInvoicePaymentFailed`. Cobrado
   // el recibo ya no hay nada que revisar, y dejarlo abierto manda a alguien a
@@ -746,4 +940,36 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
   }
 
   return { ok: true };
+}
+
+/**
+ * STR-01 · `createPaymentWithReceipt` (payments.ts) escribe con el cliente raíz y
+ * reintenta la colisión del número de recibo DENTRO de su bucle. Dentro de una
+ * transacción de Postgres eso no sirve: tras un error la transacción queda
+ * abortada y cualquier sentencia siguiente falla. Aquí el número se calcula en
+ * la transacción y el reintento lo hace `withUniqueRetry` con la transacción
+ * entera. `attempt` desplaza el número igual que el bucle original.
+ *
+ * TODO(payments.ts, fuera de esta pista): exponer allí una variante con `tx` y
+ * borrar esta.
+ */
+async function createPaymentWithReceiptInTx(
+  tx: Prisma.TransactionClient,
+  attempt: number,
+  data: Omit<Prisma.PaymentUncheckedCreateInput, "receiptNumber">
+) {
+  const count = await tx.payment.count({ where: { orgId: data.orgId } });
+  return tx.payment.create({ data: { ...data, receiptNumber: `TZ-${2000 + count + attempt}` } });
+}
+
+/** Reintenta una transacción que choca con una restricción de unicidad (P2002). */
+async function withUniqueRetry<T>(run: (attempt: number) => Promise<T>, maxAttempts = 5): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run(attempt);
+    } catch (e) {
+      const unique = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+      if (!unique || attempt + 1 >= maxAttempts) throw e;
+    }
+  }
 }

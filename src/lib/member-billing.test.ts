@@ -1,12 +1,16 @@
 import "dotenv/config";
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import {
+  createMemberCheckout,
   reconcileMemberInvoicePaid,
   reconcileMemberInvoicePaymentFailed,
   reconcileMemberSubscriptionDeleted,
+  reconcileMemberSubscriptionUpserted,
+  resolveStaffCheckoutCenter,
 } from "@/lib/member-billing";
 
 /**
@@ -30,6 +34,7 @@ const SUFFIX = "e2e-billing-test";
 
 type Fixture = {
   orgId: string;
+  planId: string;
   memberId: string;
   subscriptionId: string;
   stripeSubscriptionId: string;
@@ -65,7 +70,7 @@ async function createFixture(tag: string): Promise<Fixture> {
       stripeSubscriptionId,
     },
   });
-  return { orgId: org.id, memberId: member.id, subscriptionId: subscription.id, stripeSubscriptionId };
+  return { orgId: org.id, planId: plan.id, memberId: member.id, subscriptionId: subscription.id, stripeSubscriptionId };
 }
 
 /**
@@ -211,4 +216,188 @@ test("customer.subscription.deleted cancela la suscripción del socio", async ()
 
   const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
   assert.equal(sub.status, "CANCELLED");
+});
+
+test("STR-02 · con una cuota recurrente viva, «Renovar» no abre un segundo cobro mensual", async () => {
+  const f = await createFixture("doble-cuota");
+
+  for (const status of ["ACTIVE", "PENDING_CONFIRMATION", "PAUSED"] as const) {
+    await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status } });
+    const result = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: f.planId, origin: "portal" });
+    assert.equal(result.ok, false, `con la cuota en ${status}`);
+    assert.equal(!result.ok && result.code, "ALREADY_SUBSCRIBED");
+  }
+});
+
+test("STR-02 · una cuota cancelada o un bono puntual no bloquean la compra", async () => {
+  const f = await createFixture("sin-bloqueo");
+
+  await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status: "CANCELLED" } });
+  const renovar = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: f.planId, origin: "staff" });
+  assert.equal(renovar.ok, true, "tras la baja, volver a darse de alta es legítimo");
+
+  // Con la cuota viva, un bono de sesiones sueltas sigue siendo una compra aparte.
+  await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status: "ACTIVE" } });
+  const bono = await prisma.membershipPlan.create({
+    data: { orgId: f.orgId, name: "Bono 5", type: "SESSION_PACK", priceCents: 5000, sessionsIncluded: 5 },
+  });
+  const extra = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: bono.id, origin: "portal" });
+  assert.equal(extra.ok, true);
+});
+
+/** `customer.subscription.created/updated` mínimo, con lo que leen los reconciliadores. */
+function stripeSubscription(id: string, metadata: Record<string, string>, extra: Record<string, unknown> = {}): Stripe.Subscription {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id,
+    status: "active",
+    metadata,
+    pause_collection: null,
+    cancel_at: null,
+    cancel_at_period_end: false,
+    items: { data: [{ current_period_start: now, current_period_end: now + 30 * 86_400 }] },
+    ...extra,
+  } as unknown as Stripe.Subscription;
+}
+
+test("STR-03 · la cuota recurrente queda en el centro donde se vendió, no en el habitual", async () => {
+  const f = await createFixture("centro-venta");
+  const centroB = await prisma.center.create({
+    data: { orgId: f.orgId, name: "Centro B", slug: `${SUFFIX}-centro-venta-b` },
+  });
+  const id = `sub_${SUFFIX}-centro-venta-nueva`;
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(id, { orgId: f.orgId, memberId: f.memberId, planId: f.planId, centerId: centroB.id })
+  );
+
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId: id } });
+  assert.equal(sub.centerId, centroB.id);
+});
+
+test("STR-03 · un centerId de otra organización en el metadata cae al centro habitual", async () => {
+  const f = await createFixture("centro-ajeno");
+  const ajena = await createFixture("centro-ajeno-otra");
+  const centroAjeno = await prisma.subscription.findUniqueOrThrow({ where: { id: ajena.subscriptionId } });
+  const member = await prisma.member.findUniqueOrThrow({ where: { id: f.memberId } });
+  const id = `sub_${SUFFIX}-centro-ajeno-nueva`;
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(id, { orgId: f.orgId, memberId: f.memberId, planId: f.planId, centerId: centroAjeno.centerId })
+  );
+
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId: id } });
+  assert.equal(sub.centerId, member.primaryCenterId);
+});
+
+test("STR-04 · una cuota congelada con pause_collection sigue PAUSED aunque Stripe diga active", async () => {
+  const f = await createFixture("pausa");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(f.stripeSubscriptionId, meta, { pause_collection: { behavior: "void", resumes_at: null } })
+  );
+  let sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.status, "PAUSED", "Stripe mantiene status=active durante la pausa");
+
+  // Al reanudar, Stripe quita `pause_collection`: vuelve a ACTIVE.
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.status, "ACTIVE");
+});
+
+test("STR-05 · la baja a fin de periodo pedida en el Billing Portal llega a cancelAt, y se retira si se deshace", async () => {
+  const f = await createFixture("baja-portal");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+  const periodEnd = Math.floor(Date.now() / 1000) + 30 * 86_400;
+  const items = { data: [{ current_period_start: periodEnd - 30 * 86_400, current_period_end: periodEnd }] };
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(f.stripeSubscriptionId, meta, { cancel_at_period_end: true, items })
+  );
+  let sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt?.getTime(), periodEnd * 1000);
+
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta, { items }));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt, null, "el socio se arrepintió en el Billing Portal");
+
+  const cancelAt = periodEnd - 5 * 86_400;
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta, { cancel_at: cancelAt, items }));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt?.getTime(), cancelAt * 1000);
+});
+
+test("STR-05 · una baja programada en recepción (solo local) no la borra un updated sin baja", async () => {
+  const f = await createFixture("baja-recepcion");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+  const local = new Date(Date.now() + 90 * 86_400_000);
+  await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { cancelAt: local } });
+
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
+
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt?.getTime(), local.getTime());
+});
+
+test("STR-05 · pause_collection con fecha de vuelta llega a pauseUntil y se limpia al reanudar", async () => {
+  const f = await createFixture("pausa-fecha");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+  const resumesAt = Math.floor(Date.now() / 1000) + 20 * 86_400;
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(f.stripeSubscriptionId, meta, { pause_collection: { behavior: "void", resumes_at: resumesAt } })
+  );
+  let sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.status, "PAUSED");
+  assert.equal(sub.pauseUntil?.getTime(), resumesAt * 1000);
+
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.pauseUntil, null);
+});
+
+test("STR-07 · la venta en recepción queda en el centro elegido, validado con el ámbito de quien vende", async () => {
+  const f = await createFixture("recepcion-centro");
+  const member = await prisma.member.findUniqueOrThrow({ where: { id: f.memberId } });
+  const centroA = member.primaryCenterId;
+  const centroB = (await prisma.center.create({ data: { orgId: f.orgId, name: "B", slug: `${SUFFIX}-recepcion-centro-b` } })).id;
+  const ajena = await createFixture("recepcion-centro-ajena");
+  const centroAjeno = (await prisma.member.findUniqueOrThrow({ where: { id: ajena.memberId } })).primaryCenterId;
+
+  const email = `${SUFFIX}-recepcion-b@example.com`;
+  await prisma.identity.deleteMany({ where: { email } });
+  const identity = await prisma.identity.create({ data: { email, passwordHash: "no-usable-en-tests" } });
+  const user = await prisma.user.create({
+    data: { orgId: f.orgId, identityId: identity.id, name: "Recepción B", email, role: "RECEPTION", centerId: centroB },
+  });
+  const recepcionB = { id: user.id, role: "RECEPTION" as const, orgId: f.orgId, centerId: centroB };
+  const direccion = { id: "no-existe", role: "OWNER" as const, orgId: f.orgId, centerId: null };
+
+  try {
+    // Elegido y dentro de su ámbito.
+    assert.deepEqual(await resolveStaffCheckoutCenter(recepcionB, centroB), { ok: true, centerId: centroB });
+    // Sin elegir: el centro donde trabaja quien vende, no el habitual del socio.
+    assert.deepEqual(await resolveStaffCheckoutCenter(recepcionB, null), { ok: true, centerId: centroB });
+    // Un centro de su organización al que no está imputada: fuera.
+    assert.equal((await resolveStaffCheckoutCenter(recepcionB, centroA)).ok, false);
+    // Dirección de organización manda en todos sus centros, nunca en otra org.
+    assert.deepEqual(await resolveStaffCheckoutCenter(direccion, centroA), { ok: true, centerId: centroA });
+    assert.equal((await resolveStaffCheckoutCenter(direccion, centroAjeno)).ok, false);
+    // Sin centro elegido ni centro base: lo decide `createMemberCheckout` (el habitual del socio).
+    assert.deepEqual(await resolveStaffCheckoutCenter(direccion, null), { ok: true, centerId: undefined });
+  } finally {
+    await prisma.user.delete({ where: { id: user.id } });
+    await prisma.identity.delete({ where: { id: identity.id } });
+  }
+
+  // Y la acción de recepción lo usa: antes no pasaba ningún centro.
+  const accion = readFileSync("src/app/(app)/billing/actions.ts", "utf8");
+  assert.match(accion, /resolveStaffCheckoutCenter\(session\.user/);
+  assert.match(accion, /centerId: center\.centerId/);
 });

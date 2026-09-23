@@ -98,10 +98,24 @@ export type CreateSubscriptionInput = SubscriptionTermOverrides & {
 
 /**
  * Crea la suscripción con las condiciones resueltas. Acepta un cliente de
- * transacción para poder ir dentro del alta del socio (invitations.ts) sin
- * abrir una segunda.
+ * transacción para poder ir dentro del alta del socio (invitations.ts) o de la
+ * conciliación de un cobro sin abrir una segunda.
+ *
+ * STR-08: con el cliente raíz (`prisma`) la fila del bono y su asiento de alta
+ * eran dos escrituras sueltas. Si el asiento fallaba, quedaba un bono con saldo
+ * y el libro vacío — justo lo que prohíbe la invariante de `SessionLedger`. Sin
+ * transacción del llamante, se abre una aquí.
  */
 export async function createSubscriptionFromPlan(tx: Tx | typeof prisma, input: CreateSubscriptionInput) {
+  if (isRootClient(tx)) return tx.$transaction((inner) => createInTx(inner, input));
+  return createInTx(tx, input);
+}
+
+function isRootClient(client: Tx | typeof prisma): client is typeof prisma {
+  return "$transaction" in client;
+}
+
+async function createInTx(tx: Tx, input: CreateSubscriptionInput) {
   const terms = resolveSubscriptionTerms(input.plan, {
     priceCents: input.priceCents,
     sessionsRemaining: input.sessionsRemaining,
@@ -129,7 +143,7 @@ export async function createSubscriptionFromPlan(tx: Tx | typeof prisma, input: 
     const center = await tx.center.findUnique({ where: { id: input.centerId }, select: { orgId: true } });
     if (center) {
       await recordSessionsChange(
-        tx as Prisma.TransactionClient,
+        tx,
         {
           orgId: center.orgId,
           subscriptionId: subscription.id,
