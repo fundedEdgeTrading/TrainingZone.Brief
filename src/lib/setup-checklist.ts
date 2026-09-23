@@ -47,7 +47,9 @@ export async function getSetupChecklist(orgId: string): Promise<SetupStep[]> {
     }),
     prisma.center.count({ where: { orgId } }),
     prisma.membershipPlan.count({ where: { orgId, active: true } }),
-    prisma.user.count({ where: { orgId, role: { not: "OWNER" } } }),
+    // QA-ALTA-16 · Personal en activo: ni el propio director, ni los socios
+    // (que también son `User` al activar su acceso), ni soporte, ni las bajas.
+    prisma.user.count({ where: { orgId, role: { notIn: ["OWNER", "MEMBER", "PLATFORM_ADMIN"] }, deactivatedAt: null } }),
     prisma.member.count({ where: { orgId } }),
     prisma.stripeAccount.findUnique({ where: { orgId }, select: { chargesEnabled: true } }),
     prisma.center.count({ where: { orgId, publicPage: true } }),
