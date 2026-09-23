@@ -151,8 +151,8 @@ export function formatPlatformPrice(entry: Pick<PlatformPriceEntry, "unitAmount"
 
 /** Un plan que se puede comprar aquí y ahora, con el precio que se enseña. */
 export type PurchasablePlan = PlatformPlan & {
-  /** `null` solo en modo demo: no hay precio real que cobrar. */
-  stripePriceId: string | null;
+  /** El precio de Stripe que se cobra. `null` solo en modo demo: no hay cobro real. */
+  stripePrice: PlatformPriceEntry | null;
   displayPrice: string;
 };
 
@@ -165,13 +165,13 @@ export type PurchasablePlan = PlatformPlan & {
 export async function listPurchasablePlans(): Promise<PurchasablePlan[]> {
   const offered = PLATFORM_PLANS.filter((plan) => !plan.limitedOffer || fundadorEnabled());
   if (isDemoModeActive()) {
-    return offered.map((plan) => ({ ...plan, stripePriceId: null, displayPrice: plan.priceLabel }));
+    return offered.map((plan) => ({ ...plan, stripePrice: null, displayPrice: plan.priceLabel }));
   }
   const catalog = await getPlatformPriceCatalog();
   return offered.flatMap((plan) => {
     const entry = catalog[plan.code];
     if (!entry) return [];
-    return [{ ...plan, stripePriceId: entry.priceId, displayPrice: formatPlatformPrice(entry, plan.interval) }];
+    return [{ ...plan, stripePrice: entry, displayPrice: formatPlatformPrice(entry, plan.interval) }];
   });
 }
 
@@ -183,4 +183,28 @@ export async function listPurchasablePlans(): Promise<PurchasablePlan[]> {
 export async function resolvePlatformPriceId(plan: PlatformPlan): Promise<string | null> {
   const catalog = await getPlatformPriceCatalog({ fresh: true });
   return catalog[plan.code]?.priceId ?? null;
+}
+
+/** Meses que dura un ciclo de facturación de Stripe (semanas y días, aproximados). */
+const MONTHS_PER_INTERVAL: Record<Stripe.Price.Recurring.Interval, number> = {
+  day: 12 / 365,
+  week: 12 / 52,
+  month: 1,
+  year: 12,
+};
+
+/**
+ * Pura: lo que una suscripción de Stripe factura al mes, en céntimos. Suma
+ * sus líneas (importe × cantidad) mensualizadas; los descuentos no se
+ * restan (MRR bruto, el de lista de cada cliente).
+ */
+export function subscriptionMonthlyCents(subscription: Stripe.Subscription): number {
+  let monthly = 0;
+  for (const item of subscription.items.data) {
+    const recurring = item.price.recurring;
+    if (!recurring || item.price.unit_amount == null) continue;
+    const months = MONTHS_PER_INTERVAL[recurring.interval] * (recurring.interval_count || 1);
+    monthly += (item.price.unit_amount * (item.quantity ?? 1)) / months;
+  }
+  return Math.round(monthly);
 }

@@ -93,20 +93,41 @@ test("centro: los campos que no se saben no se inventan, se omiten", () => {
   assert.ok(!("addressLocality" in address));
 });
 
-test("Offer del catálogo de plataforma: SIN price", () => {
+test("Offer del catálogo de plataforma sin precio de Stripe (modo demo): SIN price", () => {
   const node = platformOffersJsonLd([
-    { name: "Avanzado", code: "avanzado" },
-    { name: "Élite", code: "elite" },
+    { name: "Avanzado", code: "avanzado_mes", interval: "month", stripePrice: null },
+    { name: "Élite", code: "elite_mes" },
   ]);
   const offers = node?.offers as Record<string, unknown>[];
   assert.equal(offers.length, 2);
   for (const offer of offers) {
-    // `priceLabel` es "solo presentación" y el importe real vive en Stripe,
-    // resuelto por entorno: marcarlo sería afirmar un cargo que puede no ser.
+    // `priceLabel` es referencia: marcarlo sería afirmar un cargo que puede no ser.
     assert.ok(!("price" in offer), "se ha marcado un precio que no es el que se cobra");
+    assert.ok(!("priceSpecification" in offer));
     assert.equal(offer.priceCurrency, "EUR");
   }
   assert.equal(platformOffersJsonLd([]), null);
+});
+
+test("Offer del catálogo de plataforma con precio de Stripe: marca el importe que se cobra", () => {
+  const node = platformOffersJsonLd([
+    { name: "Avanzado", code: "avanzado_mes", interval: "month", stripePrice: { unitAmount: 12900, currency: "eur" } },
+    { name: "Élite", code: "elite_ano", interval: "year", stripePrice: { unitAmount: 279000, currency: "eur" } },
+    { name: "Fundador", code: "fundador", interval: "lifetime", stripePrice: { unitAmount: 399000, currency: "eur" } },
+  ]);
+  const [mes, ano, fundador] = node?.offers as Record<string, unknown>[];
+  assert.equal(mes.price, "129.00");
+  assert.equal(mes.priceCurrency, "EUR");
+  assert.deepEqual(mes.priceSpecification, {
+    "@type": "UnitPriceSpecification",
+    price: "129.00",
+    priceCurrency: "EUR",
+    billingDuration: "P1M",
+  });
+  assert.equal((ano.priceSpecification as Record<string, unknown>).billingDuration, "P1Y");
+  // Pago único: precio, pero sin periodo de facturación.
+  assert.equal(fundador.price, "3990.00");
+  assert.ok(!("priceSpecification" in fundador));
 });
 
 test("Offer del centro: ahí el importe SÍ es el que se cobra, y va marcado", () => {

@@ -52,9 +52,10 @@ export async function PricingBlock({ showYearly }: { showYearly: boolean }) {
 
   return (
     <>
-      {/* E9-07 · El `Product` va con ofertas SIN precio (ver `platformOffersJsonLd`).
-          Vive aquí y no en la página porque depende del catálogo de Stripe, que
-          es justo lo que espera dentro del `<Suspense>`. */}
+      {/* E9-07 · El `Product` con sus ofertas, con el precio de Stripe cuando lo
+          hay (ver `platformOffersJsonLd`). Vive aquí y no en la página porque
+          depende del catálogo de Stripe, que es justo lo que espera dentro del
+          `<Suspense>`. */}
       <JsonLd node={platformOffersJsonLd(purchasable)} />
       <div className="flex justify-center mb-8">
         <div className="inline-flex bg-white border border-brand-border rounded-pill p-1">

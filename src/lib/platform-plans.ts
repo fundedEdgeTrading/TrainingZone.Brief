@@ -214,10 +214,11 @@ export function getPlatformPlan(code: string | null | undefined): PlatformPlan |
 }
 
 /**
- * E6-08: precio mensualizado en céntimos, derivado de `priceLabel` para el
- * MRR agregado de `/apta`. Es una aproximación de back-office (redondea el
- * importe mostrado, que ya es solo presentación) — el cobro real lo manda
- * Stripe. `null` para Fundador: es pago único, no ingreso recurrente.
+ * E6-08: precio mensualizado en céntimos, derivado de `priceLabel`. Es el
+ * RESPALDO del MRR de `/apta` cuando no hay suscripción real que leer de
+ * Stripe (modo demo, Stripe caído); el cálculo principal usa lo que factura
+ * cada suscripción (`platform-admin-queries.ts`). `null` para Fundador: es
+ * pago único, no ingreso recurrente.
  */
 export function monthlyPriceCents(plan: PlatformPlan): number | null {
   if (plan.interval === "lifetime") return null;

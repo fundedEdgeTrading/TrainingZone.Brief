@@ -73,8 +73,10 @@ Decisiones que explican el reparto:
   siguen en código (`PLATFORM_PLANS`).
 - El contador de plazas de Fundador es real, no decorativo: se cuenta contra la
   base antes de cobrar (`remainingFundadorSeats`).
-- `priceLabel` es un **precio de referencia** para el modo demo y /apta. Lo que
-  ve el comprador (`displayPrice`) y lo que se cobra sale de Stripe.
+- `priceLabel` es un **precio de referencia** para el modo demo y el alta
+  asistida. Lo que ve el comprador (`displayPrice`), el `price` del JSON-LD de
+  /planes y el MRR de /apta salen de Stripe; el MRR solo cae a `priceLabel`
+  (y lo rotula como estimado) si no puede leer la suscripción real.
 
 ### 2.2 Alta pago-primero
 

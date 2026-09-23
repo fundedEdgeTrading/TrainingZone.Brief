@@ -11,8 +11,9 @@
  *    dirección ni coordenadas no gana nada y sí puede acarrear una acción manual
  *    por datos estructurados inválidos. Por eso el constructor devuelve `null`.
  *  · **Nunca un precio que no sea el que se cobra.** `PlatformPlan.priceLabel`
- *    es solo presentación ("desde 49 €/mes"): marcarlo como `price` es afirmar
- *    un importe que puede no coincidir con el cargo real.
+ *    es un precio de referencia: marcarlo como `price` es afirmar un importe
+ *    que puede no coincidir con el cargo real. Solo se marca el que viene del
+ *    precio de Stripe con el que se cobra.
  *
  * Módulo puro: devuelve objetos planos, sin `next/*` ni Prisma, así que su forma
  * se puede comprobar en test sin levantar nada.
@@ -125,14 +126,21 @@ export function centerJsonLd(center: CenterJsonLdInput): JsonLdNode | null {
 }
 
 /**
- * Oferta de un plan de plataforma, **sin `price`**.
+ * Oferta de un plan de plataforma.
  *
- * `priceLabel` es una cadena de presentación y los importes reales viven en
- * Stripe (`lib/platform-price-catalog.ts`). Marcar el rótulo como precio
- * sería afirmar un importe que puede no coincidir con el cargo. Se emite la
- * oferta sin precio hasta que exista un importe canónico que leer.
+ * El `price` solo se marca cuando llega `stripePrice`: el importe del precio
+ * de Stripe con el que se cobra ese plan (`lib/platform-price-catalog.ts`).
+ * Sin él (modo demo) la oferta sale sin precio: `priceLabel` es referencia y
+ * marcarlo sería afirmar un cargo que puede no ser.
  */
-export function platformOffersJsonLd(plans: readonly { name: string; code: string }[]): JsonLdNode | null {
+export function platformOffersJsonLd(
+  plans: readonly {
+    name: string;
+    code: string;
+    interval?: "month" | "year" | "lifetime";
+    stripePrice?: { unitAmount: number; currency: string } | null;
+  }[]
+): JsonLdNode | null {
   if (plans.length === 0) return null;
   return {
     "@context": "https://schema.org",
@@ -140,13 +148,31 @@ export function platformOffersJsonLd(plans: readonly { name: string; code: strin
     name: `${BRAND.name} · software de gestión para gimnasios`,
     description: BRAND.description,
     brand: { "@type": "Brand", name: BRAND.name },
-    offers: plans.map((plan) => ({
-      "@type": "Offer",
-      name: plan.name,
-      url: absoluteUrl("/planes"),
-      priceCurrency: "EUR",
-      availability: "https://schema.org/InStock",
-    })),
+    offers: plans.map((plan) => {
+      const priced = plan.stripePrice;
+      const currency = priced ? priced.currency.toUpperCase() : "EUR";
+      const price = priced ? (priced.unitAmount / 100).toFixed(2) : null;
+      const billingDuration = plan.interval === "month" ? "P1M" : plan.interval === "year" ? "P1Y" : null;
+      return {
+        "@type": "Offer",
+        name: plan.name,
+        url: absoluteUrl("/planes"),
+        ...(price ? { price } : {}),
+        priceCurrency: currency,
+        // Suscripción: el importe es por periodo, no un pago único.
+        ...(price && billingDuration
+          ? {
+              priceSpecification: {
+                "@type": "UnitPriceSpecification",
+                price,
+                priceCurrency: currency,
+                billingDuration,
+              },
+            }
+          : {}),
+        availability: "https://schema.org/InStock",
+      };
+    }),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   formatPlatformPrice,
   platformLookupKey,
   resolvePlatformPriceCatalog,
+  subscriptionMonthlyCents,
 } from "@/lib/platform-price-catalog";
 
 /**
@@ -107,4 +108,25 @@ test("el checkout resuelve el precio contra Stripe, no contra el entorno", () =>
   const billing = readFileSync("src/lib/platform-billing.ts", "utf8");
   assert.doesNotMatch(billing, /process\.env\.STRIPE_PRICE_/);
   assert.equal((billing.match(/await resolvePlatformPriceId\(plan\)/g) ?? []).length, 2);
+});
+
+function subscription(items: { unit_amount: number | null; interval: Stripe.Price.Recurring.Interval; interval_count?: number; quantity?: number }[]): Stripe.Subscription {
+  return {
+    id: "sub_1",
+    items: {
+      data: items.map((i) => ({
+        quantity: i.quantity ?? 1,
+        price: { unit_amount: i.unit_amount, recurring: { interval: i.interval, interval_count: i.interval_count ?? 1 } },
+      })),
+    },
+  } as unknown as Stripe.Subscription;
+}
+
+test("MRR de /apta: lo que factura cada suscripción, mensualizado", () => {
+  assert.equal(subscriptionMonthlyCents(subscription([{ unit_amount: 12900, interval: "month" }])), 12900);
+  // Un cliente con un precio antiguo cuenta por lo que paga, no por el de lista actual.
+  assert.equal(subscriptionMonthlyCents(subscription([{ unit_amount: 9900, interval: "month" }])), 9900);
+  assert.equal(subscriptionMonthlyCents(subscription([{ unit_amount: 129000, interval: "year" }])), Math.round(129000 / 12));
+  assert.equal(subscriptionMonthlyCents(subscription([{ unit_amount: 30000, interval: "month", interval_count: 3 }])), 10000);
+  assert.equal(subscriptionMonthlyCents(subscription([{ unit_amount: 1000, interval: "month", quantity: 3 }, { unit_amount: null, interval: "month" }])), 3000);
 });
