@@ -159,6 +159,12 @@ export default function SessionDialog({
    * pasados. Se pregunta el alcance antes de tocar nada.
    */
   function handleSave() {
+    // Una sesión que llegó sin entrenador (QA-RES-11) no se guarda sin elegir
+    // uno: la acción caería a quien guarda y la asignaría en silencio.
+    if (!dlg.trainerId) {
+      toast.error("Elige el entrenador de la sesión.");
+      return;
+    }
     if (dlg.mode === "edit" && dlg.isSeries) {
       setScopeOpen(true);
       return;
@@ -435,7 +441,11 @@ export default function SessionDialog({
               {trainers.length === 0 ? (
                 <p className="text-xs text-muted">Sin entrenadores.</p>
               ) : (
-                <Select value={dlg.trainerId} onChange={(e) => patch({ trainerId: e.target.value })}>
+                <Select
+                  value={dlg.trainerId}
+                  placeholder="Sin entrenador: elige uno"
+                  onChange={(e) => patch({ trainerId: e.target.value })}
+                >
                   {trainers.map((t) => (
                     <option
                       key={t.id}

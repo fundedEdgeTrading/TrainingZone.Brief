@@ -28,6 +28,8 @@ import {
   DEFAULT_GROUP_CAPACITY,
   withTypePrefix,
   dragSaveFields,
+  UNASSIGNED_TRAINER_ID,
+  withUnassignedTrainer,
   type WeekOccurrence,
 } from "./agenda-utils";
 import { moveSessionAction, saveSessionAction } from "./session-actions";
@@ -108,6 +110,11 @@ export default function AgendaView({
     setPrevOccurrences(occurrences);
     setEvents(occurrences);
   }
+
+  // Leyenda y filtro: los entrenadores más la fila "Sin entrenador" cuando hay
+  // sesiones sin asignar (QA-RES-11). El diálogo sigue usando `trainers`: esa
+  // fila no es alguien a quien asignar una sesión.
+  const rowTrainers = useMemo(() => withUnassignedTrainer(trainers, occurrences), [trainers, occurrences]);
 
   // En móvil la rejilla pinta un único día (la semana entera en 360px deja
   // columnas de 45px, ilegibles e imposibles de tocar). Este es el día en
@@ -242,6 +249,13 @@ export default function AgendaView({
       // sesiones aplica, como al editarla desde el diálogo.
       const origin = occurrences.find((o) => o.uid === gesture.uid);
       if (ev.isRecurring && origin) {
+        if (ev.trainerId === UNASSIGNED_TRAINER_ID) {
+          // Guardar la serie exige entrenador; sin él se asignaría en silencio
+          // a quien la arrastra.
+          toast.error("Asigna un entrenador a esta serie antes de moverla.");
+          setEvents(occurrences);
+          return;
+        }
         setPendingMove({ ev, occurrenceISO: formatDateParam(addDays(weekStart, origin.dayIndex)) });
         return;
       }
@@ -368,7 +382,8 @@ export default function AgendaView({
       startHHMM: fmtHHMM(ev.startMin),
       endHHMM: fmtHHMM(ev.endMin),
       type: ev.type,
-      trainerId: ev.trainerId,
+      // Sin entrenador, el diálogo abre con el campo vacío: hay que elegir uno.
+      trainerId: ev.trainerId === UNASSIGNED_TRAINER_ID ? "" : ev.trainerId,
       // Solo el EP arrastra "su" socio al diálogo: en un grupo reducido el
       // roster son varias personas y este campo no lo representa.
       memberId: ev.type === "personal" ? ev.bookedMemberId : null,
@@ -409,7 +424,7 @@ export default function AgendaView({
       ? null
       : `wk${weekSweep.dir > 0 ? "Next" : "Prev"}${weekSweep.ab ? "B" : "A"} .34s var(--ease-out-soft) both`;
   const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-  const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
+  const trainerName = useMemo(() => Object.fromEntries(rowTrainers.map((t) => [t.id, t.name])), [rowTrainers]);
 
   const content = (
     <div
@@ -472,10 +487,10 @@ export default function AgendaView({
         </button>
         <TrainerFilter
           className="lg:hidden"
-          trainers={trainers}
+          trainers={rowTrainers}
           visible={visible}
           onToggle={(id) => setVisible((v) => ({ ...v, [id]: !(v[id] !== false) }))}
-          onSetAll={(value) => setVisible(Object.fromEntries(trainers.map((t) => [t.id, value])))}
+          onSetAll={(value) => setVisible(Object.fromEntries(rowTrainers.map((t) => [t.id, value])))}
         />
         {centerSwitcher}
         <div className="hidden lg:flex h-9 items-center gap-2 px-3.5 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text">
@@ -505,7 +520,7 @@ export default function AgendaView({
           <div className="pt-4 pb-1.5 border-t border-tz-sand mt-1">
             <div className="text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-2.5">Entrenadores</div>
             <div className="flex flex-col gap-0.5">
-              {trainers.map((t) => {
+              {rowTrainers.map((t) => {
                 const color = trainerColor(t.id);
                 const isVisible = visible[t.id] !== false;
                 return (

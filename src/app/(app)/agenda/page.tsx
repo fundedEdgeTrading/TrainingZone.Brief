@@ -5,7 +5,7 @@ import { canManageEpSlots } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, parseDateParam, zonedNow } from "@/lib/date-utils";
 import { resolveTimezoneForCenter } from "@/lib/timezone";
 import { isSameDay } from "@/lib/session-occurrences";
-import { addDays, instancesForWeek, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
+import { addDays, instancesForWeek, occurrenceTrainerId, VISIBLE_DAYS, type WeekOccurrence } from "./agenda-utils";
 import AgendaView from "./agenda-view";
 import CenterSwitcher from "./center-switcher";
 
@@ -66,7 +66,6 @@ export default async function AgendaPage({
 
   const occurrences: WeekOccurrence[] = [];
   for (const s of sessions) {
-    if (!s.trainerId) continue;
     for (const dayIndex of instancesForWeek(s, weekStart, weekEnd)) {
     // Fuera de la semana visible (ver `VISIBLE_DAYS`): no hay columna donde pintarla.
     if (dayIndex >= VISIBLE_DAYS) continue;
@@ -85,7 +84,8 @@ export default async function AgendaPage({
       startMin: toMinutes(s.startTime),
       endMin: toMinutes(s.endTime),
       title: s.name,
-      trainerId: s.trainerId,
+      // QA-RES-11: sin entrenador también se pinta, en su propia fila.
+      trainerId: occurrenceTrainerId(s.trainerId),
       type: s.classType === "Personal Training" ? "personal" : "reduced",
       capacity: s.capacity,
       selfBookable: s.selfBookable,

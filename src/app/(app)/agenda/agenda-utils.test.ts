@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dragSaveFields, type WeekOccurrence } from "./agenda-utils";
+import {
+  dragSaveFields,
+  occurrenceTrainerId,
+  trainerColor,
+  TRAINER_PALETTE,
+  UNASSIGNED_TRAINER_ID,
+  withUnassignedTrainer,
+  type WeekOccurrence,
+} from "./agenda-utils";
 
 function occurrence(over: Partial<WeekOccurrence> = {}): WeekOccurrence {
   return {
@@ -75,4 +83,24 @@ test("QA-RES-03 · una serie sin fin no manda recUntil", () => {
     scope: "future",
   });
   assert.equal("recUntil" in fields, false);
+});
+
+// --- QA-RES-11 · las sesiones sin entrenador también se pintan ---------------
+
+test("QA-RES-11 · una sesión sin entrenador se pinta en la fila 'Sin entrenador'", () => {
+  assert.equal(occurrenceTrainerId(null), UNASSIGNED_TRAINER_ID);
+  assert.equal(occurrenceTrainerId("tr-1"), "tr-1");
+
+  const trainers = [{ id: "tr-1", name: "Ana" }];
+  const rows = withUnassignedTrainer(trainers, [occurrence({ trainerId: UNASSIGNED_TRAINER_ID })]);
+  assert.deepEqual(rows, [
+    { id: "tr-1", name: "Ana" },
+    { id: UNASSIGNED_TRAINER_ID, name: "Sin entrenador" },
+  ]);
+});
+
+test("QA-RES-11 · sin sesiones huérfanas no aparece la fila, y su color no es el de nadie", () => {
+  const trainers = [{ id: "tr-1", name: "Ana" }];
+  assert.deepEqual(withUnassignedTrainer(trainers, [occurrence()]), trainers);
+  assert.ok(!TRAINER_PALETTE.includes(trainerColor(UNASSIGNED_TRAINER_ID)));
 });

@@ -31,7 +31,31 @@ export const MONTHS = [
 // Paleta de tonos tierra para entrenadores sin color asignado explícito.
 export const TRAINER_PALETTE = ["#5f6d34", "#6d4a5a", "#8a6a2e", "#98523a", "#45635f"];
 
+/**
+ * QA-RES-11: fila de la agenda para las sesiones sin entrenador asignado
+ * (`ClassSession.trainerId` es opcional). La página las descartaba y la sesión
+ * existía —con sus reservas— sin que nadie la viera en la rejilla. No es un id
+ * de usuario: nunca se manda al servidor como entrenador.
+ */
+export const UNASSIGNED_TRAINER_ID = "sin-entrenador";
+export const UNASSIGNED_TRAINER_NAME = "Sin entrenador";
+
+export function occurrenceTrainerId(trainerId: string | null): string {
+  return trainerId ?? UNASSIGNED_TRAINER_ID;
+}
+
+/** Entrenadores de la leyenda y el filtro, más "Sin entrenador" si hay sesiones sin él. */
+export function withUnassignedTrainer<T extends { id: string; name: string }>(
+  trainers: T[],
+  occurrences: { trainerId: string }[]
+): { id: string; name: string }[] {
+  if (!occurrences.some((o) => o.trainerId === UNASSIGNED_TRAINER_ID)) return trainers;
+  return [...trainers, { id: UNASSIGNED_TRAINER_ID, name: UNASSIGNED_TRAINER_NAME }];
+}
+
 export function trainerColor(trainerId: string) {
+  // Neutro a propósito: con un tono de la paleta parecería de un entrenador.
+  if (trainerId === UNASSIGNED_TRAINER_ID) return "var(--color-muted)";
   let hash = 0;
   for (let i = 0; i < trainerId.length; i++) hash = (hash * 31 + trainerId.charCodeAt(i)) >>> 0;
   return TRAINER_PALETTE[hash % TRAINER_PALETTE.length];
