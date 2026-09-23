@@ -60,6 +60,11 @@ export const PUBLIC_PATHS = [
   // endpoint sigue fallando cerrado sin `JOBS_CRON_SECRET` y comparando el
   // secreto en tiempo constante, igual que `/api/jobs`.
   "/api/flujos/cron",
+  // PROD-06 · health check de Render (`healthCheckPath`) y del monitor de
+  // disponibilidad: quien la llama no tiene sesión, y un 307 a /login se
+  // leería como "vivo" sin haber tocado la base de datos. No expone nada: solo
+  // {ok, db}.
+  "/api/health",
   "/api/stripe",
   "/api/checkout",
   "/api/hazte-socio",

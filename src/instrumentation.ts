@@ -4,6 +4,7 @@
  * impedir que la aplicación llegue a estar viva.
  */
 import { assertEuDataRegion } from "@/lib/data-region";
+import { assertProductionEnv } from "@/lib/env-check";
 
 export function register() {
   // Solo en el runtime de Node: en Edge no hay base de datos que verificar y la
@@ -19,4 +20,10 @@ export function register() {
   } else {
     console.info("[E10-07] Base de datos local: no hay región que declarar.");
   }
+
+  // PROD-02: en producción, sin la configuración completa tampoco se arranca.
+  // Cada variable ausente tenía un modo degradado de desarrollo (demo
+  // encendida, correo simulado, jobs sin correr...) que en producción es un
+  // fallo silencioso. Solo nombres y motivos en el error, nunca valores.
+  assertProductionEnv();
 }

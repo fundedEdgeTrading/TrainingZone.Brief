@@ -18,15 +18,18 @@ function euros(cents: number) {
  * con ello toda la mitad del producto que se enseña en una demo —bono, saldo,
  * reserva— quedaba inalcanzable.
  *
- * **Temporal**: se retira el día que Stripe esté vivo en producción. Mientras
- * tanto `isDemoModeActive()` la apaga sola en cuanto haya clave configurada.
+ * Solo existe con el modo demo encendido explícitamente (`DEMO_MODE`, y en
+ * producción también `ALLOW_DEMO_IN_PRODUCTION`; ver `lib/demo-mode.ts`).
+ * PROD-01: antes bastaba con que faltara `STRIPE_SECRET_KEY`.
  */
 export default async function DemoMemberCheckoutPage({
   searchParams,
 }: {
   searchParams: Promise<{ t?: string }>;
 }) {
-  // Con Stripe configurado esta pantalla no existe: se va al cobro real.
+  // PROD-01: con el modo demo apagado (DEMO_MODE) esta pantalla no existe y se
+  // va a donde el socio compra de verdad (sin sesión, el proxy lo lleva antes
+  // a /login). Redirección y no 404: §4.8 X4 de PASO_A_PRODUCCION_2_CENTROS.md.
   if (!isDemoModeActive()) redirect("/portal/membresia");
 
   const { t: token } = await searchParams;
@@ -47,7 +50,7 @@ export default async function DemoMemberCheckoutPage({
             Modo demo
           </span>
           <h1 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-brand-text">
-            Stripe no está configurado en este entorno
+            Entorno de demostración
           </h1>
           <p className="text-sm text-brand-text-2 mt-2">
             Esto <strong>NO es un cobro real</strong>. Al confirmar, {summary.memberName} recibe{" "}
@@ -69,7 +72,7 @@ export default async function DemoMemberCheckoutPage({
         <DemoMemberCheckoutForm token={token} />
 
         <p className="text-[11px] text-faint text-center mt-4">
-          Esta pantalla desaparece en cuanto se configure Stripe en el entorno.
+          Esta pantalla solo existe en un entorno de demostración.
         </p>
       </div>
     </div>

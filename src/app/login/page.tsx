@@ -3,15 +3,24 @@ import Link from "next/link";
 import LoginForm from "./login-form";
 import AptaLogo from "@/components/apta-logo";
 import { isDemoModeActive } from "@/lib/platform-plans";
+import { demoAccessForLogin } from "./demo-users";
+
+// PROD-01: la bandera del modo demo se lee en cada petición, no en el build.
+// Prerenderizada, la página congelaba el valor de DEMO_MODE del entorno de
+// construcción: apagarla en el panel del proveedor no quitaba el panel demo
+// hasta el siguiente despliegue.
+export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   // E8-16: el panel de acceso demo (usuarios sembrados, contraseña
   // compartida a la vista) es la primera pantalla de un producto que se
   // vende como premium — no puede salir en producción. Usa la misma
-  // bandera que el resto del modo demo (sin Stripe configurado no hay pago
-  // real posible, así que tampoco hay nada que "vender como premium" a
-  // proteger: es entorno de demostración).
-  const demoModeActive = isDemoModeActive();
+  // bandera que el resto del modo demo.
+  //
+  // PROD-01: esa bandera ya no es "falta STRIPE_SECRET_KEY" sino DEMO_MODE
+  // explícito (ver `lib/demo-mode.ts`), y con ella apagada al cliente no
+  // llegan ni los usuarios ni la contraseña.
+  const demoAccess = demoAccessForLogin(isDemoModeActive());
   return (
     <div className="h-dvh flex bg-tz-bone overflow-hidden">
       <div className="hidden lg:flex relative w-[42%] shrink-0 bg-tz-black overflow-hidden flex-col justify-between p-12">
@@ -61,7 +70,7 @@ export default function LoginPage() {
 
             <div className="bg-white border border-tz-linen rounded-card shadow-pop tz-card-sheen p-6 lg:p-8 short:lg:p-5">
               <Suspense>
-                <LoginForm demoModeActive={demoModeActive} />
+                <LoginForm demoAccess={demoAccess} />
               </Suspense>
             </div>
 
