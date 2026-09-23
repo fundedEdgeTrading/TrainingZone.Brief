@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { resendOwnerActivationByOrgId, createAssistedOrganization } from "@/lib/provisioning";
 import { PLATFORM_PLANS } from "@/lib/platform-plans";
+import { APTA_FORBIDDEN, isPlatformOperator } from "./platform-access";
 
 type ActionResult = { ok: true; warning?: string } | { ok: false; error: string };
 
@@ -11,9 +12,13 @@ type ActionResult = { ok: true; warning?: string } | { ok: false; error: string 
  * E6-08 · back-office `/apta`. Ambas acciones son PLATFORM_ADMIN-only —
  * comprobado aquí de nuevo, no solo en la página: una server action se puede
  * invocar directamente sin pasar por el componente que la pinta.
+ *
+ * QA-ALTA-01: y el rol no basta — hay que ser de la organización de la
+ * plataforma (`platform-access.ts`).
  */
 export async function resendActivationAction(orgId: string): Promise<ActionResult> {
   const session = await requireRole(["PLATFORM_ADMIN"]);
+  if (!(await isPlatformOperator(session.user))) return { ok: false, error: APTA_FORBIDDEN };
   const result = await resendOwnerActivationByOrgId(orgId, session.user.id);
   if (!result.ok) return { ok: false, error: result.error };
   revalidatePath("/apta");
@@ -22,6 +27,7 @@ export async function resendActivationAction(orgId: string): Promise<ActionResul
 
 export async function createAssistedOrgAction(formData: FormData): Promise<ActionResult> {
   const session = await requireRole(["PLATFORM_ADMIN"]);
+  if (!(await isPlatformOperator(session.user))) return { ok: false, error: APTA_FORBIDDEN };
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim();

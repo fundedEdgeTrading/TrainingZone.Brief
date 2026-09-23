@@ -7,13 +7,9 @@ import { prisma } from "@/lib/prisma";
 import { parseOpeningHours } from "@/lib/opening-hours";
 import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
 import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
-import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
+import { canManageStaff, canEditStaff, canDeleteStaff } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
-import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
-import { sendMail } from "@/lib/mailer";
-import { renderStaffInviteEmail } from "@/lib/emails/templates";
-import { canAddCenter } from "@/lib/entitlements";
 import { ADULT_AGE, LOPDGDD_CONSENT_AGE } from "@/lib/minors";
 // HU-ST-18/D-S5: el rango del periodo de gracia vive en un solo sitio, el mismo
 // que garantiza el CHECK de la base de datos.
@@ -25,18 +21,15 @@ import {
   setMembershipPlanActive as archiveMembershipPlan,
   type SaveMembershipPlanInput,
 } from "@/lib/membership-plans";
+import {
+  CENTER_SCOPED,
+  createStaffAccount,
+  reissueStaffInvitation,
+  resolveStaffRole,
+  sendStaffInvite,
+} from "./staff-roles";
+import { createCenterWithinLimit } from "./center-create";
 
-const STAFF_ROLES: Role[] = [
-  "OWNER",
-  "CENTER_DIRECTOR",
-  "TRAINER",
-  "TRAINER_ADMIN",
-  "RECEPTION",
-  "HR_MANAGER",
-  "PLATFORM_ADMIN",
-];
-// Roles ligados a un centro (exigen imputación). El resto son de ámbito organización.
-const CENTER_SCOPED: Role[] = ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"];
 
 function slugify(s: string) {
   return s
@@ -158,12 +151,11 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   });
   if (existing) return { ok: false, error: "Ya existe un centro con ese slug." };
 
-  // RB-PLAN-002: el número de centros es lo que se paga. Se comprueba aquí, con
-  // un mensaje que indica la salida concreta en vez de un "no puedes".
-  const allowed = await canAddCenter(session.user.orgId);
-  if (!allowed.ok) return { ok: false, error: allowed.error };
-
-  await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, lat, lng, logoUrl } });
+  // RB-PLAN-002: el número de centros es lo que se paga. El límite se comprueba
+  // e inserta bajo el mismo bloqueo (QA-ALTA-18), con un mensaje que indica la
+  // salida concreta en vez de un "no puedes".
+  const created = await createCenterWithinLimit(session.user.orgId, { name, slug, address, lat, lng, logoUrl });
+  if (!created.ok) return { ok: false, error: created.error };
   revalidatePath("/organization");
   return { ok: true };
 }
@@ -320,13 +312,14 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
   const roleRaw = String(formData.get("role") ?? "");
   const primaryCenterId = String(formData.get("primaryCenterId") ?? "") || null;
 
-  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!name || !email || !role) return { ok: false, error: "Completa el nombre, el email y el rol." };
+  if (!name || !email || !roleRaw) return { ok: false, error: "Completa el nombre, el email y el rol." };
 
-  // RRHH no puede crear administración de la organización (evita escalada de privilegios).
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
-    return { ok: false, error: "No tienes permiso para crear ese rol." };
+  // QA-ALTA-01: RRHH no crea dirección, y solo soporte de Apta crea soporte de Apta.
+  const roleCheck = await resolveStaffRole(session.user, roleRaw);
+  if (!roleCheck.ok) {
+    return { ok: false, error: roleCheck.status === 403 ? "No tienes permiso para crear ese rol." : "Completa el nombre, el email y el rol." };
   }
+  const role = roleCheck.role;
 
   // RB-ID-001: la comprobación es POR ORGANIZACIÓN. Que el email exista en otro
   // gimnasio de Apta no es un conflicto: se le añadirá una membresía aquí.
@@ -355,40 +348,74 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
     centerId = center.id;
   }
 
-  const { user, invitation } = await prisma.$transaction((tx) =>
-    createStaffWithInvitation(tx, { orgId: session.user.orgId, name, email, role, centerId })
+  // QA-ALTA-11: persona, invitación e imputación primaria en la misma transacción.
+  const { invitation } = await prisma.$transaction((tx) =>
+    createStaffAccount(tx, { orgId: session.user.orgId, name, email, role, centerId })
   );
 
-  // Imputación primaria automática para roles de centro.
-  if (centerId) {
-    await prisma.centerMembership.create({
-      data: { orgId: session.user.orgId, userId: user.id, centerId, role, isPrimary: true, allocationPct: 100 },
-    });
-  }
-
-  const [org, inviteCenter] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } }),
-    centerId
-      ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, address: true } })
-      : Promise.resolve(null),
-  ]);
-  // Email de invitación no bloqueante: el staff ya está guardado, un SMTP lento no debe colgar el alta.
-  void sendMail({
-    to: email,
-    fromName: org?.name ?? "Training Zone",
-    subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}! Tu acceso te espera`,
-    html: renderStaffInviteEmail({
-      staffFirstName: name.split(/\s+/)[0] ?? name,
-      orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
-      roleLabel: ROLE_LABEL[role],
-      onboardingUrl: onboardingUrlFor(invitation.token),
-      centerName: inviteCenter?.name,
-      postalAddress: inviteCenter?.address ?? undefined,
-    }),
-  });
+  // Email de invitación no bloqueante: el staff ya está guardado, un SMTP lento no
+  // debe colgar el alta. Si no sale, la fila queda en "Invitación" y se reenvía.
+  void sendStaffInvite({ orgId: session.user.orgId, name, email, role, centerId, token: invitation.token });
 
   revalidatePath("/organization");
+  return { ok: true };
+}
+
+/**
+ * QA-ALTA-10 · "Reenviar invitación" para quien no ha entrado todavía. Lo
+ * puede quien da de alta (`canManageStaff`), sobre su ámbito, y con la misma
+ * política de roles que el alta: reenviar el acceso de una Dirección de
+ * organización es volver a dárselo, y RRHH no puede.
+ *
+ * A diferencia del alta, aquí SÍ se espera al correo: quien pulsa el botón lo
+ * hace precisamente porque el primero no llegó, y decirle "enviado" sin saberlo
+ * es repetir el problema.
+ */
+export async function resendStaffInvitation(userId: string): Promise<OrgActionResult> {
+  const session = await requireRole(["OWNER", "PLATFORM_ADMIN", "HR_MANAGER"]);
+  if (!canManageStaff(session.user.role)) return { ok: false, error: "No tienes permiso para gestionar la plantilla." };
+
+  const target = await findStaffInScope(session.user, userId);
+  if (!target || target.deactivatedAt) return { ok: false, error: "No se ha encontrado esa persona en tu plantilla." };
+
+  const roleCheck = await resolveStaffRole(session.user, target.role);
+  if (!roleCheck.ok) return { ok: false, error: "No tienes permiso para reenviar la invitación a ese rol." };
+
+  const invitation = await prisma.$transaction(async (tx) => {
+    const fresh = await reissueStaffInvitation(tx, { orgId: session.user.orgId, userId: target.id, email: target.email });
+    if (fresh) {
+      await tx.auditLog.create({
+        data: {
+          orgId: session.user.orgId,
+          actorUserId: session.user.id,
+          action: "STAFF_INVITATION_RESENT",
+          entityType: "User",
+          entityId: target.id,
+          metadata: { email: target.email },
+        },
+      });
+    }
+    return fresh;
+  });
+  if (!invitation) {
+    return { ok: false, error: "No hay invitación pendiente que reenviar: ya ha activado su acceso o se acaba de reenviar." };
+  }
+
+  revalidatePath("/organization");
+  const mail = await sendStaffInvite({
+    orgId: session.user.orgId,
+    name: target.name,
+    email: target.email,
+    role: target.role,
+    centerId: target.centerId,
+    token: invitation.token,
+  });
+  if (!mail.ok) {
+    return {
+      ok: false,
+      error: "La invitación anterior ya no vale y hay una nueva, pero el correo no ha salido. Vuelve a intentarlo en unos minutos.",
+    };
+  }
   return { ok: true };
 }
 
@@ -412,16 +439,17 @@ export async function updateStaffUser(formData: FormData): Promise<OrgActionResu
   const primaryCenterId = String(formData.get("primaryCenterId") ?? "") || null;
   const visibleInApp = String(formData.get("visibleInApp") ?? "") === "on";
 
-  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!userId || !name || !role) return { ok: false, error: "Completa el nombre y el rol." };
+  if (!userId || !name || !roleRaw) return { ok: false, error: "Completa el nombre y el rol." };
 
   const target = await findStaffInScope(session.user, userId);
   if (!target) return { ok: false, error: "No se ha encontrado esa persona en tu plantilla." };
 
   // Escalada de privilegios, en sus dos formas: dársela a otro y dártela a ti.
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
-    return { ok: false, error: "No tienes permiso para asignar ese rol." };
+  const roleCheck = await resolveStaffRole(session.user, roleRaw);
+  if (!roleCheck.ok) {
+    return { ok: false, error: roleCheck.status === 403 ? "No tienes permiso para asignar ese rol." : "Completa el nombre y el rol." };
   }
+  const role = roleCheck.role;
   // Dirección de centro solo reparte roles de centro. Con RRHH fuera de esta
   // lista, ascender a alguien a RRHH sería sacarlo de su propio alcance: un
   // rol de ámbito organización al que ya no podría ni volver a bajar.
@@ -533,13 +561,14 @@ export async function assignUserToCenter(formData: FormData): Promise<OrgActionR
   const roleRaw = String(formData.get("role") ?? "");
   const allocationRaw = String(formData.get("allocationPct") ?? "").trim();
 
-  const role = STAFF_ROLES.includes(roleRaw as Role) ? (roleRaw as Role) : null;
-  if (!userId || !centerId || !role) return { ok: false, error: "Selecciona la persona, el centro y el rol." };
+  if (!userId || !centerId || !roleRaw) return { ok: false, error: "Selecciona la persona, el centro y el rol." };
 
   // RRHH no puede imputar a nadie con administración de la organización (evita escalada de privilegios).
-  if ((role === "OWNER" || role === "PLATFORM_ADMIN") && !canManageOrg(session.user.role)) {
-    return { ok: false, error: "No tienes permiso para asignar ese rol." };
+  const roleCheck = await resolveStaffRole(session.user, roleRaw);
+  if (!roleCheck.ok) {
+    return { ok: false, error: roleCheck.status === 403 ? "No tienes permiso para asignar ese rol." : "Selecciona la persona, el centro y el rol." };
   }
+  const role = roleCheck.role;
 
   const allocationPct = allocationRaw
     ? Math.min(100, Math.max(0, Math.round(Number(allocationRaw))))

@@ -8,7 +8,7 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ROLE_LABEL } from "@/lib/rbac";
-import { updateStaffUser, removeStaffUser, restoreStaffUser } from "./actions";
+import { updateStaffUser, removeStaffUser, restoreStaffUser, resendStaffInvitation } from "./actions";
 
 export type StaffRowData = {
   id: string;
@@ -18,6 +18,8 @@ export type StaffRowData = {
   centerId: string | null;
   visibleInApp: boolean;
   deactivated: boolean;
+  /** Tiene invitación sin canjear: aún no ha entrado nunca. */
+  invitationPending: boolean;
 };
 
 type StaffActions = { edit: (staff: StaffRowData) => void; remove: (staff: StaffRowData) => void };
@@ -104,16 +106,19 @@ export function StaffRowActions({
   staff,
   canEdit,
   canDelete,
+  canResend,
 }: {
   staff: StaffRowData;
   canEdit: boolean;
   canDelete: boolean;
+  canResend: boolean;
 }) {
   const actions = useContext(StaffActionsContext);
   if (!actions) return null;
 
   return (
     <div className="flex items-center gap-1.5 justify-end">
+      {canResend && staff.invitationPending && !staff.deactivated && <ResendInviteButton staff={staff} />}
       {canEdit && !staff.deactivated && (
         <Button variant="secondary" size="sm" onClick={() => actions.edit(staff)}>
           Editar
@@ -229,6 +234,34 @@ function StaffEditDrawer({
         </Button>
       </DrawerFooter>
     </Drawer>
+  );
+}
+
+/**
+ * QA-ALTA-10 · Invalida la invitación anterior y manda otra. Si el correo no
+ * sale, el error se enseña tal cual: quien pulsa aquí lo hace porque el primero
+ * no llegó, y un "enviado" a ciegas sería repetir el problema.
+ */
+function ResendInviteButton({ staff }: { staff: StaffRowData }) {
+  const [pending, startTransition] = useTransition();
+  const toast = useToast();
+
+  return (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const result = await resendStaffInvitation(staff.id);
+          if (result.ok) toast.success(`Invitación reenviada a ${staff.email}.`);
+          else toast.error(result.error);
+        })
+      }
+    >
+      {pending && <ButtonSpinner />}
+      Reenviar invitación
+    </Button>
   );
 }
 

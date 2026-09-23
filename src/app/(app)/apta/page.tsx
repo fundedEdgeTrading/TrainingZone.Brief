@@ -1,5 +1,7 @@
 import type { PlatformStatus } from "@prisma/client";
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/guard";
+import { defaultRouteForRole } from "@/lib/rbac";
 import { listOrganizationsForAdmin, getPlatformMetrics } from "@/lib/platform-admin-queries";
 import { PLATFORM_PLANS } from "@/lib/platform-plans";
 import { PageHeader } from "@/components/ui/page-header";
@@ -10,6 +12,7 @@ import { ActionForm } from "@/components/ui/action-form";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { resendActivationAction, createAssistedOrgAction } from "./actions";
+import { isPlatformOperator } from "./platform-access";
 
 const CARD = "bg-brand-card border border-brand-border rounded-card p-5 shadow-card";
 const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-.01em] text-brand-text";
@@ -54,7 +57,10 @@ export default async function AptaPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string }>;
 }) {
-  await requireRole(["PLATFORM_ADMIN"]);
+  const session = await requireRole(["PLATFORM_ADMIN"]);
+  // QA-ALTA-01: el rol se lo podía poner un OWNER a sí mismo; la organización de
+  // la plataforma, no. Mismo destino que `requireRole` cuando no hay permiso.
+  if (!(await isPlatformOperator(session.user))) redirect(defaultRouteForRole(session.user.role));
   const params = await searchParams;
   const status = params.status && params.status in STATUS_LABEL ? (params.status as PlatformStatus) : undefined;
 
