@@ -64,36 +64,22 @@ export default async function ActivarPage({
           select: { id: true },
         });
 
-    if (held) {
-      return (
-        <Card>
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Pago recibido</p>
-            <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
-              Ya tienes una organización con este email
-            </h1>
-            <p className="text-sm text-muted mt-2">
-              Hemos recibido tu pago, pero ese email ya dirige una organización en Training Zone, así que no hemos
-              creado otra ni hemos cambiado la que tienes. Nuestro equipo de soporte revisará el cobro y se pondrá en
-              contacto contigo. Si querías cambiar de plan, inicia sesión y hazlo desde tu organización.
-            </p>
-          </div>
-          <Link href="/login" className="block text-sm text-muted underline">
-            Iniciar sesión →
-          </Link>
-        </Card>
-      );
-    }
-
     return (
       <Card>
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Pago recibido</p>
           <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
-            {org ? "Tu plataforma está lista" : "Estamos confirmando tu pago"}
+            {org ? "Tu plataforma está lista" : held ? "Ya tienes una organización con este email" : "Estamos confirmando tu pago"}
           </h1>
           <p className="text-sm text-muted mt-2">
-            {org ? (
+            {held ? (
+              <>
+                Hemos recibido tu pago, pero ese email ya dirige una organización en Training Zone, así que no
+                hemos creado otra ni hemos cambiado la que tienes. Nuestro equipo de soporte revisará el cobro y
+                se pondrá en contacto contigo. Si querías cambiar de plan, inicia sesión y hazlo desde tu
+                organización.
+              </>
+            ) : org ? (
               <>
                 Te hemos enviado un enlace a <b>{org.billingEmail}</b> para que elijas tu contraseña y
                 empieces a configurar {org.name}.
@@ -106,10 +92,18 @@ export default async function ActivarPage({
             )}
           </p>
         </div>
-        <ResendActivationButton sessionId={params.session_id} />
-        <p className="text-xs text-faint">
-          Si el correo no aparece, revisa la carpeta de spam antes de volver a pedirlo.
-        </p>
+        {held ? (
+          <Link href="/login" className="block text-sm text-muted underline">
+            Iniciar sesión →
+          </Link>
+        ) : (
+          <>
+            <ResendActivationButton sessionId={params.session_id} />
+            <p className="text-xs text-faint">
+              Si el correo no aparece, revisa la carpeta de spam antes de volver a pedirlo.
+            </p>
+          </>
+        )}
       </Card>
     );
   }
