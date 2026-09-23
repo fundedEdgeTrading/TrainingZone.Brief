@@ -547,6 +547,48 @@ function applyPauseCollection<T extends SubscriptionStatus>(
   return pauseCollection != null && status === "ACTIVE" ? "PAUSED" : status;
 }
 
+/**
+ * STR-05 · Las bajas y las pausas que el socio pide en el Billing Portal de
+ * Stripe solo llegaban como `status`, y ni la ficha ni el portal sabían que la
+ * cuota tenía fecha de fin o de vuelta.
+ *
+ * Solo se BORRA lo que vino de Stripe: recepción puede programar una baja
+ * (`scheduleCancellation`) o congelar (FROZEN + `pauseUntil`) solo en local, y
+ * cualquier `customer.subscription.updated` posterior —una renovación, un
+ * cambio de tarjeta— la habría borrado. Una baja se reconoce como de Stripe si
+ * coincide con su fin de periodo (`cancel_at_period_end`, que es lo que ofrecen
+ * el Billing Portal y el portal propio); una pausa, por el estado PAUSED, que
+ * solo escribe este reconciliador.
+ */
+function syncCancellationAndPause(
+  subscription: Stripe.Subscription,
+  existing: { status: SubscriptionStatus; cancelAt: Date | null; pauseUntil: Date | null },
+  periodEnd: Date | undefined
+): { cancelAt?: Date | null; pauseUntil?: Date | null } {
+  const data: { cancelAt?: Date | null; pauseUntil?: Date | null } = {};
+
+  const stripeCancelAt = subscription.cancel_at
+    ? new Date(subscription.cancel_at * 1000)
+    : subscription.cancel_at_period_end
+      ? (periodEnd ?? null)
+      : null;
+  if (stripeCancelAt) {
+    data.cancelAt = stripeCancelAt;
+  } else if (existing.cancelAt && periodEnd && existing.cancelAt.getTime() === periodEnd.getTime()) {
+    data.cancelAt = null;
+  }
+
+  const pause = subscription.pause_collection;
+  if (pause) {
+    // `resumes_at` null = congelación indefinida, igual que en el schema.
+    data.pauseUntil = pause.resumes_at ? new Date(pause.resumes_at * 1000) : null;
+  } else if (existing.status === "PAUSED" && existing.pauseUntil) {
+    data.pauseUntil = null;
+  }
+
+  return data;
+}
+
 /** `customer.subscription.created` / `.updated`. */
 export async function reconcileMemberSubscriptionUpserted(orgId: string, subscription: Stripe.Subscription) {
   // HU-ST-12/RB-PAGO-025 · Con un adeudo directo en vuelo, Stripe manda esta
@@ -564,12 +606,19 @@ export async function reconcileMemberSubscriptionUpserted(orgId: string, subscri
 
   const existing = await prisma.subscription.findUnique({
     where: { stripeSubscriptionId: subscription.id },
-    select: { id: true, member: { select: { orgId: true } } },
+    select: { id: true, status: true, cancelAt: true, pauseUntil: true, member: { select: { orgId: true } } },
   });
 
   if (existing) {
     if (existing.member.orgId !== orgId) return; // aislamiento: la suscripción no es de esta org
-    await prisma.subscription.update({ where: { id: existing.id }, data: { status, ...(endDate ? { endDate } : {}) } });
+    await prisma.subscription.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        ...(endDate ? { endDate } : {}),
+        ...syncCancellationAndPause(subscription, existing, endDate),
+      },
+    });
     return;
   }
 

@@ -306,3 +306,56 @@ test("STR-04 · una cuota congelada con pause_collection sigue PAUSED aunque Str
   sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
   assert.equal(sub.status, "ACTIVE");
 });
+
+test("STR-05 · la baja a fin de periodo pedida en el Billing Portal llega a cancelAt, y se retira si se deshace", async () => {
+  const f = await createFixture("baja-portal");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+  const periodEnd = Math.floor(Date.now() / 1000) + 30 * 86_400;
+  const items = { data: [{ current_period_start: periodEnd - 30 * 86_400, current_period_end: periodEnd }] };
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(f.stripeSubscriptionId, meta, { cancel_at_period_end: true, items })
+  );
+  let sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt?.getTime(), periodEnd * 1000);
+
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta, { items }));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt, null, "el socio se arrepintió en el Billing Portal");
+
+  const cancelAt = periodEnd - 5 * 86_400;
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta, { cancel_at: cancelAt, items }));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt?.getTime(), cancelAt * 1000);
+});
+
+test("STR-05 · una baja programada en recepción (solo local) no la borra un updated sin baja", async () => {
+  const f = await createFixture("baja-recepcion");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+  const local = new Date(Date.now() + 90 * 86_400_000);
+  await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { cancelAt: local } });
+
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
+
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.cancelAt?.getTime(), local.getTime());
+});
+
+test("STR-05 · pause_collection con fecha de vuelta llega a pauseUntil y se limpia al reanudar", async () => {
+  const f = await createFixture("pausa-fecha");
+  const meta = { orgId: f.orgId, memberId: f.memberId, planId: f.planId };
+  const resumesAt = Math.floor(Date.now() / 1000) + 20 * 86_400;
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(f.stripeSubscriptionId, meta, { pause_collection: { behavior: "void", resumes_at: resumesAt } })
+  );
+  let sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.status, "PAUSED");
+  assert.equal(sub.pauseUntil?.getTime(), resumesAt * 1000);
+
+  await reconcileMemberSubscriptionUpserted(f.orgId, stripeSubscription(f.stripeSubscriptionId, meta));
+  sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
+  assert.equal(sub.pauseUntil, null);
+});
