@@ -418,3 +418,116 @@ correo no llega, se relanza con `--reenviar`. La lógica de decisión es pura y
 tiene sus pruebas en `scripts/bootstrap-plataforma.test.ts`, que corre CI
 (`npm run test:unit` solo recorre `src/`).
 
+
+### 7.4 Runbook de despliegue
+
+Producción **no despliega sola** (`autoDeployTrigger: off`). Staging sí, en cada
+commit de `main` con CI en verde. Lo que llega a producción es **un commit
+concreto que ya ha pasado por staging**, no «lo último de main».
+
+**Antes**
+
+1. CI verde en ese commit: `verify`, `e2e-pago`, `mobile`, `arranque-limpio` e
+   `infra` (el aviso de `npm audit` no bloquea, pero se lee).
+2. Staging desplegado con ese mismo commit: `/api/health` en 200, login con un
+   usuario de cada rol que toque el cambio y el recorrido afectado del guion de
+   regresión (§4 del plan de salida).
+3. **¿Trae migraciones?** `git diff <commit en producción>..<commit nuevo> --stat -- prisma/migrations`.
+   Si trae, leer el SQL:
+   - Nada que reescriba o bloquee una tabla grande a mitad de mañana (cambio de
+     tipo de columna, `NOT NULL` sin valor por defecto, índice sin
+     `CONCURRENTLY` en tablas como `Booking` o `AuditLog`).
+   - **Expandir y luego contraer**: una columna que el código deja de usar se
+     borra en un despliegue *posterior*, nunca en el mismo. Así, si hay que
+     volver al código anterior, el esquema nuevo le sigue valiendo.
+   - Apuntar la **hora exacta (UTC)** justo antes de desplegar: es el punto al
+     que se restauraría la base (§7.5).
+4. Fuera de las horas de los cron (05:00 UTC `jobs-cron`; 7, 11, 15 y 19 UTC
+   `flujos-cron`) y fuera de la hora punta de los centros. Con el disco
+   persistente el cambio de instancia deja **unos segundos sin servicio**.
+
+**Desplegar**
+
+5. Render → `trainingzone-web` → *Manual Deploy* → *Deploy a specific commit*,
+   con el commit validado en staging.
+6. Render hace build → `preDeployCommand` (`prisma migrate deploy` con el
+   propietario) → arranque → health check → cambio de instancia. **Si falla el
+   build o la migración, el despliegue se aborta y sigue sirviendo la versión
+   anterior**, pero una migración que falló a medias **deja la base a medias**:
+   ir a §7.5, caso B.
+
+**Después**
+
+7. `/api/health` en 200, login, una pantalla con datos de cada centro y los logs
+   del servicio sin errores nuevos durante 15 minutos.
+8. Si había migraciones: `npx prisma migrate status` desde la shell del servicio
+   dice *Database schema is up to date*.
+9. Al día siguiente, comprobar que el `jobs-cron` de las 05:00 UTC respondió 200
+   (no 207) en GitHub Actions.
+
+### 7.5 Rollback
+
+La regla que manda: **el código se revierte, la base de datos no**. Render puede
+volver a una versión anterior del código en un minuto; una migración aplicada,
+del todo o a medias, **no se deshace sola**. No hay un «migrate down».
+
+**Caso A · El despliegue salió bien pero la versión tiene un fallo, y no traía
+migraciones.** Render → `trainingzone-web` → *Events* → *Rollback* en el
+despliegue anterior. Arreglo en `main` y vuelta a empezar por §7.4.
+
+**Caso B · Una migración falló a medias en el `preDeployCommand`.** Render
+abortó el despliegue y sigue sirviendo la versión anterior, pero contra una base
+que tiene parte de la migración aplicada. Prisma la marca como fallida en
+`_prisma_migrations` y **ningún despliegue posterior migrará** hasta que alguien
+lo resuelva (error `P3009`).
+
+1. **No reintentar el despliegue a ciegas.** Ver qué se aplicó: el log del
+   `preDeployCommand` en Render dice qué sentencia falló; `npx prisma migrate status`
+   desde la shell dice qué migración quedó a medias.
+2. Comprobar si la versión que sigue sirviendo funciona con la base tal como
+   está (login y las pantallas que toquen las tablas afectadas). Si no, poner la
+   app en mantenimiento (*Suspend* del servicio) mientras se decide.
+3. **Restaurar la copia** (la opción por defecto): Render → `trainingzone-db` →
+   *Recovery* → restaurar a un instante (PITR) **anterior a la hora apuntada en
+   §7.4**. Render crea una base **nueva** con ese contenido (roles incluidos, son
+   del propio servidor Postgres). Después:
+   - cambiar `DATABASE_URL`, `DATABASE_MIGRATION_URL` y
+     `DATA_RETENTION_DATABASE_URL` del servicio web para que apunten al host
+     nuevo (mismos usuarios y contraseñas) y reiniciar;
+   - pasar la consulta de comprobación de §7.2 contra la base restaurada;
+   - arreglar la migración en una rama nueva, con su PR y su CI (`arranque-limpio`
+     la ejecuta sobre una base vacía), y volver a §7.4.
+   La base vieja se conserva unos días, sin borrarla, por si hubiera que sacar de
+   ella algo escrito después de ese instante.
+4. **Arreglar hacia delante**, solo si se entiende exactamente qué sentencias se
+   aplicaron y cuáles no: completar o deshacer a mano lo que quedó a medias y
+   marcarlo con `npx prisma migrate resolve --applied <migración>` (si se
+   completó) o `--rolled-back <migración>` (si se deshizo), con
+   `DATABASE_MIGRATION_URL`. Si hay la menor duda, restaurar.
+
+**Caso C · El despliegue salió bien, traía migraciones y la versión tiene un
+fallo.** Si la migración solo *añadía* (expandir, §7.4) el código anterior
+sigue funcionando: rollback de código como en el caso A y la base se queda como
+está. Si no, arreglar hacia delante o restaurar la copia como en el caso B,
+asumiendo que se pierde lo escrito desde el despliegue.
+
+**Lo que una restauración NO deshace** y hay que repasar a mano:
+
+- **Webhooks de Stripe** recibidos entre el instante restaurado y la
+  restauración: Stripe recibió un 200 y no los reenviará solo. Reenviarlos desde
+  el dashboard de Stripe (*Developers* → *Events*, filtrando por esa ventana),
+  para la cuenta de plataforma y para las cuentas conectadas. El procesado es
+  idempotente.
+- **Correos** enviados en esa ventana (invitaciones con tokens que ya no
+  existen: se reenvían desde la aplicación).
+- **Fotos de progreso** subidas en esa ventana: el fichero sigue en el disco
+  pero la referencia desapareció con la base. Quedan huérfanas; no se pierde
+  nada que no se haya perdido ya.
+
+**Nunca**, ni para salir del paso: `prisma migrate reset`, `prisma db push`,
+`npm run db:seed`, borrar o editar ficheros de `prisma/migrations/` ya
+desplegados, ni tocar `_prisma_migrations` a mano en vez de usar
+`migrate resolve`.
+
+La retención de las copias PITR depende del plan del workspace de Render:
+comprobarla en el dashboard de la base antes del go-live y apuntarla aquí.
