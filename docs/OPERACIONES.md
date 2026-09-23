@@ -164,16 +164,29 @@ Los specs de la app móvil viven en `apps/mobile` con `jest-expo` (ver
 más `workflow_dispatch` —sin él, la única forma de relanzar CI sobre una rama es
 empujar otro commit—. Postgres 16 como servicio.
 
-Dos jobs, y la razón de que sean dos es real:
+Los jobs, y la razón de que estén separados es real:
 
-- **`verify`** — lint → migraciones y seed → unitarias con cobertura → build →
-  e2e. Corre **sin claves de Stripe** a propósito, porque `/planes` debe arrancar
+- **`verify`** — lint → `tsc --noEmit` → migraciones y seed → comprobación de
+  que `bootstrap:plataforma` se niega sobre datos de demo → unitarias con
+  cobertura → build → e2e. Corre **sin claves de Stripe** a propósito, porque `/planes` debe arrancar
   en modo demo y eso es lo que verifica `planes-gateo.spec.ts`.
 - **`e2e-pago`** — los specs de alta comercial y alta completa del gimnasio
   necesitan justo lo contrario: `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`
   presentes, para probar el alta pago-primero (compra → webhook firmado →
   activación). Las dos condiciones no caben en el mismo job, así que esos 13 tests
   **se saltaban enteros y nadie lo veía**.
+- **`arranque-limpio`** — el primer despliegue de producción: propietario **no
+  superusuario** (como el de Render), roles creados con el SQL de §7.2 **extraído
+  de este documento**, `migrate deploy` con el propietario y **sin seed**,
+  comprobación de permisos de `AuditLog`, `bootstrap:plataforma` dos veces
+  (idempotente), build y arranque contra `/api/health` con `apta_app`. Mientras
+  la ruta no exista (pista P1) avisa y comprueba `/login`; en cuanto exista, solo
+  vale un 200.
+- **`infra`** — pruebas de `scripts/*.test.ts` (que `test:unit` no recorre),
+  coherencia de `render.yaml` (mismas variables en producción y staging, todas
+  `sync: false`, sin `NODE_ENV`) y `npm audit --audit-level=high`, que **de
+  momento solo informa** en el resumen del workflow. Cuando salga limpio, se
+  quita el `exit 0` del paso y pasa a ser obligatorio.
 
 CI declara `DATA_REGION` a propósito: `npm run start` corre en modo producción y
 sin ella el servidor no arranca — que es justo el comportamiento que se quiere
