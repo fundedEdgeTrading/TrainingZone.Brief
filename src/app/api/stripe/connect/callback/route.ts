@@ -54,7 +54,14 @@ export async function GET(req: NextRequest) {
   const exchanged = await exchangeOAuthCode(code);
   if (!exchanged.ok) return fail();
 
-  await upsertStripeAccountForOrg(session.user.orgId, exchanged.accountId);
+  try {
+    await upsertStripeAccountForOrg(session.user.orgId, exchanged.accountId);
+  } catch (error) {
+    // Stripe caído, o ese `acct_…` ya está enlazado a otra organización
+    // (`accountId` es único): error visible y cookie borrada, no un 500.
+    console.error("[stripe-connect] no se pudo guardar la cuenta conectada", { orgId: session.user.orgId, error });
+    return fail();
+  }
   // CON-02: el portal del socio queda configurado desde el primer minuto. Es
   // best-effort (no lanza): la cuenta ya está conectada y un fallo aquí se
   // repara solo en el siguiente `ensureMemberPortalConfigurationForOrg`.
