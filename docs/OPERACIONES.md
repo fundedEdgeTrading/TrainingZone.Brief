@@ -222,7 +222,142 @@ Contraseña de todos: `demo1234`.
 ## 7. Despliegue
 
 Render, con la base de datos en **Frankfurt** (declarada en `DATA_REGION` y
-publicada en `/privacidad`; ver [ARQUITECTURA.md §5](./ARQUITECTURA.md)).
+publicada en `/privacidad`; ver [ARQUITECTURA.md §5](./ARQUITECTURA.md)). El
+plan de salida completo, con calendario y checklist, está en
+[PASO_A_PRODUCCION_2_CENTROS.md](./PASO_A_PRODUCCION_2_CENTROS.md); esta sección
+es la parte operativa que se repite en cada entorno.
 
-Antes de un despliegue con cambios de esquema: `npx prisma migrate deploy`. El
-`postinstall` ya corre `prisma generate`.
+> **Nunca** `npm run db:seed`, `prisma migrate dev` ni `prisma migrate reset`
+> contra staging o producción. El seed **vacía la base entera** antes de
+> sembrar (`prisma/seed.ts`, `main()`).
+
+### 7.1 Entornos
+
+`render.yaml` es un Blueprint con dos entornos gemelos:
+
+| | Producción | Staging |
+|---|---|---|
+| Web | `trainingzone-web` | `trainingzone-web-staging` |
+| Base de datos | `trainingzone-db` (Postgres 16) | `trainingzone-db-staging` (Postgres 16) |
+| Despliegue | **Manual** (`autoDeployTrigger: off`) | Automático al pasar CI en `main` |
+| Stripe | Live | **Test** |
+
+Los dos: Frankfurt, plan de pago, **una sola instancia** (el disco persistente
+de `/var/data`, donde viven las fotos de progreso, no se monta en dos),
+`preDeployCommand: npx prisma migrate deploy` y health check en `/api/health`.
+Todas las variables son `sync: false`: Render pide su valor al crear el
+Blueprint. Qué va en cada una: `.env.example` y el §3.2 del plan de salida.
+
+**No se declara `NODE_ENV`.** Con `production` durante el build, `npm ci` se
+salta las devDependencies y el build falla; `next build` y `next start` ya
+fijan el modo producción.
+
+> `/api/health` lo añade la pista P1. Hasta que esté en `main`, Render no dará
+> por bueno ningún despliegue: es intencionado.
+
+### 7.2 Roles de la base de datos (antes del primer despliegue)
+
+Tres roles, y la separación es la que hace que `AuditLog` sea append-only de
+verdad (E10-14):
+
+| Rol | Variable | Para qué |
+|---|---|---|
+| Propietario (`trainingzone_owner`, lo crea Render) | `DATABASE_MIGRATION_URL` | Solo `prisma migrate deploy` (`prisma.config.ts`). Sobre él un `REVOKE` no tiene efecto |
+| `apta_app` | `DATABASE_URL` | La aplicación. Puede **insertar** en `AuditLog`, nunca modificar ni borrar |
+| `apta_mantenimiento` | `DATA_RETENTION_DATABASE_URL` | Purgas de conservación: el único, además del propietario, que conserva el `DELETE` sobre `AuditLog` |
+
+**El orden importa.** La migración `20260906120000_costuras_servidor_q3` revoca
+`UPDATE, DELETE` sobre `AuditLog` a los roles que **existen en ese momento**. Si
+la base se migra antes de crear `apta_app`, el `REVOKE` no encuentra a nadie y el
+rol nace después con todos los permisos. Por eso:
+
+1. **Comprobar que el usuario de Render puede crear roles.** Conectado como el
+   propietario: `SELECT rolcreaterole FROM pg_roles WHERE rolname = current_user;`
+   tiene que dar `t`. Si da `f`, parar y abrir un ticket con Render antes de
+   seguir: sin roles separados no hay log append-only.
+2. **Crear los roles**, como el propietario y con la base todavía vacía. Es
+   idempotente: se puede repetir.
+
+<!-- sql:roles (CI ejecuta este bloque tal cual: job `arranque-limpio`) -->
+```sql
+-- Paso 1 · Roles, sin contraseña en el script (se fija después con \password).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'apta_app') THEN
+    CREATE ROLE apta_app LOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'apta_mantenimiento') THEN
+    CREATE ROLE apta_mantenimiento LOGIN;
+  END IF;
+END
+$$;
+
+GRANT USAGE ON SCHEMA public TO apta_app, apta_mantenimiento;
+
+-- Lo que cree el propietario a partir de ahora (todas las migraciones) nace
+-- con estos permisos. Por eso va ANTES de la primera migración.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO apta_app, apta_mantenimiento;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO apta_app, apta_mantenimiento;
+
+-- CONNECT sobre la base actual, sea cual sea su nombre.
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO apta_app, apta_mantenimiento', current_database());
+END
+$$;
+```
+
+3. **Poner las contraseñas** sin que pasen por el historial de la shell ni por
+   ningún fichero: en `psql`, `\password apta_app` y `\password apta_mantenimiento`
+   (lo piden por teclado y envían el hash). Con ellas se montan
+   `DATABASE_URL` (`postgresql://apta_app:<clave>@<host interno>/<base>`) y
+   `DATA_RETENTION_DATABASE_URL` (igual, con `apta_mantenimiento`). Los caracteres
+   especiales de la clave van codificados en la URL.
+4. **Primer despliegue.** El `preDeployCommand` migra con el propietario
+   (`DATABASE_MIGRATION_URL`) y la app arranca con `apta_app` (`DATABASE_URL`).
+5. **Después de la primera migración**, quitar a los dos roles el acceso a la
+   tabla interna de Prisma, que se crea en ese momento:
+
+<!-- sql:post-migracion -->
+```sql
+REVOKE ALL ON TABLE "_prisma_migrations" FROM apta_app, apta_mantenimiento;
+```
+
+6. **Comprobar.** Cada columna tiene que dar lo que dice su comentario; si no,
+   la app no sale a producción:
+
+<!-- sql:comprobacion -->
+```sql
+SELECT
+  has_table_privilege('apta_app', '"AuditLog"', 'INSERT')           AS app_inserta,        -- t
+  has_table_privilege('apta_app', '"AuditLog"', 'UPDATE')           AS app_modifica,       -- f
+  has_table_privilege('apta_app', '"AuditLog"', 'DELETE')           AS app_borra,          -- f
+  has_table_privilege('apta_mantenimiento', '"AuditLog"', 'DELETE') AS mant_borra,         -- t
+  has_table_privilege('apta_app', '"_prisma_migrations"', 'SELECT') AS app_ve_migraciones, -- f
+  (SELECT tableowner FROM pg_tables WHERE tablename = 'AuditLog') <> 'apta_app' AS app_no_es_propietaria; -- t
+```
+
+**Sobre `apta.app_roles`.** El plan de salida (§3.1, paso 2) pide
+`ALTER DATABASE … SET apta.app_roles = 'apta_app'`. **No hace falta y en Render
+falla**: fijar un parámetro propio a nivel de base o de rol exige superusuario
+(`permission denied to set parameter "apta.app_roles"`, comprobado en Postgres
+16 con un propietario no superusuario, que es lo que da Render). La migración
+ya usa `apta_app` cuando el parámetro no existe, así que basta con que el rol se
+llame **exactamente** así. Solo si algún día se usan otros nombres habría que
+pedirle a Render un `GRANT SET ON PARAMETER "apta.app_roles"`.
+
+**Si la base ya se migró antes de crear los roles** (el orden salió mal), no hay
+que tirar nada: crear los roles con el bloque del paso 2 y, después, dar los
+permisos sobre lo que ya existe y repetir a mano el `REVOKE` que la migración no
+pudo aplicar. Luego, el paso 6.
+
+<!-- sql:arreglo-orden -->
+```sql
+-- Solo si la base YA se migró antes de crear los roles.
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO apta_app, apta_mantenimiento;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO apta_app, apta_mantenimiento;
+REVOKE UPDATE, DELETE ON TABLE "AuditLog" FROM apta_app;
+REVOKE ALL ON TABLE "_prisma_migrations" FROM apta_app, apta_mantenimiento;
+```
