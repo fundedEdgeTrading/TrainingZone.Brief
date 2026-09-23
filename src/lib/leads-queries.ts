@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import type { LeadCloseType, LeadStatus, Role, Sex } from "@prisma/client";
 import { createMemberWithInvitation } from "@/lib/invitations";
@@ -6,6 +7,7 @@ import { createHealthRecordForLead } from "@/lib/health-access";
 import { LEAD_CONSENT_VERSION, resolveLeadHealthCapture } from "@/lib/consent";
 import { canCaptureLeadHealthData, evaluateAgeAdmission } from "@/lib/minors";
 import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
+import { canManageLeads } from "@/lib/rbac";
 import { releaseReferralRewardsForLead } from "@/lib/referral-rewards";
 import { sendMemberWelcome } from "@/lib/member-welcome";
 
@@ -301,8 +303,19 @@ export async function createLead(input: CreateLeadInput): Promise<LeadWriteResul
 }
 
 export async function assignLeadOwner(orgId: string, leadId: string, ownerUserId: string) {
-  const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true } });
+  const lead = await prisma.lead.findFirst({ where: { id: leadId, orgId }, select: { id: true, centerId: true } });
   if (!lead) return { ok: false as const, error: "Lead no encontrado." };
+  // QA-ALTA-19 · El id llega del cliente: el responsable tiene que ser personal
+  // en activo de ESTA organización, con permiso para llevar leads y con el
+  // centro del lead en su ámbito — si no, el lead queda asignado a alguien que
+  // no puede ni abrirlo y la alerta de "sin responsable" se apaga en falso.
+  const owner = await prisma.user.findFirst({
+    where: { id: ownerUserId, orgId, deactivatedAt: null },
+    select: { id: true, role: true, orgId: true, centerId: true },
+  });
+  if (!owner || !canManageLeads(owner.role) || !(await isCenterInScope(owner, lead.centerId))) {
+    return { ok: false as const, error: "El responsable tiene que ser alguien del equipo con acceso al centro del lead." };
+  }
   await prisma.lead.update({ where: { id: leadId }, data: { ownerUserId } });
   // RB-LEAD-009: la alerta de "sin responsable" se resuelve automáticamente al asignarse uno.
   await prisma.notification.updateMany({
@@ -342,6 +355,18 @@ export async function addLeadNote(orgId: string, leadId: string, authorUserId: s
   if (!lead) return { ok: false as const, error: "Lead no encontrado." };
   await prisma.leadNote.create({ data: { orgId, leadId, authorUserId, body: body.trim() } });
   return { ok: true as const };
+}
+
+// QA-ALTA-19 · el tipo de cierre llega en un FormData: se valida, no se castea.
+const leadCloseTypeSchema = z.enum(["EMBUDO", "DIRECTO", "ONLINE"]);
+
+export function parseLeadCloseType(
+  raw: FormDataEntryValue | null
+): { ok: true; closeType: LeadCloseType } | { ok: false; error: string } {
+  const value = typeof raw === "string" && raw !== "" ? raw : "EMBUDO";
+  const parsed = leadCloseTypeSchema.safeParse(value);
+  if (!parsed.success) return { ok: false, error: "Tipo de cierre no válido." };
+  return { ok: true, closeType: parsed.data };
 }
 
 const MEMBER_EMAIL_TAKEN = "Ya existe un socio con ese email.";

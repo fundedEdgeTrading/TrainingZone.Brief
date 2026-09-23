@@ -14,6 +14,7 @@ import {
   addNoCloseReason,
   leadIsInScope,
   updateLeadDetails,
+  parseLeadCloseType,
   type CreateLeadInput,
   type LeadWriteResult,
 } from "@/lib/leads-queries";
@@ -118,8 +119,9 @@ export async function convertLeadAction(formData: FormData): Promise<LeadActionR
   const leadId = String(formData.get("leadId") ?? "");
   if (!(await leadIsInScope(session.user, leadId))) return { ok: false, error: CENTER_OUT_OF_SCOPE };
   const planId = String(formData.get("planId") ?? "") || null;
-  const closeType = (String(formData.get("closeType") ?? "EMBUDO") || "EMBUDO") as "EMBUDO" | "DIRECTO" | "ONLINE";
-  const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, closeType });
+  const closeType = parseLeadCloseType(formData.get("closeType"));
+  if (!closeType.ok) return closeType;
+  const result = await initiateLeadConversion(session.user.orgId, leadId, { planId, closeType: closeType.closeType });
   if (!result.ok) return result;
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/members");
