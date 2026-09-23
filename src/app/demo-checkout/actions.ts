@@ -13,16 +13,16 @@ const schema = z.object({
 });
 
 /**
- * Sustituto del checkout de Stripe cuando Stripe no está configurado
- * (`isDemoModeActive`, ver `lib/platform-plans.ts`): da de alta la
+ * Sustituto del checkout de Stripe en modo demo explícito (`DEMO_MODE`,
+ * `isDemoModeActive`, ver `lib/demo-mode.ts`): da de alta la
  * organización igual que lo haría el webhook tras un pago real, sin cobrar
  * nada, para poder enseñar el resto del alta (activación + puesta en marcha).
  */
 export async function confirmDemoCheckoutAction(planCode: string, formData: FormData): Promise<DemoCheckoutResult> {
-  // E1-11: la PÁGINA redirige a `/planes` si Stripe está configurado, pero una
+  // E1-11 / PROD-01: la PÁGINA da 404 con el modo demo apagado, pero una
   // server action es un endpoint por sí misma —queda registrada en el build
   // aunque la página redirija—, así que la comprobación tiene que repetirse
-  // aquí. Sin ella, con Stripe activo se podía invocar directamente y
+  // aquí. Sin ella, fuera del modo demo se podía invocar directamente y
   // `provisionDemoOrganization` daba de alta una `Organization` con
   // `platformStatus: "ACTIVE"` sin pagar.
   //

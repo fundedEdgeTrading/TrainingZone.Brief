@@ -9,7 +9,7 @@
  * CENTROS, nunca el de socios — escala con el valor entregado y con nuestro
  * coste, y no penaliza justo lo que queremos que el gimnasio haga crecer.
  */
-import { isPlatformStripeConfigured } from "@/lib/stripe";
+import { isDemoModeActive as isDemoModeActiveFromEnv, type DemoModeEnv } from "@/lib/demo-mode";
 
 /** Capacidades gateables por plan. El registro de datos NO se gatea (ver `entitlements.ts`). */
 export type PlatformFeature =
@@ -266,13 +266,20 @@ export function fundadorClosesAt(): Date | null {
 }
 
 /**
- * Sin `STRIPE_SECRET_KEY` no hay pago real posible en este entorno. En vez de
- * dejar `/planes` vacía (nadie puede ver el producto ni hacer una demo del
- * alta), se activa un modo demo: se enseña el catálogo completo y el pago se
- * sustituye por una pantalla que lo deja explícito, sin fingir un cobro real.
+ * Modo demo: se enseña el catálogo completo y el pago se sustituye por una
+ * pantalla que lo deja explícito, sin fingir un cobro real.
+ *
+ * PROD-01: antes se deducía de que faltara `STRIPE_SECRET_KEY`, así que un
+ * olvido de configuración en producción abría `/demo-checkout` (altas sin
+ * pagar), `/demo-checkout/socio` (bonos regalados) y el panel de usuarios demo
+ * del login. Ahora se pide explícitamente con `DEMO_MODE` (y, en producción,
+ * `ALLOW_DEMO_IN_PRODUCTION`). La lógica vive en `lib/demo-mode.ts`, pura.
+ *
+ * Que Stripe esté o no configurado sigue siendo `isPlatformStripeConfigured`
+ * (`lib/stripe.ts`): son dos preguntas distintas y ya no se mezclan.
  */
-export function isDemoModeActive() {
-  return !isPlatformStripeConfigured();
+export function isDemoModeActive(env: DemoModeEnv = process.env): boolean {
+  return isDemoModeActiveFromEnv(env);
 }
 
 /**
