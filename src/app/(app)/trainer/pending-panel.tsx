@@ -18,7 +18,9 @@ type AptitudeItem = {
   name: string;
   light: "AMBER" | "RED";
   zone: string | null;
-  description: string;
+  // QA-RES-06: la adaptación de la regla, como en el brief. La descripción
+  // clínica no llega a este componente (E3-05): se consulta en la ficha.
+  adaptation: string | null;
   meta: string;
 };
 const TABS = [
@@ -91,7 +93,7 @@ export function PendingPanel({
                   {a.name}
                 </div>
                 <div className="text-sm font-bold text-brand-text mt-1">{a.zone ?? "Restricción activa"}</div>
-                <div className="text-xs text-brand-muted mt-0.5">{a.description}</div>
+                {a.adaptation && <div className="text-xs text-brand-muted mt-0.5">{a.adaptation}</div>}
                 <div className="text-[11px] text-brand-muted-2 mt-1.5">{a.meta}</div>
               </Link>
             ))}
