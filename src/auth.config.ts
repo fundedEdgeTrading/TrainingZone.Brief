@@ -9,8 +9,11 @@ import type { Role } from "@prisma/client";
 /**
  * Estrategia de autenticación de esta entrega:
  *
- * - Login "demo" (Credentials): activo, con los usuarios sembrados por el
- *   seed (uno por rol). Es lo que se usa para navegar la plataforma ahora.
+ * - Email y contraseña (Credentials): activo. Es el login real de cada
+ *   identidad; en local y en la demo lo usan también los usuarios sembrados
+ *   por el seed (uno por rol). El `id` técnico sigue siendo "demo" porque
+ *   forma parte de la URL de callback y del `signIn` del formulario; el
+ *   rótulo visible ya no lo dice (PROD-07).
  * - Microsoft Entra ID (Azure AD): el proveedor está declarado y listo para
  *   producción, pero solo se registra si existen las variables de entorno
  *   AUTH_MICROSOFT_ENTRA_ID_ID/SECRET/ISSUER — que requieren un App
@@ -25,7 +28,7 @@ import type { Role } from "@prisma/client";
 const providers: NextAuthConfig["providers"] = [
   Credentials({
     id: "demo",
-    name: "Usuario demo",
+    name: "Email y contraseña",
     credentials: {
       email: { label: "Email", type: "email" },
       password: { label: "Contraseña", type: "password" },
