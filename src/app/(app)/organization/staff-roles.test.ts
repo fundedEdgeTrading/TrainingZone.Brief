@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { Role } from "@prisma/client";
-import { checkStaffRole, STAFF_ROLES } from "./staff-roles";
+import { checkStaffRole, mailFailed, STAFF_ROLES } from "./staff-roles";
 
 /**
  * QA-ALTA-01 · La política de roles de la plantilla. Antes del arreglo
@@ -44,4 +44,10 @@ test("roles de centro para quien gestiona plantilla, y un rol inventado se recha
   assert.deepEqual(checkStaffRole(actor("HR_MANAGER"), "TRAINER"), { ok: true, role: "TRAINER" });
   const bogus = checkStaffRole(actor("OWNER"), "MEMBER");
   assert.equal(!bogus.ok && bogus.status, 400);
+});
+
+test("QA-ALTA-10 · mailFailed reconoce el { ok: false } de P1 y tolera el void de hoy", () => {
+  assert.equal(mailFailed({ ok: false, error: "Brevo 500" }), true);
+  assert.equal(mailFailed({ ok: true, id: "x" }), false);
+  assert.equal(mailFailed(undefined), false);
 });

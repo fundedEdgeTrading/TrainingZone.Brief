@@ -5,12 +5,9 @@ import { prisma } from "@/lib/prisma";
 import { canManageStaff, ROLE_LABEL } from "@/lib/rbac";
 import { staffScopeFilter } from "@/lib/staff-queries";
 import { centerScopeFor } from "@/lib/center-scope";
-import { onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
-import { sendMail } from "@/lib/mailer";
-import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk, apiError } from "../_lib/response";
-import { CENTER_SCOPED, createStaffAccount, resolveStaffRole } from "@/app/(app)/organization/staff-roles";
+import { CENTER_SCOPED, createStaffAccount, resolveStaffRole, sendStaffInvite } from "@/app/(app)/organization/staff-roles";
 
 // D6/D7 del handoff: equipo de la organización con foto, rol e imputación a
 // centros (`CenterMembership.allocationPct`).
@@ -137,27 +134,9 @@ export async function POST(req: NextRequest) {
     createStaffAccount(tx, { orgId: claims.orgId, name, email, role, centerId })
   );
 
-  const [org, inviteCenter] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: claims.orgId }, select: { name: true, logoUrl: true } }),
-    centerId
-      ? prisma.center.findUnique({ where: { id: centerId }, select: { name: true, address: true } })
-      : Promise.resolve(null),
-  ]);
-  // Email de invitación no bloqueante: el alta ya está guardada.
-  void sendMail({
-    to: email,
-    fromName: org?.name ?? "Training Zone",
-    subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}! Tu acceso te espera`,
-    html: renderStaffInviteEmail({
-      staffFirstName: name.split(/\s+/)[0] ?? name,
-      orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
-      roleLabel: ROLE_LABEL[role],
-      onboardingUrl: onboardingUrlFor(invitation.token),
-      centerName: inviteCenter?.name,
-      postalAddress: inviteCenter?.address ?? undefined,
-    }),
-  });
+  // Email de invitación no bloqueante: el alta ya está guardada. Es el mismo
+  // correo que manda la web (`sendStaffInvite`).
+  void sendStaffInvite({ orgId: claims.orgId, name, email, role, centerId, token: invitation.token });
 
   return apiOk({ id: user.id }, 201);
 }

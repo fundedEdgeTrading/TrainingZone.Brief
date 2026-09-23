@@ -1,6 +1,15 @@
 import type { Prisma, Role } from "@prisma/client";
-import { canManageOrg } from "@/lib/rbac";
-import { createStaffWithInvitation } from "@/lib/invitations";
+import { canManageOrg, ROLE_LABEL } from "@/lib/rbac";
+import {
+  createStaffWithInvitation,
+  generateInvitationToken,
+  invitationExpiry,
+  onboardingUrlFor,
+  absoluteUrl,
+} from "@/lib/invitations";
+import { sendMail } from "@/lib/mailer";
+import { renderStaffInviteEmail } from "@/lib/emails/templates";
+import { prisma } from "@/lib/prisma";
 import { isPlatformOperator } from "../apta/platform-access";
 
 /**
@@ -83,4 +92,77 @@ export async function createStaffAccount(
     });
   }
   return created;
+}
+
+/**
+ * QA-ALTA-10 · Reenviar la invitación de alguien que aún no ha entrado. La
+ * anterior se borra y se emite otra con token y caducidad nuevos: un enlace
+ * reenviado porque "no me llegó" puede estar en el buzón equivocado, y no debe
+ * seguir abriendo la cuenta. `Invitation.userId` es único, así que "invalidar"
+ * y "crear otra" son la misma transacción.
+ *
+ * Devuelve `null` si la persona ya aceptó (o nunca tuvo invitación): no hay
+ * nada que reenviar y una invitación nueva le reabriría el onboarding.
+ */
+export async function reissueStaffInvitation(
+  tx: Prisma.TransactionClient,
+  params: { orgId: string; userId: string; email: string }
+) {
+  const previous = await tx.invitation.findFirst({
+    where: { orgId: params.orgId, userId: params.userId, type: "STAFF", usedAt: null },
+    select: { id: true },
+  });
+  if (!previous) return null;
+  await tx.invitation.delete({ where: { id: previous.id } });
+  return tx.invitation.create({
+    data: {
+      orgId: params.orgId,
+      type: "STAFF",
+      token: generateInvitationToken(),
+      email: params.email,
+      userId: params.userId,
+      expiresAt: invitationExpiry(),
+    },
+  });
+}
+
+/**
+ * `sendMail` hoy no devuelve nada; con P1 devolverá `{ ok: false }` cuando
+ * falle. Se mira sin depender de su tipo para que esto funcione antes y
+ * después de que P1 llegue a main.
+ */
+export function mailFailed(result: unknown): boolean {
+  return typeof result === "object" && result !== null && "ok" in result && result.ok === false;
+}
+
+/** Correo de invitación del personal: el mismo en el alta, en el reenvío y en la app. */
+export async function sendStaffInvite(params: {
+  orgId: string;
+  name: string;
+  email: string;
+  role: Role;
+  centerId: string | null;
+  token: string;
+}): Promise<{ ok: boolean }> {
+  const [org, inviteCenter] = await Promise.all([
+    prisma.organization.findUnique({ where: { id: params.orgId }, select: { name: true, logoUrl: true } }),
+    params.centerId
+      ? prisma.center.findUnique({ where: { id: params.centerId }, select: { name: true, address: true } })
+      : Promise.resolve(null),
+  ]);
+  const result: unknown = await sendMail({
+    to: params.email,
+    fromName: org?.name ?? "Training Zone",
+    subject: `¡Bienvenida a ${org?.name ?? "Training Zone"}! Tu acceso te espera`,
+    html: renderStaffInviteEmail({
+      staffFirstName: params.name.split(/\s+/)[0] ?? params.name,
+      orgName: org?.name ?? "Training Zone",
+      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      roleLabel: ROLE_LABEL[params.role],
+      onboardingUrl: onboardingUrlFor(params.token),
+      centerName: inviteCenter?.name,
+      postalAddress: inviteCenter?.address ?? undefined,
+    }),
+  });
+  return { ok: !mailFailed(result) };
 }
