@@ -6,6 +6,7 @@ import {
   bookSessionForMemberAsStaff,
   cancelSessionBooking,
   createEpSlot,
+  deleteSession,
   saveSession,
   staffCancellationEffect,
 } from "@/lib/agenda-queries";
@@ -280,4 +281,91 @@ test("QA-RES-02 · la reserva de una clase de ayer: bloqueada sin permiso, y sin
   const allowed = await cancelSessionBooking(org.orgId, booking.id, { canCancelStarted: true });
   assert.deepEqual(allowed, { ok: true, forfeited: true });
   assert.equal(await balanceOf(socio.subscriptionId), 4, "nadie recupera la sesión de una clase ya pasada");
+});
+
+// --- QA-RES-05 · borrar una ocurrencia, o desde ella, sin tocar el pasado ----
+
+const DAY = 86_400_000;
+
+/**
+ * Serie semanal que empezó hace dos semanas, con tres socios apuntados: uno a
+ * la ocurrencia de la semana pasada (sin marcar), otro a la de la semana que
+ * viene y otro a la siguiente. Todas las reservas por el camino real, con cobro.
+ */
+async function weeklyWithBookings(name: string) {
+  const series = await createRegressionSession(org, `${name}-${++counter}`, {
+    capacity: 4,
+    startsInHours: -14 * 24 + 2,
+    recurrence: "WEEKLY",
+  });
+  const at = (weeks: number) => new Date(series.day.getTime() + weeks * 7 * DAY);
+  const pastDay = at(1);
+  const nextDay = at(3);
+  const laterDay = at(4);
+
+  const socios: Record<"past" | "next" | "later", RegressionMember> = {
+    past: await createRegressionMember(org, `${TAG}-${name}`, ++counter, 5),
+    next: await createRegressionMember(org, `${TAG}-${name}`, ++counter, 5),
+    later: await createRegressionMember(org, `${TAG}-${name}`, ++counter, 5),
+  };
+  for (const [key, day] of [["past", pastDay], ["next", nextDay], ["later", laterDay]] as const) {
+    const booked = await bookSessionForMemberAsStaff(org.orgId, {
+      sessionId: series.id,
+      memberId: socios[key].id,
+      occurrenceDate: day,
+    });
+    assert.equal(booked.ok, true, `reserva de ${key}`);
+  }
+  return { series, socios, nextDay };
+}
+
+const bookingOf = (memberId: string) => prisma.booking.findFirst({ where: { memberId } });
+
+test("QA-RES-05 · borrar 'solo esta' ocurrencia devuelve solo la suya y la serie sigue", async () => {
+  const { series, socios, nextDay } = await weeklyWithBookings("borrar-single");
+
+  const result = await deleteSession(org.orgId, series.id, {
+    actorUserId: org.trainerId,
+    scope: "single",
+    occurrenceDate: nextDay,
+  });
+  assert.deepEqual(result, { ok: true, refunded: 1, notified: 1 });
+
+  assert.equal(await balanceOf(socios.next.subscriptionId), 5, "la ocurrencia borrada devuelve su sesión");
+  assert.equal(await bookingOf(socios.next.id), null);
+  assert.equal(await balanceOf(socios.past.subscriptionId), 4, "el pasado no se toca");
+  assert.ok(await bookingOf(socios.past.id), "la reserva de la semana pasada sigue ahí");
+  assert.equal(await balanceOf(socios.later.subscriptionId), 4);
+  const later = await bookingOf(socios.later.id);
+  assert.ok(later, "la ocurrencia siguiente conserva su reserva");
+  assert.ok(await prisma.classSession.findUnique({ where: { id: later.sessionId } }), "…en una fila que existe");
+});
+
+test("QA-RES-05 · borrar 'esta y las siguientes' recorta la serie y no devuelve el pasado", async () => {
+  const { series, socios, nextDay } = await weeklyWithBookings("borrar-future");
+
+  const result = await deleteSession(org.orgId, series.id, {
+    actorUserId: org.trainerId,
+    scope: "future",
+    occurrenceDate: nextDay,
+  });
+  assert.deepEqual(result, { ok: true, refunded: 2, notified: 2 });
+
+  assert.equal(await balanceOf(socios.next.subscriptionId), 5);
+  assert.equal(await balanceOf(socios.later.subscriptionId), 5);
+  assert.equal(await balanceOf(socios.past.subscriptionId), 4);
+  assert.ok(await bookingOf(socios.past.id));
+  const row = await prisma.classSession.findUniqueOrThrow({ where: { id: series.id } });
+  assert.ok(row.recUntil && row.recUntil < nextDay, "la serie termina la víspera del día borrado");
+});
+
+test("QA-RES-05 · borrar toda la serie devuelve solo las ocurrencias futuras", async () => {
+  const { series, socios } = await weeklyWithBookings("borrar-all");
+
+  const result = await deleteSession(org.orgId, series.id, { actorUserId: org.trainerId, scope: "all" });
+  assert.deepEqual(result, { ok: true, refunded: 2, notified: 2 });
+  assert.equal(await balanceOf(socios.past.subscriptionId), 4, "la clase de la semana pasada no se reembolsa");
+  assert.equal(await balanceOf(socios.next.subscriptionId), 5);
+  assert.equal(await balanceOf(socios.later.subscriptionId), 5);
+  assert.equal(await prisma.classSession.findUnique({ where: { id: series.id } }), null);
 });

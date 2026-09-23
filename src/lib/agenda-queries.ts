@@ -14,7 +14,12 @@ import {
 import { notifySessionVacancy } from "@/lib/session-vacancy-notify";
 import { createNotification } from "@/lib/notifications";
 import { trainerDiscardEffect } from "@/lib/attendee-discard";
-import { describeSettledAttendance, planSessionDeletion, SESSION_DELETED_AUDIT_ACTION } from "@/lib/session-deletion";
+import {
+  bookingsInDeletionScope,
+  describeSettledAttendance,
+  planSessionDeletion,
+  SESSION_DELETED_AUDIT_ACTION,
+} from "@/lib/session-deletion";
 import { checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
 import { coversSessionKind } from "@/lib/member-session-scope";
 import { resequenceWaitlist } from "@/lib/waitlist";
@@ -948,8 +953,9 @@ export type DeleteSessionResult =
   | { ok: false; error: string; needsConfirmation?: true; settledCount?: number };
 
 /**
- * RB-AGENDA-010: borrar una sesión devuelve el bono a cada socio apuntado, lo
- * audita y se lo cuenta.
+ * RB-AGENDA-010: borrar una sesión devuelve el bono a cada socio apuntado a una
+ * ocurrencia que todavía no ha empezado, lo audita y se lo cuenta. En una serie
+ * se borra con alcance (QA-RES-05): solo ese día, ese y los siguientes, o todo.
  *
  * Antes esto eran tres `deleteMany` sueltos: la reserva desaparecía, el bono NO
  * volvía y no quedaba ni una línea de `AuditLog` —a diferencia de
@@ -971,14 +977,21 @@ export async function deleteSession(
     confirmSettled?: boolean;
     /** Avisar a los socios apuntados de que la clase se ha cancelado. */
     notifyMembers?: boolean;
+    /**
+     * QA-RES-05: alcance del borrado en una serie (ver `session-series.ts`).
+     * Sin él —la app móvil todavía no lo manda— se borra la serie entera, que
+     * es lo que hacía siempre.
+     */
+    scope?: EditScope;
+    /** Día de la serie sobre el que se pidió el borrado. */
+    occurrenceDate?: Date | null;
+    now?: Date;
   }
 ): Promise<DeleteSessionResult> {
   const session = await prisma.classSession.findFirst({
     where: { id: sessionId, orgId },
-    select: {
-      id: true,
-      name: true,
-      startTime: true,
+    include: {
+      center: { select: { timezone: true } },
       bookings: {
         select: {
           id: true,
@@ -993,7 +1006,22 @@ export async function deleteSession(
   });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };
 
-  const plan = planSessionDeletion(session.bookings);
+  // Mismo criterio que al editar: el día pedido solo vale si la serie ocurre
+  // ese día, y pedir "solo esta" o "y las siguientes" donde no hay pasado o no
+  // hay futuro es borrar la serie entera.
+  const day =
+    session.recurrence !== "NONE" && opts.occurrenceDate && occursOn(session, opts.occurrenceDate)
+      ? startOfDay(opts.occurrenceDate)
+      : startOfDay(session.date);
+  const scope = effectiveScope(session, day, opts.scope ?? "all");
+
+  // Cada reserva con el instante real de SU ocurrencia: es lo que decide si
+  // todavía se devuelve y se avisa (solo lo futuro) o ya no se toca.
+  const affected = bookingsInDeletionScope(session.bookings, scope, day).map((b) => ({
+    ...b,
+    startsAt: enforcementStartsAt(b.occurrenceDate, session.startTime, session.center.timezone),
+  }));
+  const plan = planSessionDeletion(affected, opts.now ?? new Date());
 
   // Una asistencia ya registrada es histórico: borrarla lo destruye y no
   // devuelve nada. Quien borra tiene que decirlo expresamente.
@@ -1034,16 +1062,32 @@ export async function deleteSession(
             occurrenceDate: booking.occurrenceDate.toISOString(),
             subscriptionId: booking.subscriptionId,
             refunded: true,
+            scope,
           },
         },
       });
     }
 
-    // Las reservas se borran con la sesión, así que hay que soltar antes los
-    // debriefs (FK RESTRICT: Booking <- SessionDebrief).
-    await tx.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
-    await tx.booking.deleteMany({ where: { sessionId } });
-    await tx.classSession.delete({ where: { id: sessionId } });
+    if (scope === "all") {
+      // Las reservas se borran con la sesión, así que hay que soltar antes los
+      // debriefs (FK RESTRICT: Booking <- SessionDebrief).
+      await tx.sessionDebrief.deleteMany({ where: { booking: { sessionId } } });
+      await tx.booking.deleteMany({ where: { sessionId } });
+      await tx.classSession.delete({ where: { id: sessionId } });
+      return;
+    }
+
+    if (scope === "future") {
+      // El pasado se queda en la fila, recortada la víspera del día borrado.
+      await tx.classSession.update({ where: { id: sessionId }, data: { recUntil: truncatedRecUntil(session, day) } });
+    } else {
+      // Solo ese día: la serie se recompone alrededor (tramo anterior y, si
+      // sigue, el posterior con sus reservas), igual que al editar "solo esta".
+      await detachOccurrence(tx, session, day);
+    }
+    const doomed = { sessionId, ...bookingScopeWhere(scope, day) };
+    await tx.sessionDebrief.deleteMany({ where: { booking: doomed } });
+    await tx.booking.deleteMany({ where: doomed });
   });
 
   let notified = 0;

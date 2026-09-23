@@ -132,9 +132,14 @@ export async function deleteSessionAction(formData: FormData): Promise<DeleteSes
   if (!centerId) return { ok: false, error: "Sesión no encontrada." };
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN"]);
 
+  // QA-RES-05: en una serie, qué ocurrencias se borran. Sin alcance se borra
+  // la serie entera (la app móvil todavía no lo manda).
+  const occurrenceRaw = String(formData.get("occurrenceDate") ?? "");
   const result = await deleteSession(session.user.orgId, id, {
     actorUserId: session.user.id,
     confirmSettled: formData.get("confirmSettled") === "on",
+    scope: parseEditScope(formData.get("scope")),
+    occurrenceDate: occurrenceRaw ? parseDateParam(occurrenceRaw) : null,
   });
   if (!result.ok) return result;
 

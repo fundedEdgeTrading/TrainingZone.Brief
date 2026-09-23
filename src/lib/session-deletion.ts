@@ -1,4 +1,6 @@
 import type { BookingStatus } from "@prisma/client";
+import { isSameDay } from "@/lib/session-occurrences";
+import type { EditScope } from "@/lib/session-series";
 
 /**
  * RB-AGENDA-010: qué hay que deshacer antes de borrar una sesión de la agenda.
@@ -25,6 +27,11 @@ export type UnwindableBooking = {
   status: BookingStatus;
   /** Bono del que salió la reserva. `null` = no consumió (espera, ilimitado). */
   subscriptionId: string | null;
+  /**
+   * Instante real de comienzo de SU ocurrencia (zona del centro). QA-RES-05:
+   * solo lo que todavía no ha empezado se devuelve y se avisa.
+   */
+  startsAt: Date;
 };
 
 export type SessionDeletionPlan<T extends UnwindableBooking> = {
@@ -48,6 +55,25 @@ export type SessionDeletionPlan<T extends UnwindableBooking> = {
 };
 
 /**
+ * QA-RES-05: reservas a las que alcanza el borrado. Una serie es una sola fila,
+ * así que "borrar" sin alcance se llevaba todas sus ocurrencias —las pasadas
+ * incluidas— y devolvía el bono de todas.
+ *
+ * - `single`: solo las del día borrado.
+ * - `future`: ese día y los siguientes.
+ * - `all`: toda la serie.
+ */
+export function bookingsInDeletionScope<T extends { occurrenceDate: Date }>(
+  bookings: T[],
+  scope: EditScope,
+  day: Date
+): T[] {
+  if (scope === "single") return bookings.filter((b) => isSameDay(b.occurrenceDate, day));
+  if (scope === "future") return bookings.filter((b) => isSameDay(b.occurrenceDate, day) || b.occurrenceDate > day);
+  return bookings;
+}
+
+/**
  * Reparte las reservas de la sesión según lo que hay que deshacer:
  *
  * - `BOOKED` con bono → se devuelve la sesión. Es el caso verificado por
@@ -62,14 +88,22 @@ export type SessionDeletionPlan<T extends UnwindableBooking> = {
  * - `ATTENDED` / `NO_SHOW` → la sesión se consumió (o la falta ya decidió su
  *   devolución en `markBookingNoShow`): no se devuelve, y su presencia es lo
  *   que obliga a confirmar el borrado.
+ * - Una `BOOKED` o `WAITLISTED` de una ocurrencia que ya ha empezado
+ *   (QA-RES-05) → ni se devuelve ni se avisa: esa clase se dio o se perdió, y
+ *   borrar la serie después no puede reabrir la cuenta. El corte es el
+ *   comienzo, como en la cancelación (`staffCancellationEffect`).
  */
-export function planSessionDeletion<T extends UnwindableBooking>(bookings: T[]): SessionDeletionPlan<T> {
+export function planSessionDeletion<T extends UnwindableBooking>(
+  bookings: T[],
+  now: Date = new Date()
+): SessionDeletionPlan<T> {
   const refunds: T[] = [];
   const notify: T[] = [];
   const settled: T[] = [];
 
   for (const booking of bookings) {
     if (booking.status === "BOOKED" || booking.status === "WAITLISTED") {
+      if (booking.startsAt.getTime() <= now.getTime()) continue;
       notify.push(booking);
       // La lista de espera no consumió bono aunque llevara `subscriptionId`
       // (no debería), así que la condición es el estado Y el bono.
