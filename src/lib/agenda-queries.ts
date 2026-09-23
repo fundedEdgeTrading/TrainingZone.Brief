@@ -27,6 +27,7 @@ import { bookingGateForMember } from "@/lib/stripe-dunning";
 import {
   chargeSessionToSubscription,
   claimWaitlistedBooking,
+  OCCUPYING_STATUSES,
   occupiedSpots,
   pickBookingSubscription,
   shouldNotifyVacancy,
@@ -290,87 +291,122 @@ export async function saveSession(orgId: string, input: SaveSessionInput) {
     recUntil: input.recUntil,
   };
 
-  let session;
-  if (!existing) {
-    session = await prisma.classSession.create({ data: { ...data, orgId } });
-  } else if (scope === "all") {
-    // Toda la serie, incluido el pasado. La fecha del formulario es la del día
-    // que se abrió, así que la base se desplaza lo mismo que se movió ese día
-    // (con `delta` 0 no se toca y el pasado se queda donde estaba).
+  // QA-RES-01: la sesión y la reserva del campo "Socio" son UNA escritura. Si
+  // la reserva no entra (sin saldo, EP ya ocupado, moroso), lanzar deshace
+  // también la sesión: antes la franja quedaba guardada y la reserva, creada a
+  // pelo, sin descontar bono ni mirar el aforo.
+  let session: ClassSession;
+  try {
     session = await prisma.$transaction(async (tx) => {
-      const updated = await tx.classSession.update({
-        where: { id: existing.id },
-        data: { ...data, date: addDays(startOfDay(existing.date), delta) },
-      });
-      await moveBookings(tx, existing.id, updated.id, delta, {});
-      return updated;
-    });
-  } else if (scope === "future") {
-    // El pasado se queda intacto en la fila original, recortada la víspera del
-    // día editado; lo nuevo nace como serie aparte con los cambios.
-    session = await prisma.$transaction(async (tx) => {
-      await tx.classSession.update({
-        where: { id: existing.id },
-        data: { recUntil: truncatedRecUntil(existing, editedDay) },
-      });
-      const created = await tx.classSession.create({ data: { ...rowCopy(existing), ...data } });
-      await moveBookings(tx, existing.id, created.id, delta, { occurrenceDate: { gte: editedDay } });
-      return created;
-    });
-  } else {
-    // Solo ese día: sale de la serie como sesión suelta y la serie se recompone
-    // alrededor (el tramo anterior y, si sigue, el posterior).
-    session = await prisma.$transaction(async (tx) => {
-      const next = nextOccurrenceAfter(existing, editedDay);
-      if (startOfDay(existing.date) < editedDay) {
-        await tx.classSession.update({
-          where: { id: existing.id },
-          data: { recUntil: truncatedRecUntil(existing, editedDay) },
-        });
-        if (next) {
-          const rest = await tx.classSession.create({ data: { ...rowCopy(existing), date: next } });
-          await moveBookings(tx, existing.id, rest.id, 0, { occurrenceDate: { gt: editedDay } });
-        }
-      } else if (next) {
-        // Se edita la primera ocurrencia: la fila original se queda con el
-        // resto de la serie (y con sus reservas, que ya apuntan ahí).
-        await tx.classSession.update({ where: { id: existing.id }, data: { date: next } });
-      }
-      const created = await tx.classSession.create({
-        data: { ...rowCopy(existing), ...data, recurrence: "NONE" as const, recUntil: null },
-      });
-      await moveBookings(tx, existing.id, created.id, delta, { occurrenceDate: editedDay });
-      return created;
-    });
-  }
+      const saved = await writeSessionRow(tx, existing, { data, orgId, scope, editedDay, delta });
 
-  // El campo "Socio" del diálogo es la reserva MANUAL de una franja de EP en
-  // nombre de un cliente que no usa la app; nunca es el roster de la sesión.
-  //
-  // Antes se sincronizaba el roster entero con ese único socio: como en un
-  // grupo reducido el campo va vacío, volver a guardar la sesión (cambiar la
-  // hora, el título, el entrenador…) cancelaba TODAS las reservas que habían
-  // hecho los socios, sin devolverles el bono, y el entrenador se encontraba el
-  // brief vacío. Ahora solo se añade la reserva que falta, y no se toca ninguna
-  // que no haya creado este mismo campo.
-  if (isPersonal && input.memberId) {
-    const alreadyBooked = await prisma.booking.findFirst({
-      where: {
-        sessionId: session.id,
-        memberId: input.memberId,
-        occurrenceDate: startOfDay(input.date),
-        status: { notIn: ["CANCELLED"] },
-      },
-      select: { id: true },
+      // El campo "Socio" del diálogo es la reserva MANUAL de una franja de EP en
+      // nombre de un cliente que no usa la app; nunca es el roster de la sesión.
+      //
+      // Antes se sincronizaba el roster entero con ese único socio: como en un
+      // grupo reducido el campo va vacío, volver a guardar la sesión (cambiar la
+      // hora, el título, el entrenador…) cancelaba TODAS las reservas que habían
+      // hecho los socios, sin devolverles el bono, y el entrenador se encontraba
+      // el brief vacío. Ahora solo se añade la reserva que falta, y no se toca
+      // ninguna que no haya creado este mismo campo.
+      if (isPersonal && input.memberId) {
+        const alreadyBooked = await tx.booking.findFirst({
+          where: {
+            sessionId: saved.id,
+            memberId: input.memberId,
+            occurrenceDate: startOfDay(input.date),
+            status: { in: [...OCCUPYING_STATUSES] },
+          },
+          select: { id: true },
+        });
+        if (!alreadyBooked) {
+          await bookMemberInTx(tx, orgId, { sessionId: saved.id, memberId: input.memberId, occurrenceDate: input.date });
+        }
+      }
+      return saved;
     });
-    if (!alreadyBooked) {
-      await prisma.booking.create({
-        data: { sessionId: session.id, occurrenceDate: startOfDay(input.date), memberId: input.memberId, status: "BOOKED" },
-      });
-    }
+  } catch (error) {
+    if (error instanceof StaffBookingError) return { ok: false as const, error: error.reason };
+    throw error;
   }
 
   return { ok: true as const, session };
+}
+
+/**
+ * Escribe la fila (o filas, al partir una serie) de la sesión según el alcance.
+ * Va aparte de `saveSession` solo para poder correr dentro de la transacción
+ * que además reserva al socio del campo "Socio".
+ */
+async function writeSessionRow(
+  tx: Prisma.TransactionClient,
+  existing: ClassSession | null,
+  ctx: {
+    data: Omit<Prisma.ClassSessionUncheckedCreateInput, "orgId">;
+    orgId: string;
+    scope: EditScope;
+    editedDay: Date;
+    delta: number;
+  }
+): Promise<ClassSession> {
+  const { data, orgId, scope, editedDay, delta } = ctx;
+  if (!existing) {
+    return tx.classSession.create({ data: { ...data, orgId } });
+  }
+  if (scope === "all") {
+    // Toda la serie, incluido el pasado. La fecha del formulario es la del día
+    // que se abrió, así que la base se desplaza lo mismo que se movió ese día
+    // (con `delta` 0 no se toca y el pasado se queda donde estaba).
+    const updated = await tx.classSession.update({
+      where: { id: existing.id },
+      data: { ...data, date: addDays(startOfDay(existing.date), delta) },
+    });
+    await moveBookings(tx, existing.id, updated.id, delta, {});
+    return updated;
+  }
+  if (scope === "future") {
+    // El pasado se queda intacto en la fila original, recortada la víspera del
+    // día editado; lo nuevo nace como serie aparte con los cambios.
+    await tx.classSession.update({
+      where: { id: existing.id },
+      data: { recUntil: truncatedRecUntil(existing, editedDay) },
+    });
+    const created = await tx.classSession.create({ data: { ...rowCopy(existing), ...data } });
+    await moveBookings(tx, existing.id, created.id, delta, { occurrenceDate: { gte: editedDay } });
+    return created;
+  }
+  // Solo ese día: sale de la serie como sesión suelta y la serie se recompone
+  // alrededor (el tramo anterior y, si sigue, el posterior).
+  await detachOccurrence(tx, existing, editedDay);
+  const created = await tx.classSession.create({
+    data: { ...rowCopy(existing), ...data, recurrence: "NONE" as const, recUntil: null },
+  });
+  await moveBookings(tx, existing.id, created.id, delta, { occurrenceDate: editedDay });
+  return created;
+}
+
+/**
+ * Saca `day` de la serie `existing`: el tramo anterior se recorta la víspera y,
+ * si la serie sigue, el posterior nace como fila propia con sus reservas. Las
+ * reservas de `day` se quedan en la fila original; quien llama decide si las
+ * mueve (editar) o las deshace (borrar).
+ */
+async function detachOccurrence(tx: Prisma.TransactionClient, existing: ClassSession, day: Date) {
+  const next = nextOccurrenceAfter(existing, day);
+  if (startOfDay(existing.date) < day) {
+    await tx.classSession.update({
+      where: { id: existing.id },
+      data: { recUntil: truncatedRecUntil(existing, day) },
+    });
+    if (next) {
+      const rest = await tx.classSession.create({ data: { ...rowCopy(existing), date: next } });
+      await moveBookings(tx, existing.id, rest.id, 0, { occurrenceDate: { gt: day } });
+    }
+  } else if (next) {
+    // Se edita la primera ocurrencia: la fila original se queda con el
+    // resto de la serie (y con sus reservas, que ya apuntan ahí).
+    await tx.classSession.update({ where: { id: existing.id }, data: { date: next } });
+  }
 }
 
 /**
@@ -1039,28 +1075,34 @@ export async function createEpSlot(
   }
 
   const endTime = addMinutesToTime(input.startTime, input.durationMin);
-  const session = await prisma.classSession.create({
-    data: {
-      orgId,
-      centerId: input.centerId,
-      name: `Personal Training ${input.startTime}`,
-      classType: "Personal Training",
-      date: input.date,
-      startTime: input.startTime,
-      endTime,
-      capacity: 1,
-      trainerId: input.trainerId,
-      selfBookable: input.selfBookable,
-    },
-  });
-
-  if (input.memberId) {
-    await prisma.booking.create({
-      data: { sessionId: session.id, occurrenceDate: input.date, memberId: input.memberId, status: "BOOKED" },
+  const memberId = input.memberId;
+  // QA-RES-01: mismo criterio que el campo "Socio" de la web — la reserva pasa
+  // por `bookMemberInTx` (bono, asiento, aforo, morosidad) y, si no entra, el
+  // hueco tampoco se crea.
+  try {
+    const session = await prisma.$transaction(async (tx) => {
+      const created = await tx.classSession.create({
+        data: {
+          orgId,
+          centerId: input.centerId,
+          name: `Personal Training ${input.startTime}`,
+          classType: "Personal Training",
+          date: input.date,
+          startTime: input.startTime,
+          endTime,
+          capacity: 1,
+          trainerId: input.trainerId,
+          selfBookable: input.selfBookable,
+        },
+      });
+      if (memberId) await bookMemberInTx(tx, orgId, { sessionId: created.id, memberId, occurrenceDate: input.date });
+      return created;
     });
+    return { ok: true as const, session };
+  } catch (error) {
+    if (error instanceof StaffBookingError) return { ok: false as const, error: error.reason };
+    throw error;
   }
-
-  return { ok: true as const, session };
 }
 
 /** RB-AGENDA-004: entrenador que dirigió realmente la sesión (puede diferir del asignado). */
