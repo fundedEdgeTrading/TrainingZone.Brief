@@ -10,7 +10,7 @@ import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
 import { canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
-import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
+import { onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { canAddCenter } from "@/lib/entitlements";
@@ -25,7 +25,7 @@ import {
   setMembershipPlanActive as archiveMembershipPlan,
   type SaveMembershipPlanInput,
 } from "@/lib/membership-plans";
-import { CENTER_SCOPED, resolveStaffRole } from "./staff-roles";
+import { CENTER_SCOPED, createStaffAccount, resolveStaffRole } from "./staff-roles";
 
 
 function slugify(s: string) {
@@ -346,16 +346,10 @@ export async function createStaffUser(formData: FormData): Promise<OrgActionResu
     centerId = center.id;
   }
 
-  const { user, invitation } = await prisma.$transaction((tx) =>
-    createStaffWithInvitation(tx, { orgId: session.user.orgId, name, email, role, centerId })
+  // QA-ALTA-11: persona, invitación e imputación primaria en la misma transacción.
+  const { invitation } = await prisma.$transaction((tx) =>
+    createStaffAccount(tx, { orgId: session.user.orgId, name, email, role, centerId })
   );
-
-  // Imputación primaria automática para roles de centro.
-  if (centerId) {
-    await prisma.centerMembership.create({
-      data: { orgId: session.user.orgId, userId: user.id, centerId, role, isPrimary: true, allocationPct: 100 },
-    });
-  }
 
   const [org, inviteCenter] = await Promise.all([
     prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } }),

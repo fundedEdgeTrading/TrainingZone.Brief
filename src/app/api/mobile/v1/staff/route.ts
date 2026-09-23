@@ -5,12 +5,12 @@ import { prisma } from "@/lib/prisma";
 import { canManageStaff, ROLE_LABEL } from "@/lib/rbac";
 import { staffScopeFilter } from "@/lib/staff-queries";
 import { centerScopeFor } from "@/lib/center-scope";
-import { createStaffWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
+import { onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { requireApiRole } from "../_lib/api-session";
 import { apiOk, apiError } from "../_lib/response";
-import { CENTER_SCOPED, resolveStaffRole } from "@/app/(app)/organization/staff-roles";
+import { CENTER_SCOPED, createStaffAccount, resolveStaffRole } from "@/app/(app)/organization/staff-roles";
 
 // D6/D7 del handoff: equipo de la organización con foto, rol e imputación a
 // centros (`CenterMembership.allocationPct`).
@@ -132,15 +132,10 @@ export async function POST(req: NextRequest) {
     centerId = center.id;
   }
 
+  // QA-ALTA-11: la misma alta atómica que la web.
   const { user, invitation } = await prisma.$transaction((tx) =>
-    createStaffWithInvitation(tx, { orgId: claims.orgId, name, email, role, centerId })
+    createStaffAccount(tx, { orgId: claims.orgId, name, email, role, centerId })
   );
-
-  if (centerId) {
-    await prisma.centerMembership.create({
-      data: { orgId: claims.orgId, userId: user.id, centerId, role, isPrimary: true, allocationPct: 100 },
-    });
-  }
 
   const [org, inviteCenter] = await Promise.all([
     prisma.organization.findUnique({ where: { id: claims.orgId }, select: { name: true, logoUrl: true } }),

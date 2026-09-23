@@ -1,5 +1,6 @@
-import type { Role } from "@prisma/client";
+import type { Prisma, Role } from "@prisma/client";
 import { canManageOrg } from "@/lib/rbac";
+import { createStaffWithInvitation } from "@/lib/invitations";
 import { isPlatformOperator } from "../apta/platform-access";
 
 /**
@@ -56,4 +57,30 @@ export function checkStaffRole(
 export async function resolveStaffRole(actor: { role: Role; orgId: string }, requested: string): Promise<StaffRoleCheck> {
   const isOperator = requested === "PLATFORM_ADMIN" && (await isPlatformOperator(actor));
   return checkStaffRole({ role: actor.role, isPlatformOperator: isOperator }, requested);
+}
+
+/**
+ * QA-ALTA-11 · Alta de personal: persona, invitación e imputación primaria,
+ * todo o nada. La imputación iba después del commit: si fallaba, quedaba una
+ * persona de centro sin centro, con el email ocupado y sin forma de repetir el
+ * alta ("ya existe").
+ */
+export async function createStaffAccount(
+  tx: Prisma.TransactionClient,
+  params: { orgId: string; name: string; email: string; role: Role; centerId: string | null }
+) {
+  const created = await createStaffWithInvitation(tx, params);
+  if (params.centerId) {
+    await tx.centerMembership.create({
+      data: {
+        orgId: params.orgId,
+        userId: created.user.id,
+        centerId: params.centerId,
+        role: params.role,
+        isPrimary: true,
+        allocationPct: 100,
+      },
+    });
+  }
+  return created;
 }
