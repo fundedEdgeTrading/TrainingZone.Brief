@@ -619,3 +619,29 @@ test("QA-ALTA-21 · el formulario de un lead añade los objetivos que falten, si
   const lead = await prisma.lead.findUniqueOrThrow({ where: { id: leadId } });
   assert.equal(lead.goals, "Ponerme en forma · Correr una media maratón");
 });
+
+test("Profesión · lo que el socio declara en el formulario cae en Member.occupation si la ficha no la tenía", async () => {
+  await sendMemberForm({ orgId, target: { kind: "member", memberId }, sentByUserId: receptionId });
+  const resultado = await submitMemberForm({
+    token: await tokenDelUltimoEnvio(),
+    answers: respuestasDeSocio(),
+    birthDate: "1991-04-10",
+    occupation: "  Enfermera de noche ",
+    consents: { health: true },
+  });
+  assert.deepEqual(resultado, { ok: true });
+  assert.equal((await prisma.member.findUniqueOrThrow({ where: { id: memberId } })).occupation, "Enfermera de noche");
+});
+
+test("Profesión · el formulario no pisa la que ya constaba en la ficha del lead", async () => {
+  await sendMemberForm({ orgId, target: { kind: "lead", leadId }, sentByUserId: receptionId });
+  const resultado = await submitMemberForm({
+    token: await tokenDelUltimoEnvio(),
+    answers: { perfil: { objetivoPrincipal: "Ponerme en forma" }, experiencia: {} },
+    birthDate: "1990-03-15",
+    occupation: "Camarero",
+    consents: { health: true },
+  });
+  assert.deepEqual(resultado, { ok: true });
+  assert.equal((await prisma.lead.findUniqueOrThrow({ where: { id: leadId } })).occupation, "Comercial");
+});
