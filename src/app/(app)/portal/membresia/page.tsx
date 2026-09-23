@@ -16,7 +16,7 @@ import { memberBonos } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
 import { zonedToday } from "@/lib/date-utils";
 import PurchasePlanButton from "./purchase-plan-button";
-import { RenewalModal } from "./renewal-modal";
+import { AdvanceRenewalButton, RenewalModal } from "./renewal-modal";
 import { PendingSessionsRating } from "./pending-sessions";
 import { getMemberBillingSnapshot } from "./billing-view";
 import { ReceiptDownloadButton } from "./receipt-download-button";
@@ -121,6 +121,19 @@ export default async function PortalMembresiaPage({
     (a, b) => Number(ownedPlanIds.has(b.id)) - Number(ownedPlanIds.has(a.id))
   );
   const renewPlan = lowestBono ? (plans.find((p) => p.id === lowestBono.planId) ?? null) : null;
+
+  // ADV-02: con una cuota recurrente viva, renovarla es ADELANTAR su cobro, no
+  // abrir un checkout nuevo — eso crearía una segunda suscripción y cobraría
+  // dos cuotas cada mes. Solo las que se cobran por Stripe y sin baja
+  // programada se pueden adelantar; el resto de validaciones (tarjeta, que la
+  // baja no esté puesta en Stripe…) las hace el servidor al abrir el modal.
+  const liveRecurringPlanIds = new Set(bonos.filter((b) => b.bono.recurring).map((b) => b.planId));
+  const advanceSub = bonos.find((b) => b.bono.recurring && b.stripeSubscriptionId && !b.cancelAt) ?? null;
+  const advanceOutOfSessions = !!advanceSub && !advanceSub.bono.unlimited && advanceSub.bono.remaining <= 0;
+  // D5: con SEPA no se adelanta; lo que se ofrece en su lugar es un bono puntual.
+  const oneOffPlans = plans
+    .filter((p) => !isRecurring(p.type))
+    .map((p) => ({ id: p.id, name: p.name, priceLabel: euros(p.priceCents) }));
 
   const pendingItems = pending.map((p) => {
     const dateLabel = relativeDayLabel(p.sessionDate, today);
@@ -348,6 +361,34 @@ export default async function PortalMembresiaPage({
         </div>
       )}
 
+      {/* ADV-02: sin sesiones antes de la renovación → adelantar el cobro. */}
+      {advanceSub && (
+        <div
+          className={`border rounded-2xl p-[22px] tz-fade-up flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+            advanceOutOfSessions ? "bg-warning-bg border-warning/30" : "bg-white border-brand-border"
+          }`}
+          style={{ animationDelay: "0.08s" }}
+        >
+          <div>
+            <div className="font-display font-extrabold text-base uppercase text-brand-text">
+              {advanceOutOfSessions ? "Te has quedado sin sesiones" : "Adelantar renovación"}
+            </div>
+            <p className="text-[13px] text-brand-muted mt-1.5 max-w-[560px]">
+              {advanceOutOfSessions
+                ? "No hace falta esperar a la renovación: paga ya el mes siguiente y tu nuevo ciclo empieza hoy."
+                : "Si vas a agotar las sesiones antes de la renovación, puedes pagar ya el mes siguiente y empezar hoy tu nuevo ciclo."}
+            </p>
+          </div>
+          <AdvanceRenewalButton
+            subscriptionId={advanceSub.id}
+            oneOffPlans={oneOffPlans}
+            className="shrink-0 bg-brand-ink text-tz-bone rounded-lg px-4 py-[11px] text-xs font-extrabold uppercase transition-colors duration-150 hover:bg-brand-ink-soft"
+          >
+            Adelantar renovación
+          </AdvanceRenewalButton>
+        </div>
+      )}
+
       {/* E5-01: gestionar la suscripción y darse de baja sin salir del portal. */}
       {billing.hasSubscription && (
         <SubscriptionManagement
@@ -391,21 +432,39 @@ export default async function PortalMembresiaPage({
                   <div>
                     <div className="text-[13.5px] font-bold text-brand-text">{plan.name}</div>
                     <div className="text-xs text-brand-muted mt-0.5">
-                      {isCurrent ? "Renovar lo que ya tienes" : planPeriodLabel(plan)}
+                      {isCurrent && liveRecurringPlanIds.has(plan.id)
+                        ? "Tu cuota actual"
+                        : isCurrent
+                          ? "Renovar lo que ya tienes"
+                          : planPeriodLabel(plan)}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="font-display font-extrabold text-base text-brand-text">{euros(plan.priceCents)}</span>
-                    <PurchasePlanButton
-                      planId={plan.id}
-                      className={
-                        isCurrent
-                          ? "bg-brand-ink text-tz-bone rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase disabled:opacity-60"
-                          : "border border-brand-border text-brand-text rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase transition-colors duration-150 hover:bg-tz-bone disabled:opacity-60"
-                      }
-                    >
-                      {isCurrent ? "Renovar" : "Elegir"}
-                    </PurchasePlanButton>
+                    {isCurrent && advanceSub && plan.id === advanceSub.planId ? (
+                      <AdvanceRenewalButton
+                        subscriptionId={advanceSub.id}
+                        oneOffPlans={oneOffPlans}
+                        className="bg-brand-ink text-tz-bone rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase"
+                      >
+                        Adelantar renovación
+                      </AdvanceRenewalButton>
+                    ) : isCurrent && liveRecurringPlanIds.has(plan.id) ? (
+                      // Cuota viva que no se puede adelantar (baja programada,
+                      // cobro fuera de Stripe): un checkout aquí la duplicaría.
+                      <span className="text-xs font-bold uppercase text-brand-muted-2 px-1">Cuota activa</span>
+                    ) : (
+                      <PurchasePlanButton
+                        planId={plan.id}
+                        className={
+                          isCurrent
+                            ? "bg-brand-ink text-tz-bone rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase disabled:opacity-60"
+                            : "border border-brand-border text-brand-text rounded-lg px-3.5 py-[9px] text-xs font-extrabold uppercase transition-colors duration-150 hover:bg-tz-bone disabled:opacity-60"
+                        }
+                      >
+                        {isCurrent ? "Renovar" : "Elegir"}
+                      </PurchasePlanButton>
+                    )}
                   </div>
                 </div>
               );
