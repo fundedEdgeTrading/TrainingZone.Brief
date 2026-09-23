@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { canViewSessionDebrief } from "@/lib/rbac";
 import { isCenterInScope } from "@/lib/center-scope";
 import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
+import { undoNoShowRefund } from "@/lib/session-ledger";
 import type { DebriefFeeling, Role } from "@prisma/client";
 
 /**
@@ -101,11 +102,18 @@ export async function setSessionDebrief({
   // escritura: la condición de estado viaja dentro del propio UPDATE y el
   // debrief se deshace con la transacción si no se aplica.
   const applied = await prisma.$transaction(async (tx) => {
+    // QA-RES-04: una asistencia no arrastra el motivo de una falta.
     const updated = await tx.booking.updateMany({
       where: { id: bookingId, status: { in: statusesEndingAt("ATTENDED") } },
-      data: { status: "ATTENDED", checkedInAt: new Date() },
+      data: { status: "ATTENDED", checkedInAt: new Date(), noShowReason: null },
     });
     if (updated.count === 0) return false;
+    // QA-RES-04: si lo que se pasa a ATTENDED era una falta con devolución, la
+    // sesión devuelta se vuelve a descontar (asiento CORRECTION), igual que en
+    // `clearBookingNoShow`. Se llama siempre y no solo si la lectura decía
+    // NO_SHOW: la falta pudo marcarse entre la lectura y este UPDATE, y la
+    // bandera ya hace que no descuente nada si no hubo devolución.
+    await undoNoShowRefund(tx, { orgId, bookingId, actorUserId });
     await tx.sessionDebrief.upsert({
       where: { bookingId },
       create: { bookingId, feeling, note: trimmed ?? null },
@@ -167,9 +175,11 @@ export async function clearSessionDebrief({
   const applied = await prisma.$transaction(async (tx) => {
     const updated = await tx.booking.updateMany({
       where: { id: bookingId, status: { in: statusesEndingAt("BOOKED") } },
-      data: { status: "BOOKED", checkedInAt: null },
+      data: { status: "BOOKED", checkedInAt: null, noShowReason: null },
     });
     if (updated.count === 0) return false;
+    // QA-RES-04: `NO_SHOW → BOOKED` también deshace la devolución de la falta.
+    await undoNoShowRefund(tx, { orgId, bookingId, actorUserId });
     await tx.sessionDebrief.deleteMany({ where: { bookingId } });
     return true;
   });
