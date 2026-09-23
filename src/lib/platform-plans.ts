@@ -64,15 +64,14 @@ export type PlatformPlan = {
   tier: PlanTier;
   name: string;
   interval: "month" | "year" | "lifetime";
-  priceLabel: string; // solo presentación: el importe real lo manda Stripe
+  /**
+   * Precio de referencia: lo usan el modo demo y el back-office (/apta). Lo
+   * que se enseña al comprador y se cobra sale de Stripe
+   * (`lib/platform-price-catalog.ts`).
+   */
+  priceLabel: string;
   maxCenters: number | null; // null = sin límite
   features: PlatformFeature[];
-  /**
-   * Nombre de la variable de entorno con el `price_…` de Stripe. Los
-   * identificadores de precio cambian entre test y live: son configuración de
-   * entorno, no código (RB-PLAN-001).
-   */
-  priceEnvVar: string;
   recommended?: boolean;
   /** Oferta limitada: además del precio necesita interruptor y cupo. */
   limitedOffer?: boolean;
@@ -118,7 +117,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "99 €/mes",
     maxCenters: 1,
     features: [],
-    priceEnvVar: "STRIPE_PRICE_ESENCIAL_MES",
   },
   {
     code: "esencial_ano",
@@ -128,7 +126,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "990 €/año",
     maxCenters: 1,
     features: [],
-    priceEnvVar: "STRIPE_PRICE_ESENCIAL_ANO",
   },
   {
     code: "avanzado_mes",
@@ -138,7 +135,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "129 €/mes",
     maxCenters: 3,
     features: AVANZADO_FEATURES,
-    priceEnvVar: "STRIPE_PRICE_AVANZADO_MES",
     recommended: true,
     aiGenerationsPerMonth: AVANZADO_AI_GENERATIONS_PER_MONTH,
   },
@@ -150,7 +146,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "1.290 €/año",
     maxCenters: 3,
     features: AVANZADO_FEATURES,
-    priceEnvVar: "STRIPE_PRICE_AVANZADO_ANO",
     recommended: true,
     aiGenerationsPerMonth: AVANZADO_AI_GENERATIONS_PER_MONTH,
   },
@@ -165,7 +160,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "279 €/mes",
     maxCenters: 10,
     features: [...AVANZADO_FEATURES],
-    priceEnvVar: "STRIPE_PRICE_ELITE_MES",
     customPricingAboveLimit: true,
   },
   {
@@ -176,7 +170,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "2.790 €/año",
     maxCenters: 10,
     features: [...AVANZADO_FEATURES],
-    priceEnvVar: "STRIPE_PRICE_ELITE_ANO",
     customPricingAboveLimit: true,
   },
   {
@@ -191,7 +184,6 @@ export const PLATFORM_PLANS: PlatformPlan[] = [
     priceLabel: "3.990 € pago único",
     maxCenters: 3,
     features: AVANZADO_FEATURES.filter((f) => f !== "ia_programacion"),
-    priceEnvVar: "STRIPE_PRICE_FUNDADOR",
     limitedOffer: true,
   },
 ];
@@ -222,10 +214,11 @@ export function getPlatformPlan(code: string | null | undefined): PlatformPlan |
 }
 
 /**
- * E6-08: precio mensualizado en céntimos, derivado de `priceLabel` para el
- * MRR agregado de `/apta`. Es una aproximación de back-office (redondea el
- * importe mostrado, que ya es solo presentación) — el cobro real lo manda
- * Stripe. `null` para Fundador: es pago único, no ingreso recurrente.
+ * E6-08: precio mensualizado en céntimos, derivado de `priceLabel`. Es el
+ * RESPALDO del MRR de `/apta` cuando no hay suscripción real que leer de
+ * Stripe (modo demo, Stripe caído); el cálculo principal usa lo que factura
+ * cada suscripción (`platform-admin-queries.ts`). `null` para Fundador: es
+ * pago único, no ingreso recurrente.
  */
 export function monthlyPriceCents(plan: PlatformPlan): number | null {
   if (plan.interval === "lifetime") return null;
@@ -235,11 +228,6 @@ export function monthlyPriceCents(plan: PlatformPlan): number | null {
   if (!Number.isFinite(amount)) return null;
   const monthly = plan.interval === "year" ? amount / 12 : amount;
   return Math.round(monthly * 100);
-}
-
-/** El `price_…` de Stripe, resuelto del entorno. `null` = plan no vendible aquí y ahora. */
-export function resolveStripePriceId(plan: PlatformPlan): string | null {
-  return process.env[plan.priceEnvVar] || null;
 }
 
 export function fundadorEnabled() {
@@ -280,21 +268,4 @@ export function fundadorClosesAt(): Date | null {
  */
 export function isDemoModeActive(env: DemoModeEnv = process.env): boolean {
   return isDemoModeActiveFromEnv(env);
-}
-
-/**
- * Planes comprables en este entorno: los que tienen precio configurado, más el
- * interruptor de la oferta limitada. Sin precios no se muestran botones muertos.
- * En modo demo se enseña el catálogo entero, porque no hay precios reales que
- * resolver — el pago tampoco es real (ver `isDemoModeActive`).
- */
-export function listPurchasablePlans(): PlatformPlan[] {
-  if (isDemoModeActive()) {
-    return PLATFORM_PLANS.filter((plan) => !plan.limitedOffer || fundadorEnabled());
-  }
-  return PLATFORM_PLANS.filter((plan) => {
-    if (!resolveStripePriceId(plan)) return false;
-    if (plan.limitedOffer && !fundadorEnabled()) return false;
-    return true;
-  });
 }

@@ -126,20 +126,6 @@ services:
         sync: false
       - key: STRIPE_CONNECT_WEBHOOK_SECRET
         sync: false
-      - key: STRIPE_PRICE_ESENCIAL_MES
-        sync: false
-      - key: STRIPE_PRICE_ESENCIAL_ANO
-        sync: false
-      - key: STRIPE_PRICE_AVANZADO_MES
-        sync: false
-      - key: STRIPE_PRICE_AVANZADO_ANO
-        sync: false
-      - key: STRIPE_PRICE_ELITE_MES
-        sync: false
-      - key: STRIPE_PRICE_ELITE_ANO
-        sync: false
-      - key: STRIPE_PRICE_FUNDADOR
-        sync: false
       - key: PLATFORM_PLAN_FUNDADOR_ENABLED
         sync: false
       - key: PLATFORM_PLAN_FUNDADOR_MAX_SEATS
@@ -248,20 +234,6 @@ services:
       - key: STRIPE_CONNECT_CLIENT_ID
         sync: false
       - key: STRIPE_CONNECT_WEBHOOK_SECRET
-        sync: false
-      - key: STRIPE_PRICE_ESENCIAL_MES
-        sync: false
-      - key: STRIPE_PRICE_ESENCIAL_ANO
-        sync: false
-      - key: STRIPE_PRICE_AVANZADO_MES
-        sync: false
-      - key: STRIPE_PRICE_AVANZADO_ANO
-        sync: false
-      - key: STRIPE_PRICE_ELITE_MES
-        sync: false
-      - key: STRIPE_PRICE_ELITE_ANO
-        sync: false
-      - key: STRIPE_PRICE_FUNDADOR
         sync: false
       - key: PLATFORM_PLAN_FUNDADOR_ENABLED
         sync: false

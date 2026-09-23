@@ -93,7 +93,6 @@ decisiones D1-D4 del §1. Es lo que hace viable el plazo.
 | `STRIPE_SECRET_KEY` | `sk_live_…`. **Si falta, se enciende el modo demo en producción** (P1 lo corrige) |
 | `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_WEBHOOK_SECRET` | Uno por endpoint |
 | `STRIPE_CONNECT_CLIENT_ID` | `ca_…` live |
-| `STRIPE_PRICE_*` (6) + `STRIPE_PRICE_FUNDADOR` | Precios de la licencia en live |
 | `BREVO_API_KEY`, `BREVO_FROM_EMAIL` | Si faltan, el envío **se simula en silencio** (P1 lo corrige) |
 | `EMAIL_POSTAL_ADDRESS` | Dirección real del responsable. El valor por defecto está escrito en el código |
 | `CANCELLATION_WINDOW_HOURS` | La ventana acordada en D2 (p. ej. `24`) |
@@ -103,9 +102,9 @@ decisiones D1-D4 del §1. Es lo que hace viable el plazo.
 | `ANTHROPIC_API_KEY` | Solo si se activa la IA |
 
 ### 3.3 Stripe (cuenta de Apta, modo live)
-- [ ] Productos y precios de la licencia (plano 1) → `STRIPE_PRICE_*`.
+- [ ] Productos y precios de la licencia (plano 1), cada precio con su lookup key `apta_<plan>` (`apta_esencial_mes`, …, `apta_fundador`; ver `src/lib/platform-price-catalog.ts`). Sin variables de entorno.
 - [ ] Connect: activar **Standard OAuth**, redirect `https://<dominio>/api/stripe/connect/callback`.
-- [ ] **Webhook de plataforma** → `https://<dominio>/api/stripe/webhook`: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed` y `customer.subscription.deleted`.
+- [ ] **Webhook de plataforma** → `https://<dominio>/api/stripe/webhook`: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted` y, para refrescar /planes al momento, `product.created/updated/deleted` y `price.created/updated/deleted`.
 - [ ] **Webhook de cuentas conectadas** → la misma URL, con los eventos:
   - `checkout.session.completed`, `.expired`, `.async_payment_succeeded`, `.async_payment_failed`
   - `customer.subscription.created`, `.updated`, `.deleted`

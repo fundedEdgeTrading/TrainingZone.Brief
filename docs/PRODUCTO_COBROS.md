@@ -66,12 +66,17 @@ Decisiones que explican el reparto:
   único es exactamente como envejecen mal las ofertas de por vida.
 - **Élite ya no vende «centros ilimitados»**: ahí es donde vive el coste real de
   soporte.
-- Los `price_…` de Stripe son **variables de entorno** (`priceEnvVar`), no
-  código: cambian entre test y live (`RB-PLAN-001`).
+- Los precios se leen de **Stripe**, por lookup key `apta_<plan>` (igual en test
+  y en live), no de variables de entorno (`lib/platform-price-catalog.ts`).
+  Archivar el precio o el producto lo retira de /planes; el webhook invalida
+  la caché con los eventos `product.*`/`price.*`. Los tiers y sus funciones
+  siguen en código (`PLATFORM_PLANS`).
 - El contador de plazas de Fundador es real, no decorativo: se cuenta contra la
   base antes de cobrar (`remainingFundadorSeats`).
-- `priceLabel` es **solo presentación**. Nunca se marca como precio estructurado
-  ni se trata como el importe real: el que se cobra lo manda Stripe.
+- `priceLabel` es un **precio de referencia** para el modo demo y el alta
+  asistida. Lo que ve el comprador (`displayPrice`), el `price` del JSON-LD de
+  /planes y el MRR de /apta salen de Stripe; el MRR solo cae a `priceLabel`
+  (y lo rotula como estimado) si no puede leer la suscripción real.
 
 ### 2.2 Alta pago-primero
 

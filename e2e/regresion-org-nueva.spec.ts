@@ -127,7 +127,8 @@ import {
  *               --forward-connect-to localhost:3000/api/stripe/webhook
  * # el whsec que imprime vale para los dos secretos
  * STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_… STRIPE_CONNECT_WEBHOOK_SECRET=whsec_… \
- * STRIPE_PRICE_AVANZADO_MES=price_… npm run start > /tmp/server-org-nueva-stripe.log 2>&1 &
+ * npm run start > /tmp/server-org-nueva-stripe.log 2>&1 &
+ * # la cuenta de test necesita un precio mensual con lookup key `apta_avanzado_mes`
  * E2E_CLEAN_DB=true E2E_SERVER_LOG=/tmp/server-org-nueva-stripe.log \
  * STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_… STRIPE_CONNECT_WEBHOOK_SECRET=whsec_… \
  * E2E_STRIPE_CONNECTED_ACCOUNT=acct_… \

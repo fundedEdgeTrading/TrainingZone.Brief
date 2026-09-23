@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isPlatformOperational } from "@/lib/entitlements";
-import { listPurchasablePlans } from "@/lib/platform-plans";
+import { listPurchasablePlans } from "@/lib/platform-price-catalog";
 import { SIGNUP_HELD_FOR_SUPPORT } from "@/lib/provisioning";
 import { PlanCheckoutButton, ResendVerificationButton, ResendActivationButton } from "./checkout-buttons";
 
@@ -128,7 +128,7 @@ export default async function ActivarPage({
 
   const copy = STATUS_COPY[org.platformStatus] ?? STATUS_COPY.PENDING_PAYMENT;
   const isOwner = session.user.role === "OWNER";
-  const plans = listPurchasablePlans();
+  const plans = await listPurchasablePlans();
 
   return (
     <Card>
@@ -154,7 +154,7 @@ export default async function ActivarPage({
               >
                 <div>
                   <p className="font-semibold text-tz-black">{plan.name}</p>
-                  <p className="text-xs text-muted">{plan.priceLabel}</p>
+                  <p className="text-xs text-muted">{plan.displayPrice}</p>
                 </div>
                 <PlanCheckoutButton plan={plan} />
               </div>
