@@ -9,6 +9,7 @@ import {
   upsertStripeAccountForOrg,
   verifyConnectState,
 } from "@/lib/stripe-connect";
+import { ensureMemberPortalConfigurationForAccount } from "@/lib/stripe-portal-config";
 
 /**
  * C.3: recibe el `code` de Stripe (Connect Standard OAuth), lo intercambia por
@@ -54,6 +55,10 @@ export async function GET(req: NextRequest) {
   if (!exchanged.ok) return fail();
 
   await upsertStripeAccountForOrg(session.user.orgId, exchanged.accountId);
+  // CON-02: el portal del socio queda configurado desde el primer minuto. Es
+  // best-effort (no lanza): la cuenta ya está conectada y un fallo aquí se
+  // repara solo en el siguiente `ensureMemberPortalConfigurationForOrg`.
+  await ensureMemberPortalConfigurationForAccount(session.user.orgId, exchanged.accountId);
 
   settingsUrl.searchParams.set("stripe_connect", "success");
   return finish(settingsUrl);
