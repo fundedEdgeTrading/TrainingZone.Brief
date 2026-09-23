@@ -99,7 +99,8 @@ async function handleConnectEvent(event: Stripe.Event): Promise<ConnectEventResu
       const session = event.data.object as Stripe.Checkout.Session;
       const orgId = await resolveConnectOrgId(event.account);
       if (!orgId) break;
-      await reconcileConnectCheckoutCompleted(orgId, session);
+      const result = await reconcileConnectCheckoutCompleted(orgId, session);
+      if (!result.ok) return { ok: false, error: result.error };
       break;
     }
     case "checkout.session.expired": {
