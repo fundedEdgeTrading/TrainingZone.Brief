@@ -948,6 +948,29 @@ export async function clearBookingNoShow(
   return { ok: true as const, memberId: booking.memberId, sessionId: booking.sessionId, refunded: false };
 }
 
+/**
+ * QA-RES-12: minutos antes del comienzo a partir de los que se puede pasar
+ * lista. El check-in aceptaba cualquier ocurrencia, también la de la semana que
+ * viene: marcar ATTENDED por error una clase futura la daba por consumida antes
+ * de que ocurriera. Media hora cubre al socio que llega pronto.
+ */
+export const CHECK_IN_OPENS_MINUTES_BEFORE = 30;
+
+/**
+ * ¿Se puede marcar ya la asistencia? `startsAt` es el instante real de la
+ * ocurrencia en la zona del centro (`enforcementStartsAt`), nunca la del
+ * servidor ni la del navegador. Después del comienzo no hay límite: pasar lista
+ * tarde es lo normal.
+ */
+export function checkInWindow(startsAt: Date, now: Date = new Date()): { ok: true } | { ok: false; error: string } {
+  const opensAt = startsAt.getTime() - CHECK_IN_OPENS_MINUTES_BEFORE * 60_000;
+  if (now.getTime() >= opensAt) return { ok: true };
+  return {
+    ok: false,
+    error: `Esta sesión todavía no ha empezado: la asistencia se marca desde ${CHECK_IN_OPENS_MINUTES_BEFORE} minutos antes del inicio.`,
+  };
+}
+
 export type DeleteSessionResult =
   | { ok: true; refunded: number; notified: number }
   | { ok: false; error: string; needsConfirmation?: true; settledCount?: number };

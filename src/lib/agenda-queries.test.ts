@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import {
   bookSessionForMemberAsStaff,
   cancelSessionBooking,
+  CHECK_IN_OPENS_MINUTES_BEFORE,
+  checkInWindow,
   createEpSlot,
   deleteSession,
   rescheduleSession,
@@ -416,4 +418,25 @@ test("QA-RES-03 · mover 'solo esta' ocurrencia se lleva sus reservas y deja la 
   const laterRow = await prisma.classSession.findUniqueOrThrow({ where: { id: later.sessionId } });
   assert.equal(laterRow.startTime, row.startTime, "las demás ocurrencias siguen a su hora");
   assert.equal(await balanceOf(socios.next.subscriptionId), 4, "mover no cobra ni devuelve");
+});
+
+// --- QA-RES-12 · no se pasa lista de una clase que aún no toca ---------------
+
+test("QA-RES-12 · el check-in de la semana que viene se rechaza", () => {
+  const now = new Date("2026-09-23T10:00:00Z");
+  const nextWeek = new Date(now.getTime() + 7 * DAY);
+  const result = checkInWindow(nextWeek, now);
+  assert.equal(result.ok, false);
+  assert.ok(!result.ok && /todavía no/.test(result.error));
+});
+
+test("QA-RES-12 · la ventana abre X minutos antes del inicio y sigue abierta después", () => {
+  const startsAt = new Date("2026-09-23T10:00:00Z");
+  const minute = 60_000;
+  const justOpen = new Date(startsAt.getTime() - CHECK_IN_OPENS_MINUTES_BEFORE * minute);
+  const tooEarly = new Date(justOpen.getTime() - minute);
+
+  assert.equal(checkInWindow(startsAt, tooEarly).ok, false);
+  assert.equal(checkInWindow(startsAt, justOpen).ok, true);
+  assert.equal(checkInWindow(startsAt, new Date(startsAt.getTime() + 3 * 3_600_000)).ok, true, "pasar lista tarde vale");
 });
