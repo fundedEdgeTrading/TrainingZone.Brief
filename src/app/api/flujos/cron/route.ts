@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
+import { authorizeCronRequest } from "@/lib/cron-auth";
 
 import { prisma } from "@/lib/prisma";
 import { runFlowQueue, type FlowRunReport } from "@/lib/flows";
@@ -31,12 +31,13 @@ import { runFlowQueue, type FlowRunReport } from "@/lib/flows";
  * de rotar. Falla cerrado si no está configurado.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.JOBS_CRON_SECRET;
-  if (!secret) {
+  // PROD-04: solo la cabecera `x-cron-secret` (nunca `?secret=`, que acaba en
+  // los logs de acceso), comparada en tiempo constante. Ver `lib/cron-auth.ts`.
+  const auth = authorizeCronRequest(req.headers);
+  if (auth === "unconfigured") {
     return NextResponse.json({ ok: false, error: "jobs deshabilitados: falta JOBS_CRON_SECRET" }, { status: 503 });
   }
-  const provided = req.headers.get("x-cron-secret") ?? req.nextUrl.searchParams.get("secret");
-  if (!provided || !safeEqual(provided, secret)) {
+  if (auth !== "ok") {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
@@ -73,12 +74,4 @@ export async function GET(req: NextRequest) {
     { ok: failures.length === 0, ranAt: new Date().toISOString(), summary, reports, failures },
     { status: failures.length === 0 ? 200 : 207 }
   );
-}
-
-/** Comparación en tiempo constante: un `!==` filtra el secreto carácter a carácter. */
-function safeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
 }
