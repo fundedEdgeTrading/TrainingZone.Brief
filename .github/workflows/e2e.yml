@@ -90,10 +90,29 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # INF-04 · Explícito y antes del build. `next build` también comprueba
+      # tipos, pero solo de lo que entra en el bundle: `scripts/`, `prisma/` y
+      # `e2e/` se quedan fuera y un error ahí llegaba a main sin que nada lo viera.
+      - name: Typecheck
+        run: npx tsc --noEmit
+
       - name: Migraciones y datos de demo
         run: |
           npx prisma migrate deploy
           npm run db:seed
+
+      # INF-03 · El arranque de plataforma tiene que NEGARSE sobre una base con
+      # datos de demo, incluso con --force. Aquí la base acaba de sembrarse: si
+      # el script termina bien, la guarda está rota.
+      - name: El arranque de plataforma se niega sobre datos de demo
+        env:
+          PLATFORM_ORG_SLUG: apta-plataforma-ci
+          PLATFORM_ADMIN_EMAIL: plataforma@ci.invalid
+        run: |
+          if npm run -s bootstrap:plataforma -- --force; then
+            echo "::error::bootstrap:plataforma se ejecutó sobre una base con datos de demo"
+            exit 1
+          fi
 
       # Después de migrar: los tests de los reconciliadores de Stripe Billing
       # montan su propia organización contra la base real, porque el riesgo que
@@ -271,3 +290,251 @@ jobs:
           path: apps/mobile/coverage/
           retention-days: 7
           if-no-files-found: ignore
+
+  # INF-04 · Producción arranca SIN seed, y hasta ahora ningún job lo probaba:
+  # `verify` y `e2e-pago` siembran justo después de migrar, así que una
+  # migración que solo funciona sobre datos, o una página que revienta con la
+  # base vacía, pasaba CI y se descubría el día del despliegue.
+  #
+  # Este job reproduce el primer despliegue de Render con la mayor fidelidad
+  # posible: propietario NO superusuario (como el que da Render), los roles
+  # creados con el SQL de docs/OPERACIONES.md §7.2 extraído del propio documento
+  # —si alguien lo edita y lo rompe, esto se pone en rojo—, migraciones con el
+  # propietario, y la app arrancando con `apta_app`.
+  arranque-limpio:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      # Solo `prisma migrate deploy` usa la del propietario (prisma.config.ts).
+      DATABASE_MIGRATION_URL: postgresql://trainingzone_owner:owner-ci@localhost:5432/trainingzone?schema=public
+      DATABASE_URL: postgresql://apta_app:app-ci@localhost:5432/trainingzone?schema=public
+      DATA_RETENTION_DATABASE_URL: postgresql://apta_mantenimiento:mant-ci@localhost:5432/trainingzone?schema=public
+      AUTH_SECRET: ci-secret-no-usar-en-produccion
+      NEXTAUTH_URL: http://localhost:3000
+      CANCELLATION_WINDOW_HOURS: "24"
+      DATA_REGION: frankfurt
+      PROGRESS_PHOTO_KEY: Y2ktb25seS1rZXktbm90LWZvci1wcm9kdWN0aW9uISE=
+      JOBS_CRON_SECRET: cron-solo-para-ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Base vacía con propietario no superusuario (como Render)
+        env:
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 -d postgres <<'SQL'
+          CREATE ROLE trainingzone_owner LOGIN CREATEROLE PASSWORD 'owner-ci';
+          CREATE DATABASE trainingzone OWNER trainingzone_owner;
+          SQL
+
+      # El SQL sale de OPERACIONES.md, no de una copia: lo que se prueba es lo
+      # que va a ejecutar una persona en producción.
+      - name: Roles de BD (OPERACIONES.md §7.2, tal cual)
+        env:
+          PGUSER: trainingzone_owner
+          PGPASSWORD: owner-ci
+          PGDATABASE: trainingzone
+        run: |
+          set -euo pipefail
+          extraer() {
+            awk -v tag="$1" 'index($0, "<!-- " tag) == 1 { f = 1; next }
+              f && /^```sql/ { g = 1; next }
+              g && /^```/ { exit }
+              g { print }' docs/OPERACIONES.md
+          }
+          for bloque in sql:roles sql:post-migracion sql:comprobacion; do
+            extraer "$bloque" > "/tmp/${bloque#sql:}.sql"
+            test -s "/tmp/${bloque#sql:}.sql" || { echo "::error::No encuentro el bloque $bloque en OPERACIONES.md"; exit 1; }
+          done
+          psql -v ON_ERROR_STOP=1 -f /tmp/roles.sql
+          # Idempotente: el runbook dice que se puede repetir.
+          psql -v ON_ERROR_STOP=1 -f /tmp/roles.sql
+          # En producción las contraseñas van con \password; aquí, de usar y tirar.
+          psql -v ON_ERROR_STOP=1 -c "ALTER ROLE apta_app PASSWORD 'app-ci'" \
+                                  -c "ALTER ROLE apta_mantenimiento PASSWORD 'mant-ci'"
+
+      - name: Migraciones con el propietario, sin seed
+        run: npx prisma migrate deploy
+
+      - name: Permisos después de migrar (AuditLog append-only para la app)
+        env:
+          PGUSER: trainingzone_owner
+          PGPASSWORD: owner-ci
+          PGDATABASE: trainingzone
+        run: |
+          set -euo pipefail
+          psql -v ON_ERROR_STOP=1 -f /tmp/post-migracion.sql
+          resultado=$(psql -v ON_ERROR_STOP=1 -At -f /tmp/comprobacion.sql)
+          echo "Comprobación: $resultado"
+          if [ "$resultado" != "t|f|f|t|f|t" ]; then
+            echo "::error::Permisos de BD inesperados ($resultado, se esperaba t|f|f|t|f|t). Ver OPERACIONES.md §7.2."
+            exit 1
+          fi
+          vacia=$(psql -At -c 'SELECT (SELECT count(*) FROM "Organization") + (SELECT count(*) FROM "User")')
+          test "$vacia" = "0" || { echo "::error::La base no está vacía después de migrar ($vacia filas)"; exit 1; }
+
+      - name: Arranque de plataforma, dos veces (idempotente)
+        env:
+          PLATFORM_ORG_SLUG: apta-plataforma-ci
+          PLATFORM_ADMIN_EMAIL: plataforma@ci.invalid
+          PGUSER: trainingzone_owner
+          PGPASSWORD: owner-ci
+          PGDATABASE: trainingzone
+        run: |
+          set -euo pipefail
+          # --force porque aquí NODE_ENV no es production; corre con apta_app.
+          npm run -s bootstrap:plataforma -- --force > /dev/null
+          npm run -s bootstrap:plataforma -- --force
+          filas=$(psql -At -c "SELECT (SELECT count(*) FROM \"Organization\" WHERE \"platformStatus\" = 'ACTIVE') || '|' ||
+                                      (SELECT count(*) FROM \"User\" WHERE role = 'PLATFORM_ADMIN') || '|' ||
+                                      (SELECT count(*) FROM \"Invitation\")")
+          echo "Organizaciones activas | admins | invitaciones: $filas"
+          test "$filas" = "1|1|1" || { echo "::error::El arranque de plataforma no es idempotente ($filas)"; exit 1; }
+
+      - name: Build
+        run: npm run build
+
+      # /api/health lo añade la pista P1. Mientras la ruta no exista en el
+      # checkout, se comprueba lo que se puede (la app sirve y apta_app conecta)
+      # y se avisa. En cuanto exista, nada que no sea un 200 vale: la
+      # transición se cierra sola, sin tener que acordarse de tocar esto.
+      # Ojo: hoy el proxy redirige a /login (307) todo lo que no es público, así
+      # que la ruta tiene que declararse pública o Render no la dará por buena.
+      - name: Arrancar la app contra /api/health
+        run: |
+          set -uo pipefail
+          npm run start > server.log 2>&1 &
+          for _ in $(seq 1 60); do
+            code=$(curl -s -o /tmp/health.json -w '%{http_code}' http://localhost:3000/api/health || true)
+            [ "$code" != "000" ] && break
+            sleep 2
+          done
+          echo "GET /api/health → HTTP $code"
+          cat /tmp/health.json 2>/dev/null; echo
+          if [ -d src/app/api/health ]; then
+            [ "$code" = "200" ] && exit 0
+            echo "::error::/api/health respondió $code con la base recién migrada y sin seed"
+            tail -n 100 server.log
+            exit 1
+          fi
+          echo "::warning::src/app/api/health no existe todavía (pista P1): se comprueba /login y la conexión de apta_app en su lugar."
+          login=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login)
+          echo "GET /login → HTTP $login"
+          psql "${DATABASE_URL%%\?*}" -At -c 'SELECT 1' > /dev/null || { echo "::error::apta_app no conecta"; exit 1; }
+          if [ "$login" != "200" ]; then
+            echo "::error::La app no sirve /login con la base vacía (HTTP $login)"
+            tail -n 100 server.log
+            exit 1
+          fi
+
+      - name: Guardar el log del servidor
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arranque-limpio-server-log
+          path: server.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # INF-04 · Comprobaciones de infraestructura que no necesitan base de datos.
+  infra:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      # `npm run test:unit` solo recorre src/: sin este paso, las pruebas de los
+      # scripts de operación no las ejecutaba nadie.
+      - name: Tests de los scripts de operación
+        run: npx tsx --test scripts/*.test.ts
+
+      # Una variable declarada solo en producción es un staging que no prueba
+      # lo que se va a desplegar; un valor literal en vez de `sync: false` es un
+      # secreto camino del repo.
+      - name: Blueprint de Render coherente
+        run: |
+          python3 -c 'import yaml' 2>/dev/null || sudo apt-get install -y -qq python3-yaml
+          python3 - <<'PY'
+          import sys, yaml
+          blueprint = yaml.safe_load(open("render.yaml"))
+          webs = {s["name"]: s for s in blueprint["services"] if s["type"] == "web"}
+          errores = []
+          claves = {n: [e["key"] for e in s.get("envVars", [])] for n, s in webs.items()}
+          if len(set(map(tuple, map(sorted, claves.values())))) > 1:
+              errores.append(f"los servicios web no declaran las mismas variables: {claves}")
+          for nombre, servicio in webs.items():
+              for e in servicio.get("envVars", []):
+                  if e["key"] == "PROGRESS_PHOTO_DIR":
+                      if not str(e.get("value", "")).startswith(servicio["disk"]["mountPath"] + "/"):
+                          errores.append(f"{nombre}: PROGRESS_PHOTO_DIR no está dentro del disco")
+                  elif e.get("sync") is not False:
+                      errores.append(f"{nombre}: {e['key']} no es sync: false")
+              if servicio.get("preDeployCommand") != "npx prisma migrate deploy":
+                  errores.append(f"{nombre}: preDeployCommand no es npx prisma migrate deploy")
+              if any(e["key"] == "NODE_ENV" for e in servicio.get("envVars", [])):
+                  errores.append(f"{nombre}: declara NODE_ENV (npm ci se saltaría las devDependencies)")
+          for error in errores:
+              print(f"::error file=render.yaml::{error}")
+          sys.exit(1 if errores else 0)
+          PY
+
+      # Primer día: informa, no rompe. Hay que ver primero qué sale; cuando el
+      # informe esté limpio, se quita el `exit 0` final y pasa a ser obligatorio.
+      - name: npm audit (informativo)
+        run: |
+          set +e
+          npm audit --audit-level=high > audit.txt 2>&1
+          code=$?
+          {
+            echo "## npm audit (--audit-level=high)"
+            echo
+            if [ "$code" = "0" ]; then
+              echo "Sin vulnerabilidades altas ni críticas."
+            else
+              echo "**Hay vulnerabilidades altas o críticas.** No rompe el build todavía (INF-04)."
+            fi
+            echo
+            echo '```'
+            tail -n 60 audit.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat audit.txt
+          if [ "$code" != "0" ]; then
+            echo "::warning::npm audit encuentra vulnerabilidades altas o críticas (ver el resumen del workflow)"
+          fi
+          exit 0

@@ -16,7 +16,8 @@
     "test:unit:coverage": "node scripts/test-unit-coverage.mjs",
     "test:e2e": "playwright test",
     "migrate:fotos": "tsx scripts/migrate-progress-photos.ts",
-    "export:fichajes": "tsx scripts/export-timeclock.ts"
+    "export:fichajes": "tsx scripts/export-timeclock.ts",
+    "bootstrap:plataforma": "tsx scripts/bootstrap-plataforma.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

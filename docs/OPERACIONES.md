@@ -29,6 +29,7 @@ Para la app nativa, `apps/mobile/README.md`.
 | `npm run test:e2e` | Playwright |
 | `npm run migrate:fotos` | Migración de fotos de progreso al almacén cifrado |
 | `npm run export:fichajes` | Exportación de fichajes (módulo aparcado) |
+| `npm run bootstrap:plataforma` | Organización de plataforma y su primer `PLATFORM_ADMIN` en una base limpia, sin seed (§7.3) |
 
 Otros scripts puntuales en `scripts/`: `limpiar-tareas.ts`,
 `simular-flujos.ts`.
@@ -163,16 +164,29 @@ Los specs de la app móvil viven en `apps/mobile` con `jest-expo` (ver
 más `workflow_dispatch` —sin él, la única forma de relanzar CI sobre una rama es
 empujar otro commit—. Postgres 16 como servicio.
 
-Dos jobs, y la razón de que sean dos es real:
+Los jobs, y la razón de que estén separados es real:
 
-- **`verify`** — lint → migraciones y seed → unitarias con cobertura → build →
-  e2e. Corre **sin claves de Stripe** a propósito, porque `/planes` debe arrancar
+- **`verify`** — lint → `tsc --noEmit` → migraciones y seed → comprobación de
+  que `bootstrap:plataforma` se niega sobre datos de demo → unitarias con
+  cobertura → build → e2e. Corre **sin claves de Stripe** a propósito, porque `/planes` debe arrancar
   en modo demo y eso es lo que verifica `planes-gateo.spec.ts`.
 - **`e2e-pago`** — los specs de alta comercial y alta completa del gimnasio
   necesitan justo lo contrario: `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET`
   presentes, para probar el alta pago-primero (compra → webhook firmado →
   activación). Las dos condiciones no caben en el mismo job, así que esos 13 tests
   **se saltaban enteros y nadie lo veía**.
+- **`arranque-limpio`** — el primer despliegue de producción: propietario **no
+  superusuario** (como el de Render), roles creados con el SQL de §7.2 **extraído
+  de este documento**, `migrate deploy` con el propietario y **sin seed**,
+  comprobación de permisos de `AuditLog`, `bootstrap:plataforma` dos veces
+  (idempotente), build y arranque contra `/api/health` con `apta_app`. Mientras
+  la ruta no exista (pista P1) avisa y comprueba `/login`; en cuanto exista, solo
+  vale un 200.
+- **`infra`** — pruebas de `scripts/*.test.ts` (que `test:unit` no recorre),
+  coherencia de `render.yaml` (mismas variables en producción y staging, todas
+  `sync: false`, sin `NODE_ENV`) y `npm audit --audit-level=high`, que **de
+  momento solo informa** en el resumen del workflow. Cuando salga limpio, se
+  quita el `exit 0` del paso y pasa a ser obligatorio.
 
 CI declara `DATA_REGION` a propósito: `npm run start` corre en modo producción y
 sin ella el servidor no arranca — que es justo el comportamiento que se quiere
@@ -222,7 +236,298 @@ Contraseña de todos: `demo1234`.
 ## 7. Despliegue
 
 Render, con la base de datos en **Frankfurt** (declarada en `DATA_REGION` y
-publicada en `/privacidad`; ver [ARQUITECTURA.md §5](./ARQUITECTURA.md)).
+publicada en `/privacidad`; ver [ARQUITECTURA.md §5](./ARQUITECTURA.md)). El
+plan de salida completo, con calendario y checklist, está en
+[PASO_A_PRODUCCION_2_CENTROS.md](./PASO_A_PRODUCCION_2_CENTROS.md); esta sección
+es la parte operativa que se repite en cada entorno.
 
-Antes de un despliegue con cambios de esquema: `npx prisma migrate deploy`. El
-`postinstall` ya corre `prisma generate`.
+> **Nunca** `npm run db:seed`, `prisma migrate dev` ni `prisma migrate reset`
+> contra staging o producción. El seed **vacía la base entera** antes de
+> sembrar (`prisma/seed.ts`, `main()`).
+
+### 7.1 Entornos
+
+`render.yaml` es un Blueprint con dos entornos gemelos:
+
+| | Producción | Staging |
+|---|---|---|
+| Web | `trainingzone-web` | `trainingzone-web-staging` |
+| Base de datos | `trainingzone-db` (Postgres 16) | `trainingzone-db-staging` (Postgres 16) |
+| Despliegue | **Manual** (`autoDeployTrigger: off`) | Automático al pasar CI en `main` |
+| Stripe | Live | **Test** |
+
+Los dos: Frankfurt, plan de pago, **una sola instancia** (el disco persistente
+de `/var/data`, donde viven las fotos de progreso, no se monta en dos),
+`preDeployCommand: npx prisma migrate deploy` y health check en `/api/health`.
+Todas las variables son `sync: false`: Render pide su valor al crear el
+Blueprint. Qué va en cada una: `.env.example` y el §3.2 del plan de salida.
+
+**No se declara `NODE_ENV`.** Con `production` durante el build, `npm ci` se
+salta las devDependencies y el build falla; `next build` y `next start` ya
+fijan el modo producción.
+
+> `/api/health` lo añade la pista P1. Hasta que esté en `main`, Render no dará
+> por bueno ningún despliegue: es intencionado.
+
+### 7.2 Roles de la base de datos (antes del primer despliegue)
+
+Tres roles, y la separación es la que hace que `AuditLog` sea append-only de
+verdad (E10-14):
+
+| Rol | Variable | Para qué |
+|---|---|---|
+| Propietario (`trainingzone_owner`, lo crea Render) | `DATABASE_MIGRATION_URL` | Solo `prisma migrate deploy` (`prisma.config.ts`). Sobre él un `REVOKE` no tiene efecto |
+| `apta_app` | `DATABASE_URL` | La aplicación. Puede **insertar** en `AuditLog`, nunca modificar ni borrar |
+| `apta_mantenimiento` | `DATA_RETENTION_DATABASE_URL` | Purgas de conservación: el único, además del propietario, que conserva el `DELETE` sobre `AuditLog` |
+
+**El orden importa.** La migración `20260906120000_costuras_servidor_q3` revoca
+`UPDATE, DELETE` sobre `AuditLog` a los roles que **existen en ese momento**. Si
+la base se migra antes de crear `apta_app`, el `REVOKE` no encuentra a nadie y el
+rol nace después con todos los permisos. Por eso:
+
+1. **Comprobar que el usuario de Render puede crear roles.** Conectado como el
+   propietario: `SELECT rolcreaterole FROM pg_roles WHERE rolname = current_user;`
+   tiene que dar `t`. Si da `f`, parar y abrir un ticket con Render antes de
+   seguir: sin roles separados no hay log append-only.
+2. **Crear los roles**, como el propietario y con la base todavía vacía. Es
+   idempotente: se puede repetir.
+
+<!-- sql:roles (CI ejecuta este bloque tal cual: job `arranque-limpio`) -->
+```sql
+-- Paso 1 · Roles, sin contraseña en el script (se fija después con \password).
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'apta_app') THEN
+    CREATE ROLE apta_app LOGIN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'apta_mantenimiento') THEN
+    CREATE ROLE apta_mantenimiento LOGIN;
+  END IF;
+END
+$$;
+
+GRANT USAGE ON SCHEMA public TO apta_app, apta_mantenimiento;
+
+-- Lo que cree el propietario a partir de ahora (todas las migraciones) nace
+-- con estos permisos. Por eso va ANTES de la primera migración.
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO apta_app, apta_mantenimiento;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO apta_app, apta_mantenimiento;
+
+-- CONNECT sobre la base actual, sea cual sea su nombre.
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO apta_app, apta_mantenimiento', current_database());
+END
+$$;
+```
+
+3. **Poner las contraseñas** sin que pasen por el historial de la shell ni por
+   ningún fichero: en `psql`, `\password apta_app` y `\password apta_mantenimiento`
+   (lo piden por teclado y envían el hash). Con ellas se montan
+   `DATABASE_URL` (`postgresql://apta_app:<clave>@<host interno>/<base>`) y
+   `DATA_RETENTION_DATABASE_URL` (igual, con `apta_mantenimiento`). Los caracteres
+   especiales de la clave van codificados en la URL.
+4. **Primer despliegue.** El `preDeployCommand` migra con el propietario
+   (`DATABASE_MIGRATION_URL`) y la app arranca con `apta_app` (`DATABASE_URL`).
+5. **Después de la primera migración**, quitar a los dos roles el acceso a la
+   tabla interna de Prisma, que se crea en ese momento:
+
+<!-- sql:post-migracion -->
+```sql
+REVOKE ALL ON TABLE "_prisma_migrations" FROM apta_app, apta_mantenimiento;
+```
+
+6. **Comprobar.** Cada columna tiene que dar lo que dice su comentario; si no,
+   la app no sale a producción:
+
+<!-- sql:comprobacion -->
+```sql
+SELECT
+  has_table_privilege('apta_app', '"AuditLog"', 'INSERT')           AS app_inserta,        -- t
+  has_table_privilege('apta_app', '"AuditLog"', 'UPDATE')           AS app_modifica,       -- f
+  has_table_privilege('apta_app', '"AuditLog"', 'DELETE')           AS app_borra,          -- f
+  has_table_privilege('apta_mantenimiento', '"AuditLog"', 'DELETE') AS mant_borra,         -- t
+  has_table_privilege('apta_app', '"_prisma_migrations"', 'SELECT') AS app_ve_migraciones, -- f
+  (SELECT tableowner FROM pg_tables WHERE tablename = 'AuditLog') <> 'apta_app' AS app_no_es_propietaria; -- t
+```
+
+**Sobre `apta.app_roles`.** El plan de salida (§3.1, paso 2) pide
+`ALTER DATABASE … SET apta.app_roles = 'apta_app'`. **No hace falta y en Render
+falla**: fijar un parámetro propio a nivel de base o de rol exige superusuario
+(`permission denied to set parameter "apta.app_roles"`, comprobado en Postgres
+16 con un propietario no superusuario, que es lo que da Render). La migración
+ya usa `apta_app` cuando el parámetro no existe, así que basta con que el rol se
+llame **exactamente** así. Solo si algún día se usan otros nombres habría que
+pedirle a Render un `GRANT SET ON PARAMETER "apta.app_roles"`.
+
+**Si la base ya se migró antes de crear los roles** (el orden salió mal), no hay
+que tirar nada: crear los roles con el bloque del paso 2 y, después, dar los
+permisos sobre lo que ya existe y repetir a mano el `REVOKE` que la migración no
+pudo aplicar. Luego, el paso 6.
+
+<!-- sql:arreglo-orden -->
+```sql
+-- Solo si la base YA se migró antes de crear los roles.
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO apta_app, apta_mantenimiento;
+GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO apta_app, apta_mantenimiento;
+REVOKE UPDATE, DELETE ON TABLE "AuditLog" FROM apta_app;
+REVOKE ALL ON TABLE "_prisma_migrations" FROM apta_app, apta_mantenimiento;
+```
+
+### 7.3 Primer arranque sin seed: la plataforma
+
+Producción nace **vacía**. Las organizaciones de los gimnasios solo se crean
+pagando (`/planes` → webhook → OWNER, RB-ALTA-001), pero para soporte y para
+revisar las altas hace falta alguien en el panel de plataforma, y sin seed no
+existe. `scripts/bootstrap-plataforma.ts` crea exactamente eso y nada más:
+
+- la organización de plataforma (slug `PLATFORM_ORG_SLUG`), en estado
+  `ACTIVE`: con el `PENDING_PAYMENT` por defecto, la purga de organizaciones sin
+  pagar la **borraría** a los días, porque no tiene socios, centros ni cobros;
+- un `PLATFORM_ADMIN` (`PLATFORM_ADMIN_EMAIL`) **sin contraseña**: recibe una
+  invitación por correo y la fija en `/onboarding/<token>`. El enlace no se
+  imprime nunca;
+- una fila en `AuditLog` (`PLATFORM_BOOTSTRAP`), sin el token.
+
+Desde la shell del servicio web en Render (tiene las variables del entorno):
+
+```bash
+NODE_ENV=production npm run bootstrap:plataforma
+```
+
+`NODE_ENV=production` va delante a propósito: Render no lo declara (§7.1) y el
+script se niega a correr fuera de producción salvo con `--force`. Variables:
+`PLATFORM_ORG_SLUG` y `PLATFORM_ADMIN_EMAIL` (obligatorias, ya en el blueprint),
+`PLATFORM_ORG_NAME` y `PLATFORM_ADMIN_NAME` (opcionales, en la propia línea).
+
+| Situación | Qué hace |
+|---|---|
+| Base vacía | Crea organización, administrador e invitación, y la envía |
+| Se vuelve a ejecutar | Nada: dice lo que ya existe. Con `--reenviar`, manda otra vez la invitación vigente |
+| La invitación caducó | La renueva (mismo registro, token nuevo) y la envía |
+| El email ya tiene contraseña en Apta | Crea la membresía sin invitación: entra con la suya |
+| Datos de demo (la organización `training-zone` o cuentas con la contraseña del seed) | **Se niega**, también con `--force` |
+| El slug es de una organización con socios, centros o cobros | Se niega: es un gimnasio |
+| El email ya tiene otro rol en esa organización, o está de baja | Se niega: no cambia roles en silencio |
+| En producción sin `BREVO_API_KEY` o con la URL pública en `localhost` | Se niega **antes de escribir nada**: la invitación no llegaría |
+
+`sendMail` registra los fallos de Brevo en el log en vez de propagarlos: si el
+correo no llega, se relanza con `--reenviar`. La lógica de decisión es pura y
+tiene sus pruebas en `scripts/bootstrap-plataforma.test.ts`, que corre CI
+(`npm run test:unit` solo recorre `src/`).
+
+
+### 7.4 Runbook de despliegue
+
+Producción **no despliega sola** (`autoDeployTrigger: off`). Staging sí, en cada
+commit de `main` con CI en verde. Lo que llega a producción es **un commit
+concreto que ya ha pasado por staging**, no «lo último de main».
+
+**Antes**
+
+1. CI verde en ese commit: `verify`, `e2e-pago`, `mobile`, `arranque-limpio` e
+   `infra` (el aviso de `npm audit` no bloquea, pero se lee).
+2. Staging desplegado con ese mismo commit: `/api/health` en 200, login con un
+   usuario de cada rol que toque el cambio y el recorrido afectado del guion de
+   regresión (§4 del plan de salida).
+3. **¿Trae migraciones?** `git diff <commit en producción>..<commit nuevo> --stat -- prisma/migrations`.
+   Si trae, leer el SQL:
+   - Nada que reescriba o bloquee una tabla grande a mitad de mañana (cambio de
+     tipo de columna, `NOT NULL` sin valor por defecto, índice sin
+     `CONCURRENTLY` en tablas como `Booking` o `AuditLog`).
+   - **Expandir y luego contraer**: una columna que el código deja de usar se
+     borra en un despliegue *posterior*, nunca en el mismo. Así, si hay que
+     volver al código anterior, el esquema nuevo le sigue valiendo.
+   - Apuntar la **hora exacta (UTC)** justo antes de desplegar: es el punto al
+     que se restauraría la base (§7.5).
+4. Fuera de las horas de los cron (05:00 UTC `jobs-cron`; 7, 11, 15 y 19 UTC
+   `flujos-cron`) y fuera de la hora punta de los centros. Con el disco
+   persistente el cambio de instancia deja **unos segundos sin servicio**.
+
+**Desplegar**
+
+5. Render → `trainingzone-web` → *Manual Deploy* → *Deploy a specific commit*,
+   con el commit validado en staging.
+6. Render hace build → `preDeployCommand` (`prisma migrate deploy` con el
+   propietario) → arranque → health check → cambio de instancia. **Si falla el
+   build o la migración, el despliegue se aborta y sigue sirviendo la versión
+   anterior**, pero una migración que falló a medias **deja la base a medias**:
+   ir a §7.5, caso B.
+
+**Después**
+
+7. `/api/health` en 200, login, una pantalla con datos de cada centro y los logs
+   del servicio sin errores nuevos durante 15 minutos.
+8. Si había migraciones: `npx prisma migrate status` desde la shell del servicio
+   dice *Database schema is up to date*.
+9. Al día siguiente, comprobar que el `jobs-cron` de las 05:00 UTC respondió 200
+   (no 207) en GitHub Actions.
+
+### 7.5 Rollback
+
+La regla que manda: **el código se revierte, la base de datos no**. Render puede
+volver a una versión anterior del código en un minuto; una migración aplicada,
+del todo o a medias, **no se deshace sola**. No hay un «migrate down».
+
+**Caso A · El despliegue salió bien pero la versión tiene un fallo, y no traía
+migraciones.** Render → `trainingzone-web` → *Events* → *Rollback* en el
+despliegue anterior. Arreglo en `main` y vuelta a empezar por §7.4.
+
+**Caso B · Una migración falló a medias en el `preDeployCommand`.** Render
+abortó el despliegue y sigue sirviendo la versión anterior, pero contra una base
+que tiene parte de la migración aplicada. Prisma la marca como fallida en
+`_prisma_migrations` y **ningún despliegue posterior migrará** hasta que alguien
+lo resuelva (error `P3009`).
+
+1. **No reintentar el despliegue a ciegas.** Ver qué se aplicó: el log del
+   `preDeployCommand` en Render dice qué sentencia falló; `npx prisma migrate status`
+   desde la shell dice qué migración quedó a medias.
+2. Comprobar si la versión que sigue sirviendo funciona con la base tal como
+   está (login y las pantallas que toquen las tablas afectadas). Si no, poner la
+   app en mantenimiento (*Suspend* del servicio) mientras se decide.
+3. **Restaurar la copia** (la opción por defecto): Render → `trainingzone-db` →
+   *Recovery* → restaurar a un instante (PITR) **anterior a la hora apuntada en
+   §7.4**. Render crea una base **nueva** con ese contenido (roles incluidos, son
+   del propio servidor Postgres). Después:
+   - cambiar `DATABASE_URL`, `DATABASE_MIGRATION_URL` y
+     `DATA_RETENTION_DATABASE_URL` del servicio web para que apunten al host
+     nuevo (mismos usuarios y contraseñas) y reiniciar;
+   - pasar la consulta de comprobación de §7.2 contra la base restaurada;
+   - arreglar la migración en una rama nueva, con su PR y su CI (`arranque-limpio`
+     la ejecuta sobre una base vacía), y volver a §7.4.
+   La base vieja se conserva unos días, sin borrarla, por si hubiera que sacar de
+   ella algo escrito después de ese instante.
+4. **Arreglar hacia delante**, solo si se entiende exactamente qué sentencias se
+   aplicaron y cuáles no: completar o deshacer a mano lo que quedó a medias y
+   marcarlo con `npx prisma migrate resolve --applied <migración>` (si se
+   completó) o `--rolled-back <migración>` (si se deshizo), con
+   `DATABASE_MIGRATION_URL`. Si hay la menor duda, restaurar.
+
+**Caso C · El despliegue salió bien, traía migraciones y la versión tiene un
+fallo.** Si la migración solo *añadía* (expandir, §7.4) el código anterior
+sigue funcionando: rollback de código como en el caso A y la base se queda como
+está. Si no, arreglar hacia delante o restaurar la copia como en el caso B,
+asumiendo que se pierde lo escrito desde el despliegue.
+
+**Lo que una restauración NO deshace** y hay que repasar a mano:
+
+- **Webhooks de Stripe** recibidos entre el instante restaurado y la
+  restauración: Stripe recibió un 200 y no los reenviará solo. Reenviarlos desde
+  el dashboard de Stripe (*Developers* → *Events*, filtrando por esa ventana),
+  para la cuenta de plataforma y para las cuentas conectadas. El procesado es
+  idempotente.
+- **Correos** enviados en esa ventana (invitaciones con tokens que ya no
+  existen: se reenvían desde la aplicación).
+- **Fotos de progreso** subidas en esa ventana: el fichero sigue en el disco
+  pero la referencia desapareció con la base. Quedan huérfanas; no se pierde
+  nada que no se haya perdido ya.
+
+**Nunca**, ni para salir del paso: `prisma migrate reset`, `prisma db push`,
+`npm run db:seed`, borrar o editar ficheros de `prisma/migrations/` ya
+desplegados, ni tocar `_prisma_migrations` a mano en vez de usar
+`migrate resolve`.
+
+La retención de las copias PITR depende del plan del workspace de Render:
+comprobarla en el dashboard de la base antes del go-live y apuntarla aquí.
