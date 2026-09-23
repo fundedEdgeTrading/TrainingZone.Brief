@@ -93,3 +93,29 @@ test("PROD-02 · instrumentation.ts lo ejecuta en el arranque, después de E10-0
   assert.ok(region > -1 && env > region, "assertProductionEnv tiene que llamarse tras la comprobación de región");
   assert.match(source, /\[E10-07\] Región de datos verificada: \$\{region\.label\} \(\$\{region\.country\}\)\./);
 });
+
+/**
+ * PROD-08 · el contrato de variables vive en `.env.example`: cada una que el
+ * arranque exige o que esta pista introduce tiene que estar ahí, con su
+ * comentario. Una variable que solo existe en el código es una variable que
+ * nadie configura hasta que algo se rompe.
+ */
+test("PROD-08 · .env.example documenta las variables exigidas y las de esta pista", () => {
+  const example = readFileSync(".env.example", "utf8");
+  const documented = new Set([...example.matchAll(/^([A-Z0-9_]+)=/gm)].map((m) => m[1]));
+  const expected = [
+    ...Object.keys(GOOD).filter((k) => k !== "NODE_ENV"),
+    "DEMO_MODE",
+    "ALLOW_DEMO_IN_PRODUCTION",
+    "AI_DPA_SIGNED_AT",
+    "AI_DEMO_ORG_SLUGS",
+    "FREEZE_MAX_DAYS_PER_YEAR",
+    "FREEZE_MIN_NOTICE_DAYS",
+    "AUTH_URL",
+    "SMTP_FROM",
+    "PROGRESS_PHOTO_DIR",
+    "DATABASE_MIGRATION_URL",
+  ];
+  const missing = expected.filter((name) => !documented.has(name));
+  assert.deepEqual(missing, [], `faltan en .env.example: ${missing.join(", ")}`);
+});
