@@ -1,19 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
 import { renderSessionReminderEmail } from "@/lib/emails/templates";
-import { sessionStartsAt, CANCEL_WINDOW_HOURS } from "@/lib/portal-queries";
-import { DEFAULT_TIMEZONE } from "@/lib/date-utils";
+import { sessionStartsAt, canCancelWithoutPenalty, CANCEL_WINDOW_HOURS } from "@/lib/portal-queries";
+import { DEFAULT_TIMEZONE, formatInstantDate } from "@/lib/date-utils";
 import { absoluteUrl } from "@/lib/site";
 
 /**
- * E5-03/RB-RES-013: recordatorios de sesión a 24h y 2h — el único canal es el
+ * E5-03/RB-RES-013: recordatorios de sesión el día anterior y a 2h (QA-RES-10:
+ * "a 24h" se lee como "mañana en el calendario del centro") — el único canal es el
  * email (el push queda congelado por el alcance de la app). Disparado desde
  * `/api/jobs/run`, como el resto de reglas temporales.
  *
  * Aviso de cadencia: `/api/jobs/run` corre HOY una sola vez al día
  * (`.github/workflows/jobs-cron.yml` / `render.yaml`, ambos a las 05:00 UTC).
- * El recordatorio de 24h vive bien con esa cadencia (siempre hay una pasada
- * antes de mañana), pero el de 2h solo puede llegar puntual si el cron corre
+ * El recordatorio del día anterior vive bien con esa cadencia (siempre hay una
+ * pasada el día antes, ver `dueReminderKinds`), pero el de 2h solo puede llegar puntual si el cron corre
  * con más frecuencia — devops tendría que programar `/api/jobs/run` (o un
  * endpoint dedicado más ligero) cada hora para que RB-RES-013 cumpla de
  * verdad su plazo de 2h en sesiones de tarde/noche. La regla de aquí es
@@ -27,7 +28,43 @@ const REMINDER_2H_ACTION = "SESSION_REMINDER_2H_SENT";
 
 type ReminderKind = "24H" | "2H";
 const REMINDER_ACTION: Record<ReminderKind, string> = { "24H": REMINDER_24H_ACTION, "2H": REMINDER_2H_ACTION };
-const REMINDER_THRESHOLD_HOURS: Record<ReminderKind, number> = { "24H": 24, "2H": 2 };
+const TWO_HOURS = 2;
+
+/** "dd/mm/aaaa" del día siguiente al de `instant` en `timeZone`. */
+function nextDayLabel(instant: Date, timeZone: string): string {
+  const [dd, mm, yyyy] = formatInstantDate(instant, timeZone).split("/").map(Number);
+  const next = new Date(Date.UTC(yyyy, mm - 1, dd + 1));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(next.getUTCDate())}/${pad(next.getUTCMonth() + 1)}/${next.getUTCFullYear()}`;
+}
+
+/**
+ * QA-RES-10 · Qué recordatorio toca AHORA para una sesión que empieza en
+ * `startsAt` (instante real), en la zona del centro.
+ *
+ * Antes cada variante salía en cuanto las horas que faltaban bajaban de su
+ * umbral (24 y 2), y eso tiene dos fallos que llegaban al socio:
+ *  · "Mañana entrenas" el MISMO día: con el cron diario de las 05:00 UTC, una
+ *    clase de las 20:00 de hoy está a 13 h ≤ 24 h;
+ *  · las dos a la vez: una pasada a menos de 2 h mandaba también la de 24 h si
+ *    aún no había salido.
+ *
+ * Ahora:
+ *  · a 2 h o menos, SOLO la de 2 h;
+ *  · la de 24 h solo si la sesión es MAÑANA en el calendario del centro —no en
+ *    el de UTC ni contando horas—, falten las horas que falten. Con la pasada
+ *    diaria es la única forma de que salga el día anterior; con una pasada
+ *    horaria saldría en la primera hora de ese día anterior;
+ *  · el mismo día y a más de 2 h, ninguna.
+ *
+ * Pura, con el instante como argumento, para probarla sin reloj ni base.
+ */
+export function dueReminderKinds(startsAt: Date, now: Date, timeZone: string): ReminderKind[] {
+  const hoursUntilStart = (startsAt.getTime() - now.getTime()) / (60 * 60 * 1000);
+  if (hoursUntilStart <= 0) return []; // ya empezó o pasó: no se avisa de lo que ya fue
+  if (hoursUntilStart <= TWO_HOURS) return ["2H"];
+  return formatInstantDate(startsAt, timeZone) === nextDayLabel(now, timeZone) ? ["24H"] : [];
+}
 
 // ---------- Preferencia propia del socio (independiente del resto de correo) ----------
 //
@@ -80,7 +117,12 @@ type ReminderBooking = {
   };
 };
 
-async function sendReminderOnce(orgId: string, booking: ReminderBooking, kind: ReminderKind): Promise<boolean> {
+async function sendReminderOnce(
+  orgId: string,
+  booking: ReminderBooking,
+  kind: ReminderKind,
+  now: Date
+): Promise<boolean> {
   const action = REMINDER_ACTION[kind];
   const already = await prisma.auditLog.findFirst({
     where: { entityType: REMINDER_ENTITY, entityId: booking.id, action },
@@ -120,19 +162,26 @@ async function sendReminderOnce(orgId: string, booking: ReminderBooking, kind: R
       room: booking.session.room ?? undefined,
       trainerName: booking.session.trainer?.name,
       cancelWindowHours: CANCEL_WINDOW_HOURS,
+      // Con una ventana más larga que el adelanto del aviso (p. ej. 48 h), el
+      // "Mañana entrenas" llega ya dentro de ella: prometer la cancelación
+      // gratis sería mentir.
+      withinCancelWindow: !canCancelWithoutPenalty(startsAt, now),
     }),
   });
 
   return true;
 }
 
-/** RB-RES-013: recordatorios a 24h y 2h de reservas BOOKED que aún no han empezado. */
-export async function runSessionReminderRule(orgId: string): Promise<number> {
-  const now = new Date();
+/**
+ * RB-RES-013: recordatorios del día anterior y a 2h de reservas BOOKED que aún
+ * no han empezado. `now` solo se pasa en tests.
+ */
+export async function runSessionReminderRule(orgId: string, now: Date = new Date()): Promise<number> {
   // Ventana amplia a propósito (ver cabecera): cubre sobradamente ambos
-  // umbrales sea cual sea la cadencia real del cron.
+  // avisos sea cual sea la cadencia real del cron. Por arriba, 48 h: "mañana"
+  // en el calendario del centro puede quedar a más de 24 h (QA-RES-10).
   const horizonStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  const horizonEnd = new Date(now.getTime() + 26 * 60 * 60 * 1000);
+  const horizonEnd = new Date(now.getTime() + 48 * 60 * 60 * 1000);
 
   const bookings = await prisma.booking.findMany({
     where: {
@@ -162,12 +211,8 @@ export async function runSessionReminderRule(orgId: string): Promise<number> {
   for (const booking of bookings) {
     const timezone = booking.session.center.timezone || DEFAULT_TIMEZONE;
     const startsAt = sessionStartsAt(booking.occurrenceDate, booking.session.startTime, timezone);
-    const hoursUntilStart = (startsAt.getTime() - now.getTime()) / (60 * 60 * 1000);
-    if (hoursUntilStart <= 0) continue; // ya empezó o pasó: no se avisa de lo que ya fue
-
-    for (const kind of Object.keys(REMINDER_THRESHOLD_HOURS) as ReminderKind[]) {
-      if (hoursUntilStart > REMINDER_THRESHOLD_HOURS[kind]) continue;
-      if (await sendReminderOnce(orgId, booking, kind)) sent++;
+    for (const kind of dueReminderKinds(startsAt, now, timezone)) {
+      if (await sendReminderOnce(orgId, booking, kind, now)) sent++;
     }
   }
 
