@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import AptaLogo from "@/components/apta-logo";
 import { prisma } from "@/lib/prisma";
@@ -16,11 +16,12 @@ export default async function DemoCheckoutPage({
 }: {
   searchParams: Promise<{ plan?: string }>;
 }) {
-  // PROD-01: con el modo demo apagado (DEMO_MODE) esta pantalla NO EXISTE —
-  // 404, no redirección: una redirección a /planes seguía anunciando que la
-  // ruta estaba ahí. Se comprueba aquí además de en el layout porque layout y
-  // página se renderizan a la vez y la página consulta la base de datos.
-  if (!isDemoModeActive()) notFound();
+  // PROD-01: con el modo demo apagado (DEMO_MODE) esta pantalla no existe y se
+  // manda al catálogo real, que es donde vive la compra de verdad. Redirección
+  // y no 404 porque así lo fija la regresión de producción (§4.8 X4 de
+  // docs/PASO_A_PRODUCCION_2_CENTROS.md) y porque quien llegue con un enlace
+  // viejo de demo aterriza en un sitio útil.
+  if (!isDemoModeActive()) redirect("/planes");
 
   const { plan: planCode } = await searchParams;
   const plan = getPlatformPlan(planCode);

@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import AptaLogo from "@/components/apta-logo";
 import { isDemoModeActive } from "@/lib/platform-plans";
@@ -27,8 +27,10 @@ export default async function DemoMemberCheckoutPage({
 }: {
   searchParams: Promise<{ t?: string }>;
 }) {
-  // PROD-01: con el modo demo apagado (DEMO_MODE) esta pantalla no existe.
-  if (!isDemoModeActive()) notFound();
+  // PROD-01: con el modo demo apagado (DEMO_MODE) esta pantalla no existe y se
+  // va a donde el socio compra de verdad (sin sesión, el proxy lo lleva antes
+  // a /login). Redirección y no 404: §4.8 X4 de PASO_A_PRODUCCION_2_CENTROS.md.
+  if (!isDemoModeActive()) redirect("/portal/membresia");
 
   const { t: token } = await searchParams;
   if (!token) notFound();
