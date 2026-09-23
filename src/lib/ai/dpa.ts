@@ -17,35 +17,54 @@
  *
  *   AI_DPA_SIGNED_AT="2026-09-20"   → firmado a partir de esa fecha
  *   AI_DEMO_ORG_SLUGS="a,b"         → organizaciones cuyos datos son de demo
+ *                                     (vacía en producción = ninguna; fuera de
+ *                                     producción = "training-zone", la semilla)
  */
 
-/** Organizaciones sembradas por `prisma/seed.ts`: datos inventados, no personas. */
+/**
+ * Organizaciones sembradas por `prisma/seed.ts`: datos inventados, no personas.
+ * Solo como valor por defecto FUERA de producción (PROD-05): en producción un
+ * slug es de quien se registre con él, y "training-zone" es el nombre del
+ * centro piloto real.
+ */
 const DEFAULT_DEMO_ORG_SLUGS = ["training-zone"];
 
-export function aiDpaSignedAt(): Date | null {
-  const raw = process.env.AI_DPA_SIGNED_AT?.trim();
+/** Lo que este módulo lee del entorno; inyectable para poder probarlo. */
+export type DpaEnv = {
+  AI_DPA_SIGNED_AT?: string;
+  AI_DEMO_ORG_SLUGS?: string;
+  NODE_ENV?: string;
+};
+
+export function aiDpaSignedAt(env: DpaEnv = process.env): Date | null {
+  const raw = env.AI_DPA_SIGNED_AT?.trim();
   if (!raw) return null;
   const date = new Date(raw);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
 /** Firmado = hay fecha y ya ha llegado. Una fecha futura todavía no vale. */
-export function isAiDpaSigned(now: Date = new Date()): boolean {
-  const signedAt = aiDpaSignedAt();
+export function isAiDpaSigned(now: Date = new Date(), env: DpaEnv = process.env): boolean {
+  const signedAt = aiDpaSignedAt(env);
   return signedAt !== null && signedAt.getTime() <= now.getTime();
 }
 
-export function demoOrgSlugs(): string[] {
-  const raw = process.env.AI_DEMO_ORG_SLUGS?.trim();
-  if (!raw) return DEFAULT_DEMO_ORG_SLUGS;
+/**
+ * PROD-05: sin `AI_DEMO_ORG_SLUGS`, en producción la lista es VACÍA. Antes caía
+ * a ["training-zone"] en cualquier entorno, así que una organización real con
+ * ese slug se saltaba la puerta del DPA sin que nadie lo hubiera decidido.
+ */
+export function demoOrgSlugs(env: DpaEnv = process.env): string[] {
+  const raw = env.AI_DEMO_ORG_SLUGS?.trim();
+  if (!raw) return env.NODE_ENV === "production" ? [] : [...DEFAULT_DEMO_ORG_SLUGS];
   return raw
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 }
 
-export function isDemoOrgSlug(slug: string | null | undefined): boolean {
-  return !!slug && demoOrgSlugs().includes(slug);
+export function isDemoOrgSlug(slug: string | null | undefined, env: DpaEnv = process.env): boolean {
+  return !!slug && demoOrgSlugs(env).includes(slug);
 }
 
 export const AI_DPA_BLOCKED_REASON =
@@ -60,8 +79,12 @@ export type AiGenerationGate = { allowed: true } | { allowed: false; reason: str
  * después: el bloqueo es sobre el tratamiento, y leer la ficha para luego no
  * usarla ya sería tratarla.
  */
-export function aiGenerationGate(org: { slug: string | null }, now: Date = new Date()): AiGenerationGate {
-  if (isAiDpaSigned(now)) return { allowed: true };
-  if (isDemoOrgSlug(org.slug)) return { allowed: true };
+export function aiGenerationGate(
+  org: { slug: string | null },
+  now: Date = new Date(),
+  env: DpaEnv = process.env
+): AiGenerationGate {
+  if (isAiDpaSigned(now, env)) return { allowed: true };
+  if (isDemoOrgSlug(org.slug, env)) return { allowed: true };
   return { allowed: false, reason: AI_DPA_BLOCKED_REASON };
 }
