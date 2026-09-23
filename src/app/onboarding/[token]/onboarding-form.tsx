@@ -14,6 +14,11 @@ type Props = {
   type: "MEMBER" | "STAFF" | "OWNER";
   firstName: string;
   email: string;
+  /**
+   * RB-ID-003 (QA-ALTA-09): la identidad ya tiene contraseña en Apta. No se le
+   * pide otra —la acción tampoco la cambiaría—: acepta y entra con la suya.
+   */
+  hasPassword: boolean;
   orgName: string;
   orgLogoUrl: string;
   contextLabel: string;
@@ -70,9 +75,20 @@ const CONSENT_DEFS = [
   },
 ];
 
-export default function OnboardingForm({ token, type, firstName, email, orgName, orgLogoUrl, contextLabel }: Props) {
+export default function OnboardingForm({
+  token,
+  type,
+  firstName,
+  email,
+  hasPassword,
+  orgName,
+  orgLogoUrl,
+  contextLabel,
+}: Props) {
   const router = useRouter();
-  const [phase, setPhase] = useState<"pass" | "consent" | "done">("pass");
+  const [phase, setPhase] = useState<"pass" | "account" | "consent" | "done">(
+    hasPassword ? (type === "MEMBER" ? "consent" : "account") : "pass"
+  );
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
   const [consents, setConsents] = useState({ health: false, contract: false, images: false, marketing: false, ai: false });
@@ -95,9 +111,10 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
     setError(null);
     const result =
       type === "STAFF" || type === "OWNER"
-        ? await completeStaffOnboarding(token, pass1)
+        ? await completeStaffOnboarding(token, hasPassword ? undefined : pass1)
         : await completeMemberOnboarding(token, {
-            password: pass1,
+            password: hasPassword ? undefined : pass1,
+            consentContract: consents.contract,
             consentHealth: consents.health,
             consentImages: consents.images,
             consentMarketing: consents.marketing,
@@ -108,6 +125,14 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
     if (!result.ok) {
       setPending(false);
       setError(result.error);
+      return;
+    }
+
+    // Con cuenta previa no hay contraseña que usar aquí: se le manda al login
+    // para que entre con la suya.
+    if (hasPassword) {
+      setPending(false);
+      setPhase("done");
       return;
     }
 
@@ -147,7 +172,7 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
           <img src={orgLogoUrl} alt={orgName} className="h-[34px] w-auto object-contain inline-block" />
         </div>
 
-        {phase !== "done" && type === "MEMBER" && (
+        {phase !== "done" && type === "MEMBER" && !hasPassword && (
           <div className="flex justify-center gap-2 mb-5">
             <span className="w-9 h-[5px] rounded-pill bg-tz-black" />
             <span className={clsx("w-9 h-[5px] rounded-pill transition-colors duration-300", phase === "pass" ? "bg-tz-linen" : "bg-tz-black")} />
@@ -224,10 +249,38 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
             </form>
           )}
 
+          {phase === "account" && (
+            <div className="tz-wiz-a">
+              <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted">
+                Ya tienes cuenta
+              </div>
+              <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] mt-1.5">
+                ¡Hola, {firstName}!
+              </h1>
+              <p className="text-sm text-muted mt-2 mb-5">
+                Tu cuenta <b className="text-text-2">{email}</b> ya tiene contraseña. Acepta la invitación a {orgName} (
+                {contextLabel}) y entra con tu contraseña de siempre.
+              </p>
+              {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2 mb-3">{error}</p>}
+              <Button size="lg" onClick={finish} disabled={pending}>
+                {pending && <ButtonSpinner />}
+                {pending ? "Procesando..." : "Aceptar invitación →"}
+              </Button>
+            </div>
+          )}
+
           {phase === "consent" && type === "MEMBER" && (
             <div className="tz-wiz-a">
-              <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted">Paso 2 de 2</div>
+              <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted">
+                {hasPassword ? "Ya tienes cuenta" : "Paso 2 de 2"}
+              </div>
               <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] mt-1.5">Tus datos, tus reglas</h1>
+              {hasPassword && (
+                <p className="text-sm text-muted mt-2">
+                  Tu cuenta <b className="text-text-2">{email}</b> ya tiene contraseña: no hace falta crear otra. Al
+                  terminar, entra con tu contraseña de siempre.
+                </p>
+              )}
               <p className="text-sm text-muted mt-2 mb-5">
                 Para entrenar contigo de forma segura necesitamos tu consentimiento expreso. Puedes retirarlo en
                 cualquier momento desde tu perfil.
@@ -284,13 +337,17 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
               </div>
               {error && <p className="text-sm text-critical bg-critical-bg rounded-control px-3 py-2 mt-3">{error}</p>}
               <div className="flex justify-between items-center mt-5">
-                <button
-                  type="button"
-                  onClick={() => setPhase("pass")}
-                  className="font-semibold bg-transparent text-text-2 rounded-control px-3.5 py-2.5 text-sm transition-colors duration-200 hover:bg-tz-linen/40"
-                >
-                  ← Atrás
-                </button>
+                {hasPassword ? (
+                  <span />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPhase("pass")}
+                    className="font-semibold bg-transparent text-text-2 rounded-control px-3.5 py-2.5 text-sm transition-colors duration-200 hover:bg-tz-linen/40"
+                  >
+                    ← Atrás
+                  </button>
+                )}
                 <Button size="lg" onClick={finish} disabled={!consentOk || pending}>
                   {pending && <ButtonSpinner />}
                   {pending ? "Guardando..." : "Guardar y entrar →"}
@@ -315,12 +372,28 @@ export default function OnboardingForm({ token, type, firstName, email, orgName,
                 </svg>
               </div>
               <h1 className="font-display font-extrabold text-[26px] uppercase tracking-[-.01em]">¡Todo listo, {firstName}!</h1>
-              <p className="text-sm text-muted mt-2.5">
-                Tu contraseña{type === "MEMBER" ? " y consentimientos" : ""} se han guardado.
-                <br />
-                Te llevamos a <b className="text-text-2">{destinationLabel}</b>
-                {countdown ? ` en ${countdown}…` : "…"}
-              </p>
+              {hasPassword ? (
+                <>
+                  <p className="text-sm text-muted mt-2.5">
+                    {type === "MEMBER" ? "Tus consentimientos se han guardado." : `Ya formas parte de ${orgName}.`}
+                    <br />
+                    Entra con tu contraseña de siempre.
+                  </p>
+                  <a
+                    href="/login"
+                    className="inline-block mt-5 font-semibold bg-tz-black text-tz-bone rounded-control px-6 py-3 text-sm no-underline"
+                  >
+                    Entrar con tu contraseña
+                  </a>
+                </>
+              ) : (
+                <p className="text-sm text-muted mt-2.5">
+                  Tu contraseña{type === "MEMBER" ? " y consentimientos" : ""} se han guardado.
+                  <br />
+                  Te llevamos a <b className="text-text-2">{destinationLabel}</b>
+                  {countdown ? ` en ${countdown}…` : "…"}
+                </p>
+              )}
             </div>
           )}
         </div>

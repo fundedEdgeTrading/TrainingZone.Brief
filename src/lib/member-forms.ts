@@ -578,6 +578,12 @@ export type MemberFormSubmission = {
   /** `yyyy-mm-dd`. Obligatoria si no constaba ya en la ficha (E10-12). */
   birthDate?: string | null;
   sex?: Sex | null;
+  /**
+   * Profesión (`Member.occupation` / `Lead.occupation`). Es parte de la
+   * valoración inicial —condiciona horarios, sedentarismo y cargas— pero no
+   * vive en `answers`: ya tiene columna en la ficha, que es donde se lee.
+   */
+  occupation?: string | null;
   consents: Partial<Record<ConsentKind, boolean>>;
   guardian?: GuardianDeclaration | null;
   now?: Date;
@@ -607,8 +613,10 @@ export async function submitMemberForm(input: MemberFormSubmission): Promise<Sub
       memberId: true,
       leadId: true,
       organization: { select: { allowsMinors: true, minimumAgeYears: true } },
-      member: { select: { id: true, firstName: true, lastName: true, birthDate: true, consentHealth: true } },
-      lead: { select: { id: true, firstName: true, lastName: true, birthDate: true, goals: true } },
+      member: {
+        select: { id: true, firstName: true, lastName: true, birthDate: true, consentHealth: true, occupation: true },
+      },
+      lead: { select: { id: true, firstName: true, lastName: true, birthDate: true, goals: true, occupation: true } },
     },
   });
 
@@ -683,7 +691,14 @@ export async function submitMemberForm(input: MemberFormSubmission): Promise<Sub
     });
   }
   if (invite.leadId && invite.lead) {
-    return submitForLead({ invite: target, leadId: invite.leadId, input, birthDate, now });
+    return submitForLead({
+      invite: target,
+      leadId: invite.leadId,
+      leadOccupation: invite.lead.occupation,
+      input,
+      birthDate,
+      now,
+    });
   }
   return { ok: false, error: MEMBER_FORM_INVALID_MESSAGE.notfound };
 }
@@ -731,7 +746,14 @@ type SubmitContext = {
 
 async function submitForMember(
   ctx: SubmitContext & {
-    member: { id: string; firstName: string; lastName: string; birthDate: Date | null; consentHealth: boolean };
+    member: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      birthDate: Date | null;
+      consentHealth: boolean;
+      occupation: string | null;
+    };
     minor: boolean;
     config: Awaited<ReturnType<typeof getAssessmentConfig>>;
   }
@@ -791,6 +813,7 @@ async function submitForMember(
       data: {
         // Solo lo que faltaba: un formulario no pisa lo que ya hay en la ficha.
         ...(member.birthDate == null && ctx.birthDate ? { birthDate: ctx.birthDate } : {}),
+        ...occupationPatch(member.occupation, input.occupation),
         ...consentPatch(input.consents, now),
         // La versión del texto que la persona tenía delante al aceptar. Es lo
         // que decide si algún día hay que volver a pedírselo (`needsReconsent`).
@@ -866,7 +889,7 @@ async function submitForMember(
  * guardarlas con el trato que les corresponde.
  */
 async function submitForLead(
-  ctx: SubmitContext & { leadId: string }
+  ctx: SubmitContext & { leadId: string; leadOccupation: string | null }
 ): Promise<SubmitMemberFormResult> {
   const { invite, input, now, leadId } = ctx;
 
@@ -875,17 +898,21 @@ async function submitForLead(
     return { ok: false, error: "Falta responder «Objetivo principal»." };
   }
 
-  const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { firstName: true, lastName: true } });
+  const lead = await prisma.lead.findUnique({
+    where: { id: leadId },
+    select: { firstName: true, lastName: true, goals: true },
+  });
 
   await prisma.$transaction(async (tx) => {
     await tx.lead.update({
       where: { id: leadId },
       data: {
-        goals: answers.goals,
+        goals: mergeLeadGoals(lead?.goals ?? "", answers.goalParts),
         hasTrainedBefore: answers.hasTrainedBefore,
         ...(answers.hasTrainedNote ? { hasTrainedNote: answers.hasTrainedNote } : {}),
         ...(ctx.birthDate ? { birthDate: ctx.birthDate } : {}),
         ...(input.sex ? { sex: input.sex } : {}),
+        ...occupationPatch(ctx.leadOccupation, input.occupation),
       },
     });
 
@@ -958,10 +985,29 @@ function leadAnswersOf(raw: unknown) {
 
   return {
     objetivoPrincipal,
-    goals: partes.join(" · ").slice(0, 2000),
+    goalParts: partes,
     hasTrainedBefore: experiencia.haEntrenadoAntes === true,
     hasTrainedNote: text(experiencia.ejerciciosNoTolera).slice(0, 500) || null,
   };
+}
+
+/**
+ * QA-ALTA-21: el formulario COMPLETA los objetivos del lead, no los sustituye.
+ * Lo que recepción o la captación pública ya apuntaron ("Ponerme en forma") es
+ * tan dato del lead como lo que contesta ahora; antes se machacaba entero. Se
+ * añade cada parte que no constara ya (sin distinguir mayúsculas), en orden.
+ */
+export function mergeLeadGoals(existing: string, parts: string[]): string {
+  const current = existing.trim();
+  const known = current.toLowerCase();
+  const missing = parts.filter((part) => part && !known.includes(part.toLowerCase()));
+  return [current, ...missing].filter(Boolean).join(" · ").slice(0, 2000);
+}
+
+/** La profesión declarada, solo si la ficha no tenía: como el resto, no pisa lo que ya hay. */
+function occupationPatch(current: string | null, declared: string | null | undefined) {
+  const value = declared?.trim().slice(0, 120);
+  return !current?.trim() && value ? { occupation: value } : {};
 }
 
 /** Los cuatro consentimientos de `Member`, y solo los que se han otorgado. */
