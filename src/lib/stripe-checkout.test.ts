@@ -1,9 +1,16 @@
 import "dotenv/config";
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
-import type Stripe from "stripe";
+import Stripe from "stripe";
+import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { reconcileConnectCheckoutCompleted } from "@/lib/stripe-checkout";
+import { POST } from "@/app/api/stripe/webhook/route";
+
+// Igual que `stripe-webhook-dispatch.test.ts`: la ruta lee las dos variables en
+// cada petición, así que basta con fijarlas antes de la primera entrega.
+process.env.STRIPE_SECRET_KEY ||= "sk_test_chk_checkout";
+process.env.STRIPE_CONNECT_WEBHOOK_SECRET ||= "whsec_chk_checkout";
 
 /**
  * Conciliación de `checkout.session.completed` en la cuenta conectada (pista
@@ -17,6 +24,7 @@ import { reconcileConnectCheckoutCompleted } from "@/lib/stripe-checkout";
  */
 
 const SUFFIX = "e2e-chk-test";
+const EVENT_PREFIX = `evt_${SUFFIX}`;
 
 type Fixture = { orgId: string; centerId: string; planId: string; memberId: string; paymentId: string; sessionId: string };
 
@@ -59,15 +67,15 @@ function paidMemberSession(f: Fixture): Stripe.Checkout.Session {
 }
 
 /**
- * Hace fallar de verdad la creación del bono de un socio, a nivel de base de
- * datos: es el "algo falla entre medias" del hallazgo sin meter ganchos de
- * prueba en el código de producción.
+ * Hace fallar de verdad la creación de un bono (el de ese socio, o el de ese
+ * plan), a nivel de base de datos: es el "algo falla entre medias" de los
+ * hallazgos sin meter ganchos de prueba en el código de producción.
  */
-async function breakBonoCreation(memberId: string) {
+async function breakBonoCreation(column: "memberId" | "planId", value: string) {
   await prisma.$executeRawUnsafe(`
     CREATE OR REPLACE FUNCTION chk_test_fail_subscription() RETURNS trigger AS $$
     BEGIN
-      IF NEW."memberId" = '${memberId}' THEN RAISE EXCEPTION 'fallo simulado al crear el bono'; END IF;
+      IF NEW."${column}" = '${value}' THEN RAISE EXCEPTION 'fallo simulado al crear el bono'; END IF;
       RETURN NEW;
     END $$ LANGUAGE plpgsql;
   `);
@@ -84,6 +92,7 @@ async function restoreBonoCreation() {
 
 async function cleanup() {
   await restoreBonoCreation();
+  await prisma.stripeWebhookEvent.deleteMany({ where: { id: { startsWith: EVENT_PREFIX } } });
   const orgs = await prisma.organization.findMany({ where: { slug: { startsWith: SUFFIX } }, select: { id: true } });
   for (const org of orgs) {
     await prisma.auditLog.deleteMany({ where: { orgId: org.id } });
@@ -114,9 +123,10 @@ test("CHK-01: si crear el bono falla, el Payment NO queda PAID y la reentrega cr
   const f = await createFixture("atomico");
   const session = paidMemberSession(f);
 
-  await breakBonoCreation(f.memberId);
+  await breakBonoCreation("memberId", f.memberId);
   try {
-    await assert.rejects(reconcileConnectCheckoutCompleted(f.orgId, session));
+    const fallo = await reconcileConnectCheckoutCompleted(f.orgId, session);
+    assert.equal(fallo.ok, false, "el fallo se propaga para que Stripe reintente");
   } finally {
     await restoreBonoCreation();
   }
@@ -160,4 +170,106 @@ test("CHK-01: una reentrega normal no duplica el bono", async () => {
 
   assert.equal(await prisma.subscription.count({ where: { memberId: f.memberId } }), 1);
   assert.equal(await prisma.sessionLedger.count({ where: { orgId: f.orgId } }), 1);
+});
+
+// ---------------------------------------------------------------------------
+// CHK-02 · Un alta pagada desde la landing no se pierde (RB-PAGO-002)
+// ---------------------------------------------------------------------------
+
+type LandingFixture = { orgId: string; centerId: string; planId: string; email: string; accountId: string };
+
+async function createLandingFixture(tag: string, planType: "SESSION_PACK" | "MONTHLY" = "SESSION_PACK"): Promise<LandingFixture> {
+  const slug = `${SUFFIX}-${tag}`;
+  const org = await prisma.organization.create({ data: { name: `CHK ${tag}`, slug } });
+  const center = await prisma.center.create({ data: { orgId: org.id, name: `Centro ${tag}`, slug: `${slug}-centro` } });
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: org.id, name: `Plan ${tag}`, type: planType, priceCents: 4900, sessionsIncluded: 8 },
+  });
+  const accountId = `acct_${slug}`;
+  await prisma.stripeAccount.create({ data: { orgId: org.id, accountId, chargesEnabled: true, payoutsEnabled: true } });
+  return { orgId: org.id, centerId: center.id, planId: plan.id, email: `${slug}@example.com`, accountId };
+}
+
+/** Doble de la sesión que crea `createProspectMemberCheckout` en `/hazte-socio`. */
+function landingSession(
+  f: LandingFixture,
+  tag: string,
+  overrides: Partial<Record<"mode" | "payment_status" | "customer" | "subscription", string>> = {}
+): Stripe.Checkout.Session {
+  return {
+    id: `cs_${SUFFIX}-${tag}`,
+    status: "complete",
+    payment_status: overrides.payment_status ?? "paid",
+    mode: overrides.mode ?? "payment",
+    payment_intent: overrides.mode === "subscription" ? null : `pi_${SUFFIX}-${tag}`,
+    subscription: overrides.subscription ?? null,
+    customer: overrides.customer ?? null,
+    amount_total: 4900,
+    metadata: {
+      orgId: f.orgId,
+      centerId: f.centerId,
+      planId: f.planId,
+      prospectFirstName: "Lucía",
+      prospectLastName: "Landing",
+      prospectEmail: f.email,
+      prospectPhone: "",
+    },
+  } as unknown as Stripe.Checkout.Session;
+}
+
+/** Entrega firmada con el HMAC real, como la haría Stripe a la cuenta conectada. */
+async function deliver(eventId: string, accountId: string, session: Stripe.Checkout.Session) {
+  const payload = JSON.stringify({ id: eventId, type: "checkout.session.completed", account: accountId, data: { object: session } });
+  const signature = Stripe.webhooks.generateTestHeaderString({ payload, secret: process.env.STRIPE_CONNECT_WEBHOOK_SECRET! });
+  const req = new NextRequest("http://localhost/api/stripe/webhook", {
+    method: "POST",
+    body: payload,
+    headers: { "stripe-signature": signature, "content-type": "application/json" },
+  });
+  return (await POST(req)).status;
+}
+
+test("CHK-02: un plan que no existe devuelve ok:false en vez de callarse", async () => {
+  const f = await createLandingFixture("sin-plan");
+  const session = landingSession(f, "sin-plan");
+  session.metadata!.planId = "plan-que-no-existe";
+
+  const result = await reconcileConnectCheckoutCompleted(f.orgId, session);
+  assert.equal(result?.ok, false);
+});
+
+test("CHK-02: el alta que falla a medias se reintenta y la reentrega la completa", async () => {
+  const f = await createLandingFixture("reintento");
+  const session = landingSession(f, "reintento");
+
+  await breakBonoCreation("planId", f.planId);
+  try {
+    const fallo = await reconcileConnectCheckoutCompleted(f.orgId, session);
+    assert.equal(fallo?.ok, false, "el error ya no se traga: Stripe tiene que reintentar");
+  } finally {
+    await restoreBonoCreation();
+  }
+
+  const result = await reconcileConnectCheckoutCompleted(f.orgId, session);
+  assert.equal(result.ok, true);
+
+  const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  const payment = await prisma.payment.findUniqueOrThrow({ where: { stripeCheckoutSessionId: session.id } });
+  assert.equal(payment.memberId, member.id);
+  assert.equal(payment.status, "PAID");
+  assert.ok(payment.subscriptionId, "la reentrega termina el alta: el socio tiene su bono");
+  assert.equal(await prisma.member.count({ where: { orgId: f.orgId } }), 1, "sin ficha duplicada");
+});
+
+test("CHK-02: la ruta del webhook responde 500 si el alta desde la landing falla", async () => {
+  const f = await createLandingFixture("ruta");
+  const session = landingSession(f, "ruta");
+  session.metadata!.centerId = "centro-que-no-existe";
+
+  const status = await deliver(`${EVENT_PREFIX}-ruta`, f.accountId, session);
+  assert.equal(status, 500, "con 200 Stripe daría el evento por consumido y el alta pagada se perdería");
+
+  const evento = await prisma.stripeWebhookEvent.findUniqueOrThrow({ where: { id: `${EVENT_PREFIX}-ruta` } });
+  assert.equal(evento.processedAt, null, "el evento no queda sellado como procesado");
+  assert.ok(evento.lastError, "y queda anotado por qué");
 });
