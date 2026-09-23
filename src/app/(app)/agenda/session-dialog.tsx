@@ -99,6 +99,8 @@ export default function SessionDialog({
   const toast = useToast();
   const mounted = useMounted();
   const [scopeOpen, setScopeOpen] = useState(false);
+  // QA-RES-05: borrar una serie también pregunta el alcance.
+  const [deleteScopeOpen, setDeleteScopeOpen] = useState(false);
   const [tab, setTab] = useState<"details" | "attendees">("details");
   // El apartado de asistentes gestiona el roster de una sesión YA GUARDADA de
   // grupo reducido: en EP el socio se maneja con el campo "Socio asignado", y
@@ -157,6 +159,12 @@ export default function SessionDialog({
    * pasados. Se pregunta el alcance antes de tocar nada.
    */
   function handleSave() {
+    // Una sesión que llegó sin entrenador (QA-RES-11) no se guarda sin elegir
+    // uno: la acción caería a quien guarda y la asignaría en silencio.
+    if (!dlg.trainerId) {
+      toast.error("Elige el entrenador de la sesión.");
+      return;
+    }
     if (dlg.mode === "edit" && dlg.isSeries) {
       setScopeOpen(true);
       return;
@@ -166,9 +174,22 @@ export default function SessionDialog({
 
   function handleDelete() {
     if (!dlg.id) return;
+    if (dlg.isSeries) {
+      setDeleteScopeOpen(true);
+      return;
+    }
+    submitDelete("all");
+  }
+
+  function submitDelete(scope: EditScope) {
+    if (!dlg.id) return;
     const fd = new FormData();
     fd.set("id", dlg.id);
     fd.set("centerId", centerId);
+    // El día que se abrió de la serie, no `dateISO` (que el usuario puede haber
+    // cambiado en el formulario sin guardar).
+    fd.set("occurrenceDate", dlg.occurrenceISO);
+    fd.set("scope", scope);
     startDeleteTransition(async () => {
       let res = await deleteSessionAction(fd);
       // RB-AGENDA-010: con asistencias ya registradas el borrado se para y pide
@@ -180,6 +201,7 @@ export default function SessionDialog({
         res = await deleteSessionAction(fd);
       }
       if (res.ok) {
+        setDeleteScopeOpen(false);
         toast.success("Sesión eliminada");
         onDone();
       } else {
@@ -419,7 +441,11 @@ export default function SessionDialog({
               {trainers.length === 0 ? (
                 <p className="text-xs text-muted">Sin entrenadores.</p>
               ) : (
-                <Select value={dlg.trainerId} onChange={(e) => patch({ trainerId: e.target.value })}>
+                <Select
+                  value={dlg.trainerId}
+                  placeholder="Sin entrenador: elige uno"
+                  onChange={(e) => patch({ trainerId: e.target.value })}
+                >
                   {trainers.map((t) => (
                     <option
                       key={t.id}
@@ -503,6 +529,13 @@ export default function SessionDialog({
       pending={saving}
       onCancel={() => setScopeOpen(false)}
       onConfirm={(scope) => submit(scope)}
+    />
+    <SessionScopeDialog
+      open={deleteScopeOpen}
+      pending={deleting}
+      intent="delete"
+      onCancel={() => setDeleteScopeOpen(false)}
+      onConfirm={(scope) => submitDelete(scope)}
     />
     </>,
     document.body

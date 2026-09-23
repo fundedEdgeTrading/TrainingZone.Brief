@@ -31,7 +31,31 @@ export const MONTHS = [
 // Paleta de tonos tierra para entrenadores sin color asignado explícito.
 export const TRAINER_PALETTE = ["#5f6d34", "#6d4a5a", "#8a6a2e", "#98523a", "#45635f"];
 
+/**
+ * QA-RES-11: fila de la agenda para las sesiones sin entrenador asignado
+ * (`ClassSession.trainerId` es opcional). La página las descartaba y la sesión
+ * existía —con sus reservas— sin que nadie la viera en la rejilla. No es un id
+ * de usuario: nunca se manda al servidor como entrenador.
+ */
+export const UNASSIGNED_TRAINER_ID = "sin-entrenador";
+export const UNASSIGNED_TRAINER_NAME = "Sin entrenador";
+
+export function occurrenceTrainerId(trainerId: string | null): string {
+  return trainerId ?? UNASSIGNED_TRAINER_ID;
+}
+
+/** Entrenadores de la leyenda y el filtro, más "Sin entrenador" si hay sesiones sin él. */
+export function withUnassignedTrainer<T extends { id: string; name: string }>(
+  trainers: T[],
+  occurrences: { trainerId: string }[]
+): { id: string; name: string }[] {
+  if (!occurrences.some((o) => o.trainerId === UNASSIGNED_TRAINER_ID)) return trainers;
+  return [...trainers, { id: UNASSIGNED_TRAINER_ID, name: UNASSIGNED_TRAINER_NAME }];
+}
+
 export function trainerColor(trainerId: string) {
+  // Neutro a propósito: con un tono de la paleta parecería de un entrenador.
+  if (trainerId === UNASSIGNED_TRAINER_ID) return "var(--color-muted)";
   let hash = 0;
   for (let i = 0; i < trainerId.length; i++) hash = (hash * 31 + trainerId.charCodeAt(i)) >>> 0;
   return TRAINER_PALETTE[hash % TRAINER_PALETTE.length];
@@ -179,6 +203,48 @@ export type WeekOccurrence = {
   bookedCount: number;
   status: string;
 };
+
+/**
+ * QA-RES-03: campos con los que se guarda por `saveSessionAction` una
+ * ocurrencia de una serie que se ha soltado en otro hueco de la rejilla.
+ *
+ * Todo lo que no es día y hora viaja tal cual (si faltara `recurrence` o
+ * `recUntil`, guardar degradaría la serie), y `occurrenceDate` es el día ORIGEN:
+ * es lo que dice al servidor qué ocurrencia se movió. `memberId` NO se manda: el
+ * movimiento ya se lleva la reserva del EP, y mandarlo intentaría reservarla otra
+ * vez.
+ */
+export function dragSaveFields(
+  ev: WeekOccurrence,
+  target: {
+    centerId: string;
+    /** Día de la serie que se ha arrastrado ("YYYY-MM-DD"). */
+    occurrenceISO: string;
+    dateISO: string;
+    startHHMM: string;
+    endHHMM: string;
+    scope: "all" | "future" | "single";
+  }
+): Record<string, string> {
+  const fields: Record<string, string> = {
+    id: ev.id,
+    centerId: target.centerId,
+    title: ev.title,
+    type: ev.type,
+    trainerId: ev.trainerId,
+    date: target.dateISO,
+    startTime: target.startHHMM,
+    endTime: target.endHHMM,
+    capacity: String(ev.capacity),
+    recurrence: ev.recurrence,
+    occurrenceDate: target.occurrenceISO,
+    scope: target.scope,
+  };
+  if (ev.type === "personal" && ev.selfBookable) fields.selfBookable = "on";
+  if (ev.isTrial) fields.isTrial = "on";
+  if (ev.recurrence !== "NONE" && ev.recUntilISO) fields.recUntil = ev.recUntilISO;
+  return fields;
+}
 
 /**
  * Días de la semana [ws, we) en los que `session` tiene ocurrencia.

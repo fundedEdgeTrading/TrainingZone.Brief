@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
+import { prisma } from "@/lib/prisma";
 import { loginAs, isoDay } from "./helpers";
+import { createBookingMember, deleteBookingMembers, type Fixture } from "./fixtures/booking-members";
 
 const toast = (page: import("@playwright/test").Page) => page.locator("[role=status], [role=alert]");
 
@@ -101,5 +103,72 @@ test.describe("F11 — Agenda EP", () => {
     if (!(await nowLine.isVisible().catch(() => false))) test.skip();
 
     await expect(nowLine).toHaveCSS("pointer-events", "none");
+  });
+});
+
+/**
+ * QA-RES-01: el campo "Socio asignado" del diálogo creaba la reserva a pelo —sin
+ * descontar el bono ni mirar el aforo—. Ahora pasa por el motor de reservas del
+ * staff: descuenta, deja asiento, y un segundo socio no cabe en un EP de una
+ * plaza. Lo que se comprueba aquí es el camino de la pantalla; la regla la
+ * cubre `src/lib/agenda-queries.test.ts`.
+ */
+test.describe("QA-RES-01 — Socio asignado a un EP", () => {
+  let a: Fixture;
+  let b: Fixture;
+  const title = `EP asignado ${Date.now()}`;
+
+  test.beforeAll(async () => {
+    a = await createBookingMember({ tag: `epasig-a-${Date.now()}`, service: "EP" });
+    b = await createBookingMember({ tag: `epasig-b-${Date.now()}`, service: "EP" });
+  });
+
+  test.afterAll(async () => {
+    await deleteBookingMembers([a, b]);
+    await prisma.classSession.deleteMany({ where: { name: title } });
+  });
+
+  const balance = async (f: Fixture) =>
+    (await prisma.subscription.findFirstOrThrow({ where: { memberId: f.memberId, status: "ACTIVE" } })).sessionsRemaining;
+
+  async function pickMember(page: import("@playwright/test").Page, f: Fixture) {
+    await page.locator('[data-field="member"] button[aria-haspopup="listbox"]').click();
+    await page.getByPlaceholder("Buscar...").fill(f.fullName);
+    await page.getByRole("button", { name: f.fullName, exact: false }).first().click();
+  }
+
+  test("asignar socio descuenta su bono y un segundo socio no cabe en la misma franja", async ({ page }) => {
+    const beforeA = await balance(a);
+    const beforeB = await balance(b);
+
+    await loginAs(page, "entrenador@trainingzone.es");
+    await page.goto("/agenda");
+    await page.getByRole("button", { name: /Nueva sesión/ }).first().click();
+    await page.getByRole("button", { name: "Entrenamiento personal", exact: true }).click();
+    await pickMember(page, a);
+    // Elegir socio reescribe el título con su nombre: el nuestro va después.
+    await page.getByPlaceholder("Añadir título").fill(title);
+    await page.locator('input[type="date"]').first().fill(isoDay(3));
+    await page.locator('input[type="time"]').nth(0).fill("07:00");
+    await page.locator('input[type="time"]').nth(1).fill("08:00");
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(toast(page).getByText("Sesión creada")).toBeVisible({ timeout: 15_000 });
+
+    const booking = await prisma.booking.findFirstOrThrow({ where: { memberId: a.memberId, session: { name: title } } });
+    expect(booking.status).toBe("BOOKED");
+    expect(booking.subscriptionId).not.toBeNull();
+    expect(await balance(a)).toBe((beforeA ?? 0) - 1);
+    const entry = await prisma.sessionLedger.findFirstOrThrow({ where: { bookingId: booking.id } });
+    expect(entry.delta).toBe(-1);
+
+    // La misma franja, con otro socio: el EP es de una plaza.
+    await openSessionInAgenda(page, title, isoDay(3));
+    await pickMember(page, b);
+    await page.getByPlaceholder("Añadir título").fill(title);
+    await page.getByRole("button", { name: "Guardar" }).click();
+    await expect(toast(page).getByText(/completa/)).toBeVisible({ timeout: 15_000 });
+
+    expect(await prisma.booking.count({ where: { session: { name: title }, status: "BOOKED" } })).toBe(1);
+    expect(await balance(b)).toBe(beforeB);
   });
 });

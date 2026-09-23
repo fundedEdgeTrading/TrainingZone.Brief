@@ -9,7 +9,9 @@ import {
   getSessionCenterId,
   markBookingNoShow,
   clearBookingNoShow,
+  checkInWindow,
 } from "@/lib/agenda-queries";
+import { enforcementStartsAt } from "@/lib/portal-queries";
 import { revalidateSessionViews } from "@/lib/revalidate-sessions";
 import { parseNoShowReason } from "@/lib/no-show";
 import { bookingTransitionMessage, checkBookingTransition, statusesEndingAt } from "@/lib/booking-transitions";
@@ -70,12 +72,21 @@ export async function toggleCheckIn(bookingId: string, sessionId: string): Promi
   // dejaba pasar el check-in de una reserva de cualquier otra organización.
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, sessionId, session: { orgId: actor.user.orgId } },
+    include: { session: { select: { startTime: true, center: { select: { timezone: true } } } } },
   });
   if (!booking) return { ok: false, error: "No se ha encontrado esa reserva." };
 
   // Desmarcar devuelve a BOOKED, nunca a CANCELLED: cancelar libera plaza y
   // devuelve bono, y quitar un check no es ninguna de las dos cosas (E2-02).
   const newStatus = booking.status === "ATTENDED" ? "BOOKED" : "ATTENDED";
+
+  // QA-RES-12: no se marca la asistencia de una ocurrencia que aún no toca. La
+  // hora es la del centro (RB-RES-012); desmarcar sí se permite siempre.
+  if (newStatus === "ATTENDED") {
+    const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+    const opened = checkInWindow(startsAt);
+    if (!opened.ok) return opened;
+  }
 
   // RB-RES-010: el estado de partida manda. Una reserva WAITLISTED nunca ocupó
   // plaza ni consumió bono, así que alternar su check la metía en una sesión

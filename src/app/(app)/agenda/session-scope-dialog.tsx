@@ -9,6 +9,8 @@ function useMounted() {
   return useSyncExternalStore(noopSubscribe, () => true, () => false);
 }
 
+type ScopeIntent = "edit" | "delete";
+
 const OPTIONS: { value: EditScope; label: string; hint: string }[] = [
   {
     value: "single",
@@ -28,6 +30,43 @@ const OPTIONS: { value: EditScope; label: string; hint: string }[] = [
 ];
 
 /**
+ * Las mismas tres opciones al borrar (QA-RES-05), con lo que de verdad pasa con
+ * las reservas: solo las de ocurrencias futuras vuelven al bono.
+ */
+const DELETE_OPTIONS: { value: EditScope; label: string; hint: string }[] = [
+  {
+    value: "single",
+    label: "Esta sesión",
+    hint: "Solo el día que estás viendo. El resto de la serie sigue igual, con sus reservas.",
+  },
+  {
+    value: "future",
+    label: "Esta sesión y las posteriores",
+    hint: "La serie termina la víspera. Las anteriores se quedan intactas, con sus reservas y su brief.",
+  },
+  {
+    value: "all",
+    label: "Todos los eventos",
+    hint: "Borra la serie entera, también el histórico. Solo vuelven al bono las reservas de sesiones que aún no se han dado.",
+  },
+];
+
+const COPY: Record<ScopeIntent, { title: string; aria: string; action: string; pendingAction: string }> = {
+  edit: {
+    title: "¿A qué sesiones aplico el cambio?",
+    aria: "Editar sesión periódica",
+    action: "Guardar",
+    pendingAction: "Guardando…",
+  },
+  delete: {
+    title: "¿Qué sesiones elimino?",
+    aria: "Eliminar sesión periódica",
+    action: "Eliminar",
+    pendingAction: "Eliminando…",
+  },
+};
+
+/**
  * Alcance de una edición sobre una sesión que se repite en el tiempo.
  *
  * Una serie es UNA fila en la base de datos, así que guardar el diálogo
@@ -40,29 +79,36 @@ export default function SessionScopeDialog({
   pending,
   onCancel,
   onConfirm,
+  intent = "edit",
 }: {
   open: boolean;
   pending: boolean;
   onCancel: () => void;
   onConfirm: (scope: EditScope) => void;
+  /** Guardar un cambio (también al arrastrar, QA-RES-03) o eliminar (QA-RES-05). */
+  intent?: ScopeIntent;
 }) {
   const mounted = useMounted();
   if (!mounted || !open) return null;
   // El contenido vive en su propio componente para que el alcance elegido nazca
   // siempre en "Esta sesión": al cerrarse se desmonta y no arrastra la elección
   // de la vez anterior.
-  return <ScopePicker pending={pending} onCancel={onCancel} onConfirm={onConfirm} />;
+  return <ScopePicker pending={pending} onCancel={onCancel} onConfirm={onConfirm} intent={intent} />;
 }
 
 function ScopePicker({
   pending,
   onCancel,
   onConfirm,
+  intent,
 }: {
   pending: boolean;
   onCancel: () => void;
   onConfirm: (scope: EditScope) => void;
+  intent: ScopeIntent;
 }) {
+  const copy = COPY[intent];
+  const options = intent === "delete" ? DELETE_OPTIONS : OPTIONS;
   const [scope, setScope] = useState<EditScope>("single");
 
   useEffect(() => {
@@ -84,19 +130,19 @@ function ScopePicker({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Editar sesión periódica"
+        aria-label={copy.aria}
         onMouseDown={(e) => e.stopPropagation()}
         className="w-[460px] max-w-full bg-white rounded-[18px] border border-brand-border shadow-pop overflow-hidden [animation:tzFadeUp_.26s_var(--ease-out-soft)_both]"
       >
         <div className="px-6 sm:px-7 pt-6 pb-1">
           <div className="font-display font-bold text-[11px] tracking-[.16em] uppercase text-muted">Sesión periódica</div>
           <h2 className="font-display font-extrabold text-xl uppercase tracking-[-.01em] text-brand-text mt-1">
-            ¿A qué sesiones aplico el cambio?
+            {copy.title}
           </h2>
         </div>
 
         <div className="px-6 sm:px-7 py-4 flex flex-col gap-1.5" role="radiogroup" aria-label="Alcance del cambio">
-          {OPTIONS.map((o) => (
+          {options.map((o) => (
             <label
               key={o.value}
               className={`flex items-start gap-3 rounded-control border p-3 cursor-pointer transition-colors ${
@@ -140,9 +186,11 @@ function ScopePicker({
             type="button"
             onClick={() => onConfirm(scope)}
             disabled={pending}
-            className="h-[42px] px-6 rounded-control bg-tz-black text-tz-bone text-sm font-semibold hover:bg-brand-ink-soft disabled:opacity-60"
+            className={`h-[42px] px-6 rounded-control text-sm font-semibold disabled:opacity-60 ${
+              intent === "delete" ? "bg-critical text-white hover:opacity-90" : "bg-tz-black text-tz-bone hover:bg-brand-ink-soft"
+            }`}
           >
-            {pending ? "Guardando…" : "Guardar"}
+            {pending ? copy.pendingAction : copy.action}
           </button>
         </div>
       </div>

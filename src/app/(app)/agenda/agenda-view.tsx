@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { formatDateParam, parseDateParam } from "@/lib/date-utils";
@@ -27,10 +27,16 @@ import {
   CAPACITY_FULL,
   DEFAULT_GROUP_CAPACITY,
   withTypePrefix,
+  dragSaveFields,
+  UNASSIGNED_TRAINER_ID,
+  withUnassignedTrainer,
   type WeekOccurrence,
 } from "./agenda-utils";
-import { moveSessionAction } from "./session-actions";
+import { moveSessionAction, saveSessionAction } from "./session-actions";
 import SessionDialog, { type DialogState } from "./session-dialog";
+import SessionScopeDialog from "./session-scope-dialog";
+import type { EditScope } from "@/lib/session-series";
+import { useToast } from "@/components/ui/toast";
 import { TrainerTooltip } from "./trainer-tooltip";
 import TrainerFilter from "./trainer-filter";
 import { usePointerDrag } from "@/lib/use-pointer-drag";
@@ -105,6 +111,11 @@ export default function AgendaView({
     setEvents(occurrences);
   }
 
+  // Leyenda y filtro: los entrenadores más la fila "Sin entrenador" cuando hay
+  // sesiones sin asignar (QA-RES-11). El diálogo sigue usando `trainers`: esa
+  // fila no es alguien a quien asignar una sesión.
+  const rowTrainers = useMemo(() => withUnassignedTrainer(trainers, occurrences), [trainers, occurrences]);
+
   // En móvil la rejilla pinta un único día (la semana entera en 360px deja
   // columnas de 45px, ilegibles e imposibles de tocar). Este es el día en
   // pantalla; en escritorio se siguen viendo los siete.
@@ -129,6 +140,11 @@ export default function AgendaView({
 
   const [miniMonth, setMiniMonth] = useState(weekStartISO.slice(0, 7));
   const [dlg, setDlg] = useState<DialogState | null>(null);
+  // QA-RES-03: ocurrencia de una serie soltada en otro hueco, a la espera de
+  // que se elija el alcance. Mientras tanto la tarjeta se queda donde se soltó.
+  const [pendingMove, setPendingMove] = useState<{ ev: WeekOccurrence; occurrenceISO: string } | null>(null);
+  const [movingSeries, startMoveTransition] = useTransition();
+  const toast = useToast();
 
   const rootRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -146,7 +162,7 @@ export default function AgendaView({
       // el diálogo de sesión y los desplegables de la barra (que traen su
       // propio manejador). Sin esta guarda, una sola tecla cerraría el
       // desplegable y la pantalla completa a la vez.
-      if (dlg) return;
+      if (dlg || pendingMove) return;
       if (rootRef.current?.querySelector('[aria-expanded="true"]')) return;
       setExpanded(false);
     };
@@ -155,7 +171,7 @@ export default function AgendaView({
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [fullscreen, dlg]);
+  }, [fullscreen, dlg, pendingMove]);
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
 
@@ -229,6 +245,20 @@ export default function AgendaView({
       if (!canEdit) return;
       const ev = events.find((e) => e.uid === gesture.uid);
       if (!ev) return;
+      // Una ocurrencia de una serie no se mueve sola: se pregunta a qué
+      // sesiones aplica, como al editarla desde el diálogo.
+      const origin = occurrences.find((o) => o.uid === gesture.uid);
+      if (ev.isRecurring && origin) {
+        if (ev.trainerId === UNASSIGNED_TRAINER_ID) {
+          // Guardar la serie exige entrenador; sin él se asignaría en silencio
+          // a quien la arrastra.
+          toast.error("Asigna un entrenador a esta serie antes de moverla.");
+          setEvents(occurrences);
+          return;
+        }
+        setPendingMove({ ev, occurrenceISO: formatDateParam(addDays(weekStart, origin.dayIndex)) });
+        return;
+      }
       const date = formatDateParam(addDays(weekStart, ev.dayIndex));
       moveSessionAction({ id: ev.id, centerId, date, startTime: fmtHHMM(ev.startMin), endTime: fmtHHMM(ev.endMin) }).then((res) => {
         if (!res.ok) router.refresh();
@@ -239,6 +269,35 @@ export default function AgendaView({
       setEvents(occurrences);
     },
   });
+
+  function confirmSeriesMove(scope: EditScope) {
+    if (!pendingMove) return;
+    const { ev, occurrenceISO } = pendingMove;
+    const fd = new FormData();
+    const fields = dragSaveFields(ev, {
+      centerId,
+      occurrenceISO,
+      dateISO: formatDateParam(addDays(weekStart, ev.dayIndex)),
+      startHHMM: fmtHHMM(ev.startMin),
+      endHHMM: fmtHHMM(ev.endMin),
+      scope,
+    });
+    for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+    startMoveTransition(async () => {
+      const res = await saveSessionAction(fd);
+      setPendingMove(null);
+      if (!res.ok) {
+        toast.error(res.error);
+        setEvents(occurrences);
+      }
+      router.refresh();
+    });
+  }
+
+  function cancelSeriesMove() {
+    setPendingMove(null);
+    setEvents(occurrences);
+  }
 
   function navigate(newWeekStart: Date, day?: number) {
     weekSweep = {
@@ -323,7 +382,8 @@ export default function AgendaView({
       startHHMM: fmtHHMM(ev.startMin),
       endHHMM: fmtHHMM(ev.endMin),
       type: ev.type,
-      trainerId: ev.trainerId,
+      // Sin entrenador, el diálogo abre con el campo vacío: hay que elegir uno.
+      trainerId: ev.trainerId === UNASSIGNED_TRAINER_ID ? "" : ev.trainerId,
       // Solo el EP arrastra "su" socio al diálogo: en un grupo reducido el
       // roster son varias personas y este campo no lo representa.
       memberId: ev.type === "personal" ? ev.bookedMemberId : null,
@@ -364,7 +424,7 @@ export default function AgendaView({
       ? null
       : `wk${weekSweep.dir > 0 ? "Next" : "Prev"}${weekSweep.ab ? "B" : "A"} .34s var(--ease-out-soft) both`;
   const hours = Array.from({ length: END_HOUR - START_HOUR }, (_, i) => START_HOUR + i);
-  const trainerName = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
+  const trainerName = useMemo(() => Object.fromEntries(rowTrainers.map((t) => [t.id, t.name])), [rowTrainers]);
 
   const content = (
     <div
@@ -427,10 +487,10 @@ export default function AgendaView({
         </button>
         <TrainerFilter
           className="lg:hidden"
-          trainers={trainers}
+          trainers={rowTrainers}
           visible={visible}
           onToggle={(id) => setVisible((v) => ({ ...v, [id]: !(v[id] !== false) }))}
-          onSetAll={(value) => setVisible(Object.fromEntries(trainers.map((t) => [t.id, value])))}
+          onSetAll={(value) => setVisible(Object.fromEntries(rowTrainers.map((t) => [t.id, value])))}
         />
         {centerSwitcher}
         <div className="hidden lg:flex h-9 items-center gap-2 px-3.5 rounded-control border border-brand-border text-[13px] font-semibold text-brand-text">
@@ -460,7 +520,7 @@ export default function AgendaView({
           <div className="pt-4 pb-1.5 border-t border-tz-sand mt-1">
             <div className="text-[11px] font-bold tracking-[.14em] uppercase text-muted mb-2.5">Entrenadores</div>
             <div className="flex flex-col gap-0.5">
-              {trainers.map((t) => {
+              {rowTrainers.map((t) => {
                 const color = trainerColor(t.id);
                 const isVisible = visible[t.id] !== false;
                 return (
@@ -772,6 +832,13 @@ export default function AgendaView({
           <span className="text-3xl leading-none font-normal">+</span>
         </button>
       )}
+
+      <SessionScopeDialog
+        open={pendingMove !== null}
+        pending={movingSeries}
+        onCancel={cancelSeriesMove}
+        onConfirm={confirmSeriesMove}
+      />
 
       {dlg && (
         <SessionDialog

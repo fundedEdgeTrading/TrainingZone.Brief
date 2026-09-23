@@ -38,11 +38,16 @@ type Fixture = {
   members: { id: string; subscriptionId: string }[];
 };
 
-/** Primer día operativo a partir de mañana: el centro no abre todos los días. */
+/**
+ * Primer día operativo a partir de pasado mañana: el centro no abre todos los
+ * días, y con "mañana a las 18:00" la clase caía dentro de la ventana de
+ * cancelación si la suite corría por la tarde (QA-RES-02: el staff ya no
+ * devuelve el bono dentro de esa ventana).
+ */
 function nextBookableDay(): Date {
   const day = new Date();
   day.setHours(0, 0, 0, 0);
-  day.setDate(day.getDate() + 1);
+  day.setDate(day.getDate() + 2);
   while (!isOperatingDay(day)) day.setDate(day.getDate() + 1);
   return day;
 }
@@ -183,7 +188,7 @@ test("reservar desde la agenda descuenta el bono del socio y lo devuelve al canc
   assert.equal((await balanceOf(socio.subscriptionId)).sessionsRemaining, 4);
 
   const cancelled = await cancelSessionBooking(f.orgId, booking.id);
-  assert.deepEqual(cancelled, { ok: true });
+  assert.deepEqual(cancelled, { ok: true, forfeited: false });
   assert.equal((await balanceOf(socio.subscriptionId)).sessionsRemaining, 5, "cancelar devuelve la sesión al bono");
   const after = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
   assert.equal(after.status, "CANCELLED");

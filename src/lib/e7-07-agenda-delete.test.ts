@@ -131,8 +131,10 @@ test("U1 · una asistencia ya registrada no se borra a la primera, y no devuelve
 
   const confirmed = await deleteSession(org.orgId, session.id, { actorUserId, confirmSettled: true });
   assert.equal(confirmed.ok, true);
-  assert.equal(confirmed.ok && confirmed.refunded, 2, "los dos que no llegaron a asistir sí recuperan");
-  assert.equal(await balanceOf(asistio.subscriptionId), 4, "una sesión que se dio, se dio: no se devuelve");
+  // QA-RES-05: la clase fue hace dos días, así que tampoco vuelve la sesión de
+  // quien no llegó a marcarse — solo se devuelven ocurrencias futuras.
+  assert.equal(confirmed.ok && confirmed.refunded, 0, "una clase pasada no se reembolsa al borrarla");
+  for (const socio of socios) assert.equal(await balanceOf(socio.subscriptionId), 4);
 });
 
 test("U1 · una reserva cancelada no revive ni cobra dos veces al borrar la sesión", async () => {
