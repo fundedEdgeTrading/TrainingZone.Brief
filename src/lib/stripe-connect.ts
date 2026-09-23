@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { getStripeClient } from "@/lib/stripe";
 import { publicOrigin } from "@/lib/site";
@@ -16,16 +17,125 @@ export function isStripeConnectConfigured() {
   return !!process.env.STRIPE_SECRET_KEY && !!process.env.STRIPE_CONNECT_CLIENT_ID;
 }
 
-/** `state` = orgId, para atar el callback a la org que inició el OAuth. */
-export function buildConnectOAuthUrl(orgId: string) {
+/**
+ * CON-01 · El `state` del OAuth era el `orgId`: un valor predecible y fijo, así
+ * que no protegía de nada. Un atacante empezaba el OAuth con SU cuenta de
+ * Stripe, se quedaba con el `code` y le hacía abrir a la víctima (dirección de
+ * otro gimnasio, con sesión) `/callback?code=…&state=<orgId de la víctima>`:
+ * la org de la víctima quedaba conectada a la cuenta del atacante y los cobros
+ * a sus socios acababan en ella.
+ *
+ * Ahora `state` es un nonce aleatorio de un solo uso que solo conoce el
+ * navegador que inició el flujo: viaja en una cookie httpOnly firmada con
+ * `AUTH_SECRET`, junto a la org que lo inició y su caducidad. El callback exige
+ * que el `state` de la URL coincida con el de la cookie, que la org de la
+ * cookie sea la de la sesión, y la borra pase lo que pase.
+ *
+ * Es una cookie técnica (existe solo para completar la conexión que el propio
+ * usuario ha pedido) y está inventariada en `/cookies`.
+ */
+export const CONNECT_STATE_COOKIE = "tz_stripe_connect";
+
+/** 10 minutos: de sobra para el formulario de Stripe, poco para reutilizarla. */
+export const CONNECT_STATE_TTL_SECONDS = 10 * 60;
+
+/** El propósito va dentro de la firma: este token no vale como ningún otro. */
+const CONNECT_STATE_PURPOSE = "stripe-connect-state";
+
+/** Punto de entrada del botón "Conectar cobros con Stripe": pone la cookie y redirige a Stripe. */
+export const CONNECT_START_PATH = "/api/stripe/connect/start";
+
+function connectStateSecret(): string {
+  const s = process.env.AUTH_SECRET;
+  if (!s) throw new Error("AUTH_SECRET no configurado — necesario para firmar el estado del OAuth de Stripe.");
+  return s;
+}
+
+function signConnectState(payload: string): string {
+  return crypto.createHmac("sha256", connectStateSecret()).update(payload).digest("base64url");
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a);
+  const bBuf = Buffer.from(b);
+  return aBuf.length === bBuf.length && crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+/** Opciones de la cookie. `path` acotado: solo la ven las rutas de la conexión. */
+export function connectStateCookieOptions() {
+  return {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+    path: "/api/stripe/connect",
+    maxAge: CONNECT_STATE_TTL_SECONDS,
+  };
+}
+
+/**
+ * Nonce nuevo para `orgId`. `nonce` va como `state` a Stripe; `cookieValue`, a
+ * la cookie. 32 bytes de `randomBytes`: inadivinable, a diferencia del orgId.
+ */
+export function createConnectState(orgId: string, now: number = Date.now()): { nonce: string; cookieValue: string } {
+  const nonce = crypto.randomBytes(32).toString("base64url");
+  const exp = now + CONNECT_STATE_TTL_SECONDS * 1000;
+  const payload = [CONNECT_STATE_PURPOSE, nonce, orgId, String(exp)].join(".");
+  return { nonce, cookieValue: `${Buffer.from(payload, "utf8").toString("base64url")}.${signConnectState(payload)}` };
+}
+
+export type ConnectStateCheck = { ok: true } | { ok: false; error: "missing" | "invalid" | "expired" | "state-mismatch" | "org-mismatch" };
+
+/**
+ * ¿El `state` que devuelve Stripe lo inició ESTE navegador para ESTA org?
+ * `sessionOrgId` sale de la sesión, nunca de la URL.
+ */
+export function verifyConnectState(
+  cookieValue: string | null | undefined,
+  state: string | null | undefined,
+  sessionOrgId: string,
+  now: number = Date.now()
+): ConnectStateCheck {
+  if (!cookieValue || !state) return { ok: false, error: "missing" };
+
+  const [payloadB64, mac, ...rest] = cookieValue.split(".");
+  if (!payloadB64 || !mac || rest.length > 0) return { ok: false, error: "invalid" };
+
+  const payload = Buffer.from(payloadB64, "base64url").toString("utf8");
+  if (!safeEqual(mac, signConnectState(payload))) return { ok: false, error: "invalid" };
+
+  const [purpose, nonce, orgId, expStr, ...extra] = payload.split(".");
+  const exp = Number(expStr);
+  if (purpose !== CONNECT_STATE_PURPOSE || !nonce || !orgId || !Number.isFinite(exp) || extra.length > 0) {
+    return { ok: false, error: "invalid" };
+  }
+  if (now > exp) return { ok: false, error: "expired" };
+  if (!safeEqual(nonce, state)) return { ok: false, error: "state-mismatch" };
+  if (orgId !== sessionOrgId) return { ok: false, error: "org-mismatch" };
+  return { ok: true };
+}
+
+/** URL de autorización de Stripe con el nonce como `state` (nunca el orgId). */
+export function buildStripeAuthorizeUrl(nonce: string) {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: process.env.STRIPE_CONNECT_CLIENT_ID ?? "",
     scope: "read_write",
     redirect_uri: `${publicOrigin()}/api/stripe/connect/callback`,
-    state: orgId,
+    state: nonce,
   });
   return `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
+}
+
+/**
+ * Enlace del botón "Conectar cobros con Stripe". Ya no apunta a Stripe: apunta
+ * a `/api/stripe/connect/start`, que es quien puede poner la cookie del nonce
+ * (un Server Component no puede escribir cookies). La org sale de la sesión en
+ * el servidor, así que el argumento se ignora; se mantiene para no romper a
+ * quien ya lo llama.
+ */
+export function buildConnectOAuthUrl(orgId?: string) {
+  void orgId;
+  return CONNECT_START_PATH;
 }
 
 export async function exchangeOAuthCode(

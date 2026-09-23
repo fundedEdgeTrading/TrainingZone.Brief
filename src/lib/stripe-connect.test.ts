@@ -2,7 +2,15 @@ import "dotenv/config";
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
-import { deauthorizeStripeAccount } from "@/lib/stripe-connect";
+import {
+  buildConnectOAuthUrl,
+  buildStripeAuthorizeUrl,
+  CONNECT_STATE_TTL_SECONDS,
+  connectStateCookieOptions,
+  createConnectState,
+  deauthorizeStripeAccount,
+  verifyConnectState,
+} from "@/lib/stripe-connect";
 import { isStripeConfiguredForOrg } from "@/lib/stripe";
 
 /**
@@ -91,4 +99,63 @@ test("la desconexión es idempotente", async () => {
 
   const cuenta = await prisma.stripeAccount.findUniqueOrThrow({ where: { accountId } });
   assert.equal(cuenta.chargesEnabled, false);
+});
+
+/**
+ * CON-01 · `state = orgId` no es un nonce: el callback aceptaba cualquier
+ * `code` que llegara con el orgId de la víctima, y el atacante podía atar la
+ * org de la víctima a SU cuenta de Stripe (CSRF de OAuth).
+ */
+
+test("CON-01: el state que va a Stripe no es el orgId ni se puede predecir", () => {
+  const a = createConnectState("org_victima");
+  const b = createConnectState("org_victima");
+  assert.notEqual(a.nonce, "org_victima");
+  assert.notEqual(a.nonce, b.nonce, "cada inicio de OAuth lleva un nonce nuevo");
+  assert.ok(a.nonce.length >= 43, "32 bytes aleatorios en base64url");
+
+  const url = new URL(buildStripeAuthorizeUrl(a.nonce));
+  assert.equal(url.searchParams.get("state"), a.nonce);
+  assert.ok(!url.toString().includes("org_victima"));
+  // El botón ya no enlaza a Stripe con el orgId: pasa por /start, que pone la cookie.
+  assert.equal(buildConnectOAuthUrl("org_victima"), "/api/stripe/connect/start");
+});
+
+test("CON-01: el callback con state = orgId (el ataque de antes) se rechaza", () => {
+  // Sin cookie: el navegador de la víctima nunca inició el flujo.
+  assert.deepEqual(verifyConnectState(undefined, "org_victima", "org_victima"), { ok: false, error: "missing" });
+  // Con la cookie de un flujo legítimo suyo, pero el state del atacante.
+  const { cookieValue } = createConnectState("org_victima");
+  assert.deepEqual(verifyConnectState(cookieValue, "org_victima", "org_victima"), { ok: false, error: "state-mismatch" });
+});
+
+test("CON-01: nonce y org de la cookie deben casar con el state y con la sesión", () => {
+  const { nonce, cookieValue } = createConnectState("org_a");
+  assert.deepEqual(verifyConnectState(cookieValue, nonce, "org_a"), { ok: true });
+  assert.deepEqual(verifyConnectState(cookieValue, nonce, "org_b"), { ok: false, error: "org-mismatch" });
+});
+
+test("CON-01: la cookie caduca a los 10 minutos", () => {
+  const t0 = Date.UTC(2026, 8, 23, 10, 0, 0);
+  const { nonce, cookieValue } = createConnectState("org_a", t0);
+  assert.deepEqual(verifyConnectState(cookieValue, nonce, "org_a", t0 + 9 * 60_000), { ok: true });
+  assert.deepEqual(verifyConnectState(cookieValue, nonce, "org_a", t0 + 11 * 60_000), { ok: false, error: "expired" });
+});
+
+test("CON-01: una cookie manipulada (otra org, otra caducidad) no pasa la firma", () => {
+  const { nonce, cookieValue } = createConnectState("org_a");
+  const [payloadB64, mac] = cookieValue.split(".");
+  const payload = Buffer.from(payloadB64, "base64url").toString("utf8").replace("org_a", "org_b");
+  const forged = `${Buffer.from(payload, "utf8").toString("base64url")}.${mac}`;
+  assert.deepEqual(verifyConnectState(forged, nonce, "org_b"), { ok: false, error: "invalid" });
+  assert.deepEqual(verifyConnectState("basura", nonce, "org_a"), { ok: false, error: "invalid" });
+});
+
+test("CON-01: la cookie es httpOnly, Secure, SameSite=Lax y de 10 minutos", () => {
+  const opts = connectStateCookieOptions();
+  assert.equal(opts.httpOnly, true);
+  assert.equal(opts.secure, true);
+  assert.equal(opts.sameSite, "lax");
+  assert.equal(opts.maxAge, CONNECT_STATE_TTL_SECONDS);
+  assert.equal(CONNECT_STATE_TTL_SECONDS, 600);
 });
