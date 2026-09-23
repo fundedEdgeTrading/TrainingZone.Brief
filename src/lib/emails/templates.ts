@@ -825,9 +825,18 @@ export function renderSessionReminderEmail(opts: {
   trainerName?: string;
   /** Ventana real de cancelación del centro (RB-RES-005), nunca un literal fijo. */
   cancelWindowHours: number;
+  /**
+   * El aviso sale ya dentro de esa ventana (QA-RES-10): con una ventana mayor
+   * que el adelanto del recordatorio, "puedes cancelar sin penalización" ya no
+   * es verdad. Lo decide el servidor con el mismo `canCancelWithoutPenalty`.
+   */
+  withinCancelWindow?: boolean;
   postalAddress?: string;
 }) {
   const is24h = opts.variant === "24H";
+  const cancelNote = opts.withinCancelWindow
+    ? `Ya estás dentro de las ${opts.cancelWindowHours}h previas a la clase: si cancelas ahora, la sesión se da por empleada y no se devuelve a tu bono.`
+    : `Puedes cancelar sin penalización hasta ${opts.cancelWindowHours}h antes de la clase. Pasado ese plazo, la sesión se da por empleada y no se devuelve a tu bono.`;
   return shell({
     logoUrl: opts.brandLogoUrl,
     logoAlt: opts.brandName,
@@ -854,9 +863,7 @@ export function renderSessionReminderEmail(opts: {
     ],
     ctaLabel: is24h ? "Ver o cancelar mi reserva" : "Ver mi reserva",
     ctaUrl: opts.agendaUrl,
-    noteHtml: is24h
-      ? `Puedes cancelar sin penalización hasta ${opts.cancelWindowHours}h antes de la clase. Pasado ese plazo, la sesión se da por empleada y no se devuelve a tu bono.`
-      : "Este es solo un recordatorio: no hace falta que confirmes nada.",
+    noteHtml: is24h ? cancelNote : "Este es solo un recordatorio: no hace falta que confirmes nada.",
     signOff: `Nos vemos en el centro,<br>${strong(`El equipo de ${opts.centerName}`)}`,
     senderName: opts.centerName,
     postalAddress: opts.postalAddress ?? DEFAULT_ADDRESS,

@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { canViewHealthData } from "@/lib/rbac";
 import { startOfWeekMonday, formatDateParam, zonedNow, zonedTimeToInstant } from "@/lib/date-utils";
 import { expandOccurrences, isSameDay, occurrencesInRange, occursOn, ownSessionsWhere, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import type { AptitudeLight, Role } from "@prisma/client";
-import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
+import { getAptitudeInputsForTrainerPanel } from "@/lib/health-access";
+import { conditionLabel, resolveAptitude } from "@/lib/aptitude-light";
+import { ruleMatchesRecord } from "@/lib/injury-zones";
+import type { BriefCondition, BriefRule } from "@/lib/brief-queries";
 import { staffScopeFilter } from "@/lib/staff-queries";
 import type { ScopedUser } from "@/lib/center-scope";
 
@@ -51,6 +53,35 @@ function formatRelative(diffMs: number) {
 }
 
 type Tone = "good" | "warning" | "critical" | "gold" | "neutral";
+
+export type PanelAptitude = {
+  light: AptitudeLight;
+  /** "Lesión · Hombro derecho": de dónde sale la luz, sin el historial. */
+  label: string;
+  /** Adaptación de la regla que manda; `null` si la luz es de una condición sin regla. */
+  adaptation: string | null;
+};
+
+/**
+ * QA-RES-06 · El semáforo del panel, con el MISMO criterio que el brief:
+ * `resolveAptitude` (zona del catálogo + lado, y ámbar para lo declarado sin
+ * regla). Aquí solo se añade lo que el panel enseña: qué condición pone la luz
+ * y con qué adaptación. `null` = nada declarado.
+ */
+export function panelAptitude(conditions: BriefCondition[], rules: BriefRule[]): PanelAptitude | null {
+  const { light } = resolveAptitude(conditions, rules);
+  if (!light) return null;
+  for (const condition of conditions) {
+    const matches = rules.filter((rule) => ruleMatchesRecord(rule, condition));
+    if (matches.length === 0) {
+      if (light === "AMBER") return { light, label: conditionLabel(condition), adaptation: null };
+      continue;
+    }
+    const decisive = matches.find((rule) => rule.light === light);
+    if (decisive) return { light, label: conditionLabel(condition), adaptation: decisive.adaptation };
+  }
+  return { light, label: "Restricción activa", adaptation: null };
+}
 
 /** RB-RRHH-005 (rediseño): panel operativo del entrenador — agenda de hoy, pendientes,
  * huecos de EP, reconocimiento y clientes de EP, todo derivado de datos reales. */
@@ -230,43 +261,23 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
   const groupSparkline = sparklineBuckets.map((m) => Math.max(8, Math.round((m / sparklineMax) * 100)));
 
   // ---------- Aptitud: lectura única y auditada de salud para todos los clientes de EP ----------
-  const canSeeHealth = canViewHealthData(actorRole);
+  // QA-RES-06: por `health-access.ts` (matriz de permisos + AuditLog) y con el
+  // mismo criterio que el brief. Antes se emparejaba `rule.injuryZone ===
+  // record.zone` —dos textos libres deprecados por E3-02— y el panel dejaba sin
+  // semáforo a quien el brief pintaba en rojo.
   const memberIds = epClientsRaw.map((m) => m.id);
-  const healthLightByMember = new Map<string, { light: AptitudeLight; zone: string | null; description: string; adaptation: string | null }>();
-
-  if (canSeeHealth && memberIds.length) {
-    const [healthRecords, aptitudeRules] = await Promise.all([
-      // Vigentes (ACTIVE / IN_REHAB / CHRONIC): el semáforo de aptitud empareja
-      // por zona y no mira la fase — la fase solo decide si el registro cuenta.
-      prisma.healthRecord.findMany({
-        where: { memberId: { in: memberIds }, status: { in: OPEN_HEALTH_STATUSES } },
-        select: { memberId: true, zone: true, description: true },
-      }),
-      prisma.aptitudeRule.findMany({ where: { orgId } }),
-    ]);
-    const LIGHT_RANK: Record<AptitudeLight, number> = { RED: 2, AMBER: 1, GREEN: 0 };
-    for (const record of healthRecords) {
-      if (!record.memberId || !record.zone) continue;
-      const rule = aptitudeRules
-        .filter((r) => r.injuryZone === record.zone)
-        .sort((a, b) => LIGHT_RANK[b.light] - LIGHT_RANK[a.light])[0];
-      if (!rule) continue;
-      const current = healthLightByMember.get(record.memberId);
-      if (!current || LIGHT_RANK[rule.light] > LIGHT_RANK[current.light]) {
-        healthLightByMember.set(record.memberId, { light: rule.light, zone: record.zone, description: record.description, adaptation: rule.adaptation });
-      }
+  const healthLightByMember = new Map<string, PanelAptitude>();
+  const aptitudeInputs = await getAptitudeInputsForTrainerPanel({
+    orgId,
+    actorUserId: trainerUserId,
+    actorRole,
+    memberIds,
+  });
+  if (aptitudeInputs) {
+    for (const [memberId, conditions] of aptitudeInputs.conditionsByMember) {
+      const aptitude = panelAptitude(conditions, aptitudeInputs.rules);
+      if (aptitude) healthLightByMember.set(memberId, aptitude);
     }
-
-    await prisma.auditLog.create({
-      data: {
-        orgId,
-        actorUserId: trainerUserId,
-        action: "TRAINER_PANEL_HEALTH_READ",
-        entityType: "Member",
-        entityId: trainerUserId,
-        metadata: { memberIds },
-      },
-    });
   }
 
   // ---------- Clientes de EP (tabla + KPI) ----------
@@ -487,8 +498,8 @@ export async function getTrainerPanelData(orgId: string, trainerUserId: string, 
         memberId: c.id,
         name: `${c.firstName} ${c.lastName}`,
         light: c.light as "AMBER" | "RED",
-        zone: health.zone,
-        description: health.description,
+        // Rótulo y adaptación, nunca la descripción clínica (E3-05).
+        zone: health.label,
         adaptation: health.adaptation,
         meta: c.nextLabel === "Sin cita" ? "sin próxima cita" : `sesión ${c.nextLabel.toLowerCase()}`,
       };

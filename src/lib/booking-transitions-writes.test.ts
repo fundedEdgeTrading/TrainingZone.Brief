@@ -1,75 +1,252 @@
-import test from "node:test";
+import "dotenv/config";
+import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import type { BookingStatus } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { BOOKING_WRITE_POINTS, bookingTransitionMessage, type BookingWritePointId } from "@/lib/booking-transitions";
+import { setSessionDebrief, clearSessionDebrief } from "@/lib/session-debrief";
+import { markBookingNoShow, clearBookingNoShow, cancelSessionBooking, discardAttendeeAsStaff } from "@/lib/agenda-queries";
+import { bookSessionForMember, cancelBookingForMember } from "@/lib/portal-queries";
+import { trainerDiscardEffect } from "@/lib/attendee-discard";
+import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import {
-  checkBookingTransition,
-  statusesEndingAt,
-  statusesThatCanReach,
-} from "@/lib/booking-transitions";
+  cleanupRegressionOrgs,
+  createRegressionMember,
+  createRegressionOrg,
+  type RegressionMember,
+  type RegressionOrg,
+} from "@/lib/e7-07-fixture";
 
 /**
- * E2-02 / RB-RES-010, visto desde los CUATRO puntos de escritura que la
- * consumen: el debrief de la web, el debrief de la app, el feedback de ejes de
- * la app y el check-in de `/agenda/session/[id]`.
+ * E2-02 / RB-RES-010, QA-RES-09 · Los puntos de escritura del estado de una
+ * reserva, ejercidos DE VERDAD.
  *
- * Lo verificado antes del arreglo: reserva → cancelación (`CANCELLED`,
- * `subscriptionId = null`, bono devuelto) → `POST /trainer/brief/<id>/debrief`
- * → `{"saved":true}` y en BD `status = ATTENDED` con `checkedInAt` puesto.
- * Ninguna de las cuatro vías miraba el estado de partida.
+ * La versión anterior de este fichero decía probar "las cuatro vías" y solo
+ * consultaba la tabla de transiciones: la tabla nunca fue lo que fallaba, lo
+ * que fallaba es que nadie la consultaba. Aquí se llama a cada función que
+ * escribe, sobre filas reales, y se mira la fila después.
  *
- * Los cuatro sitios comprueban lo mismo de dos maneras a la vez, y por eso se
- * prueban juntas: `checkBookingTransition` corta antes de escribir, y
- * `statusesEndingAt` es la lista que viaja DENTRO del `where` del UPDATE, para
- * que una cancelación que llegue entre la lectura y la escritura tampoco cuele.
+ * La lista de puntos NO vive aquí: es `BOOKING_WRITE_POINTS`, en
+ * booking-transitions.ts. El primer test exige que cada punto de esa lista
+ * tenga su ejercicio en este fichero, así que añadir un punto de escritura sin
+ * probarlo falla aquí y no en producción.
  */
 
-test("marcar asistencia sobre una reserva cancelada se rechaza en las cuatro vías", () => {
-  const check = checkBookingTransition("CANCELLED", "ATTENDED");
-  assert.equal(check.ok, false);
-  assert.ok(!check.ok && /reservarla de nuevo/.test(check.error));
+const TAG = "qa-res-09";
+let org: RegressionOrg;
+let sessionId: string;
+let day: Date;
+let seq = 0;
 
-  // Y la misma respuesta la da el UPDATE condicional: CANCELLED no está en la
-  // lista, así que `updateMany` cuenta 0 y no se escribe ni el debrief.
-  assert.ok(!statusesEndingAt("ATTENDED").includes("CANCELLED"));
+function nextBookableDay(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 2);
+  while (!isOperatingDay(d)) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+const dateParam = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+before(async () => {
+  await cleanupRegressionOrgs(TAG);
+  org = await createRegressionOrg(TAG);
+  // Sesión futura (fuera de la ventana de cancelación): así la cancelación
+  // del portal y el descarte llegan hasta el UPDATE y no se paran antes por
+  // "ya ha empezado".
+  day = nextBookableDay();
+  const session = await prisma.classSession.create({
+    data: {
+      orgId: org.orgId,
+      centerId: org.centerId,
+      trainerId: org.trainerId,
+      name: "clase-escrituras",
+      classType: "Grupo reducido",
+      date: day,
+      startTime: "18:00",
+      endTime: "19:00",
+      capacity: 50,
+    },
+  });
+  sessionId = session.id;
 });
 
-test("el check-in sobre una reserva en lista de espera se rechaza", () => {
-  // Nunca ocupó plaza ni consumió bono: saltar a ATTENDED la metería en una
-  // sesión llena sin pasar por la promoción, que es la que mira aforo y bono.
-  const check = checkBookingTransition("WAITLISTED", "ATTENDED");
-  assert.equal(check.ok, false);
-  assert.ok(!check.ok && /no tiene plaza/.test(check.error));
-  assert.ok(!statusesEndingAt("ATTENDED").includes("WAITLISTED"));
+after(async () => {
+  await cleanupRegressionOrgs(TAG);
+  await prisma.$disconnect();
 });
 
-test("una reserva viva sigue funcionando exactamente igual que hoy", () => {
-  assert.deepEqual(checkBookingTransition("BOOKED", "ATTENDED"), { ok: true });
-  // Volver a guardar el debrief de quien ya estaba marcado no es un cambio y
-  // no puede fallar: es el guardado optimista por eje de la app.
-  assert.deepEqual(checkBookingTransition("ATTENDED", "ATTENDED"), { ok: true });
-  assert.deepEqual(statusesEndingAt("ATTENDED").sort(), ["ATTENDED", "BOOKED", "NO_SHOW"]);
+async function bookingWith(status: BookingStatus): Promise<{ socio: RegressionMember; bookingId: string }> {
+  const socio = await createRegressionMember(org, TAG, ++seq, 5);
+  const booking = await prisma.booking.create({
+    data: {
+      sessionId,
+      occurrenceDate: day,
+      memberId: socio.id,
+      status,
+      subscriptionId: status === "BOOKED" || status === "ATTENDED" || status === "NO_SHOW" ? socio.subscriptionId : null,
+      waitlistPosition: status === "WAITLISTED" ? 1 : null,
+    },
+  });
+  return { socio, bookingId: booking.id };
+}
+
+const statusOf = async (bookingId: string) =>
+  (await prisma.booking.findUniqueOrThrow({ where: { id: bookingId }, select: { status: true } })).status;
+
+const actor = () => ({
+  sessionId,
+  orgId: org.orgId,
+  actorUserId: org.trainerId,
+  actorRole: "TRAINER" as const,
+  actorCenterId: org.centerId,
 });
 
-test("desmarcar una asistencia vuelve a BOOKED, no a CANCELLED", () => {
-  assert.deepEqual(checkBookingTransition("ATTENDED", "BOOKED"), { ok: true });
-  // Y cancelar sigue siendo otra cosa: libera plaza y devuelve bono. Quitar un
-  // check no es ninguna de las dos, así que esa puerta se queda cerrada desde
-  // el propio toggle (que solo alterna entre ATTENDED y BOOKED).
-  assert.ok(statusesEndingAt("BOOKED").includes("ATTENDED"));
-  assert.ok(!statusesThatCanReach("ATTENDED").includes("CANCELLED"));
+async function memberForBooking(memberId: string) {
+  const member = await prisma.member.findUniqueOrThrow({
+    where: { id: memberId },
+    include: { subscriptions: { where: { status: "ACTIVE" }, include: { plan: true } } },
+  });
+  return {
+    id: member.id,
+    primaryCenterId: member.primaryCenterId,
+    subscriptions: member.subscriptions.map((s) => ({
+      id: s.id,
+      status: s.status,
+      centerId: s.centerId,
+      sessionsRemaining: s.sessionsRemaining,
+      plan: { type: s.plan.type },
+    })),
+  };
+}
+
+/** Un ejercicio por punto de escritura. La clave es el id de `BOOKING_WRITE_POINTS`. */
+const EXERCISES: Record<BookingWritePointId, () => Promise<void>> = {
+  "agenda-check-in": async () => {
+    // `toggleCheckIn` es un Server Action con `requireRole`: necesita sesión de
+    // navegador y aquí no se puede llamar. Se fija que sigue entrando por la
+    // máquina de estados (y por `clearBookingNoShow` al rectificar una falta);
+    // el recorrido completo lo cubre el spec no-show-motivo.
+    const source = readFileSync("src/app/(app)/agenda/session/[id]/actions.ts", "utf8");
+    const body = source.slice(source.indexOf("export async function toggleCheckIn"));
+    assert.match(body, /checkBookingTransition\(booking\.status, newStatus\)/);
+    assert.match(body, /statusesEndingAt\(newStatus\)/);
+    assert.match(body, /clearBookingNoShow\(/);
+  },
+
+  debrief: async () => {
+    for (const from of ["CANCELLED", "WAITLISTED"] as const) {
+      const { bookingId } = await bookingWith(from);
+      const set = await setSessionDebrief({ ...actor(), bookingId, feeling: "GREEN" });
+      assert.equal(set.ok === false && set.status, 409, `debrief sobre ${from}`);
+      assert.equal(await statusOf(bookingId), from);
+      assert.equal(await prisma.sessionDebrief.count({ where: { bookingId } }), 0);
+    }
+    const { bookingId: cancelada } = await bookingWith("CANCELLED");
+    const cleared = await clearSessionDebrief({ ...actor(), bookingId: cancelada });
+    assert.equal(cleared.ok === false && cleared.status, 409, "desmarcar nunca resucita una cancelada");
+    assert.equal(await statusOf(cancelada), "CANCELLED");
+
+    const { bookingId: viva } = await bookingWith("BOOKED");
+    assert.equal((await setSessionDebrief({ ...actor(), bookingId: viva, feeling: "GREEN" })).ok, true);
+    assert.equal(await statusOf(viva), "ATTENDED");
+  },
+
+  "no-show": async () => {
+    const { bookingId: cancelada } = await bookingWith("CANCELLED");
+    const marked = await markBookingNoShow(org.orgId, cancelada, { reason: "FORGOT", refundSession: false });
+    assert.equal(marked.ok, false);
+    const cleared = await clearBookingNoShow(org.orgId, cancelada, "ATTENDED");
+    assert.equal(cleared.ok, false);
+    assert.equal(await statusOf(cancelada), "CANCELLED");
+
+    const { bookingId: enEspera } = await bookingWith("WAITLISTED");
+    assert.equal((await markBookingNoShow(org.orgId, enEspera, { reason: "FORGOT", refundSession: false })).ok, false);
+    assert.equal(await statusOf(enEspera), "WAITLISTED");
+  },
+
+  "portal-cancel": async () => {
+    // Una asistida no se cancela: borraría el histórico de asistencia. Y el
+    // mensaje es el de la máquina de estados, el mismo en todas las vías.
+    const { socio, bookingId: asistida } = await bookingWith("ATTENDED");
+    const result = await cancelBookingForMember(socio.id, asistida);
+    assert.deepEqual(result, { ok: false, error: bookingTransitionMessage("ATTENDED", "CANCELLED") });
+    assert.equal(await statusOf(asistida), "ATTENDED");
+
+    const { socio: s2, bookingId: falta } = await bookingWith("NO_SHOW");
+    assert.equal((await cancelBookingForMember(s2.id, falta)).ok, false);
+    assert.equal(await statusOf(falta), "NO_SHOW");
+
+    const { socio: s3, bookingId: cancelada } = await bookingWith("CANCELLED");
+    assert.equal((await cancelBookingForMember(s3.id, cancelada)).ok, false);
+
+    const { socio: s4, bookingId: viva } = await bookingWith("BOOKED");
+    assert.equal((await cancelBookingForMember(s4.id, viva)).ok, true);
+    assert.equal(await statusOf(viva), "CANCELLED");
+  },
+
+  "portal-claim": async () => {
+    // Reclamar la plaza es WAITLISTED → BOOKED, la única salida legítima de la
+    // cola. Una reserva cancelada del mismo socio no se resucita: se crea otra.
+    const { socio, bookingId: enEspera } = await bookingWith("WAITLISTED");
+    const claimed = await bookSessionForMember(await memberForBooking(socio.id), sessionId, dateParam(day));
+    assert.deepEqual(claimed, { ok: true, waitlisted: false });
+    assert.equal(await statusOf(enEspera), "BOOKED");
+
+    const { socio: s2, bookingId: cancelada } = await bookingWith("CANCELLED");
+    const again = await bookSessionForMember(await memberForBooking(s2.id), sessionId, dateParam(day));
+    assert.equal(again.ok, true);
+    assert.equal(await statusOf(cancelada), "CANCELLED", "CANCELLED es terminal");
+  },
+
+  "staff-cancel": async () => {
+    for (const from of ["ATTENDED", "NO_SHOW", "CANCELLED"] as const) {
+      const { bookingId } = await bookingWith(from);
+      const result = await cancelSessionBooking(org.orgId, bookingId);
+      assert.equal(result.ok, false, `cancelar desde la agenda una reserva ${from}`);
+      assert.equal(await statusOf(bookingId), from);
+    }
+  },
+
+  discard: async () => {
+    for (const from of ["ATTENDED", "NO_SHOW", "CANCELLED"] as const) {
+      const { bookingId } = await bookingWith(from);
+      const result = await discardAttendeeAsStaff(org.orgId, bookingId, {
+        actorUserId: org.trainerId,
+        notifyMember: false,
+      });
+      assert.equal(result.ok, false, `descartar una reserva ${from}`);
+      assert.equal(await statusOf(bookingId), from);
+
+      // Y la decisión pura dice lo mismo: no hay efecto sobre el bono de un
+      // descarte que la máquina de estados no admite.
+      const effect = trainerDiscardEffect({
+        startsAt: new Date(Date.now() + 72 * 3_600_000),
+        now: new Date(),
+        status: from,
+        hasSubscription: true,
+      });
+      assert.equal(effect.transition.ok, false, `trainerDiscardEffect sobre ${from}`);
+      assert.equal(effect.refunds, false);
+    }
+
+    const { bookingId: viva } = await bookingWith("BOOKED");
+    const done = await discardAttendeeAsStaff(org.orgId, viva, { actorUserId: org.trainerId, notifyMember: false });
+    assert.equal(done.ok, true);
+    assert.equal(await statusOf(viva), "CANCELLED");
+  },
+};
+
+test("QA-RES-09 · cada punto de escritura de BOOKING_WRITE_POINTS tiene su ejercicio aquí", () => {
+  const listed = BOOKING_WRITE_POINTS.map((p) => p.id).sort();
+  assert.deepEqual(listed, Object.keys(EXERCISES).sort());
+  assert.equal(new Set(listed).size, listed.length, "sin ids repetidos");
 });
 
-test("deshacer una falta parte de una falta", () => {
-  // `clearBookingNoShow` no acotaba el estado: el mismo bookingId llevaba a
-  // ATTENDED una reserva cancelada. Ahora solo se deshace lo que es NO_SHOW.
-  assert.deepEqual(checkBookingTransition("NO_SHOW", "ATTENDED"), { ok: true });
-  assert.deepEqual(checkBookingTransition("NO_SHOW", "BOOKED"), { ok: true });
-  assert.equal(checkBookingTransition("CANCELLED", "BOOKED").ok, false);
-});
-
-test("marcar falta acota su estado de partida con la misma lista compartida", () => {
-  // `markBookingNoShow` era la única vía que sí validaba; ahora la lista no es
-  // un literal suyo, sale de la máquina de estados.
-  assert.deepEqual(statusesEndingAt("NO_SHOW").sort(), ["ATTENDED", "BOOKED", "NO_SHOW"]);
-  assert.ok(!statusesEndingAt("NO_SHOW").includes("CANCELLED"));
-  assert.ok(!statusesEndingAt("NO_SHOW").includes("WAITLISTED"));
-});
+for (const point of BOOKING_WRITE_POINTS) {
+  test(`QA-RES-09 · ${point.id} (${point.writer}) respeta la máquina de estados`, async () => {
+    await EXERCISES[point.id]();
+  });
+}

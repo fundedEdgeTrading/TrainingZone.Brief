@@ -89,6 +89,42 @@ export async function refundSession(tx: Prisma.TransactionClient, ctx: LedgerCon
 }
 
 /**
+ * Rectificación de una falta que devolvió la sesión (RB-RES-009, QA-RES-04):
+ * la sesión devuelta se vuelve a descontar, con asiento `CORRECTION`.
+ *
+ * Es el núcleo de `clearBookingNoShow`, pero sobre la transacción de quien
+ * llama: el debrief pasa `NO_SHOW → ATTENDED` en su propio UPDATE y la
+ * rectificación tiene que ir en la MISMA transacción, o una caída entre las dos
+ * dejaría la asistencia marcada con la sesión regalada.
+ *
+ * La bandera `noShowRefunded` es el cierre de la operación y viaja dentro del
+ * UPDATE: dos rectificaciones simultáneas no descuentan dos veces una sesión
+ * que solo se devolvió una. Sin bandera no hace nada, así que se puede llamar
+ * sin mirar antes el estado. Devuelve si ha descontado.
+ */
+export async function undoNoShowRefund(
+  tx: Prisma.TransactionClient,
+  ctx: { orgId: string; bookingId: string; actorUserId?: string | null }
+): Promise<boolean> {
+  const released = await tx.booking.updateMany({
+    where: { id: ctx.bookingId, noShowRefunded: true },
+    data: { noShowRefunded: false },
+  });
+  if (released.count === 0) return false;
+  const booking = await tx.booking.findUnique({ where: { id: ctx.bookingId }, select: { subscriptionId: true } });
+  if (!booking?.subscriptionId) return false;
+  // Como en `clearBookingNoShow`: sin saldo no se deja el bono en negativo.
+  return chargeSession(tx, {
+    orgId: ctx.orgId,
+    subscriptionId: booking.subscriptionId,
+    bookingId: ctx.bookingId,
+    reason: "CORRECTION",
+    actorUserId: ctx.actorUserId ?? null,
+    note: "Falta rectificada: la sesión devuelta se vuelve a descontar.",
+  });
+}
+
+/**
  * Movimiento de tamaño arbitrario: el alta o renovación de un bono (+N) y el
  * ajuste manual del saldo desde la ficha. `applied` deja al llamador decidir la
  * condición del UPDATE (el ajuste manual tiene sus propios topes); aquí solo se
