@@ -178,7 +178,12 @@ function birthDateForAge(years: number) {
 
 test("QA-ALTA-08 · el entrenador no puede cambiar el email ni la fecha de nacimiento", async () => {
   actAs("TRAINER");
-  for (const change of [{ email: `${SLUG}-otra@example.com` }, { birthDate: "1991-01-01" }, { phone: "699000000" }]) {
+  const changes: Record<string, string>[] = [
+    { email: `${SLUG}-otra@example.com` },
+    { birthDate: "1991-01-01" },
+    { phone: "699000000" },
+  ];
+  for (const change of changes) {
     const result = await actions.updateMemberData(await memberDataForm(change));
     assert.equal(result.ok, false, `el entrenador ha podido cambiar ${Object.keys(change)[0]}`);
   }
