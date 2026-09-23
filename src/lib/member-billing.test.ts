@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import {
+  createMemberCheckout,
   reconcileMemberInvoicePaid,
   reconcileMemberInvoicePaymentFailed,
   reconcileMemberSubscriptionDeleted,
@@ -30,6 +31,7 @@ const SUFFIX = "e2e-billing-test";
 
 type Fixture = {
   orgId: string;
+  planId: string;
   memberId: string;
   subscriptionId: string;
   stripeSubscriptionId: string;
@@ -65,7 +67,7 @@ async function createFixture(tag: string): Promise<Fixture> {
       stripeSubscriptionId,
     },
   });
-  return { orgId: org.id, memberId: member.id, subscriptionId: subscription.id, stripeSubscriptionId };
+  return { orgId: org.id, planId: plan.id, memberId: member.id, subscriptionId: subscription.id, stripeSubscriptionId };
 }
 
 /**
@@ -211,4 +213,31 @@ test("customer.subscription.deleted cancela la suscripción del socio", async ()
 
   const sub = await prisma.subscription.findUniqueOrThrow({ where: { id: f.subscriptionId } });
   assert.equal(sub.status, "CANCELLED");
+});
+
+test("STR-02 · con una cuota recurrente viva, «Renovar» no abre un segundo cobro mensual", async () => {
+  const f = await createFixture("doble-cuota");
+
+  for (const status of ["ACTIVE", "PENDING_CONFIRMATION", "PAUSED"] as const) {
+    await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status } });
+    const result = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: f.planId, origin: "portal" });
+    assert.equal(result.ok, false, `con la cuota en ${status}`);
+    assert.equal(!result.ok && result.code, "ALREADY_SUBSCRIBED");
+  }
+});
+
+test("STR-02 · una cuota cancelada o un bono puntual no bloquean la compra", async () => {
+  const f = await createFixture("sin-bloqueo");
+
+  await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status: "CANCELLED" } });
+  const renovar = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: f.planId, origin: "staff" });
+  assert.equal(renovar.ok, true, "tras la baja, volver a darse de alta es legítimo");
+
+  // Con la cuota viva, un bono de sesiones sueltas sigue siendo una compra aparte.
+  await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status: "ACTIVE" } });
+  const bono = await prisma.membershipPlan.create({
+    data: { orgId: f.orgId, name: "Bono 5", type: "SESSION_PACK", priceCents: 5000, sessionsIncluded: 5 },
+  });
+  const extra = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: bono.id, origin: "portal" });
+  assert.equal(extra.ok, true);
 });

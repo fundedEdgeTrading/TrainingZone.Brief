@@ -40,7 +40,22 @@ import {
   retriesExhausted,
 } from "@/lib/stripe-dunning";
 
-export type MemberCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
+export type MemberCheckoutErrorCode = "ALREADY_SUBSCRIBED";
+
+export type MemberCheckoutResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string; code?: MemberCheckoutErrorCode };
+
+/** STR-02: mismo mensaje en todas las puertas de venta. */
+export const ALREADY_SUBSCRIBED_ERROR =
+  "Ya tienes una cuota mensual activa. Se renueva sola cada mes: no hace falta volver a pagarla.";
+
+/**
+ * STR-02 · Estados en los que una suscripción recurrente sigue viva en Stripe y
+ * volverá a cobrar: la activa, la que espera a que liquide un adeudo SEPA y la
+ * congelada (con `pause_collection` Stripe no la cancela, solo deja de cobrar).
+ */
+const LIVE_RECURRING_STATUSES: SubscriptionStatus[] = ["ACTIVE", "PENDING_CONFIRMATION", "PAUSED"];
 
 // F5: la regla de recurrencia vive en `plan-recurrence.ts` (ver allí por qué), y
 // se sigue reexportando desde aquí: es donde la buscan todos los call sites.
@@ -201,6 +216,18 @@ export async function createMemberCheckout(params: {
   // vive aquí, que es por donde pasan las tres superficies, y se comprueba antes
   // que la pasarela: no depende de que haya Stripe configurado.
   if (!plan.active) return { ok: false, error: PLAN_ARCHIVED_ERROR };
+
+  // STR-02 · "Renovar" en el portal abría otro checkout recurrente aunque la
+  // cuota ya se renovara sola, y el socio acababa con dos suscripciones en
+  // Stripe cobrándole dos veces al mes. Va aquí, antes del modo demo y de la
+  // pasarela, porque es la puerta común de recepción, portal, landing y móvil.
+  if (isRecurring(plan.type)) {
+    const live = await prisma.subscription.findFirst({
+      where: { memberId: member.id, stripeSubscriptionId: { not: null }, status: { in: LIVE_RECURRING_STATUSES } },
+      select: { id: true },
+    });
+    if (live) return { ok: false, error: ALREADY_SUBSCRIBED_ERROR, code: "ALREADY_SUBSCRIBED" };
+  }
 
   const centerId = params.centerId ?? member.primaryCenterId;
   const returnPath = origin === "portal" ? "/portal/membresia" : origin === "landing" ? "/hazte-socio/gracias" : "/billing";
