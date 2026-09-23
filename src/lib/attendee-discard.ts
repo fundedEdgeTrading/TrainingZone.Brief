@@ -21,14 +21,20 @@
  * depender de la hora del runner.
  */
 
+import type { BookingStatus } from "@prisma/client";
+import { checkBookingTransition, type BookingTransitionCheck } from "@/lib/booking-transitions";
+
 export const TRAINER_DISCARD_WINDOW_HOURS = 24;
 
 export type DiscardInput = {
   /** Instante real de comienzo de la ocurrencia (sessionStartsAt). */
   startsAt: Date;
   now: Date;
-  /** Estado de la reserva que se descarta. */
-  status: "BOOKED" | "WAITLISTED";
+  /**
+   * Estado de la reserva que se descarta. Cualquiera: que el descarte proceda
+   * lo decide la máquina de estados aquí dentro (QA-RES-09), no el llamador.
+   */
+  status: BookingStatus;
   /** La reserva descontó bono (la lista de espera nunca lo hace). */
   hasSubscription: boolean;
   /** El entrenador ha pedido devolver la sesión estando dentro de la ventana. */
@@ -48,20 +54,37 @@ export type DiscardEffect = {
   overridden: boolean;
   /** El override se pidió pero el rol no puede: se ignora, no se falla. */
   overrideDenied: boolean;
+  /**
+   * `status → CANCELLED` según `checkBookingTransition` (QA-RES-09). Si no es
+   * legítimo, el descarte no tiene efecto sobre el bono y quien escribe no
+   * debe aplicarlo: una asistida o una falta no se "descartan", se rectifican.
+   */
+  transition: BookingTransitionCheck;
 };
 
 export function trainerDiscardEffect(input: DiscardInput): DiscardEffect {
   const hoursUntil = (input.startsAt.getTime() - input.now.getTime()) / 3_600_000;
   const withinWindow = hoursUntil < TRAINER_DISCARD_WINDOW_HOURS;
+  // Descartar es cancelar la reserva: el mismo `→ CANCELLED` que la cancelación
+  // del socio, contra la misma máquina de estados. `from === to` se acepta ahí
+  // (re-marcar no cambia nada), pero descartar una cancelada no es re-marcarla:
+  // no hay reserva viva que quitar.
+  const transition: BookingTransitionCheck =
+    input.status === "CANCELLED"
+      ? { ok: false, error: "No se ha encontrado esa reserva activa." }
+      : checkBookingTransition(input.status, "CANCELLED");
+  if (!transition.ok) {
+    return { hoursUntil, withinWindow, refunds: false, overridden: false, overrideDenied: false, transition };
+  }
 
   // La lista de espera nunca descontó bono: no hay nada que devolver ni que
   // consumir, y forzar la devolución ahí regalaría una sesión que nadie pagó.
   if (!input.hasSubscription || input.status === "WAITLISTED") {
-    return { hoursUntil, withinWindow, refunds: false, overridden: false, overrideDenied: false };
+    return { hoursUntil, withinWindow, refunds: false, overridden: false, overrideDenied: false, transition };
   }
 
   if (!withinWindow) {
-    return { hoursUntil, withinWindow, refunds: true, overridden: false, overrideDenied: false };
+    return { hoursUntil, withinWindow, refunds: true, overridden: false, overrideDenied: false, transition };
   }
 
   const wants = Boolean(input.forceRefund);
@@ -72,6 +95,7 @@ export function trainerDiscardEffect(input: DiscardInput): DiscardEffect {
     refunds: wants && may,
     overridden: wants && may,
     overrideDenied: wants && !may,
+    transition,
   };
 }
 

@@ -13,6 +13,7 @@ import { zonedNow, zonedToday, zonedTimeToInstant, parseDateParam, formatDatePar
 import { expandOccurrences, occursOn, sessionsInRangeWhere } from "@/lib/session-occurrences";
 import { resequenceWaitlist } from "@/lib/waitlist";
 import { refundSession } from "@/lib/session-ledger";
+import { checkBookingTransition, statusesThatCanReach } from "@/lib/booking-transitions";
 import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 import { OPEN_HEALTH_STATUSES } from "@/lib/health-status";
 import { getOwnProgressEntries } from "@/lib/health-access";
@@ -844,9 +845,12 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   // Solo se cancela lo que sigue vivo. Sin este filtro, el `bookingId` que
   // recibe la acción (y el endpoint móvil) permitía marcar como CANCELLED una
   // reserva ya asistida y borrar así el histórico de asistencia del socio.
-  if (booking.status !== "BOOKED" && booking.status !== "WAITLISTED") {
-    return { ok: false, error: "Esta reserva ya no está activa." };
-  }
+  // QA-RES-09: lo decide la máquina de estados, no una lista propia. Cancelar
+  // una ya cancelada no es "re-marcarla" (que la máquina acepta): no hay nada
+  // vivo que cancelar.
+  if (booking.status === "CANCELLED") return { ok: false, error: "Esta reserva ya no está activa." };
+  const transition = checkBookingTransition(booking.status, "CANCELLED");
+  if (!transition.ok) return { ok: false, error: transition.error };
   // RB-RES-012: zona del centro, nunca la del cliente. De ella dependen tanto
   // "la clase ya ha empezado" como la ventana de penalización que decide si se
   // devuelve el bono — y es la misma que usó la lectura para pintar el
@@ -884,7 +888,7 @@ export async function cancelBookingForMember(memberId: string, bookingId: string
   // pasaran las dos y devolvieran el bono por duplicado.
   const cancelled = await prisma.$transaction(async (tx) => {
     const applied = await tx.booking.updateMany({
-      where: { id: bookingId, status: { in: ["BOOKED", "WAITLISTED"] } },
+      where: { id: bookingId, status: { in: statusesThatCanReach("CANCELLED") } },
       data: { status: "CANCELLED", cancelledAt: new Date(), subscriptionId: null },
     });
     if (applied.count === 0) return false;
