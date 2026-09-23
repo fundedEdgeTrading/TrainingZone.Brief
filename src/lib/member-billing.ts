@@ -2,8 +2,10 @@ import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
 import { stripeForOrg } from "@/lib/stripe";
 import { createPaymentWithReceipt } from "@/lib/payments";
-import type { PlanType, SubscriptionStatus } from "@prisma/client";
+import { Prisma, type PlanType, type SubscriptionStatus } from "@prisma/client";
 import { createSubscriptionFromPlan } from "@/lib/subscriptions";
+// STR-01: la recarga de sesiones de la renovación, en la transacción del cobro.
+import { refillOnRenewal } from "@/lib/stripe-renewal";
 import { publicOrigin } from "@/lib/site";
 // HU-ST-02: la resolución del id de suscripción de una factura es la misma para
 // los dos planos y vive en un solo sitio desde que el plano 1 se quedó con el
@@ -577,8 +579,9 @@ export type ReconcileResult = { ok: true } | { ok: false; retry: boolean; error:
 
 export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.Invoice): Promise<ReconcileResult> {
   if (!invoice.id) return { ok: true };
+  const invoiceId = invoice.id;
   const already = await prisma.payment.findUnique({
-    where: { stripeInvoiceId: invoice.id },
+    where: { stripeInvoiceId: invoiceId },
     select: { id: true, status: true },
   });
   // Solo una fila YA COBRADA significa reentrega del mismo evento. Una fila en
@@ -607,58 +610,88 @@ export async function reconcileMemberInvoicePaid(orgId: string, invoice: Stripe.
 
   const periodEnd = resolveInvoicePeriodEnd(invoice);
 
-  // HU-ST-23: el desglose necesita saber SOBRE QUÉ cobro se apunta, y las dos
-  // ramas de abajo lo conocen por vías distintas.
-  let paymentId: string | undefined = already?.id;
-
-  if (already) {
-    // El recibo ya existe del intento fallido: se actualiza en vez de crear un
-    // segundo, que además chocaría con la unicidad de `stripeInvoiceId`.
-    await prisma.payment.update({
-      where: { id: already.id },
-      data: {
-        status: "PAID",
-        amountCents: invoice.amount_paid,
-        date: new Date(),
-        notes: "Factura recurrente Stripe (cobrada tras un intento fallido)",
-      },
+  // STR-01 · El cobro, la recarga de sesiones de la renovación y el estado de
+  // la suscripción van en UNA transacción: un `Payment` PAID sin recarga deja al
+  // socio pagando una cuota sin sesiones, y una recarga sin `Payment` hace que
+  // la reentrega del evento (que ya no ve el cobro) recargue otra vez.
+  //
+  // Dos entregas concurrentes del mismo evento chocan en la unicidad de
+  // `stripeInvoiceId`: la segunda transacción se deshace entera (recarga
+  // incluida) y su reintento ve el `Payment` PAID y sale.
+  const paymentId = await withUniqueRetry(async (attempt) => {
+    const current = attempt === 0 ? already : await prisma.payment.findUnique({
+      where: { stripeInvoiceId: invoiceId },
+      select: { id: true, status: true },
     });
-  } else {
-    paymentId = (
-      await createPaymentWithReceipt({
-        orgId,
-        memberId: subscription.memberId,
+    if (current?.status === "PAID") return null;
+
+    return prisma.$transaction(async (tx) => {
+      // HU-ST-23: el desglose necesita saber SOBRE QUÉ cobro se apunta, y las
+      // dos ramas de abajo lo conocen por vías distintas.
+      let id: string;
+      if (current) {
+        // El recibo ya existe del intento fallido: se actualiza en vez de crear
+        // un segundo, que además chocaría con la unicidad de `stripeInvoiceId`.
+        await tx.payment.update({
+          where: { id: current.id },
+          data: {
+            status: "PAID",
+            amountCents: invoice.amount_paid,
+            date: new Date(),
+            notes: "Factura recurrente Stripe (cobrada tras un intento fallido)",
+          },
+        });
+        id = current.id;
+      } else {
+        id = (
+          await createPaymentWithReceiptInTx(tx, attempt, {
+            orgId,
+            memberId: subscription.memberId,
+            subscriptionId: subscription.id,
+            amountCents: invoice.amount_paid,
+            method: "STRIPE",
+            status: "PAID",
+            date: new Date(),
+            stripeInvoiceId: invoiceId,
+            notes: "Factura recurrente Stripe",
+          })
+        ).id;
+      }
+
+      // Solo en renovación (`subscription_cycle`, y `subscription_update` del
+      // adelanto de P4); idempotente por factura. Deja también el `endDate`.
+      await refillOnRenewal(tx, {
         subscriptionId: subscription.id,
-        amountCents: invoice.amount_paid,
-        method: "STRIPE",
-        status: "PAID",
-        date: new Date(),
-        stripeInvoiceId: invoice.id,
-        notes: "Factura recurrente Stripe",
-      })
-    ).id;
-  }
+        invoiceId,
+        billingReason: invoice.billing_reason,
+        periodEnd,
+      });
+
+      await tx.subscription.update({
+        where: { id: subscription.id },
+        data: { status: "ACTIVE", ...(periodEnd ? { endDate: periodEnd } : {}) },
+      });
+      return id;
+    });
+  });
+  // Otra entrega concurrente ya lo concilió entero.
+  if (!paymentId) return { ok: true };
 
   // HU-ST-27 (petición de P5): el descuento de la factura, sobre el `Payment`
   // que acaba de escribirse — es el punto común de las dos ramas de arriba
   // (recibo que ya existía de un intento fallido, y recibo nuevo).
-  if (paymentId) await recordInvoiceDiscount(orgId, invoice, paymentId);
+  await recordInvoiceDiscount(orgId, invoice, paymentId);
 
   // HU-ST-23 (P4) · Punto de enganche del desglose bruto/comisión/neto. Hoy no
   // hace nada y NO puede lanzar: es un apunte contable colgado del camino del
   // cobro, y tumbar aquí haría que Stripe reintentase un `invoice.paid` que ya
   // estaba bien. El desglose se reconstruye después; el cobro no.
-  if (paymentId) await recordBalanceBreakdown(paymentId, resolveInvoiceChargeId(invoice));
+  await recordBalanceBreakdown(paymentId, resolveInvoiceChargeId(invoice));
 
   // HU-ST-12: `invoice.paid` es el otro desenlace posible de un adeudo directo
   // en vuelo (el primero es `checkout.session.async_payment_succeeded`). El
   // dinero ya ha entrado, así que el freno de RB-PAGO-025 se levanta aquí.
   if (stripeSubscriptionId) await releaseAsyncHold(orgId, stripeSubscriptionId, true);
-
-  await prisma.subscription.update({
-    where: { id: subscription.id },
-    data: { status: "ACTIVE", ...(periodEnd ? { endDate: periodEnd } : {}) },
-  });
 
   // El aviso a recepción lo abrió `reconcileMemberInvoicePaymentFailed`. Cobrado
   // el recibo ya no hay nada que revisar, y dejarlo abierto manda a alguien a
@@ -746,4 +779,36 @@ export async function reconcileMemberInvoicePaymentFailed(orgId: string, invoice
   }
 
   return { ok: true };
+}
+
+/**
+ * STR-01 · `createPaymentWithReceipt` (payments.ts) escribe con el cliente raíz y
+ * reintenta la colisión del número de recibo DENTRO de su bucle. Dentro de una
+ * transacción de Postgres eso no sirve: tras un error la transacción queda
+ * abortada y cualquier sentencia siguiente falla. Aquí el número se calcula en
+ * la transacción y el reintento lo hace `withUniqueRetry` con la transacción
+ * entera. `attempt` desplaza el número igual que el bucle original.
+ *
+ * TODO(payments.ts, fuera de esta pista): exponer allí una variante con `tx` y
+ * borrar esta.
+ */
+async function createPaymentWithReceiptInTx(
+  tx: Prisma.TransactionClient,
+  attempt: number,
+  data: Omit<Prisma.PaymentUncheckedCreateInput, "receiptNumber">
+) {
+  const count = await tx.payment.count({ where: { orgId: data.orgId } });
+  return tx.payment.create({ data: { ...data, receiptNumber: `TZ-${2000 + count + attempt}` } });
+}
+
+/** Reintenta una transacción que choca con una restricción de unicidad (P2002). */
+async function withUniqueRetry<T>(run: (attempt: number) => Promise<T>, maxAttempts = 5): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run(attempt);
+    } catch (e) {
+      const unique = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+      if (!unique || attempt + 1 >= maxAttempts) throw e;
+    }
+  }
 }
