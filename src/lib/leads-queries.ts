@@ -7,6 +7,7 @@ import { LEAD_CONSENT_VERSION, resolveLeadHealthCapture } from "@/lib/consent";
 import { canCaptureLeadHealthData } from "@/lib/minors";
 import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
 import { releaseReferralRewardsForLead } from "@/lib/referral-rewards";
+import { sendMemberWelcome } from "@/lib/member-welcome";
 
 /**
  * Ámbito de centro de un lead (center-scope.ts), igual que ya se aplica a
@@ -415,6 +416,15 @@ export async function initiateLeadConversion(
     }
     return { member, invitation };
   });
+
+  // QA-ALTA-04 · Sin este envío el socio nacía con una invitación que nadie le
+  // mandaba. Fuera de la transacción y sin poder tumbar la conversión: el alta
+  // ya está hecha, y "Reenviar bienvenida" en la ficha es la vía de rescate.
+  try {
+    await sendMemberWelcome(member.id);
+  } catch (error) {
+    console.error("[leads] error enviando la bienvenida del lead convertido:", error);
+  }
 
   return { ok: true as const, memberId: member.id };
 }
