@@ -233,7 +233,9 @@ type FakePrice = {
   active: boolean;
   currency: string;
   unit_amount: number;
-  recurring: { interval: string; interval_count: number } | null;
+  billing_scheme: "per_unit";
+  transform_quantity: null;
+  recurring: { interval: string; interval_count: number; usage_type: "licensed" } | null;
 };
 
 function fakeCatalogStripe() {
@@ -263,7 +265,9 @@ function fakeCatalogStripe() {
           active: true,
           currency: params.currency,
           unit_amount: params.unit_amount,
-          recurring: params.recurring ? { interval: params.recurring.interval, interval_count: 1 } : null,
+          billing_scheme: "per_unit",
+          transform_quantity: null,
+          recurring: params.recurring ? { interval: params.recurring.interval, interval_count: 1, usage_type: "licensed" } : null,
         };
         prices.push(price);
         if (opts.idempotencyKey) byKey.set(opts.idempotencyKey, price.id);
@@ -378,4 +382,20 @@ test("CON-04: ensurePlanPriceForAccount respeta la organización y el archivado"
   const archivado = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
   assert.equal(archivado.ok, false);
   assert.equal(prices.length, 0, "no se crea nada en Stripe para un plan que no se vende");
+});
+
+test("CON-03: un reintento tras perder el guardado local reutiliza el Price, no crea otro", async () => {
+  const fx = await fixture("reintento");
+  const { prices, resolver } = fakeCatalogStripe();
+  const plan = await prisma.membershipPlan.create({
+    data: { orgId: fx.orgId, name: "Cuota", type: "MONTHLY", priceCents: 4900 },
+  });
+  const first = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(first.ok, true);
+  // Se pierde el espejo local (p. ej. el update de Prisma falló tras crear en Stripe).
+  await prisma.membershipPlan.update({ where: { id: plan.id }, data: { stripePriceId: null } });
+  const retry = await ensurePlanPriceForAccount(fx.orgId, plan.id, resolver);
+  assert.equal(retry.ok && first.ok && retry.priceId === first.priceId, true);
+  assert.equal(prices.length, 1);
+  assert.equal(prices[0].active, true, "no se archiva el propio Price que se reutiliza");
 });

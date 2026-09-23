@@ -250,8 +250,15 @@ export function catalogPriceKey(
 /** ¿Este Price de Stripe cobra exactamente lo que dice el plan? */
 function priceMatches(price: Stripe.Price, unitAmountCents: number, recurring: boolean): boolean {
   if (!price.active || price.currency !== "eur" || price.unit_amount !== unitAmountCents) return false;
+  // Solo un precio plano por unidad: uno escalonado o con `transform_quantity`
+  // puede tener el mismo `unit_amount` y cobrar otra cosa.
+  if (price.billing_scheme !== "per_unit" || price.transform_quantity) return false;
   if (!recurring) return !price.recurring;
-  return price.recurring?.interval === "month" && price.recurring.interval_count === 1;
+  return (
+    price.recurring?.interval === "month" &&
+    price.recurring.interval_count === 1 &&
+    price.recurring.usage_type === "licensed"
+  );
 }
 
 /**
