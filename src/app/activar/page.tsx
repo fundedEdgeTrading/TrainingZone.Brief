@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 const STATUS_COPY: Record<string, { title: string; body: string }> = {
   PENDING_PAYMENT: {
     title: "Activa tu plataforma",
-    body: "Tu organización está creada. Falta elegir un plan para empezar a usar Apta.",
+    body: "Tu organización está creada. Falta elegir un plan para empezar a usar Training Zone.",
   },
   PAST_DUE: {
     title: "Hay un problema con tu último cobro",
@@ -171,7 +171,7 @@ export default async function ActivarPage({
           </div>
         ) : (
           <p className="text-sm text-brand-muted bg-tz-sand border border-brand-border rounded-control p-4">
-            Todavía no hay planes de precio configurados en este entorno. Contacta con Apta para activar tu cuenta.
+            Todavía no hay planes de precio configurados en este entorno. Contacta con Training Zone para activar tu cuenta.
           </p>
         )
       ) : (
