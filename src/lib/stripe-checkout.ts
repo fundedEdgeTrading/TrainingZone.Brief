@@ -64,8 +64,15 @@ export async function reconcileConnectCheckoutCompleted(orgId: string, session: 
  * `Payment` en el histórico. Recurrente: no se toca nada aquí, lo cubre
  * `customer.subscription.created` (reconcileMemberSubscriptionUpserted).
  *
- * Idempotente por `Payment.status`: si el Payment ya estaba PAID (redelivery
- * del webhook), no se repite la creación del bono ni el resto del efecto.
+ * CHK-01 · `Payment` PAID, bono y su asiento de `SessionLedger` van en UNA
+ * transacción. Antes el `Payment` pasaba a PAID primero y el bono se creaba
+ * después, fuera de ella: si algo fallaba entre medias, la reentrega de Stripe
+ * salía por la guarda de "ya está PAID" y el socio quedaba cobrado y sin bono.
+ *
+ * La guarda de idempotencia mira lo que de verdad importa: con un plan puntual,
+ * que el `Payment` tenga ya su bono (`subscriptionId`), no solo que esté PAID.
+ * Viaja DENTRO del UPDATE condicional, así que dos entregas concurrentes no
+ * crean dos bonos: la segunda espera al bloqueo de la fila y ya no casa.
  */
 async function reconcileMemberCheckoutSession(
   orgId: string,
@@ -75,31 +82,44 @@ async function reconcileMemberCheckoutSession(
 ) {
   const payment = await prisma.payment.findFirst({ where: { stripeCheckoutSessionId: session.id, orgId } });
   if (!payment) return;
-  if (payment.status === "PAID") return; // ya conciliado — redelivery del webhook
 
-  await prisma.payment.update({
-    where: { id: payment.id },
-    data: { status: "PAID", stripePaymentIntentId: paymentIntentId, receiptNumber: payment.receiptNumber ?? `STRIPE-${payment.id.slice(-8)}` },
+  const planId = session.metadata?.planId;
+  const plan = planId ? await prisma.membershipPlan.findFirst({ where: { id: planId, orgId } }) : null;
+  const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { primaryCenterId: true } });
+  const needsBono = !!plan && !isRecurring(plan.type) && !!member;
+
+  // Ámbito de centro: el `centerId` del metadata lo puso nuestro servidor, pero
+  // se comprueba igual que pertenece a la organización antes de colgarle un bono.
+  let centerId = member?.primaryCenterId ?? null;
+  const metaCenterId = session.metadata?.centerId;
+  if (needsBono && metaCenterId) {
+    const center = await prisma.center.findFirst({ where: { id: metaCenterId, orgId }, select: { id: true } });
+    if (!center) throw new Error(`Centro ${metaCenterId} fuera de la organización ${orgId}.`);
+    centerId = center.id;
+  }
+
+  const reconciled = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.payment.updateMany({
+      where: needsBono ? { id: payment.id, subscriptionId: null } : { id: payment.id, status: { not: "PAID" } },
+      data: { status: "PAID", stripePaymentIntentId: paymentIntentId, receiptNumber: payment.receiptNumber ?? `STRIPE-${payment.id.slice(-8)}` },
+    });
+    if (claimed.count === 0) return false; // ya conciliado — redelivery del webhook
+
+    if (needsBono && plan && centerId) {
+      // `createSubscriptionFromPlan` deja el asiento PURCHASE del libro mayor con
+      // el mismo cliente de transacción.
+      const subscription = await createSubscriptionFromPlan(tx, { memberId, centerId, plan });
+      await tx.payment.update({ where: { id: payment.id }, data: { subscriptionId: subscription.id } });
+    }
+    return true;
   });
+  if (!reconciled) return;
 
   // HU-ST-27 (petición de P5): cuánto descuento se aplicó y con qué código. Es
   // lo que convierte "se usó un cupón" en "este código trajo N ventas y X €".
-  // Va dentro de la guarda de reentrega de arriba, así que una redelivery del
+  // Va detrás de la guarda de reentrega de arriba, así que una redelivery del
   // webhook no la repite; sin descuento en la sesión, no hace nada.
   await recordCheckoutDiscount(orgId, session);
-
-  const planId = session.metadata?.planId;
-  if (planId) {
-    const plan = await prisma.membershipPlan.findFirst({ where: { id: planId, orgId } });
-    if (plan && !isRecurring(plan.type)) {
-      const member = await prisma.member.findFirst({ where: { id: memberId, orgId }, select: { primaryCenterId: true } });
-      if (member) {
-        const centerId = session.metadata?.centerId || member.primaryCenterId;
-        const subscription = await createSubscriptionFromPlan(prisma, { memberId, centerId, plan });
-        await prisma.payment.update({ where: { id: payment.id }, data: { subscriptionId: subscription.id } });
-      }
-    }
-  }
 
   await confirmLeadClosureForMember(orgId, memberId);
 }
