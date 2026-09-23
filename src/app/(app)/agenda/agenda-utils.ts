@@ -181,6 +181,48 @@ export type WeekOccurrence = {
 };
 
 /**
+ * QA-RES-03: campos con los que se guarda por `saveSessionAction` una
+ * ocurrencia de una serie que se ha soltado en otro hueco de la rejilla.
+ *
+ * Todo lo que no es día y hora viaja tal cual (si faltara `recurrence` o
+ * `recUntil`, guardar degradaría la serie), y `occurrenceDate` es el día ORIGEN:
+ * es lo que dice al servidor qué ocurrencia se movió. `memberId` NO se manda: el
+ * movimiento ya se lleva la reserva del EP, y mandarlo intentaría reservarla otra
+ * vez.
+ */
+export function dragSaveFields(
+  ev: WeekOccurrence,
+  target: {
+    centerId: string;
+    /** Día de la serie que se ha arrastrado ("YYYY-MM-DD"). */
+    occurrenceISO: string;
+    dateISO: string;
+    startHHMM: string;
+    endHHMM: string;
+    scope: "all" | "future" | "single";
+  }
+): Record<string, string> {
+  const fields: Record<string, string> = {
+    id: ev.id,
+    centerId: target.centerId,
+    title: ev.title,
+    type: ev.type,
+    trainerId: ev.trainerId,
+    date: target.dateISO,
+    startTime: target.startHHMM,
+    endTime: target.endHHMM,
+    capacity: String(ev.capacity),
+    recurrence: ev.recurrence,
+    occurrenceDate: target.occurrenceISO,
+    scope: target.scope,
+  };
+  if (ev.type === "personal" && ev.selfBookable) fields.selfBookable = "on";
+  if (ev.isTrial) fields.isTrial = "on";
+  if (ev.recurrence !== "NONE" && ev.recUntilISO) fields.recUntil = ev.recUntilISO;
+  return fields;
+}
+
+/**
  * Días de la semana [ws, we) en los que `session` tiene ocurrencia.
  *
  * - "NONE": su propio día, si cae dentro de la semana.

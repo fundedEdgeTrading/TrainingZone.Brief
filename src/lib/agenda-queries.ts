@@ -1121,25 +1121,34 @@ function formatOccurrenceLabel(day: Date) {
   return day.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
 }
 
-/** Arrastrar y soltar: reprograma día/hora conservando la duración original. */
+/**
+ * Arrastrar y soltar una sesión SUELTA: reprograma día/hora conservando la
+ * duración original.
+ *
+ * QA-RES-03: con una serie, esto movía la fecha base de la fila —la serie
+ * entera, pasado incluido— y dejaba cada reserva en su día viejo, huérfana. La
+ * rejilla ahora pregunta el alcance y guarda por `saveSession`; aquí se
+ * rechaza para que ningún otro llamador vuelva a mover una serie a ciegas.
+ */
 export async function rescheduleSession(orgId: string, sessionId: string, date: Date, startTime: string, endTime: string) {
   const session = await prisma.classSession.findFirst({
     where: { id: sessionId, orgId },
     select: { id: true, date: true, recurrence: true },
   });
   if (!session) return { ok: false as const, error: "Sesión no encontrada." };
+  if (session.recurrence !== "NONE") {
+    return { ok: false as const, error: "Es una sesión periódica: elige a qué sesiones aplicar el cambio." };
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.classSession.update({ where: { id: sessionId }, data: { date, startTime, endTime } });
     // Mover una sesión suelta se lleva consigo a quien ya la había reservado:
     // si no, la reserva se quedaba apuntando al día viejo y desaparecía del
     // roster de la sesión y de "tus próximas reservas".
-    if (session.recurrence === "NONE") {
-      await tx.booking.updateMany({
-        where: { sessionId, occurrenceDate: session.date },
-        data: { occurrenceDate: date },
-      });
-    }
+    await tx.booking.updateMany({
+      where: { sessionId, occurrenceDate: session.date },
+      data: { occurrenceDate: date },
+    });
   });
   return { ok: true as const };
 }

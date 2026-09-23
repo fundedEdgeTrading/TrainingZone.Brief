@@ -7,6 +7,7 @@ import {
   cancelSessionBooking,
   createEpSlot,
   deleteSession,
+  rescheduleSession,
   saveSession,
   staffCancellationEffect,
 } from "@/lib/agenda-queries";
@@ -368,4 +369,51 @@ test("QA-RES-05 · borrar toda la serie devuelve solo las ocurrencias futuras", 
   assert.equal(await balanceOf(socios.next.subscriptionId), 5);
   assert.equal(await balanceOf(socios.later.subscriptionId), 5);
   assert.equal(await prisma.classSession.findUnique({ where: { id: series.id } }), null);
+});
+
+// --- QA-RES-03 · arrastrar una ocurrencia de una serie ------------------------
+
+test("QA-RES-03 · el arrastre directo no mueve una serie entera", async () => {
+  const { series, socios, nextDay } = await weeklyWithBookings("mover-serie");
+  const before = await prisma.classSession.findUniqueOrThrow({ where: { id: series.id } });
+
+  const moved = await rescheduleSession(org.orgId, series.id, new Date(nextDay.getTime() + DAY), "12:00", "13:00");
+  assert.equal(moved.ok, false, "una serie se mueve eligiendo alcance, por saveSession");
+  const after = await prisma.classSession.findUniqueOrThrow({ where: { id: series.id } });
+  assert.deepEqual([after.date, after.startTime], [before.date, before.startTime]);
+  assert.ok(await bookingOf(socios.next.id));
+});
+
+test("QA-RES-03 · mover 'solo esta' ocurrencia se lleva sus reservas y deja la serie en su sitio", async () => {
+  const { series, socios, nextDay } = await weeklyWithBookings("mover-single");
+  const row = await prisma.classSession.findUniqueOrThrow({ where: { id: series.id } });
+  const target = new Date(nextDay.getTime() + DAY);
+
+  const saved = await saveSession(org.orgId, {
+    id: series.id,
+    centerId: org.centerId,
+    trainerId: org.trainerId,
+    title: row.name,
+    type: "reduced",
+    date: target,
+    startTime: "12:00",
+    endTime: "13:00",
+    memberId: null,
+    capacity: row.capacity,
+    selfBookable: false,
+    isTrial: false,
+    recurrence: "WEEKLY",
+    recUntil: null,
+    scope: "single",
+    occurrenceDate: nextDay,
+  });
+  assert.ok(saved.ok);
+
+  const moved = await prisma.booking.findFirstOrThrow({ where: { memberId: socios.next.id } });
+  assert.equal(moved.sessionId, saved.session.id, "la reserva viaja con su ocurrencia, no se queda huérfana");
+  assert.equal(moved.occurrenceDate.getTime(), target.getTime());
+  const later = await prisma.booking.findFirstOrThrow({ where: { memberId: socios.later.id } });
+  const laterRow = await prisma.classSession.findUniqueOrThrow({ where: { id: later.sessionId } });
+  assert.equal(laterRow.startTime, row.startTime, "las demás ocurrencias siguen a su hora");
+  assert.equal(await balanceOf(socios.next.subscriptionId), 4, "mover no cobra ni devuelve");
 });
