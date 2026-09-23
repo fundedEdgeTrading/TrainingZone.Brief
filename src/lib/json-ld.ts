@@ -128,7 +128,7 @@ export function centerJsonLd(center: CenterJsonLdInput): JsonLdNode | null {
  * Oferta de un plan de plataforma, **sin `price`**.
  *
  * `priceLabel` es una cadena de presentación y los importes reales viven en
- * Stripe, resueltos por entorno (RB-PLAN-001). Marcar el rótulo como precio
+ * Stripe (`lib/platform-price-catalog.ts`). Marcar el rótulo como precio
  * sería afirmar un importe que puede no coincidir con el cargo. Se emite la
  * oferta sin precio hasta que exista un importe canónico que leer.
  */
