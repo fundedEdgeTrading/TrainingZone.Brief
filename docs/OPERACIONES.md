@@ -29,6 +29,7 @@ Para la app nativa, `apps/mobile/README.md`.
 | `npm run test:e2e` | Playwright |
 | `npm run migrate:fotos` | Migración de fotos de progreso al almacén cifrado |
 | `npm run export:fichajes` | Exportación de fichajes (módulo aparcado) |
+| `npm run bootstrap:plataforma` | Organización de plataforma y su primer `PLATFORM_ADMIN` en una base limpia, sin seed (§7.3) |
 
 Otros scripts puntuales en `scripts/`: `limpiar-tareas.ts`,
 `simular-flujos.ts`.
@@ -361,3 +362,46 @@ GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO apta_app, apta_
 REVOKE UPDATE, DELETE ON TABLE "AuditLog" FROM apta_app;
 REVOKE ALL ON TABLE "_prisma_migrations" FROM apta_app, apta_mantenimiento;
 ```
+
+### 7.3 Primer arranque sin seed: la plataforma
+
+Producción nace **vacía**. Las organizaciones de los gimnasios solo se crean
+pagando (`/planes` → webhook → OWNER, RB-ALTA-001), pero para soporte y para
+revisar las altas hace falta alguien en el panel de plataforma, y sin seed no
+existe. `scripts/bootstrap-plataforma.ts` crea exactamente eso y nada más:
+
+- la organización de plataforma (slug `PLATFORM_ORG_SLUG`), en estado
+  `ACTIVE`: con el `PENDING_PAYMENT` por defecto, la purga de organizaciones sin
+  pagar la **borraría** a los días, porque no tiene socios, centros ni cobros;
+- un `PLATFORM_ADMIN` (`PLATFORM_ADMIN_EMAIL`) **sin contraseña**: recibe una
+  invitación por correo y la fija en `/onboarding/<token>`. El enlace no se
+  imprime nunca;
+- una fila en `AuditLog` (`PLATFORM_BOOTSTRAP`), sin el token.
+
+Desde la shell del servicio web en Render (tiene las variables del entorno):
+
+```bash
+NODE_ENV=production npm run bootstrap:plataforma
+```
+
+`NODE_ENV=production` va delante a propósito: Render no lo declara (§7.1) y el
+script se niega a correr fuera de producción salvo con `--force`. Variables:
+`PLATFORM_ORG_SLUG` y `PLATFORM_ADMIN_EMAIL` (obligatorias, ya en el blueprint),
+`PLATFORM_ORG_NAME` y `PLATFORM_ADMIN_NAME` (opcionales, en la propia línea).
+
+| Situación | Qué hace |
+|---|---|
+| Base vacía | Crea organización, administrador e invitación, y la envía |
+| Se vuelve a ejecutar | Nada: dice lo que ya existe. Con `--reenviar`, manda otra vez la invitación vigente |
+| La invitación caducó | La renueva (mismo registro, token nuevo) y la envía |
+| El email ya tiene contraseña en Apta | Crea la membresía sin invitación: entra con la suya |
+| Datos de demo (la organización `training-zone` o cuentas con la contraseña del seed) | **Se niega**, también con `--force` |
+| El slug es de una organización con socios, centros o cobros | Se niega: es un gimnasio |
+| El email ya tiene otro rol en esa organización, o está de baja | Se niega: no cambia roles en silencio |
+| En producción sin `BREVO_API_KEY` o con la URL pública en `localhost` | Se niega **antes de escribir nada**: la invitación no llegaría |
+
+`sendMail` registra los fallos de Brevo en el log en vez de propagarlos: si el
+correo no llega, se relanza con `--reenviar`. La lógica de decisión es pura y
+tiene sus pruebas en `scripts/bootstrap-plataforma.test.ts`, que corre CI
+(`npm run test:unit` solo recorre `src/`).
+
