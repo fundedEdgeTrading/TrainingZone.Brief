@@ -8,6 +8,7 @@ import {
   reconcileMemberInvoicePaid,
   reconcileMemberInvoicePaymentFailed,
   reconcileMemberSubscriptionDeleted,
+  reconcileMemberSubscriptionUpserted,
 } from "@/lib/member-billing";
 
 /**
@@ -240,4 +241,51 @@ test("STR-02 · una cuota cancelada o un bono puntual no bloquean la compra", as
   });
   const extra = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: bono.id, origin: "portal" });
   assert.equal(extra.ok, true);
+});
+
+/** `customer.subscription.created/updated` mínimo, con lo que leen los reconciliadores. */
+function stripeSubscription(id: string, metadata: Record<string, string>, extra: Record<string, unknown> = {}): Stripe.Subscription {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    id,
+    status: "active",
+    metadata,
+    pause_collection: null,
+    cancel_at: null,
+    cancel_at_period_end: false,
+    items: { data: [{ current_period_start: now, current_period_end: now + 30 * 86_400 }] },
+    ...extra,
+  } as unknown as Stripe.Subscription;
+}
+
+test("STR-03 · la cuota recurrente queda en el centro donde se vendió, no en el habitual", async () => {
+  const f = await createFixture("centro-venta");
+  const centroB = await prisma.center.create({
+    data: { orgId: f.orgId, name: "Centro B", slug: `${SUFFIX}-centro-venta-b` },
+  });
+  const id = `sub_${SUFFIX}-centro-venta-nueva`;
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(id, { orgId: f.orgId, memberId: f.memberId, planId: f.planId, centerId: centroB.id })
+  );
+
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId: id } });
+  assert.equal(sub.centerId, centroB.id);
+});
+
+test("STR-03 · un centerId de otra organización en el metadata cae al centro habitual", async () => {
+  const f = await createFixture("centro-ajeno");
+  const ajena = await createFixture("centro-ajeno-otra");
+  const centroAjeno = await prisma.subscription.findUniqueOrThrow({ where: { id: ajena.subscriptionId } });
+  const member = await prisma.member.findUniqueOrThrow({ where: { id: f.memberId } });
+  const id = `sub_${SUFFIX}-centro-ajeno-nueva`;
+
+  await reconcileMemberSubscriptionUpserted(
+    f.orgId,
+    stripeSubscription(id, { orgId: f.orgId, memberId: f.memberId, planId: f.planId, centerId: centroAjeno.centerId })
+  );
+
+  const sub = await prisma.subscription.findUniqueOrThrow({ where: { stripeSubscriptionId: id } });
+  assert.equal(sub.centerId, member.primaryCenterId);
 });

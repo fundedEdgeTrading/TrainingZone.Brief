@@ -576,21 +576,36 @@ export async function reconcileMemberSubscriptionUpserted(orgId: string, subscri
   ]);
   if (!member || !plan) return;
 
+  // STR-03 · El centro de la venta viaja en `subscription_data.metadata.centerId`
+  // (lo pone `createMemberCheckout`, y en recepción es el centro elegido). Se
+  // ignoraba y la cuota caía siempre en el centro habitual, así que la caja de
+  // un segundo centro nunca veía sus cuotas. El webhook no tiene usuario con el
+  // que aplicar `isCenterInScope`: la frontera aquí es la organización del
+  // evento, y un centro que no sea de ella se descarta.
+  const centerId = await resolveSubscriptionCenterId(orgId, meta.centerId, member.primaryCenterId);
+
   const startDate = item?.current_period_start ? new Date(item.current_period_start * 1000) : new Date();
 
   await createSubscriptionFromPlan(prisma, {
     memberId: member.id,
     plan,
-    // El checkout de socio no pide centro (el plan MONTHLY/ONLINE es de
-    // organización, no de un centro concreto): arranca en el centro habitual
-    // del socio, igual que cualquier bono se puede reasignar luego a mano si
-    // hiciera falta.
-    centerId: member.primaryCenterId,
+    centerId,
     startDate,
     endDate,
     status,
     stripeSubscriptionId: subscription.id,
   });
+}
+
+/** STR-03: el centro del metadata si es de la organización; si no, el habitual del socio. */
+async function resolveSubscriptionCenterId(
+  orgId: string,
+  requestedCenterId: string | undefined,
+  primaryCenterId: string
+): Promise<string> {
+  if (!requestedCenterId || requestedCenterId === primaryCenterId) return primaryCenterId;
+  const center = await prisma.center.findFirst({ where: { id: requestedCenterId, orgId }, select: { id: true } });
+  return center ? center.id : primaryCenterId;
 }
 
 /** `customer.subscription.deleted`. */
