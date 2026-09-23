@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireRole, memberIsInScope, centerIsInScope, OUT_OF_CENTER_SCOPE, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { createHealthRecord, updateHealthRecordStatus } from "@/lib/health-access";
+import { createHealthRecord, updateHealthRecordStatus, type HealthWriteResult } from "@/lib/health-access";
 import { HEALTH_STATUSES } from "@/lib/health-status";
 import { canDeleteMembers, canManageMembers, canManageOrg } from "@/lib/rbac";
 import {
@@ -79,6 +79,14 @@ function parseInjuryDate(
 
 export type MemberActionResult = { ok: true } | { ok: false; error: string };
 
+/** Motivo en claro de cada "no" de `health-access.ts` al escribir salud. */
+const HEALTH_WRITE_ERROR: Record<Exclude<HealthWriteResult, { ok: true }>["error"], string> = {
+  forbidden: "Tu rol no puede registrar datos de salud.",
+  not_found: "No se ha encontrado ese socio o ese registro.",
+  no_consent:
+    "El socio no ha dado su consentimiento de datos de salud, así que no se puede registrar. Pídeselo antes (lo firma en su portal o en la valoración inicial).",
+};
+
 // Alta de lesión / condición. El acceso real (permiso + consentimiento +
 // auditoría) lo aplica lib/health-access.ts; aquí solo se validan las entradas.
 export async function addHealthRecord(formData: FormData): Promise<MemberActionResult> {
@@ -116,7 +124,7 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
 
   if (!(await memberIsInScope(session.user, memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
-  await createHealthRecord({
+  const written = await createHealthRecord({
     memberId,
     orgId: session.user.orgId,
     actorUserId: session.user.id,
@@ -133,6 +141,10 @@ export async function addHealthRecord(formData: FormData): Promise<MemberActionR
       injuryDateApprox: injury.approx,
     },
   });
+  // QA-ALTA-07: health-access.ts es quien decide (permiso + consentimiento) y
+  // su "no" tiene que llegar a la pantalla. Antes se descartaba y la acción
+  // decía ok: el entrenador veía "guardado" de una lesión que no existía.
+  if (!written.ok) return { ok: false, error: HEALTH_WRITE_ERROR[written.error] };
 
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
@@ -164,13 +176,14 @@ export async function updateHealthRecordStatusAction(
   if (!record?.memberId) return { ok: false, error: "No se ha encontrado ese registro." };
   if (!(await memberIsInScope(session.user, record.memberId))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
-  await updateHealthRecordStatus({
+  const written = await updateHealthRecordStatus({
     recordId,
     orgId: session.user.orgId,
     actorUserId: session.user.id,
     actorRole: session.user.role,
     status,
   });
+  if (!written.ok) return { ok: false, error: HEALTH_WRITE_ERROR[written.error] };
 
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
