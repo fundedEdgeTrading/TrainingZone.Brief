@@ -11,6 +11,7 @@ import {
 } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderOwnerActivationEmail } from "@/lib/emails/templates";
+import { createNotificationOnce } from "@/lib/notifications";
 
 /**
  * Alta de la organización a partir de un pago confirmado (RB-ALTA-001). Es el
@@ -162,15 +163,20 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
     provisioningSessionId: input.provisioningSessionId,
   };
 
-  // 2. RB-ALTA-003: si ese email ya dirige una organización, se le actualiza el
-  //    plan en vez de crearle una segunda. Comprar dos veces no debe partir sus
-  //    datos en dos instalaciones.
+  // 2. RB-ALTA-003 + QA-ALTA-13: si ese email ya dirige una organización, el
+  //    alta se RETIENE para soporte y no se toca nada. Antes se le cambiaba el
+  //    plan y se le pisaba la suscripción de Stripe a esa organización: el
+  //    checkout de alta no autentica a nadie, así que bastaba con pagar con el
+  //    email de otro director. Crear una segunda organización tampoco vale:
+  //    parte sus datos en dos instalaciones y le cobra dos suscripciones. El
+  //    cambio de plan legítimo va por `applyPlanChangeFromCheckout`, que lleva
+  //    el `orgId` de una sesión autenticada.
   const existingOwner = await prisma.user.findFirst({
     where: { email, role: "OWNER" },
-    select: { orgId: true, identityId: true },
+    select: { orgId: true },
   });
   if (existingOwner) {
-    await prisma.organization.update({ where: { id: existingOwner.orgId }, data: platformFields });
+    await holdSignupForSupport({ ...input, email, planCode: plan.code, orgId: existingOwner.orgId });
     return { ok: true, created: false, orgId: existingOwner.orgId, activationUrl: null };
   }
 
@@ -241,6 +247,64 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
   }
 
   return { ok: true, created: true, orgId, activationUrl };
+}
+
+/** Acción de `AuditLog` de un alta pagada que soporte tiene que resolver a mano. */
+export const SIGNUP_HELD_FOR_SUPPORT = "PLATFORM_SIGNUP_HELD_FOR_SUPPORT";
+
+/**
+ * QA-ALTA-13 · Alta pagada que no se aplica sola. Queda en `AuditLog` de la
+ * organización que ya dirige ese email (con la sesión, el cliente y la
+ * suscripción de Stripe, que es lo que soporte necesita para enlazarla o
+ * reembolsarla) y se avisa a soporte de plataforma. Idempotente por sesión de
+ * checkout: Stripe reenvía el evento y el aviso no se duplica. `/activar`
+ * lee este registro para no dejar al comprador ante un "confirmando tu pago"
+ * eterno (RB-ALTA-002).
+ */
+async function holdSignupForSupport(input: ProvisionInput & { email: string; planCode: string; orgId: string }) {
+  const already = await prisma.auditLog.findFirst({
+    where: { action: SIGNUP_HELD_FOR_SUPPORT, entityType: "CheckoutSession", entityId: input.provisioningSessionId },
+    select: { id: true },
+  });
+  if (already) return;
+
+  await prisma.auditLog.create({
+    data: {
+      orgId: input.orgId,
+      actorUserId: null,
+      action: SIGNUP_HELD_FOR_SUPPORT,
+      entityType: "CheckoutSession",
+      entityId: input.provisioningSessionId,
+      metadata: {
+        email: input.email,
+        planCode: input.planCode,
+        customerId: input.customerId,
+        subscriptionId: input.subscriptionId,
+        reason: "El email del comprador ya dirige una organización.",
+      },
+    },
+  });
+  console.error(
+    `[provisioning] alta ${input.provisioningSessionId} retenida para soporte: ${input.email} ya dirige la organización ${input.orgId}`
+  );
+
+  const support = await prisma.user.findMany({
+    where: { role: "PLATFORM_ADMIN", deactivatedAt: null },
+    select: { id: true, orgId: true },
+  });
+  for (const admin of support) {
+    await createNotificationOnce({
+      orgId: admin.orgId,
+      recipientUserId: admin.id,
+      kind: "ALERT",
+      title: "Alta pagada retenida: el email ya dirige una organización",
+      body:
+        `${input.email} ha pagado un alta nueva (plan ${input.planCode}) y ya es director/a de otra organización. ` +
+        "No se ha tocado nada: enlaza la suscripción a su organización o reembólsala desde Stripe.",
+      entityType: "CheckoutSession",
+      entityId: input.provisioningSessionId,
+    });
+  }
 }
 
 export async function provisionOrganizationFromCheckout(

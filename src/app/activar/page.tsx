@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isPlatformOperational } from "@/lib/entitlements";
 import { listPurchasablePlans } from "@/lib/platform-plans";
+import { SIGNUP_HELD_FOR_SUPPORT } from "@/lib/provisioning";
 import { PlanCheckoutButton, ResendVerificationButton, ResendActivationButton } from "./checkout-buttons";
 
 // El estado depende del webhook, que puede llegar después que el comprador.
@@ -54,6 +55,35 @@ export default async function ActivarPage({
       where: { provisioningSessionId: params.session_id },
       select: { name: true, billingEmail: true },
     });
+    // QA-ALTA-13 · Alta retenida porque el email ya dirige una organización:
+    // no va a llegar ningún enlace, y "estamos confirmando tu pago" mentiría.
+    const held = org
+      ? null
+      : await prisma.auditLog.findFirst({
+          where: { action: SIGNUP_HELD_FOR_SUPPORT, entityType: "CheckoutSession", entityId: params.session_id },
+          select: { id: true },
+        });
+
+    if (held) {
+      return (
+        <Card>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">Pago recibido</p>
+            <h1 className="font-display font-extrabold text-2xl uppercase tracking-[-.01em] text-tz-black">
+              Ya tienes una organización con este email
+            </h1>
+            <p className="text-sm text-muted mt-2">
+              Hemos recibido tu pago, pero ese email ya dirige una organización en Training Zone, así que no hemos
+              creado otra ni hemos cambiado la que tienes. Nuestro equipo de soporte revisará el cobro y se pondrá en
+              contacto contigo. Si querías cambiar de plan, inicia sesión y hazlo desde tu organización.
+            </p>
+          </div>
+          <Link href="/login" className="block text-sm text-muted underline">
+            Iniciar sesión →
+          </Link>
+        </Card>
+      );
+    }
 
     return (
       <Card>
