@@ -5,9 +5,18 @@
  * en sus planes gratuitos; la API HTTP viaja por HTTPS (puerto 443) y no
  * tiene ese problema.
  *
- * Sin BREVO_API_KEY configurada (p. ej. en desarrollo o en este entorno de
- * demo), cae a registrar el email en el log del servidor para poder seguir
- * el flujo sin bloquear la funcionalidad.
+ * Sin BREVO_API_KEY configurada FUERA de producción (desarrollo, CI), cae a
+ * registrar el email en el log del servidor para poder seguir el flujo sin
+ * bloquear la funcionalidad.
+ *
+ * PROD-03: en producción ya no se simula. Sin clave, o con un error de Brevo,
+ * `sendMail` devuelve `{ ok: false, error }` y deja un `console.error` (sin la
+ * clave). Antes el correo "se enviaba" en el log y la invitación o el enlace
+ * de recuperación no llegaban nunca, sin que nada se pusiera rojo.
+ *
+ * `sendMail` NO lanza nunca: los llamadores que lo usan como
+ * `void sendMail(...)` siguen funcionando igual, y los que quieran reaccionar
+ * leen el resultado.
  */
 const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
@@ -38,20 +47,46 @@ export type MailOptions = {
   unsubscribeUrl?: string;
 };
 
-export async function sendMail({ to, subject, html, fromName, replyTo, unsubscribeUrl }: MailOptions) {
-  const apiKey = process.env.BREVO_API_KEY;
+/**
+ * Resultado del envío. `id` es el `messageId` de Brevo, o `null` cuando el
+ * envío se ha simulado (fuera de producción, sin clave) o Brevo no lo devolvió.
+ */
+export type SendMailResult = { ok: true; id: string | null } | { ok: false; error: string };
+
+/** Lo que `sendMail` lee del entorno; inyectable para poder probarlo sin red. */
+export type MailerEnv = {
+  NODE_ENV?: string;
+  BREVO_API_KEY?: string;
+  BREVO_FROM_EMAIL?: string;
+  SMTP_FROM?: string;
+};
+
+export type MailerDeps = { env?: MailerEnv; fetch?: typeof fetch };
+
+export async function sendMail(
+  { to, subject, html, fromName, replyTo, unsubscribeUrl }: MailOptions,
+  deps: MailerDeps = {}
+): Promise<SendMailResult> {
+  const env = deps.env ?? process.env;
+  const doFetch = deps.fetch ?? fetch;
+  const production = env.NODE_ENV === "production";
+  const apiKey = env.BREVO_API_KEY;
 
   if (!apiKey) {
+    if (production) {
+      const error = "BREVO_API_KEY no configurada: correo NO enviado";
+      console.error(`[mailer] ${error} → ${to} · ${subject}`);
+      return { ok: false, error };
+    }
+    // Formato del log sin cambios: hay specs que leen los correos de aquí.
     const from = fromName ? ` de «${fromName}»` : "";
     console.log(`[mailer] Brevo no configurado — simulando envío${from} → ${to} · ${subject}`);
-    if (process.env.NODE_ENV !== "production") {
-      console.log(html);
-    }
-    return;
+    console.log(html);
+    return { ok: true, id: null };
   }
 
   try {
-    const res = await fetch(BREVO_API_URL, {
+    const res = await doFetch(BREVO_API_URL, {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -60,7 +95,7 @@ export async function sendMail({ to, subject, html, fromName, replyTo, unsubscri
       },
       body: JSON.stringify({
         sender: {
-          email: process.env.BREVO_FROM_EMAIL || process.env.SMTP_FROM,
+          email: env.BREVO_FROM_EMAIL || env.SMTP_FROM,
           ...(fromName ? { name: fromName } : {}),
         },
         to: [{ email: to }],
@@ -79,10 +114,21 @@ export async function sendMail({ to, subject, html, fromName, replyTo, unsubscri
     });
 
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`Brevo API respondió ${res.status}: ${body}`);
+      // El cuerpo de Brevo explica el motivo (remitente no verificado, clave
+      // revocada...). Se recorta y se limpia de la clave por si algún día la
+      // repitiera: el log no es sitio para un secreto.
+      const body = (await res.text().catch(() => "")).slice(0, 500).split(apiKey).join("[redactado]");
+      const error = `Brevo API respondió ${res.status}`;
+      console.error(`[mailer] ${error} enviando a ${to} · ${subject}: ${body}`);
+      return { ok: false, error };
     }
-  } catch (error) {
-    console.error(`[mailer] Error enviando email a ${to}:`, error);
+
+    const data = (await res.json().catch(() => null)) as { messageId?: unknown } | null;
+    return { ok: true, id: typeof data?.messageId === "string" ? data.messageId : null };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    const error = `Error de red con Brevo: ${reason.split(apiKey).join("[redactado]")}`;
+    console.error(`[mailer] ${error} enviando a ${to} · ${subject}`);
+    return { ok: false, error };
   }
 }
