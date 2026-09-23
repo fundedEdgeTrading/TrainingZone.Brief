@@ -558,120 +558,144 @@ export async function bookSessionForMemberAsStaff(
   orgId: string,
   input: { sessionId: string; memberId: string; occurrenceDate: Date }
 ): Promise<StaffBookingResult> {
-  const day = startOfDay(input.occurrenceDate);
   try {
-    return await prisma.$transaction(async (tx) => {
-      // Mismo lock de fila que el portal: sin él, dos reservas simultáneas leen
-      // el mismo aforo libre y ambas entran por encima de `capacity`.
-      await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${input.sessionId} FOR UPDATE`;
-
-      const cls = await tx.classSession.findFirst({
-        where: { id: input.sessionId, orgId },
-        select: {
-          id: true,
-          centerId: true,
-          classType: true,
-          capacity: true,
-          status: true,
-          date: true,
-          recurrence: true,
-          recUntil: true,
-          bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
-        },
-      });
-      if (!cls) throw new StaffBookingError("Sesión no encontrada.");
-      if (cls.status !== "SCHEDULED") throw new StaffBookingError("Esta sesión ya no admite reservas.");
-      // El día llega de la URL de la agenda: en una serie recurrente solo vale
-      // si la serie ocurre de verdad ese día (si no, la reserva quedaría en un
-      // roster que no existe).
-      if (!occursOn(cls, day)) throw new StaffBookingError("Esta sesión no se imparte ese día.");
-
-      // El socio, contrastado contra la organización: sin esto bastaba conocer
-      // un id ajeno para colar una reserva a nombre de alguien de otra.
-      const member = await tx.member.findFirst({
-        where: { id: input.memberId, orgId },
-        select: { id: true, firstName: true, lastName: true, primaryCenter: { select: { timezone: true } } },
-      });
-      if (!member) throw new StaffBookingError("Socio no encontrado.");
-
-      // HU-ST-18 · El mismo corte por morosidad que en el portal. Si recepción
-      // puede seguir apuntando al moroso desde el mostrador, el corte es
-      // decorativo: el motor filtraba por el estado del BONO, no por el del
-      // socio, y ese era justo el agujero. Recepción no se queda sin salida —
-      // registrar el cobro devuelve al socio a ACTIVE y con él el acceso.
-      const gate = await bookingGateForMember(member.id, {
-        surface: "staff",
-        memberName: `${member.firstName} ${member.lastName}`,
-        timezone: member.primaryCenter?.timezone,
-      });
-      if (!gate.allowed) throw new StaffBookingError(gate.reason);
-
-      const dayBookings = cls.bookings.filter((b) => isSameDay(b.occurrenceDate, day));
-      const mine = dayBookings.filter((b) => b.memberId === member.id);
-      if (mine.some((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW")) {
-        throw new StaffBookingError("Ese socio ya tiene plaza en esta sesión.");
-      }
-      // Desde el mostrador no se apunta a nadie a la lista de espera: eso lo
-      // hace el cliente desde la app. Aquí solo se ocupa una plaza que exista.
-      if (occupiedSpots(dayBookings, day) >= cls.capacity) {
-        throw new StaffBookingError("La sesión está completa: no quedan plazas libres ese día.");
-      }
-
-      const kind = sessionServiceKind(cls.classType);
-      const subscriptions = await tx.subscription.findMany({
-        where: { memberId: member.id, status: "ACTIVE" },
-        select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
-      });
-      const choice = pickBookingSubscription(subscriptions, {
-        centerId: cls.centerId,
-        kind,
-        consumesSession: true,
-      });
-      if (!choice.ok) {
-        throw new StaffBookingError(
-          choice.reason === "NO_PLAN"
-            ? `El bono de ese socio no incluye sesiones de ${serviceLabelLower(kind)} en este centro.`
-            : "A ese socio no le quedan sesiones en su bono."
-        );
-      }
-      const chargeSubscriptionId = choice.subscriptionId;
-
-      // Antes de escribir la reserva, para no dejarla creada sin cobrar.
-      if (
-        chargeSubscriptionId &&
-        !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId, reason: "BOOKING" }))
-      ) {
-        throw new StaffBookingError("A ese socio no le quedan sesiones en su bono.");
-      }
-
-      const waiting = mine.find((b) => b.status === "WAITLISTED");
-      if (waiting) {
-        if (!(await claimWaitlistedBooking(tx, waiting.id, chargeSubscriptionId))) {
-          // Lanzar deshace también el descuento de bono de más arriba: nadie
-          // paga una plaza que se quedó otro.
-          throw new StaffBookingError("Esa plaza ya la ha reclamado otra persona.");
-        }
-        // E2-08: quien pasa a tener plaza sale de la cola, así que la cola se
-        // recoloca.
-        await resequenceWaitlist(tx, cls.id, day);
-        return { ok: true as const, claimedFromWaitlist: true };
-      }
-
-      await tx.booking.create({
-        data: {
-          sessionId: cls.id,
-          occurrenceDate: day,
-          memberId: member.id,
-          status: "BOOKED",
-          subscriptionId: chargeSubscriptionId,
-        },
-      });
-      return { ok: true as const, claimedFromWaitlist: false };
-    });
+    return await prisma.$transaction((tx) => bookMemberInTx(tx, orgId, input));
   } catch (error) {
     if (error instanceof StaffBookingError) return { ok: false as const, error: error.reason };
     throw error;
   }
+}
+
+/**
+ * El cuerpo de `bookSessionForMemberAsStaff`, sobre una transacción que abre
+ * otro. QA-RES-01: el campo "Socio" del diálogo (`saveSession`) y el hueco de EP
+ * de la app (`createEpSlot`) creaban la reserva con un `booking.create` suelto
+ * —sin bono, sin asiento, sin mirar aforo ni morosidad—. Reservan por aquí,
+ * dentro de la misma transacción que escribe la sesión, para que un fallo
+ * (sin saldo, lleno, moroso) se lleve la sesión por delante en vez de dejarla
+ * guardada a medias. Falla LANZANDO `StaffBookingError`, que es lo que deshace
+ * la transacción.
+ */
+async function bookMemberInTx(
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  input: { sessionId: string; memberId: string; occurrenceDate: Date }
+): Promise<{ ok: true; claimedFromWaitlist: boolean }> {
+  const day = startOfDay(input.occurrenceDate);
+  // Mismo lock de fila que el portal: sin él, dos reservas simultáneas leen
+  // el mismo aforo libre y ambas entran por encima de `capacity`.
+  await tx.$queryRaw`SELECT id FROM "ClassSession" WHERE id = ${input.sessionId} FOR UPDATE`;
+
+  const cls = await tx.classSession.findFirst({
+    where: { id: input.sessionId, orgId },
+    select: {
+      id: true,
+      centerId: true,
+      classType: true,
+      capacity: true,
+      status: true,
+      date: true,
+      recurrence: true,
+      recUntil: true,
+      bookings: { select: { id: true, memberId: true, status: true, occurrenceDate: true } },
+    },
+  });
+  if (!cls) throw new StaffBookingError("Sesión no encontrada.");
+  if (cls.status !== "SCHEDULED") throw new StaffBookingError("Esta sesión ya no admite reservas.");
+  // El día llega de la URL de la agenda: en una serie recurrente solo vale
+  // si la serie ocurre de verdad ese día (si no, la reserva quedaría en un
+  // roster que no existe).
+  if (!occursOn(cls, day)) throw new StaffBookingError("Esta sesión no se imparte ese día.");
+
+  // El socio, contrastado contra la organización: sin esto bastaba conocer
+  // un id ajeno para colar una reserva a nombre de alguien de otra.
+  const member = await tx.member.findFirst({
+    where: { id: input.memberId, orgId },
+    select: { id: true, firstName: true, lastName: true, primaryCenter: { select: { timezone: true } } },
+  });
+  if (!member) throw new StaffBookingError("Socio no encontrado.");
+
+  // HU-ST-18 · El mismo corte por morosidad que en el portal. Si recepción
+  // puede seguir apuntando al moroso desde el mostrador, el corte es
+  // decorativo: el motor filtraba por el estado del BONO, no por el del
+  // socio, y ese era justo el agujero. Recepción no se queda sin salida —
+  // registrar el cobro devuelve al socio a ACTIVE y con él el acceso.
+  const gate = await bookingGateForMember(member.id, {
+    surface: "staff",
+    memberName: `${member.firstName} ${member.lastName}`,
+    timezone: member.primaryCenter?.timezone,
+  });
+  if (!gate.allowed) throw new StaffBookingError(gate.reason);
+
+  const dayBookings = cls.bookings.filter((b) => isSameDay(b.occurrenceDate, day));
+  const mine = dayBookings.filter((b) => b.memberId === member.id);
+  if (mine.some((b) => b.status === "BOOKED" || b.status === "ATTENDED" || b.status === "NO_SHOW")) {
+    throw new StaffBookingError("Ese socio ya tiene plaza en esta sesión.");
+  }
+  // Desde el mostrador no se apunta a nadie a la lista de espera: eso lo
+  // hace el cliente desde la app. Aquí solo se ocupa una plaza que exista.
+  if (occupiedSpots(dayBookings, day) >= cls.capacity) {
+    throw new StaffBookingError("La sesión está completa: no quedan plazas libres ese día.");
+  }
+
+  const kind = sessionServiceKind(cls.classType);
+  const subscriptions = await tx.subscription.findMany({
+    where: { memberId: member.id, status: "ACTIVE" },
+    select: { id: true, centerId: true, sessionsRemaining: true, plan: { select: { type: true } } },
+  });
+  const choice = pickBookingSubscription(subscriptions, {
+    centerId: cls.centerId,
+    kind,
+    consumesSession: true,
+  });
+  if (!choice.ok) {
+    throw new StaffBookingError(
+      choice.reason === "NO_PLAN"
+        ? `El bono de ese socio no incluye sesiones de ${serviceLabelLower(kind)} en este centro.`
+        : "A ese socio no le quedan sesiones en su bono."
+    );
+  }
+  const chargeSubscriptionId = choice.subscriptionId;
+
+  // QA-RES-08: primero la reserva y después el cobro, para que el asiento
+  // del libro lleve su `bookingId`. Cobrar antes dejaba un -1 sin reserva a
+  // la que atribuirlo, y el cuadre sesión a sesión no casaba. Si el cobro
+  // no se aplica, lanzar deshace también la reserva recién escrita.
+  const waiting = mine.find((b) => b.status === "WAITLISTED");
+  let bookingId: string;
+  if (waiting) {
+    if (!(await claimWaitlistedBooking(tx, waiting.id, chargeSubscriptionId))) {
+      throw new StaffBookingError("Esa plaza ya la ha reclamado otra persona.");
+    }
+    bookingId = waiting.id;
+  } else {
+    const created = await tx.booking.create({
+      data: {
+        sessionId: cls.id,
+        occurrenceDate: day,
+        memberId: member.id,
+        status: "BOOKED",
+        subscriptionId: chargeSubscriptionId,
+      },
+      select: { id: true },
+    });
+    bookingId = created.id;
+  }
+
+  if (
+    chargeSubscriptionId &&
+    !(await chargeSessionToSubscription(tx, chargeSubscriptionId, { orgId, bookingId, reason: "BOOKING" }))
+  ) {
+    throw new StaffBookingError("A ese socio no le quedan sesiones en su bono.");
+  }
+
+  if (waiting) {
+    // E2-08: quien pasa a tener plaza sale de la cola, así que la cola se
+    // recoloca.
+    await resequenceWaitlist(tx, cls.id, day);
+    return { ok: true as const, claimedFromWaitlist: true };
+  }
+  return { ok: true as const, claimedFromWaitlist: false };
 }
 
 /**
