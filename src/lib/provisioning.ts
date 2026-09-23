@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type Stripe from "stripe";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ensureIdentity } from "@/lib/identity";
 import { getPlatformPlan } from "@/lib/platform-plans";
@@ -36,6 +37,48 @@ type ProvisionInput = {
   subscriptionId: string | null;
   periodEnd: Date | null;
 };
+
+/**
+ * QA-ALTA-02 · Catálogos comerciales con los que nace toda organización. Sin
+ * ellos el formulario público de leads enseña un select obligatorio vacío y
+ * `createLead` rechaza cualquier alta por falta de canal: el embudo nacía roto
+ * hasta que dirección encontrara el panel de configuración. Son un punto de
+ * partida; dirección los edita sin desplegar (RB-LEAD-004/011).
+ */
+export const DEFAULT_LEAD_CHANNELS = [
+  "Instagram",
+  "Facebook",
+  "Google",
+  "Web",
+  "Referido",
+  "Paso por el centro",
+  "Teléfono",
+  "Otro",
+] as const;
+
+export const DEFAULT_NO_CLOSE_REASONS = ["Precio", "Horario", "Distancia", "Se va a otro centro", "No responde", "Otro"] as const;
+
+/**
+ * Crea solo lo que falta, comparando sin mayúsculas: un reintento no duplica,
+ * y un canal que dirección desactivó no resucita (cuenta como existente). El
+ * esquema no tiene único por `(orgId, label)` —está congelado—, así que la
+ * idempotencia la garantiza esta comprobación dentro de la transacción del alta.
+ */
+export async function ensureDefaultLeadCatalogs(tx: Prisma.TransactionClient, orgId: string) {
+  const missing = (existing: { label: string }[], defaults: readonly string[]) => {
+    const have = new Set(existing.map((row) => row.label.trim().toLowerCase()));
+    return defaults.filter((label) => !have.has(label.toLowerCase())).map((label) => ({ orgId, label }));
+  };
+
+  const [channels, reasons] = await Promise.all([
+    tx.leadChannel.findMany({ where: { orgId }, select: { label: true } }),
+    tx.noCloseReason.findMany({ where: { orgId }, select: { label: true } }),
+  ]);
+  const newChannels = missing(channels, DEFAULT_LEAD_CHANNELS);
+  const newReasons = missing(reasons, DEFAULT_NO_CLOSE_REASONS);
+  if (newChannels.length) await tx.leadChannel.createMany({ data: newChannels });
+  if (newReasons.length) await tx.noCloseReason.createMany({ data: newReasons });
+}
 
 function ownerInvitationExpiry() {
   return new Date(Date.now() + OWNER_INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -133,8 +176,8 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
 
   const orgName = billingName || email.split("@")[0];
 
-  // 3. Organización + credencial + membresía OWNER + invitación de activación,
-  //    todo o nada.
+  // 3. Organización + catálogos comerciales + credencial + membresía OWNER +
+  //    invitación de activación, todo o nada.
   const { orgId, token } = await prisma.$transaction(async (tx) => {
     const org = await tx.organization.create({
       data: {
@@ -146,6 +189,7 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
         ...platformFields,
       },
     });
+    await ensureDefaultLeadCatalogs(tx, org.id);
 
     // Sin contraseña utilizable: la fija el director al canjear su enlace.
     const identity = await ensureIdentity(tx, { email });
@@ -387,6 +431,7 @@ export async function createAssistedOrganization(input: {
         platformPlan: plan.code,
       },
     });
+    await ensureDefaultLeadCatalogs(tx, org.id);
 
     const identity = await ensureIdentity(tx, { email });
     const owner = await tx.user.create({
