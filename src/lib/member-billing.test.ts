@@ -229,8 +229,16 @@ test("STR-02 · con una cuota recurrente viva, «Renovar» no abre un segundo co
   }
 });
 
-test("STR-02 · una cuota cancelada o un bono puntual no bloquean la compra", async () => {
+test("STR-02 · una cuota cancelada o un bono puntual no bloquean la compra", async (t) => {
   const f = await createFixture("sin-bloqueo");
+  // Sin Stripe en el entorno, que la compra siga adelante solo puede verse por el
+  // checkout de demostración, y desde PROD-01 ese modo se pide con DEMO_MODE.
+  const originalDemoMode = process.env.DEMO_MODE;
+  process.env.DEMO_MODE = "true";
+  t.after(() => {
+    if (originalDemoMode === undefined) delete process.env.DEMO_MODE;
+    else process.env.DEMO_MODE = originalDemoMode;
+  });
 
   await prisma.subscription.update({ where: { id: f.subscriptionId }, data: { status: "CANCELLED" } });
   const renovar = await createMemberCheckout({ orgId: f.orgId, memberId: f.memberId, planId: f.planId, origin: "staff" });
