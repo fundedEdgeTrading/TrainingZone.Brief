@@ -10,7 +10,6 @@ import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
 import { canManageStaff, canEditStaff, canDeleteStaff } from "@/lib/rbac";
 import { findStaffInScope, countActiveWithRole, canActOnCenter } from "@/lib/staff-queries";
 import { removeStaffMember, restoreStaffMember, type StaffRemovalResult } from "@/lib/staff-lifecycle";
-import { canAddCenter } from "@/lib/entitlements";
 import { ADULT_AGE, LOPDGDD_CONSENT_AGE } from "@/lib/minors";
 // HU-ST-18/D-S5: el rango del periodo de gracia vive en un solo sitio, el mismo
 // que garantiza el CHECK de la base de datos.
@@ -29,6 +28,7 @@ import {
   resolveStaffRole,
   sendStaffInvite,
 } from "./staff-roles";
+import { createCenterWithinLimit } from "./center-create";
 
 
 function slugify(s: string) {
@@ -151,12 +151,11 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   });
   if (existing) return { ok: false, error: "Ya existe un centro con ese slug." };
 
-  // RB-PLAN-002: el número de centros es lo que se paga. Se comprueba aquí, con
-  // un mensaje que indica la salida concreta en vez de un "no puedes".
-  const allowed = await canAddCenter(session.user.orgId);
-  if (!allowed.ok) return { ok: false, error: allowed.error };
-
-  await prisma.center.create({ data: { orgId: session.user.orgId, name, slug, address, lat, lng, logoUrl } });
+  // RB-PLAN-002: el número de centros es lo que se paga. El límite se comprueba
+  // e inserta bajo el mismo bloqueo (QA-ALTA-18), con un mensaje que indica la
+  // salida concreta en vez de un "no puedes".
+  const created = await createCenterWithinLimit(session.user.orgId, { name, slug, address, lat, lng, logoUrl });
+  if (!created.ok) return { ok: false, error: created.error };
   revalidatePath("/organization");
   return { ok: true };
 }
