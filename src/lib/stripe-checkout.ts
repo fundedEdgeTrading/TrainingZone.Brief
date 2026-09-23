@@ -180,6 +180,7 @@ async function provisionMemberFromLandingCheckout(
   //    no debe crear una segunda ficha (RB-ALTA-003).
   const existing = await prisma.member.findFirst({ where: { orgId, email }, select: { id: true } });
   const memberId = existing?.id ?? (await createLandingMember(orgId, session, plan, center, email));
+  await rememberStripeCustomer(orgId, memberId, session);
 
   // 2. Bono puntual. El `Payment` se crea PENDING y lo concilia el camino
   //    común: si algo falla después, la reentrega lo encuentra y termina.
@@ -201,6 +202,30 @@ async function provisionMemberFromLandingCheckout(
   }
   await reconcileMemberCheckoutSession(orgId, memberId, session, paymentIntentId);
   return { ok: true };
+}
+
+/**
+ * CHK-03 · El socio que nace en la landing guarda su cliente de Stripe y la
+ * cuenta conectada donde vive. Sin ellos el Billing Portal le dice que "todavía
+ * no tiene un cliente de Stripe", y la siguiente compra le crea OTRO cliente
+ * (`createMemberCheckout` crea uno nuevo si falta o si la cuenta no coincide).
+ *
+ * La cuenta es la de la organización: `StripeAccount.orgId` es único y es la
+ * misma de la que el webhook ha resuelto `orgId` a partir de `event.account`.
+ * Solo rellena lo que falta: una reentrega no reescribe nada, y un socio que
+ * ya tenía su cliente lo conserva.
+ */
+async function rememberStripeCustomer(orgId: string, memberId: string, session: Stripe.Checkout.Session) {
+  const customerId = typeof session.customer === "string" ? session.customer : (session.customer?.id ?? null);
+  // Un checkout `mode: "payment"` sin `customer_creation: "always"` paga como
+  // invitado y no deja cliente: no hay nada que guardar.
+  if (!customerId) return;
+  const account = await prisma.stripeAccount.findUnique({ where: { orgId }, select: { accountId: true } });
+  if (!account) return;
+  await prisma.member.updateMany({
+    where: { id: memberId, orgId, stripeCustomerId: null },
+    data: { stripeCustomerId: customerId, stripeAccountId: account.accountId },
+  });
 }
 
 /**

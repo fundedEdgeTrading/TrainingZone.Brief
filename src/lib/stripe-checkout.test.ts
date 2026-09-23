@@ -273,3 +273,31 @@ test("CHK-02: la ruta del webhook responde 500 si el alta desde la landing falla
   assert.equal(evento.processedAt, null, "el evento no queda sellado como procesado");
   assert.ok(evento.lastError, "y queda anotado por qué");
 });
+
+// ---------------------------------------------------------------------------
+// CHK-03 · El socio de la landing guarda su cliente y su cuenta de Stripe
+// ---------------------------------------------------------------------------
+
+test("CHK-03: el socio que nace en la landing guarda stripeCustomerId y stripeAccountId", async () => {
+  const f = await createLandingFixture("cliente", "MONTHLY");
+  const session = landingSession(f, "cliente", { mode: "subscription", subscription: `sub_${SUFFIX}-cliente`, customer: `cus_${SUFFIX}-cliente` });
+
+  const result = await reconcileConnectCheckoutCompleted(f.orgId, session);
+  assert.equal(result.ok, true);
+
+  const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  assert.equal(member.stripeCustomerId, `cus_${SUFFIX}-cliente`, "el Billing Portal lo necesita");
+  assert.equal(member.stripeAccountId, f.accountId, "sin la cuenta, la siguiente compra crearía otro cliente");
+});
+
+test("CHK-03: también en un bono puntual con cliente, y la reentrega no lo pisa", async () => {
+  const f = await createLandingFixture("cliente-bono");
+  const session = landingSession(f, "cliente-bono", { customer: `cus_${SUFFIX}-cliente-bono` });
+
+  await reconcileConnectCheckoutCompleted(f.orgId, session);
+  await reconcileConnectCheckoutCompleted(f.orgId, { ...session, customer: "cus_otro" } as Stripe.Checkout.Session);
+
+  const member = await prisma.member.findFirstOrThrow({ where: { orgId: f.orgId, email: f.email } });
+  assert.equal(member.stripeCustomerId, `cus_${SUFFIX}-cliente-bono`);
+  assert.equal(member.stripeAccountId, f.accountId);
+});
