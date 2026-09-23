@@ -2,7 +2,14 @@ import "dotenv/config";
 import test, { after, before } from "node:test";
 import assert from "node:assert/strict";
 import { prisma } from "@/lib/prisma";
-import { bookSessionForMemberAsStaff, createEpSlot, saveSession } from "@/lib/agenda-queries";
+import {
+  bookSessionForMemberAsStaff,
+  cancelSessionBooking,
+  createEpSlot,
+  saveSession,
+  staffCancellationEffect,
+} from "@/lib/agenda-queries";
+import { CANCEL_WINDOW_HOURS } from "@/lib/portal-queries";
 import {
   balanceOf,
   cleanupRegressionOrgs,
@@ -28,7 +35,10 @@ let counter = 0;
 
 before(async () => {
   await cleanupRegressionOrgs(TAG);
-  org = await createRegressionOrg(TAG);
+  // `createRegressionSession` compone la hora de comienzo con la zona del
+  // proceso; con el centro en otra zona, "dentro de una hora" caía en el
+  // pasado. Las ventanas se miden bien solo si las dos coinciden.
+  org = await createRegressionOrg(TAG, Intl.DateTimeFormat().resolvedOptions().timeZone);
   const plan = await prisma.membershipPlan.create({
     data: { orgId: org.orgId, name: `Bono EP ${TAG}`, type: "PERSONAL_TRAINING", sessionsIncluded: 10, priceCents: 9000 },
   });
@@ -178,4 +188,96 @@ test("QA-RES-08 · la reserva de staff deja el asiento del cobro enlazado a la r
   const booking = await prisma.booking.findFirstOrThrow({ where: { sessionId: session.id, memberId: socio.id } });
   const entry = await prisma.sessionLedger.findFirstOrThrow({ where: { subscriptionId: socio.subscriptionId } });
   assert.equal(entry.bookingId, booking.id, "sin bookingId el asiento no se puede cuadrar con su reserva");
+});
+
+// --- QA-RES-02 · el staff cancela con la misma ventana que el socio ----------
+
+const HOUR = 3_600_000;
+
+test("QA-RES-02 · con antelación se devuelve la sesión; dentro de la ventana, no", () => {
+  const now = new Date("2026-09-23T10:00:00Z");
+  const early = staffCancellationEffect({
+    status: "BOOKED",
+    hasSubscription: true,
+    startsAt: new Date(now.getTime() + (CANCEL_WINDOW_HOURS + 1) * HOUR),
+    now,
+    canCancelStarted: false,
+  });
+  assert.deepEqual(early, { ok: true, refunds: true, forfeited: false });
+
+  const late = staffCancellationEffect({
+    status: "BOOKED",
+    hasSubscription: true,
+    startsAt: new Date(now.getTime() + HOUR),
+    now,
+    canCancelStarted: false,
+  });
+  assert.deepEqual(late, { ok: true, refunds: false, forfeited: true });
+});
+
+test("QA-RES-02 · una clase ya empezada solo la cancela quien puede ajustar saldo, y sin devolver", () => {
+  const now = new Date("2026-09-23T10:00:00Z");
+  const past = { status: "BOOKED" as const, hasSubscription: true, startsAt: new Date(now.getTime() - 24 * HOUR), now };
+
+  const trainer = staffCancellationEffect({ ...past, canCancelStarted: false });
+  assert.equal(trainer.ok, false);
+
+  const reception = staffCancellationEffect({ ...past, canCancelStarted: true });
+  assert.deepEqual(reception, { ok: true, refunds: false, forfeited: true });
+});
+
+test("QA-RES-02 · la lista de espera nunca descontó: ni devuelve ni se pierde", () => {
+  const now = new Date("2026-09-23T10:00:00Z");
+  const effect = staffCancellationEffect({
+    status: "WAITLISTED",
+    hasSubscription: false,
+    startsAt: new Date(now.getTime() + HOUR),
+    now,
+    canCancelStarted: false,
+  });
+  assert.deepEqual(effect, { ok: true, refunds: false, forfeited: false });
+});
+
+/** Reserva de staff real (con su cobro) en una clase que empieza dentro de `startsInHours`. */
+async function bookedGroup(startsInHours: number) {
+  const socio = await createRegressionMember(org, `${TAG}-cancel`, ++counter, 5);
+  const session = await createRegressionSession(org, `grupo-cancel-${counter}`, { capacity: 4, startsInHours });
+  // El mostrador puede apuntar a una clase ya empezada; se reserva con la
+  // ocurrencia del día para montar el caso de "cancelar la de ayer".
+  const booked = await bookSessionForMemberAsStaff(org.orgId, {
+    sessionId: session.id,
+    memberId: socio.id,
+    occurrenceDate: session.day,
+  });
+  assert.equal(booked.ok, true);
+  assert.equal(await balanceOf(socio.subscriptionId), 4);
+  const booking = await prisma.booking.findFirstOrThrow({ where: { sessionId: session.id, memberId: socio.id } });
+  return { socio, booking };
+}
+
+test("QA-RES-02 · cancelar a tiempo desde la agenda devuelve el bono", async () => {
+  const { socio, booking } = await bookedGroup(CANCEL_WINDOW_HOURS + 48);
+  const result = await cancelSessionBooking(org.orgId, booking.id);
+  assert.deepEqual(result, { ok: true, forfeited: false });
+  assert.equal(await balanceOf(socio.subscriptionId), 5);
+});
+
+test("QA-RES-02 · cancelar dentro de la ventana no devuelve el bono", async () => {
+  const { socio, booking } = await bookedGroup(1);
+  const result = await cancelSessionBooking(org.orgId, booking.id);
+  assert.deepEqual(result, { ok: true, forfeited: true });
+  assert.equal(await balanceOf(socio.subscriptionId), 4, "la sesión se consume, igual que si cancelara el socio");
+  assert.equal((await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).status, "CANCELLED");
+});
+
+test("QA-RES-02 · la reserva de una clase de ayer: bloqueada sin permiso, y sin devolución con él", async () => {
+  const { socio, booking } = await bookedGroup(-24);
+
+  const blocked = await cancelSessionBooking(org.orgId, booking.id);
+  assert.equal(blocked.ok, false);
+  assert.equal((await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).status, "BOOKED");
+
+  const allowed = await cancelSessionBooking(org.orgId, booking.id, { canCancelStarted: true });
+  assert.deepEqual(allowed, { ok: true, forfeited: true });
+  assert.equal(await balanceOf(socio.subscriptionId), 4, "nadie recupera la sesión de una clase ya pasada");
 });

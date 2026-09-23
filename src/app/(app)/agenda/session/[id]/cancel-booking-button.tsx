@@ -9,7 +9,8 @@ import { useToast } from "@/components/ui/toast";
  * Quitar a un socio del roster de la sesión. Antes esto se hacía de rebote al
  * guardar la sesión con el campo "Socio" vacío, lo que barría también las
  * reservas del resto y no devolvía el bono; ahora es una acción explícita, por
- * reserva, y reembolsa la sesión al bono (RB-RES-006).
+ * reserva, y reembolsa la sesión al bono si se cancela con antelación
+ * (RB-RES-006, QA-RES-02).
  */
 export default function CancelBookingButton({
   bookingId,
@@ -30,7 +31,13 @@ export default function CancelBookingButton({
     startTransition(async () => {
       const result = await cancelSessionBookingAction(bookingId, sessionId);
       if (result.ok) {
-        toast.success(`Reserva de ${memberName} cancelada.`);
+        // Dentro de la ventana de cancelación la sesión se consume (QA-RES-02):
+        // quien cancela tiene que saberlo, porque el socio lo va a preguntar.
+        toast.success(
+          result.forfeited
+            ? `Reserva de ${memberName} cancelada. Fuera de plazo: la sesión no vuelve al bono.`
+            : `Reserva de ${memberName} cancelada.`
+        );
         onCancelled?.();
       } else {
         toast.error(result.error);

@@ -19,7 +19,7 @@ import { checkBookingTransition, statusesEndingAt } from "@/lib/booking-transiti
 import { coversSessionKind } from "@/lib/member-session-scope";
 import { resequenceWaitlist } from "@/lib/waitlist";
 import { chargeSession, refundSession } from "@/lib/session-ledger";
-import { enforcementStartsAt } from "@/lib/portal-queries";
+import { canCancelWithoutPenalty, enforcementStartsAt } from "@/lib/portal-queries";
 import { sessionServiceKind } from "@/lib/members-queries";
 // HU-ST-18: el mismo corte por morosidad que el portal. Un corte que recepción
 // se salta sin enterarse no es un corte.
@@ -409,13 +409,58 @@ async function detachOccurrence(tx: Prisma.TransactionClient, existing: ClassSes
   }
 }
 
+export type StaffCancellationEffect =
+  | { ok: true; refunds: boolean; forfeited: boolean }
+  | { ok: false; error: string };
+
+/**
+ * QA-RES-02: qué pasa con el bono cuando el staff cancela una reserva.
+ *
+ * Antes la vía de staff devolvía SIEMPRE la sesión, aunque se cancelara diez
+ * minutos antes o la clase fuera de la semana pasada: cancelar desde la agenda
+ * era la forma de saltarse la ventana que el socio sí tiene. Ahora es la misma
+ * ventana (`canCancelWithoutPenalty`, que lee `CANCEL_WINDOW_HOURS` del
+ * servidor): con antelación vuelve al bono; dentro de la ventana se consume.
+ *
+ * Una clase ya empezada no se cancela salvo con `canCancelStarted` (roles con
+ * `canAdjustSessionBalance`), y aun así no devuelve nada: quien quiera regalar
+ * la sesión tiene el ajuste manual del saldo, que deja su propio rastro.
+ *
+ * Pura y con `now` explícito para probar los bordes sin depender del reloj.
+ */
+export function staffCancellationEffect(input: {
+  status: "BOOKED" | "WAITLISTED";
+  /** La reserva descontó bono (la lista de espera y la cuota ilimitada, no). */
+  hasSubscription: boolean;
+  /** Instante real de comienzo de la ocurrencia, en la zona del centro. */
+  startsAt: Date;
+  now: Date;
+  canCancelStarted: boolean;
+}): StaffCancellationEffect {
+  if (input.startsAt.getTime() <= input.now.getTime() && !input.canCancelStarted) {
+    return { ok: false, error: "Esta clase ya ha empezado: no se puede cancelar la reserva." };
+  }
+  if (input.status !== "BOOKED" || !input.hasSubscription) return { ok: true, refunds: false, forfeited: false };
+  const refunds = canCancelWithoutPenalty(input.startsAt, input.now);
+  return { ok: true, refunds, forfeited: !refunds };
+}
+
 /**
  * Cancela la reserva que el entrenador había agendado a mano en una franja de
  * EP (el reverso de dejar vacío el campo "Socio" del diálogo). Se hace desde
  * una acción explícita y no al guardar, para no volver a barrer reservas que el
- * socio hizo por su cuenta. Devuelve el bono, igual que si cancelara el socio.
+ * socio hizo por su cuenta. El bono se trata como si cancelara el socio
+ * (`staffCancellationEffect`): `forfeited` avisa de que la sesión se consumió.
  */
-export async function cancelSessionBooking(orgId: string, bookingId: string) {
+export async function cancelSessionBooking(
+  orgId: string,
+  bookingId: string,
+  opts: {
+    /** El actor puede cancelar clases ya empezadas (`canAdjustSessionBalance`). */
+    canCancelStarted?: boolean;
+    now?: Date;
+  } = {}
+): Promise<{ ok: true; forfeited: boolean } | { ok: false; error: string }> {
   const booking = await prisma.booking.findFirst({
     where: { id: bookingId, session: { orgId }, status: { in: ["BOOKED", "WAITLISTED"] } },
     select: {
@@ -438,6 +483,18 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   });
   if (!booking) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
+  const now = opts.now ?? new Date();
+  // RB-RES-012: la zona del centro, igual que en la cancelación del socio.
+  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
+  const effect = staffCancellationEffect({
+    status: booking.status === "WAITLISTED" ? "WAITLISTED" : "BOOKED",
+    hasSubscription: Boolean(booking.subscriptionId),
+    startsAt,
+    now,
+    canCancelStarted: Boolean(opts.canCancelStarted),
+  });
+  if (!effect.ok) return effect;
+
   // RB-RES-007: mismo aviso de hueco liberado que en la cancelación del
   // propio socio, medido antes de cancelar (ver portal-queries.ts).
   const dayBookings = booking.session.bookings.filter((b) => isSameDay(b.occurrenceDate, booking.occurrenceDate));
@@ -458,8 +515,9 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
     });
     if (applied.count === 0) return false;
 
-    // RB-RES-006: la lista de espera nunca descontó bono, así que no se devuelve.
-    if (booking.status === "BOOKED" && booking.subscriptionId) {
+    // RB-RES-006: la lista de espera nunca descontó bono, así que no se
+    // devuelve; y dentro de la ventana la sesión se consume (QA-RES-02).
+    if (effect.refunds && booking.subscriptionId) {
       await refundSession(tx, {
         orgId,
         subscriptionId: booking.subscriptionId,
@@ -476,12 +534,11 @@ export async function cancelSessionBooking(orgId: string, bookingId: string) {
   if (!cancelled) return { ok: false as const, error: "No se ha encontrado esa reserva activa." };
 
   // E2-09: solo se anuncia el hueco de una clase que todavía no ha empezado.
-  const startsAt = enforcementStartsAt(booking.occurrenceDate, booking.session.startTime, booking.session.center.timezone);
-  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt })) {
+  if (shouldNotifyVacancy({ cancelledStatus: booking.status, wasFull, hasWaitlist, startsAt, now })) {
     void notifySessionVacancy({ orgId, sessionId: booking.sessionId, occurrenceDate: booking.occurrenceDate });
   }
 
-  return { ok: true as const };
+  return { ok: true as const, forfeited: effect.forfeited };
 }
 
 /**

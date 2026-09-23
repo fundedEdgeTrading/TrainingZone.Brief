@@ -1,7 +1,7 @@
 "use server";
 
 import { requireRole, requireCenterRole } from "@/lib/guard";
-import { canManageEpSlots } from "@/lib/rbac";
+import { canAdjustSessionBalance, canManageEpSlots } from "@/lib/rbac";
 import {
   saveSession,
   deleteSession,
@@ -142,13 +142,16 @@ export async function deleteSessionAction(formData: FormData): Promise<DeleteSes
   return { ok: true };
 }
 
+export type CancelBookingActionResult = { ok: true; forfeited: boolean } | { ok: false; error: string };
+
 /**
  * Cancela una reserva concreta desde el roster de la sesión. Antes esto se
  * hacía implícitamente al guardar la sesión (vaciando el campo "Socio"), lo que
  * arrastraba consigo las reservas del resto de socios; ahora es explícito y
- * devuelve el bono, igual que si cancelara el propio socio.
+ * trata el bono igual que si cancelara el propio socio (QA-RES-02): misma
+ * ventana, y una clase ya empezada solo la cancela quien puede ajustar saldo.
  */
-export async function cancelSessionBookingAction(bookingId: string, sessionId: string): Promise<SessionActionResult> {
+export async function cancelSessionBookingAction(bookingId: string, sessionId: string): Promise<CancelBookingActionResult> {
   const session = await requireRole([...ALLOWED_ROLES, "RECEPTION"]);
 
   // Ámbito de centro: cancelar la reserva de un socio es tocar el roster de esa
@@ -157,11 +160,13 @@ export async function cancelSessionBookingAction(bookingId: string, sessionId: s
   if (!centerId) return { ok: false, error: "No se ha encontrado esa reserva." };
   await requireCenterRole(centerId, ["CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
 
-  const result = await cancelSessionBooking(session.user.orgId, bookingId);
+  const result = await cancelSessionBooking(session.user.orgId, bookingId, {
+    canCancelStarted: canAdjustSessionBalance(session.user.role),
+  });
   if (!result.ok) return result;
 
   revalidateSessionViews(sessionId);
-  return { ok: true };
+  return { ok: true, forfeited: result.forfeited };
 }
 
 /**
