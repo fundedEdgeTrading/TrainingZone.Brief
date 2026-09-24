@@ -17,6 +17,18 @@ import { runSessionReminderRule, memberWantsSessionReminders, setMemberSessionRe
  */
 
 const SUFFIX = "e2e-session-reminders-test";
+
+/**
+ * Reloj fijo: hoy a las 10:00 UTC. El aviso de 24 h solo sale si la sesión es
+ * MAÑANA en el calendario del centro (QA-RES-10), así que con `Date.now()` el
+ * resultado dependía de la hora a la que corría CI: a las 05:44 UTC, "dentro
+ * de 15 h" caía hoy a las 20:44 y el test fallaba. Desde las 10:00, las
+ * sesiones a 15 h y a 20 h caen mañana siempre.
+ */
+const NOW = (() => {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 10, 0));
+})();
 const pad = (n: number) => String(n).padStart(2, "0");
 
 function utcCalendarParts(date: Date) {
@@ -53,7 +65,7 @@ async function fixture(tag: string, hoursFromNow: number) {
   const member = await prisma.member.create({
     data: { orgId: org.id, primaryCenterId: center.id, firstName: "Eva", lastName: tag, email: `${slug}@example.com` },
   });
-  const { date, time } = utcCalendarParts(new Date(Date.now() + hoursFromNow * 60 * 60 * 1000));
+  const { date, time } = utcCalendarParts(new Date(NOW.getTime() + hoursFromNow * 60 * 60 * 1000));
   const session = await prisma.classSession.create({
     data: {
       orgId: org.id,
@@ -75,7 +87,7 @@ async function fixture(tag: string, hoursFromNow: number) {
 test("recordatorio a 24h: se envía una vez y queda marcado en AuditLog", async () => {
   const f = await fixture("24h", 20);
 
-  const firstRun = await runSessionReminderRule(f.orgId);
+  const firstRun = await runSessionReminderRule(f.orgId, NOW);
   assert.equal(firstRun, 1, "una reserva a 20h vista dispara el recordatorio de 24h");
 
   const marks = await prisma.auditLog.count({
@@ -83,7 +95,7 @@ test("recordatorio a 24h: se envía una vez y queda marcado en AuditLog", async 
   });
   assert.equal(marks, 1);
 
-  const secondRun = await runSessionReminderRule(f.orgId);
+  const secondRun = await runSessionReminderRule(f.orgId, NOW);
   assert.equal(secondRun, 0, "una segunda pasada no repite el mismo recordatorio");
 });
 
@@ -91,7 +103,7 @@ test("una reserva cancelada antes del aviso no recibe recordatorio", async () =>
   const f = await fixture("cancelada", 10);
   await prisma.booking.update({ where: { id: f.bookingId }, data: { status: "CANCELLED" } });
 
-  const sent = await runSessionReminderRule(f.orgId);
+  const sent = await runSessionReminderRule(f.orgId, NOW);
   assert.equal(sent, 0);
 });
 
@@ -102,10 +114,10 @@ test("el socio puede desactivar los recordatorios de forma independiente", async
   await setMemberSessionReminderPreference(f.orgId, f.memberId, false);
   assert.equal(await memberWantsSessionReminders(f.memberId), false);
 
-  const sent = await runSessionReminderRule(f.orgId);
+  const sent = await runSessionReminderRule(f.orgId, NOW);
   assert.equal(sent, 0, "con la preferencia apagada no se envía, aunque esté dentro de la ventana");
 
   await setMemberSessionReminderPreference(f.orgId, f.memberId, true);
-  const sentAfterReenable = await runSessionReminderRule(f.orgId);
+  const sentAfterReenable = await runSessionReminderRule(f.orgId, NOW);
   assert.equal(sentAfterReenable, 1, "al reactivarla vuelve a enviarse en la siguiente pasada");
 });
