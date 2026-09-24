@@ -53,10 +53,10 @@ export async function createInvitedMember(params: {
 
 /**
  * Socio listo para reservar: alta con bono, cuenta activada con TODOS los
- * consentimientos obligatorios (salud incluido: P8 lo hará exigible en el
- * servidor y el relleno no puede depender de que hoy no lo sea), muro de
- * primera sesión superado y su parte de la valoración inicial enviada, para que
- * el aviso de valoración pendiente no tape el portal cuando entra por pantalla.
+ * consentimientos obligatorios (salud y contrato, que el servidor exige desde
+ * QA-ALTA-09), muro de primera sesión superado y su parte de la valoración
+ * inicial enviada, para que el aviso de valoración pendiente no tape el portal
+ * cuando entra por pantalla.
  */
 export async function createFillerMember(params: {
   orgId: string;
@@ -80,6 +80,8 @@ export async function createFillerMember(params: {
 
   const result = await completeMemberOnboarding(token, {
     password: FILLER_PASSWORD,
+    // QA-ALTA-09: el servidor exige también el contrato de servicios.
+    consentContract: true,
     consentHealth: true,
     consentImages: false,
     consentMarketing: false,
