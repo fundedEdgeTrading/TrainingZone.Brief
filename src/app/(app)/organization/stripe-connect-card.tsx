@@ -65,11 +65,20 @@ export async function StripeConnectCard({ orgId }: { orgId: string }) {
     return (
       <div className={CARD}>
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-          <p className="text-sm text-brand-muted max-w-lg">
-            Conecta tu propia cuenta de Stripe para cobrar a tus socios. Apta nunca guarda una clave secreta tuya
-            — solo el identificador de tu cuenta conectada, vía OAuth de un botón.
-          </p>
-          <a href={buildConnectOAuthUrl(orgId)}>
+          <div className="flex flex-col gap-1 max-w-lg">
+            <p className="text-sm text-brand-muted">
+              Conecta tu propia cuenta de Stripe para cobrar a tus socios. Apta nunca guarda una clave secreta tuya
+              — solo el identificador de tu cuenta conectada, vía OAuth de un botón.
+            </p>
+            <p className="text-sm text-brand-muted">
+              ¿Aún no tienes Stripe?{" "}
+              <a href={buildConnectOAuthUrl(orgId, "register")} className="underline font-medium">
+                Crea tu cuenta
+              </a>{" "}
+              con los datos de tu centro ya rellenos.
+            </p>
+          </div>
+          <a href={buildConnectOAuthUrl(orgId, "login")} className="shrink-0">
             <Button variant="secondary">Conectar cobros con Stripe →</Button>
           </a>
         </div>
