@@ -36,8 +36,8 @@ import {
  * ├──────┼──────────────────────────────────────────────────────────────────────┤
  * │ O1   │ /planes → Avanzado → pago simulado → organización ACTIVE + OWNER +  │
  * │      │ invitación y email de activación                                    │
- * │ O2   │ Activación del OWNER → /puesta-en-marcha con "Canales de lead" ya   │
- * │      │ resuelto (P10)                                                      │
+ * │ O2   │ Activación del OWNER → /puesta-en-marcha con "Canales de captación" │
+ * │      │ ya resuelto (P10)                                                   │
  * │ O3   │ Centros A y B con ficha pública y aforo; el 4.º centro se bloquea;  │
  * │      │ productos "Mensual EP 8" y "Bono 5 EP"                              │
  * │ E1   │ Alta de Entrenador 1 (A), Entrenador 2 (A + imputación a B) y       │
@@ -71,16 +71,15 @@ import {
  * │      │ llegue repetido                                                     │
  * └──────┴──────────────────────────────────────────────────────────────────────┘
  *
- * ## Estado en main
+ * ## Estado en release
  *
- * Los pasos que dependen de pistas aún sin mezclar (P6, P8, P9, P10) afirman el
- * estado OBJETIVO del guion y fallan hoy a propósito; cada uno lleva un
- * comentario con la pista que lo cierra. Donde la comprobación es de base de
- * datos y el recorrido puede seguir se usa `expect.soft` (el test queda en rojo
- * pero no corta el paso); donde sin la corrección no hay forma de seguir (la
- * opción "Instagram" no existe) falla duro. Al ser `serial`, el primer test en
- * rojo deja sin ejecutar los siguientes: hasta que P10 esté en main el
- * recorrido se detiene en O2.
+ * Con las pistas P1–P12 mezcladas, lo que dependía de P6, P8, P9 y P10 ya
+ * pasa y se afirma en duro; cada paso conserva el comentario con la pista que
+ * lo cerró. Solo quedan en `expect.soft` las dos de V2: la profesión en la
+ * parte del socio de la valoración (P8-7), que P8 dejó para los formularios
+ * del socio y no está. Fallan a propósito, pero dejan comprobar el resto del
+ * paso. Al ser
+ * `serial`, un test en rojo deja sin ejecutar los siguientes.
  *
  * ## Requisitos de entorno (recorrido principal, modo demo)
  *
@@ -93,9 +92,18 @@ import {
  *   `next start` el arranque exige la región aunque la base esté en localhost)
  *   y `JOBS_CRON_SECRET` (V1 dispara el cron a la vez que el onboarding).
  * - SIN `BREVO_API_KEY`: los emails se comprueban por la línea `[mailer]` que
- *   escribe el servidor al simular el envío.
- * - SIN `STRIPE_SECRET_KEY`: el modo demo (/demo-checkout) solo existe sin
- *   clave. Si está definida, `beforeAll` falla en vez de probar otra cosa.
+ *   escribe el servidor (con `next start`, PROD-03, "correo NO enviado": se
+ *   comprueba que se intentó, con su asunto y destinatario).
+ * - Modo demo EXPLÍCITO (PROD-01): `DEMO_MODE=true` y, con `next start`,
+ *   `ALLOW_DEMO_IN_PRODUCTION=true`. Ya no basta con quitar `STRIPE_SECRET_KEY`:
+ *   el modo demo gana aunque la clave esté. `beforeAll` falla si el proceso de
+ *   Playwright no ve las dos (las carga del mismo `.env` que el servidor por
+ *   `dotenv` en `playwright.config.ts`; una variable del shell tiene prioridad).
+ * - Con `next start` el arranque valida el entorno (PROD-02) y el servidor no
+ *   levanta si falla: `AUTH_SECRET` de 32+ caracteres y que NO sea uno de los
+ *   valores de ejemplo publicados en el repositorio, `PROGRESS_PHOTO_KEY` de 32
+ *   bytes en base64 (`openssl rand -base64 32`) que tampoco sea la de ejemplo,
+ *   `PROGRESS_PHOTO_DIR` (un directorio escribible) y `JOBS_CRON_SECRET`.
  * - `E2E_SERVER_LOG`: ruta del fichero con la salida del servidor.
  *
  * ## Preparar una base limpia y lanzar el recorrido
@@ -126,10 +134,10 @@ import {
  * stripe listen --forward-to localhost:3000/api/stripe/webhook \
  *               --forward-connect-to localhost:3000/api/stripe/webhook
  * # el whsec que imprime vale para los dos secretos
- * STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_… STRIPE_CONNECT_WEBHOOK_SECRET=whsec_… \
+ * DEMO_MODE=false STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_… STRIPE_CONNECT_WEBHOOK_SECRET=whsec_… \
  * npm run start > /tmp/server-org-nueva-stripe.log 2>&1 &
  * # la cuenta de test necesita un precio mensual con lookup key `apta_avanzado_mes`
- * E2E_CLEAN_DB=true E2E_SERVER_LOG=/tmp/server-org-nueva-stripe.log \
+ * E2E_CLEAN_DB=true E2E_SERVER_LOG=/tmp/server-org-nueva-stripe.log DEMO_MODE=false \
  * STRIPE_SECRET_KEY=sk_test_… STRIPE_WEBHOOK_SECRET=whsec_… STRIPE_CONNECT_WEBHOOK_SECRET=whsec_… \
  * E2E_STRIPE_CONNECTED_ACCOUNT=acct_… \
  *   npx playwright test e2e/regresion-org-nueva.spec.ts --grep @stripe
@@ -319,10 +327,14 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
   let jobsRun: Promise<{ status: number }> | null = null;
 
   test.beforeAll(async () => {
-    if (process.env.STRIPE_SECRET_KEY) {
+    // PROD-01: el modo demo ya no se deduce de que falte la clave de Stripe; se
+    // pide con dos banderas. Se comprueban en ESTE proceso (playwright.config.ts
+    // carga el mismo .env que lee el servidor): sin ellas /planes iría a Stripe
+    // y el recorrido probaría otra cosa.
+    if (process.env.DEMO_MODE !== "true" || process.env.ALLOW_DEMO_IN_PRODUCTION !== "true") {
       throw new Error(
-        "Este recorrido exige modo demo: STRIPE_SECRET_KEY está definida y /demo-checkout no existe con clave. " +
-          "Lánzalo sin la variable (y con el servidor arrancado sin ella), o usa --grep @stripe para el bloque de Stripe."
+        "Este recorrido exige modo demo explícito: DEMO_MODE=true y ALLOW_DEMO_IN_PRODUCTION=true " +
+          "(en el .env del servidor y en el entorno de Playwright). Para el bloque de Stripe usa --grep @stripe."
       );
     }
     await assertCleanDatabase({ requireEmpty: true });
@@ -369,10 +381,10 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
 
     // P10 · QA-ALTA-02: la organización nace con canales de lead por defecto y
     // el paso del checklist sale ya tachado.
-    await expect
-      .soft(page.locator("li", { hasText: /Canales de lead/ }).locator(".line-through"))
-      .toBeVisible({ timeout: 5_000 });
-    expect.soft(await db().leadChannel.count({ where: { orgId } })).toBeGreaterThan(0);
+    await expect(page.locator("li", { hasText: /Canales de captación/ }).locator(".line-through")).toBeVisible({
+      timeout: 5_000,
+    });
+    expect(await db().leadChannel.count({ where: { orgId } })).toBeGreaterThan(0);
   });
 
   test("O3 · centros A y B con ficha pública y aforo, el cuarto se bloquea por plan, y el catálogo", async ({ page }) => {
@@ -410,6 +422,10 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
       await fieldInput(capacityForm, "Aforo por defecto").fill(capacity);
       await capacityForm.getByRole("button", { name: "Guardar", exact: true }).click();
       await expectToast(page, "Aforo por defecto actualizado.");
+      // El toast del centro anterior puede seguir en pantalla: se espera al dato.
+      await expect
+        .poll(async () => (await db().center.findFirst({ where: { orgId, name } }))?.defaultGroupCapacity, { timeout: 15_000 })
+        .toBe(Number(capacity));
 
       await c.locator("summary", { hasText: "Página pública y enlaces" }).click();
       await fieldInput(c, "Teléfono").fill(phone);
@@ -418,6 +434,9 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
       await c.getByRole("checkbox", { name: /Publicar la página de este centro/ }).check();
       await c.getByRole("button", { name: "Guardar ficha pública" }).click();
       await expectToast(page, "Ficha pública actualizada.");
+      await expect
+        .poll(async () => (await db().center.findFirst({ where: { orgId, name } }))?.publicPage, { timeout: 15_000 })
+        .toBe(true);
     }
 
     const centerA = await db().center.findFirstOrThrow({ where: { orgId, name: CENTER_A } });
@@ -611,7 +630,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
         timeout: 15_000,
       });
       // P10 · QA-ALTA-02: una organización suspendida no capta leads.
-      expect.soft(await db().lead.count({ where: { orgId, email: LEAD_SUSPENDED_EMAIL } })).toBe(0);
+      expect(await db().lead.count({ where: { orgId, email: LEAD_SUSPENDED_EMAIL } })).toBe(0);
     } finally {
       await db().organization.update({ where: { id: orgId }, data: { platformStatus: "ACTIVE" } });
     }
@@ -632,10 +651,10 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
 
     // P10 · QA-ALTA-02: el socio hereda del lead la fecha de nacimiento, los
     // objetivos y el consentimiento de marketing, y recibe la bienvenida.
-    expect.soft(member.birthDate?.toISOString().slice(0, 10)).toBe(LEAD_PUBLIC.birthDate);
-    expect.soft(member.consentMarketing).toBe(true);
-    expect.soft(await db().clientGoal.count({ where: { memberId: member.id } })).toBeGreaterThan(0);
-    await expectMailLogged(LEAD_PUBLIC.email, new RegExp(`^¡Bienvenida a ${escapeRe(ORG_NAME)}, `), { soft: true });
+    expect(member.birthDate?.toISOString().slice(0, 10)).toBe(LEAD_PUBLIC.birthDate);
+    expect(member.consentMarketing).toBe(true);
+    expect(await db().clientGoal.count({ where: { memberId: member.id } })).toBeGreaterThan(0);
+    await expectMailLogged(LEAD_PUBLIC.email, new RegExp(`^¡Bienvenida a ${escapeRe(ORG_NAME)}, `));
   });
 
   test("S1 · alta de socio en A con foto, teléfono y nacimiento, y bienvenida enviada", async ({ page }) => {
@@ -711,9 +730,9 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     expect(member.emergencyContact).toContain("600777888");
 
     // P8 · los consentimientos quedan en el registro de auditoría.
-    expect
-      .soft(await db().auditLog.count({ where: { orgId, memberId: sociaId, action: { contains: "CONSENT" } } }))
-      .toBeGreaterThan(0);
+    expect(
+      await db().auditLog.count({ where: { orgId, memberId: sociaId, action: { contains: "CONSENT" } } })
+    ).toBeGreaterThan(0);
 
     // P8 · el SERVIDOR exige el consentimiento de salud: la pantalla ya lo
     // impide, pero la acción es invocable por sí misma.
@@ -726,12 +745,14 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     });
     const withoutHealth = await completeMemberOnboarding(probe.token, {
       password: MEMBER_PASSWORD,
+      // Con el contrato aceptado: el rechazo tiene que ser por la salud y nada más.
+      consentContract: true,
       consentHealth: false,
       consentImages: false,
       consentMarketing: false,
       consentAI: false,
     });
-    expect.soft(withoutHealth.ok, "el onboarding sin consentimiento de salud debe rechazarse").toBe(false);
+    expect(withoutHealth.ok, "el onboarding sin consentimiento de salud debe rechazarse").toBe(false);
   });
 
   test("V1 · existe UNA valoración inicial aunque el cron y el onboarding corran a la vez", async () => {
@@ -739,7 +760,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     expect((await jobsRun!).status).toBe(200);
     const initial = await db().assessment.findMany({ where: { memberId: sociaId, kind: "INITIAL" } });
     // P8 · la creación de la INITIAL es idempotente también en carrera.
-    expect.soft(initial).toHaveLength(1);
+    expect(initial).toHaveLength(1);
     expect(initial.length).toBeGreaterThan(0);
     assessmentId = initial[0].id;
   });
@@ -757,10 +778,13 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     await chooseInField(page, fieldByLabel(page, "Nivel de estrés"), "2 — baja");
     await chooseInField(page, fieldByLabel(page, "Energía"), "4 — alta");
 
-    // P8 · el guion pide también profesión y rutina, que hoy el formulario no
-    // pregunta. Cuando P8 los añada, aquí se rellenan con sus rótulos.
-    await expect.soft(page.getByLabel(/Profesión|Ocupación|A qué te dedicas/i)).toBeVisible({ timeout: 2_000 });
-    await expect.soft(page.getByLabel(/Rutina/i)).toBeVisible({ timeout: 2_000 });
+    // P8-7 · la rutina son los días por semana y el nivel de actividad (ya
+    // arriba); la profesión se pregunta aquí y cae en `Member.occupation`, no en
+    // `answers`. P8 dejó la pregunta para los formularios del socio y en release
+    // sigue sin estar: falla a propósito hasta que se añada.
+    const occupation = page.getByLabel(/Profesión|Ocupación|A qué te dedicas/i);
+    await expect.soft(occupation).toBeVisible({ timeout: 2_000 });
+    if (await occupation.count()) await occupation.first().fill("Enfermera");
 
     await page.getByRole("button", { name: "Guardar mi valoración →" }).click();
     await expect(page.getByText("¡Gracias!", { exact: true })).toBeVisible({ timeout: 15_000 });
@@ -772,6 +796,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
       perfil: { objetivoPrincipal: "Correr una media maratón sin lesionarme" },
       experiencia: { nivelActividad: "ALTO" },
     });
+    expect.soft((await db().member.findUniqueOrThrow({ where: { id: sociaId } })).occupation).toBe("Enfermera");
   });
 
   test("V3 · el entrenador cierra la valoración y se propaga sin tocar el consentimiento de imagen", async ({ page }) => {
@@ -797,7 +822,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     // P8 · cerrar la valoración no puede apagar el consentimiento de imagen
     // que la socia dio en su onboarding.
     const member = await db().member.findUniqueOrThrow({ where: { id: sociaId } });
-    expect.soft(member.consentImages).toBe(true);
+    expect(member.consentImages).toBe(true);
   });
 
   test("C1 · la socia compra \"Mensual EP 8\" desde su portal (pago de demostración)", async ({ page }) => {
@@ -920,7 +945,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     await loginAs(page, OWNER_EMAIL, OWNER_PASSWORD);
     await page.goto(`/agenda?center=${centerAId}&week=${DAY_NO_TRAINER}`);
     await expect(page.locator(`[title="${T_GROUP4}"]`).first()).toBeVisible({ timeout: 15_000 });
-    await expect.soft(page.locator(`[title="${T_NO_TRAINER}"]`).first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(`[title="${T_NO_TRAINER}"]`).first()).toBeVisible({ timeout: 5_000 });
   });
 
   test("R2 · la socia reserva el grupo semanal: −1 sesión y asiento BOOKING con su reserva", async ({ page }) => {
@@ -939,8 +964,8 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
       orderBy: { createdAt: "desc" },
     });
     expect(charge.delta).toBe(-1);
-    // P9 · el asiento de la reserva del socio lleva su bookingId (hoy va null).
-    expect.soft(charge.bookingId).toBe(booking.id);
+    // P9 · el asiento de la reserva del socio lleva su bookingId.
+    expect(charge.bookingId).toBe(booking.id);
   });
 
   test("R3 · grupo lleno → lista de espera → la socia cancela → quien esperaba reclama el hueco", async ({ page }) => {
@@ -1005,7 +1030,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     });
     expect(claimCharge.delta).toBe(-1);
     // P9 · también el asiento del reclamo lleva la reserva.
-    expect.soft(claimCharge.bookingId).toBe(claimed.id);
+    expect(claimCharge.bookingId).toBe(claimed.id);
     expect(
       await db().booking.count({ where: { sessionId: group4Id, occurrenceDate: dbDay(DAY_GROUP4), status: "BOOKED" } })
     ).toBe(4);
@@ -1042,13 +1067,11 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     await page.getByRole("button", { name: "Guardar", exact: true }).click();
     await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
     // P6 · la franja de EP respeta su aforo cuando la asigna el staff.
-    await expect.soft(toast(page).getByText(/completa|aforo|ocupada/i).first()).toBeVisible({ timeout: 5_000 });
-    expect
-      .soft(
-        await db().booking.count({ where: { sessionId: epId, memberId: sociaId, status: { not: "CANCELLED" } } }),
-        "la socia no debe quedar reservada en una EP llena"
-      )
-      .toBe(0);
+    await expect(toast(page).getByText(/completa|aforo|ocupada/i).first()).toBeVisible({ timeout: 5_000 });
+    expect(
+      await db().booking.count({ where: { sessionId: epId, memberId: sociaId, status: { not: "CANCELLED" } } }),
+      "la socia no debe quedar reservada en una EP llena"
+    ).toBe(0);
 
     // EP libre: la reserva del staff descuenta el bono de EP como la del socio.
     await submitSessionDialog(page, {
@@ -1064,10 +1087,10 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     const epBooking = await db().booking.findFirstOrThrow({ where: { sessionId: epFree.id, memberId: sociaId } });
     expect(epBooking.status).toBe("BOOKED");
     // P6 · descuento del bono de EP con su asiento.
-    expect.soft((await subscriptionOf(sociaId, PLAN_EP)).sessionsRemaining).toBe(4);
-    expect
-      .soft(await db().sessionLedger.count({ where: { subscriptionId: epSub.id, reason: "BOOKING", delta: -1 } }))
-      .toBe(1);
+    expect((await subscriptionOf(sociaId, PLAN_EP)).sessionsRemaining).toBe(4);
+    expect(
+      await db().sessionLedger.count({ where: { subscriptionId: epSub.id, reason: "BOOKING", delta: -1 } })
+    ).toBe(1);
 
     // Moroso: gracia 0 y un impago de hace diez días cortan la reserva del staff.
     await page.goto("/organization");
@@ -1091,9 +1114,9 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
       });
       await expect(toast(page).first()).toBeVisible({ timeout: 15_000 });
       // P6 · la franja de EP pasa por el mismo corte por morosidad que el roster.
-      await expect
-        .soft(toast(page).getByText(/tiene un recibo sin pagar y el acceso cortado por morosidad/).first())
-        .toBeVisible({ timeout: 5_000 });
+      await expect(
+        toast(page).getByText(/tiene un recibo sin pagar y el acceso cortado por morosidad/).first()
+      ).toBeVisible({ timeout: 5_000 });
     } finally {
       await db().member.update({ where: { id: sociaId }, data: { state: before.state, delinquentSince: null } });
       await db().organization.update({ where: { id: orgId }, data: { dunningGraceDays: 7 } });
@@ -1275,6 +1298,10 @@ test.describe.serial("Regresión · organización nueva · cobros reales en Stri
       !accountId.startsWith("acct_") && "E2E_STRIPE_CONNECTED_ACCOUNT=acct_…",
     ].filter(Boolean);
     if (missing.length) throw new Error(`El bloque @stripe necesita claves de TEST: falta ${missing.join(", ")}.`);
+    // PROD-01: con el modo demo activo /planes lleva a /demo-checkout aunque haya clave.
+    if (process.env.DEMO_MODE === "true") {
+      throw new Error("El bloque @stripe necesita el modo demo apagado: lánzalo (y el servidor) con DEMO_MODE=false.");
+    }
     await assertCleanDatabase({ requireEmpty: false });
     serverLogPath();
     stripe = new Stripe(key);
