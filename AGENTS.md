@@ -35,8 +35,17 @@ integrador: hay nueve pistas trabajando en paralelo sobre este repositorio.
   traer en el mismo cambio un CMP con "rechazar todo" al mismo nivel visual que
   "aceptar todo", y actualizar el inventario de `/cookies`.
 
-**Ficheros congelados** durante el trimestre: `prisma/schema.prisma` y `src/lib/rbac.ts`.
-Si necesitas tocarlos, para y pídelo — no los edites en tu rama.
+**Ficheros sensibles** (ya no congelados): `prisma/schema.prisma` y `src/lib/rbac.ts` se
+pueden editar, con estas condiciones:
+
+- **`schema.prisma`**: todo cambio va con su migración en `prisma/migrations/`
+  (`npm run db:migrate`), en el mismo commit. Solo cambios aditivos (tablas, columnas
+  opcionales, índices) salvo acuerdo explícito: renombrar o borrar columnas rompe al resto
+  de pistas. Nada de editar migraciones ya aplicadas.
+- **`rbac.ts`**: sigue siendo la fuente única de permisos y rótulos (ver invariantes). Los
+  parches pendientes de `docs/hu/patches-rbac/` ya se pueden aplicar; al hacerlo, borra
+  el parche aplicado.
+- Antes de subir, trae `main` a tu rama: son los dos ficheros con más riesgo de conflicto.
 
 **Pruebas**: ejecuta `npm run lint`, `npx tsc --noEmit` y `npm run test:unit`, más los
 specs de Playwright de tu pista. **Nunca la suite completa de Playwright**: muta la base
