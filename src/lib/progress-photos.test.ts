@@ -1,7 +1,7 @@
 import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir } from "fs/promises";
+import { mkdtemp, readdir, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import path from "path";
 
@@ -13,7 +13,10 @@ import {
   parseDataUrl,
   photoRefsOf,
   putProgressPhoto,
+  readLegacyEnvelope,
   readProgressPhoto,
+  type PhotoBlobStore,
+  type PhotoDeps,
   resolveProgressPhotoUrl,
   signPhotoUrl,
   verifyPhotoToken,
@@ -26,10 +29,29 @@ const PNG_1PX =
 
 const KEY = Buffer.from("dev-only-key-do-not-use-in-prod!").toString("base64");
 
-/** Entorno de prueba con su propio directorio: cada test empieza en vacío. */
-async function envWithStore(): Promise<NodeJS.ProcessEnv> {
-  const dir = await mkdtemp(path.join(tmpdir(), "tz-photos-"));
-  return { ...process.env, PROGRESS_PHOTO_KEY: KEY, PROGRESS_PHOTO_DIR: dir };
+const OWNER = { orgId: "org-1", memberId: "member-1" };
+
+/** Almacén en memoria: el contrato de Postgres sin base de datos. */
+function memoryStore(): PhotoBlobStore & { blobs: Map<string, { envelope: string; owner: typeof OWNER }> } {
+  const blobs = new Map<string, { envelope: string; owner: typeof OWNER }>();
+  return {
+    blobs,
+    async put(id, envelope, owner) {
+      blobs.set(id, { envelope, owner: { orgId: owner.orgId, memberId: owner.memberId } });
+    },
+    async get(id) {
+      return blobs.get(id)?.envelope ?? null;
+    },
+    async delete(id) {
+      return blobs.delete(id);
+    },
+  };
+}
+
+function depsWithStore() {
+  const store = memoryStore();
+  const deps: PhotoDeps = { env: { ...process.env, PROGRESS_PHOTO_KEY: KEY }, store };
+  return { store, deps };
 }
 
 function envWithKey(): NodeJS.ProcessEnv {
@@ -37,39 +59,40 @@ function envWithKey(): NodeJS.ProcessEnv {
 }
 
 /**
- * E10-20, escenario principal: las fotos se guardan FUERA de la base de datos.
- * Antes vivían como `data:image/jpeg;base64,...` en una columna de texto, así
- * que un `pg_dump` las entregaba legibles.
+ * E10-20, escenario principal: la columna no guarda la foto. Antes vivía como
+ * `data:image/jpeg;base64,...` en una columna de texto, así que un `pg_dump`
+ * la entregaba legible.
  */
 test("lo que se guarda en la columna es una referencia, no la foto", async () => {
-  const env = await envWithStore();
-  const stored = await putProgressPhoto(PNG_1PX, env);
+  const { deps } = depsWithStore();
+  const stored = await putProgressPhoto(PNG_1PX, OWNER, deps);
   assert.ok(stored);
   assert.equal(isPhotoRef(stored.ref), true);
   assert.equal(isInlineDataUrl(stored.ref), false);
   assert.equal(stored.ref.includes("base64"), false);
 });
 
-/** Escenario "cifrado por columna": el fichero en disco no es legible. */
-test("el fichero en disco está cifrado: no contiene los bytes de la imagen", async () => {
-  const env = await envWithStore();
-  const stored = await putProgressPhoto(PNG_1PX, env);
+/** Escenario "cifrado": lo que llega al almacén (una fila de Postgres) no es legible. */
+test("lo guardado está cifrado: no contiene los bytes ni el tipo de la imagen", async () => {
+  const { store, deps } = depsWithStore();
+  const stored = await putProgressPhoto(PNG_1PX, OWNER, deps);
   assert.ok(stored);
 
-  const files = await readdir(env.PROGRESS_PHOTO_DIR!);
-  assert.equal(files.length, 1);
-  const raw = await readFile(path.join(env.PROGRESS_PHOTO_DIR!, files[0]), "utf8");
-  assert.equal(isEncrypted(raw), true);
-  // La firma PNG no aparece en claro en ninguna parte del fichero.
-  assert.equal(raw.includes("iVBORw0KGgo"), false);
-  assert.equal(raw.includes("image/png"), false);
+  assert.equal(store.blobs.size, 1);
+  const [saved] = [...store.blobs.values()];
+  assert.equal(isEncrypted(saved.envelope), true);
+  // La firma PNG no aparece en claro en ninguna parte.
+  assert.equal(saved.envelope.includes("iVBORw0KGgo"), false);
+  assert.equal(saved.envelope.includes("image/png"), false);
+  // Y va atada al socio: borrar al socio se la lleva (FK en cascada).
+  assert.deepEqual(saved.owner, OWNER);
 });
 
 test("lo guardado se recupera byte a byte", async () => {
-  const env = await envWithStore();
-  const stored = await putProgressPhoto(PNG_1PX, env);
+  const { deps } = depsWithStore();
+  const stored = await putProgressPhoto(PNG_1PX, OWNER, deps);
   assert.ok(stored);
-  const loaded = await readProgressPhoto(stored.ref, env);
+  const loaded = await readProgressPhoto(stored.ref, deps);
   assert.ok(loaded);
   assert.equal(loaded.mime, "image/png");
   assert.equal(loaded.data.toString("base64"), PNG_1PX.split(",")[1]);
@@ -105,29 +128,65 @@ test("un token inventado no pasa", () => {
   assert.equal(verifyPhotoToken(id, "m1", "", now, env), false);
 });
 
-/** Escenario "borrado": borrar la entrada borra también el fichero. */
-test("borrar la referencia borra el fichero de disco", async () => {
-  const env = await envWithStore();
-  const stored = await putProgressPhoto(PNG_1PX, env);
+/** Escenario "borrado": borrar la entrada borra también la foto. */
+test("borrar la referencia borra la foto del almacén", async () => {
+  const { store, deps } = depsWithStore();
+  const stored = await putProgressPhoto(PNG_1PX, OWNER, deps);
   assert.ok(stored);
-  assert.equal((await readdir(env.PROGRESS_PHOTO_DIR!)).length, 1);
+  assert.equal(store.blobs.size, 1);
 
-  assert.equal(await deleteProgressPhoto(stored.ref, env), true);
-  assert.equal((await readdir(env.PROGRESS_PHOTO_DIR!)).length, 0);
+  assert.equal(await deleteProgressPhoto(stored.ref, deps), true);
+  assert.equal(store.blobs.size, 0);
 });
 
 /**
- * Un id con `../` dentro convertiría el almacén en una lectura arbitraria de
- * ficheros. Se valida como UUID ANTES de tocar el disco.
+ * Un id con `../` dentro convertiría el respaldo en disco en una lectura
+ * arbitraria de ficheros. Se valida como UUID ANTES de tocar ningún almacén.
  */
-test("una referencia con recorrido de directorios no llega al disco", async () => {
-  const env = await envWithStore();
-  assert.equal(await readProgressPhoto("photo:v1:../../etc/passwd", env), null);
-  assert.equal(await deleteProgressPhoto("photo:v1:../../etc/passwd", env), false);
+test("una referencia con recorrido de directorios no llega a ningún almacén", async () => {
+  const { store, deps } = depsWithStore();
+  let touched = false;
+  const spy: PhotoBlobStore = {
+    put: store.put,
+    get: async (id) => ((touched = true), store.get(id)),
+    delete: async (id) => ((touched = true), store.delete(id)),
+  };
+  assert.equal(await readProgressPhoto("photo:v1:../../etc/passwd", { ...deps, store: spy }), null);
+  assert.equal(await deleteProgressPhoto("photo:v1:../../etc/passwd", { ...deps, store: spy }), false);
+  assert.equal(touched, false);
+});
+
+/**
+ * Las fotos guardadas en el disco de Render antes de pasar a Postgres se
+ * siguen leyendo y borrando mientras `npm run files:migrate` no las mueve.
+ */
+test("una foto que sigue en el disco antiguo se lee y se borra", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "tz-photos-"));
+  const env = { ...process.env, PROGRESS_PHOTO_KEY: KEY, PROGRESS_PHOTO_DIR: dir };
+  // Se escribe como lo hacía la versión en disco: el sobre en `<id>.enc`.
+  const { store, deps } = depsWithStore();
+  const stored = await putProgressPhoto(PNG_1PX, OWNER, { ...deps, env });
+  assert.ok(stored);
+  const id = stored.ref.slice("photo:v1:".length);
+  await writeFile(path.join(dir, `${id}.enc`), store.blobs.get(id)!.envelope, "utf8");
+
+  // Sin fila en Postgres, `postgresPhotoStore` cae a `readLegacyEnvelope`;
+  // aquí se prueba ese respaldo sin base de datos.
+  const legacyOnly: PhotoBlobStore = {
+    put: async () => undefined,
+    get: (photoId) => readLegacyEnvelope(photoId, env),
+    delete: store.delete,
+  };
+  const loaded = await readProgressPhoto(stored.ref, { env, store: legacyOnly });
+  assert.ok(loaded);
+  assert.equal(loaded.mime, "image/png");
+  assert.equal((await readdir(dir)).length, 1);
 });
 
 test("solo se aceptan imágenes, y no cualquier data URL", () => {
   assert.equal(parseDataUrl("data:text/html;base64,PHNjcmlwdD4="), null);
+  // Declarar `image/png` no basta: manda la firma de los bytes.
+  assert.equal(parseDataUrl("data:image/png;base64,PHNjcmlwdD4="), null);
   assert.equal(parseDataUrl("https://example.test/foto.jpg"), null);
   assert.equal(parseDataUrl("data:image/png;base64,"), null);
   assert.ok(parseDataUrl(PNG_1PX));

@@ -5,12 +5,12 @@ import {
   generateInvitationToken,
   invitationExpiry,
   onboardingUrlFor,
-  absoluteUrl,
 } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderStaffInviteEmail } from "@/lib/emails/templates";
 import { prisma } from "@/lib/prisma";
 import { isPlatformOperator } from "../apta/platform-access";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * Política de roles de la plantilla, compartida por `/organization` y por
@@ -151,7 +151,7 @@ export async function sendStaffInvite(params: {
   token: string;
 }): Promise<{ ok: boolean }> {
   const [org, inviteCenter] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: params.orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: params.orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     params.centerId
       ? prisma.center.findUnique({ where: { id: params.centerId }, select: { name: true, address: true } })
       : Promise.resolve(null),
@@ -163,7 +163,7 @@ export async function sendStaffInvite(params: {
     html: renderStaffInviteEmail({
       staffFirstName: params.name.split(/\s+/)[0] ?? params.name,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      orgLogoUrl: emailBrandLogo(org),
       roleLabel: ROLE_LABEL[params.role],
       onboardingUrl: onboardingUrlFor(params.token),
       centerName: inviteCenter?.name,

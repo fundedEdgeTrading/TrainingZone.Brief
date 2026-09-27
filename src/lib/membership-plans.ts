@@ -1,5 +1,6 @@
 import type { PlanType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import type { ServiceKind } from "@/lib/session-balance";
 import { PACK_TYPES, PLAN_TYPES, resolvePlanType } from "@/lib/membership-plan-types";
 import { hasOnlineContent } from "@/lib/online-queries";
@@ -93,7 +94,7 @@ export async function saveMembershipPlan(
   const existing = input.planId
     ? await prisma.membershipPlan.findFirst({
         where: { id: input.planId, orgId },
-        select: { id: true, type: true, priceCents: true, sessionsIncluded: true, validityDays: true },
+        select: { id: true, type: true, priceCents: true, sessionsIncluded: true, validityDays: true, imageUrl: true },
       })
     : null;
   if (input.planId && !existing) return { ok: false, error: "Producto no encontrado." };
@@ -131,6 +132,21 @@ export async function saveMembershipPlan(
     warning = ONLINE_PLAN_NO_CONTENT_WARNING;
   }
 
+  // La foto llega como `data:` URL desde la web y la app; se guarda en
+  // Postgres (`StoredFile`) y la columna recibe `/api/files/<id>`. Va después
+  // de validar para no dejar una imagen suelta por un producto rechazado.
+  let imageUrl: string | null | undefined = undefined;
+  if (input.imageUrl !== undefined) {
+    const image = await resolveImageInput(input.imageUrl, {
+      orgId,
+      kind: "PRODUCT_IMAGE",
+      previous: existing?.imageUrl,
+      createdById: actorUserId,
+    });
+    if (!image.ok) return image;
+    imageUrl = image.value;
+  }
+
   const data: Prisma.MembershipPlanUncheckedCreateInput = {
     orgId,
     name,
@@ -139,7 +155,7 @@ export async function saveMembershipPlan(
     sessionsIncluded,
     validityDays,
     ...(input.description !== undefined ? { description: input.description } : {}),
-    ...(input.imageUrl !== undefined ? { imageUrl: input.imageUrl } : {}),
+    ...(imageUrl !== undefined ? { imageUrl } : {}),
     ...(active !== undefined ? { active } : {}),
   };
 
@@ -167,6 +183,7 @@ export async function saveMembershipPlan(
     where: { id: existing.id },
     data: { ...updatable, ...(priceChanged ? { stripePriceId: null } : {}) },
   });
+  if (imageUrl !== undefined) await discardReplacedImage(existing.imageUrl, imageUrl, orgId);
   // HU-ST-08: nombre, descripción y foto se propagan al Product (sin generar
   // precio nuevo); un cambio de importe crea un Price nuevo y archiva el
   // anterior — nunca lo borra (RB-VENTA-007).

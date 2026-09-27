@@ -3,9 +3,10 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { INVALID_IMAGE_ERROR, parseImageDataUrl, resolveImageInput } from "@/lib/file-store";
 import { requireRole, centerIsInScope, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { canManageMembers, canManageOrg } from "@/lib/rbac";
-import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
+import { createMemberWithInvitation, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
@@ -15,6 +16,7 @@ import {
   markClientGoalAchieved,
   addClientGoalTemplate,
 } from "@/lib/members-queries";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 export type MembersActionResult = { ok: true } | { ok: false; error: string };
 
@@ -35,6 +37,10 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   const birthRaw = String(formData.get("birthDate") ?? "").trim();
   const centerId = String(formData.get("centerId") ?? "");
   const photoUrl = String(formData.get("photoUrl") ?? "").trim() || null;
+
+  // La foto se valida ANTES del alta: después, un fallo ya no podría deshacer
+  // un socio creado con su invitación enviada.
+  if (photoUrl && !parseImageDataUrl(photoUrl)) return { ok: false, error: INVALID_IMAGE_ERROR };
 
   if (!firstName || !lastName || !email || !centerId) {
     return { ok: false, error: "Completa el nombre, apellidos, email y centro." };
@@ -77,7 +83,7 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   };
   const org = await prisma.organization.findUnique({
     where: { id: session.user.orgId },
-    select: { name: true, logoUrl: true, allowsMinors: true, minimumAgeYears: true },
+    select: { name: true, logoUrl: true, logoDarkUrl: true, allowsMinors: true, minimumAgeYears: true },
   });
   if (!org) return { ok: false, error: "No se ha encontrado la organización." };
 
@@ -132,7 +138,16 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
   }
 
   if (photoUrl) {
-    await prisma.member.update({ where: { id: member.id }, data: { photoUrl } });
+    // A `StoredFile`, atada al socio: se borra con él.
+    const photo = await resolveImageInput(photoUrl, {
+      orgId: session.user.orgId,
+      kind: "MEMBER_PHOTO",
+      memberId: member.id,
+      createdById: session.user.id,
+    });
+    if (photo.ok && photo.value) {
+      await prisma.member.update({ where: { id: member.id }, data: { photoUrl: photo.value } });
+    }
   }
 
   const footer = memberEmailFooterLinks(member.id);
@@ -145,7 +160,7 @@ export async function createMember(formData: FormData): Promise<MembersActionRes
     html: renderMemberWelcomeEmail({
       memberFirstName: firstName,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      orgLogoUrl: emailBrandLogo(org),
       centerName: center.name,
       onboardingUrl: onboardingUrlFor(invitation.token),
       memberFullName: `${firstName} ${lastName}`,

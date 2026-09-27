@@ -179,6 +179,25 @@ type RequestOptions = {
   timeoutMs?: number;
 };
 
+/**
+ * `source` de un `<Image>` a partir de lo que devuelve la API.
+ *
+ * Las imágenes subidas llegan como rutas del servidor (`/api/files/<id>`,
+ * `/api/progress-photos/<id>?…`): React Native no tiene un origen desde el que
+ * resolverlas, así que se les pone delante el de la web. Las fotos de personas
+ * exigen sesión y el `<Image>` no manda cookies: va el mismo Bearer que el resto
+ * de peticiones (la ruta del servidor acepta los dos). URLs absolutas y `data:`
+ * heredados se devuelven tal cual.
+ */
+export function imageSource(uri: string): { uri: string; headers?: Record<string, string> } {
+  if (!uri.startsWith("/") || uri.startsWith("//")) return { uri };
+  const token = accessTokenCache;
+  return {
+    uri: `${WEB_APP_URL}${uri}`,
+    ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+  };
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   if (accessTokenCache === undefined) {
     accessTokenCache = (await getStoredTokens()).accessToken;

@@ -189,10 +189,15 @@ estrictas.
   el motor de conservación pueda purgar, con una conexión de mantenimiento
   distinta (`DATA_RETENTION_DATABASE_URL`).
 - Las **fotos de progreso** (frontal, perfil y espalda, habitualmente en ropa
-  interior) no viven en la base: la columna guarda una referencia y el fichero
-  vive fuera, cifrado con AES-256-GCM (`src/lib/column-crypto.ts`,
-  `PROGRESS_PHOTO_KEY` / `PROGRESS_PHOTO_DIR`), fuera de `public/` y servido por
-  enlace firmado.
+  interior) no viven en claro en la base: la columna guarda una referencia y la
+  foto va cifrada con AES-256-GCM (`src/lib/column-crypto.ts`,
+  `PROGRESS_PHOTO_KEY`) en su propia fila de `StoredFile`, servida solo por
+  enlace firmado. Las que se guardaron antes en disco (`PROGRESS_PHOTO_DIR`) se
+  siguen leyendo hasta que `npm run files:migrate` las mueve.
+- El resto de **imágenes subidas** (logos, productos, anuncios, fotos de perfil)
+  también viven en `StoredFile` y se sirven por `/api/files/<id>`: públicas las
+  de marca y catálogo, con sesión y ámbito de centro las fotos de personas
+  (`src/lib/file-store.ts`). Sin proveedor externo ni disco.
 - Lo que viaja a la IA se pseudonimiza antes (`src/lib/ai/pseudonymize.ts`) y
   solo con consentimiento explícito (`canUseClinicalDataForAI`).
 - La región donde vive la base de datos se declara (`DATA_REGION`) y debe

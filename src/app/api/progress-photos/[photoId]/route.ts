@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { prisma } from "@/lib/prisma";
-import { auth } from "@/auth";
-import { verifyAccessToken } from "@/lib/mobile-auth";
-import { isCenterInScope, type ScopedUser } from "@/lib/center-scope";
+import { isCenterInScope } from "@/lib/center-scope";
+import { resolveRequestViewer } from "@/lib/request-viewer";
 import { canViewHealthData } from "@/lib/rbac";
 import {
   photoFingerprint,
@@ -39,7 +38,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ photoId: st
   const memberId = req.nextUrl.searchParams.get("m") ?? "";
   const token = req.nextUrl.searchParams.get("t") ?? "";
 
-  const viewer = await resolveViewer(req);
+  const viewer = await resolveRequestViewer(req);
   if (!viewer) return NextResponse.json({ error: "No autorizado." }, { status: 401 });
 
   if (!verifyPhotoToken(photoId, memberId, token)) {
@@ -100,37 +99,4 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ photoId: st
       "Content-Disposition": "inline",
     },
   });
-}
-
-/** `id/role/orgId/centerId` es exactamente el `ScopedUser` de center-scope. */
-type Viewer = ScopedUser & { surface: "web" | "movil" };
-
-/**
- * Identidad de quien pide, venga de la cookie de sesión o del Bearer de la app.
- * Es lo ÚNICO que cambia entre las dos superficies: los permisos, el ámbito de
- * centro y la traza son los mismos más abajo.
- */
-async function resolveViewer(req: NextRequest): Promise<Viewer | null> {
-  const bearer = req.headers.get("authorization");
-  if (bearer?.startsWith("Bearer ")) {
-    const claims = await verifyAccessToken(bearer.slice(7));
-    if (!claims) return null;
-    return {
-      id: claims.sub,
-      orgId: claims.orgId,
-      role: claims.role,
-      centerId: claims.centerId ?? null,
-      surface: "movil",
-    };
-  }
-
-  const session = await auth();
-  if (!session?.user) return null;
-  return {
-    id: session.user.id,
-    orgId: session.user.orgId,
-    role: session.user.role,
-    centerId: session.user.centerId ?? null,
-    surface: "web",
-  };
 }

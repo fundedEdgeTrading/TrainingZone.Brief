@@ -4,6 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { deleteStoredImage, discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { parseOpeningHours } from "@/lib/opening-hours";
 import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
 import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
@@ -43,17 +44,79 @@ function slugify(s: string) {
 export type OrgActionResult = { ok: true; warning?: string } | { ok: false; error: string };
 
 // ---------- Organización (marca / logo) ----------
+
+type LogoPair = { logoUrl: string | null; logoDarkUrl: string | null };
+
+/**
+ * El logo y su versión para fondos oscuros, del formulario a las columnas.
+ *
+ *  · Sin logo no hay versión oscura: una suelta no se pintaría en ningún sitio
+ *    (`resolveBrandLogo` solo la mira junto a su logo) y se quedaría ocupando
+ *    sitio. Quitar el logo se lleva las dos.
+ *  · Un formulario que no manda `logoDarkUrl` no la toca.
+ */
+async function resolveLogoPair(
+  formData: FormData,
+  ctx: { orgId: string; kind: "ORG_LOGO" | "CENTER_LOGO"; previous: LogoPair; createdById: string },
+): Promise<{ ok: true; value: LogoPair } | { ok: false; error: string }> {
+  const light = await resolveImageInput(formData.get("logoUrl"), {
+    orgId: ctx.orgId,
+    kind: ctx.kind,
+    previous: ctx.previous.logoUrl,
+    createdById: ctx.createdById,
+  });
+  if (!light.ok) return light;
+  if (!light.value) return { ok: true, value: { logoUrl: null, logoDarkUrl: null } };
+
+  if (!formData.has("logoDarkUrl")) {
+    return { ok: true, value: { logoUrl: light.value, logoDarkUrl: ctx.previous.logoDarkUrl } };
+  }
+  const dark = await resolveImageInput(formData.get("logoDarkUrl"), {
+    orgId: ctx.orgId,
+    kind: ctx.kind,
+    previous: ctx.previous.logoDarkUrl,
+    createdById: ctx.createdById,
+  });
+  if (!dark.ok) {
+    // El logo normal ya se guardó como fichero: sin fila que lo use, se borra.
+    if (light.value !== ctx.previous.logoUrl) await deleteStoredImage(light.value, ctx.orgId);
+    return dark;
+  }
+  return { ok: true, value: { logoUrl: light.value, logoDarkUrl: dark.value } };
+}
+
+/** Tras escribir la fila: lo que ya no usa ninguna de las dos columnas, fuera. */
+async function discardReplacedLogos(previous: LogoPair, next: LogoPair, orgId: string) {
+  await discardReplacedImage(previous.logoUrl, next.logoUrl, orgId);
+  await discardReplacedImage(previous.logoDarkUrl, next.logoDarkUrl, orgId);
+}
+
 export async function updateOrganization(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
   if (!name) return { ok: false, error: "El nombre de la organización es obligatorio." };
+
+  const current = (await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { logoUrl: true, logoDarkUrl: true },
+  })) ?? { logoUrl: null, logoDarkUrl: null };
+  // Los logos se suben como imagen (o se pega una URL) y se guardan en
+  // Postgres: las columnas reciben `/api/files/<id>`, nunca los bytes.
+  const logos = await resolveLogoPair(formData, {
+    orgId: session.user.orgId,
+    kind: "ORG_LOGO",
+    previous: current,
+    createdById: session.user.id,
+  });
+  if (!logos.ok) return logos;
 
   await prisma.organization.update({
     where: { id: session.user.orgId },
-    data: { name, logoUrl },
+    data: { name, ...logos.value },
   });
-  revalidatePath("/organization");
+  await discardReplacedLogos(current, logos.value, session.user.orgId);
+  // El logo sale en el menú lateral de todas las pantallas.
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 
@@ -124,7 +187,6 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim() || null;
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
   const slug = slugify(String(formData.get("slug") ?? "").trim() || name);
   if (!name || !slug) return { ok: false, error: "Indica al menos el nombre del centro." };
 
@@ -154,8 +216,28 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   // RB-PLAN-002: el número de centros es lo que se paga. El límite se comprueba
   // e inserta bajo el mismo bloqueo (QA-ALTA-18), con un mensaje que indica la
   // salida concreta en vez de un "no puedes".
-  const created = await createCenterWithinLimit(session.user.orgId, { name, slug, address, lat, lng, logoUrl });
-  if (!created.ok) return { ok: false, error: created.error };
+  const logos = await resolveLogoPair(formData, {
+    orgId: session.user.orgId,
+    kind: "CENTER_LOGO",
+    previous: { logoUrl: null, logoDarkUrl: null },
+    createdById: session.user.id,
+  });
+  if (!logos.ok) return logos;
+
+  const created = await createCenterWithinLimit(session.user.orgId, {
+    name,
+    slug,
+    address,
+    lat,
+    lng,
+    ...logos.value,
+  });
+  if (!created.ok) {
+    // El centro no se creó: los logos recién subidos no tienen a quién pertenecer.
+    await deleteStoredImage(logos.value.logoUrl, session.user.orgId);
+    await deleteStoredImage(logos.value.logoDarkUrl, session.user.orgId);
+    return { ok: false, error: created.error };
+  }
   revalidatePath("/organization");
   return { ok: true };
 }
@@ -291,16 +373,25 @@ function text(raw: FormDataEntryValue | null): string | null {
 export async function updateCenterLogo(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const centerId = String(formData.get("centerId") ?? "");
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
 
   const center = await prisma.center.findFirst({
     where: { id: centerId, orgId: session.user.orgId },
-    select: { id: true },
+    select: { id: true, logoUrl: true, logoDarkUrl: true },
   });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
 
-  await prisma.center.update({ where: { id: centerId }, data: { logoUrl } });
-  revalidatePath("/organization");
+  const previous = { logoUrl: center.logoUrl, logoDarkUrl: center.logoDarkUrl };
+  const logos = await resolveLogoPair(formData, {
+    orgId: session.user.orgId,
+    kind: "CENTER_LOGO",
+    previous,
+    createdById: session.user.id,
+  });
+  if (!logos.ok) return logos;
+
+  await prisma.center.update({ where: { id: centerId }, data: logos.value });
+  await discardReplacedLogos(previous, logos.value, session.user.orgId);
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 

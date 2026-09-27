@@ -68,7 +68,7 @@ export function NewMemberDrawer({
           className="flex flex-col gap-5 p-6 sm:p-7"
         >
           <div className="flex gap-5 items-center">
-            <ImageDropzone name="photoUrl" shape="circle" sizeClassName="w-24 h-24" />
+            <ImageDropzone name="photoUrl" shape="circle" sizeClassName="w-24 h-24" maxDimension={600} />
             <div className="text-[13px] text-muted">
               <div className="font-bold text-tz-black text-sm">Foto de perfil</div>
               Arrastra una imagen o haz clic en el círculo. El socio podrá cambiarla desde su portal.

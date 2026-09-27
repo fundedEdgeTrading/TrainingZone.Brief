@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import type { Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { canEditStaff, canDeleteStaff, canManageOrg } from "@/lib/rbac";
 import { findStaffInScope } from "@/lib/staff-queries";
 import { removeStaffMember } from "@/lib/staff-lifecycle";
@@ -57,13 +58,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (centers.length !== body.allocations.length) return apiError("Alguno de los centros no es de tu organización.", 400);
   }
 
+  // La foto llega como `data:` URL desde la app y va a `StoredFile`; la
+  // columna guarda `/api/files/<id>`.
+  let image: string | null | undefined = undefined;
+  let previousImage: string | null = null;
+  if (body.image !== undefined) {
+    previousImage = (await prisma.user.findUnique({ where: { id }, select: { image: true } }))?.image ?? null;
+    const resolved = await resolveImageInput(body.image, {
+      orgId: claims.orgId,
+      kind: "STAFF_PHOTO",
+      previous: previousImage,
+      createdById: claims.sub,
+    });
+    if (!resolved.ok) return apiError(resolved.error, 400);
+    image = resolved.value;
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.user.update({
       where: { id },
       data: {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.role !== undefined ? { role: body.role } : {}),
-        ...(body.image !== undefined ? { image: body.image } : {}),
+        ...(image !== undefined ? { image } : {}),
         ...(body.visibleInApp !== undefined ? { visibleInApp: body.visibleInApp } : {}),
       },
     });
@@ -90,6 +107,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
     }
   });
+  if (image !== undefined) await discardReplacedImage(previousImage, image, claims.orgId);
 
   return apiOk({ updated: true });
 }

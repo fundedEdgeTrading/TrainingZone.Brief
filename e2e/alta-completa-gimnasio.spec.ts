@@ -3,6 +3,7 @@ import { test, expect, type Page, type Locator, type APIRequestContext } from "@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { loginAs } from "./helpers";
+import { TINY_PNG } from "./fixtures/org-nueva/ui";
 
 /**
  * Cobertura exhaustiva del recorrido completo de Parte A (Apta → gimnasio):
@@ -188,10 +189,29 @@ test.describe("Alta pago-primero completa: compra → puesta en marcha de la org
     await loginAs(page, OWNER_EMAIL, OWNER_PASSWORD);
     await page.goto("/organization");
 
+    // El logo se sube como imagen: el navegador la reescala y el servidor la
+    // guarda en Postgres (`StoredFile`); la columna recibe `/api/files/<id>`.
     const brandForm = page.locator("form", { has: page.getByRole("button", { name: "Guardar marca" }) });
-    await brandForm.locator('input[name="logoUrl"]').fill("/brand/e2e-logo.svg");
+    // El primero es el logo normal; el segundo, su versión para fondos oscuros (opcional).
+    const files = brandForm.locator('input[type="file"]');
+    await files.nth(0).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: TINY_PNG });
+    await files.nth(1).setInputFiles({ name: "logo-blanco.png", mimeType: "image/png", buffer: TINY_PNG });
+    await expect(brandForm.locator('input[name="logoUrl"]')).toHaveValue(/^data:image\/png/);
+    await expect(brandForm.locator('input[name="logoDarkUrl"]')).toHaveValue(/^data:image\/png/);
     await brandForm.getByRole("button", { name: "Guardar marca" }).click();
     await expect(page.getByText("Marca actualizada.")).toBeVisible({ timeout: 15_000 });
+    const org = await prisma!.organization.findFirstOrThrow({
+      where: { billingEmail: OWNER_EMAIL },
+      select: { logoUrl: true, logoDarkUrl: true },
+    });
+    expect(org.logoUrl).toMatch(/^\/api\/files\/[0-9a-f-]{36}$/);
+    // Su versión para fondos oscuros es otro fichero, no el mismo.
+    expect(org.logoDarkUrl).toMatch(/^\/api\/files\/[0-9a-f-]{36}$/);
+    expect(org.logoDarkUrl).not.toBe(org.logoUrl);
+    // Público: sale en fichas, emails y Stripe sin sesión.
+    const logo = await page.request.get(org.logoUrl!);
+    expect(logo.status()).toBe(200);
+    expect(logo.headers()["content-type"]).toBe("image/png");
 
     const form = productForm(page);
     await form.locator('input[name="name"]').fill(PRODUCT_NAME);

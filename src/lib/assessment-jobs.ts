@@ -7,6 +7,7 @@ import { dueDateForMilestone, getAssessmentMilestones } from "@/lib/assessments/
 import { milestoneKeyOf, milestoneLabelOf } from "@/lib/assessments/config";
 import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /** Ruta de la valoración en el portal del socio. */
 export function assessmentPortalPath(assessmentId: string): string {
@@ -27,7 +28,7 @@ export function assessmentPortalPath(assessmentId: string): string {
  */
 export async function runAssessmentDueRule(orgId: string): Promise<number> {
   const [org, milestones, members] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     // La escalera es la que ha configurado el centro (F-VAL), no una constante
     // del código: si el cron calculara la suya, la fecha que ve el socio en el
     // email y la que ve el entrenador en la ficha podrían dejar de coincidir.
@@ -48,7 +49,7 @@ export async function runAssessmentDueRule(orgId: string): Promise<number> {
   ]);
 
   const brandName = org?.name ?? "Training Zone";
-  const brandLogoUrl = absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png");
+  const brandLogoUrl = emailBrandLogo(org);
   // Del hito más lejano al más cercano: la regla abre el vigente, no todos los
   // que hayan pasado (ver la nota de arriba).
   const ladder = [...milestones].reverse();

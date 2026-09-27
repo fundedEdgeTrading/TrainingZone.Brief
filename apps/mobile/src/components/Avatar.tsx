@@ -1,6 +1,7 @@
 import { Image, Text, View, type StyleProp, type ViewStyle } from "react-native";
 import { useTheme } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
+import { imageSource } from "@/api/client";
 
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -47,7 +48,7 @@ export function Avatar({
     >
       {uri ? (
         <Image
-          source={{ uri }}
+          source={imageSource(uri)}
           resizeMode="cover"
           style={{ width: size, height: size }}
           // Foco arriba: en un recorte circular la cara no debe quedar cortada.

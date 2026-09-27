@@ -75,7 +75,7 @@ decisiones D1-D4 del §1. Es lo que hace viable el plazo.
   3. `migrate deploy` con el propietario (`DATABASE_MIGRATION_URL`, P11).
   4. La app arranca con `DATABASE_URL` apuntando a `apta_app`.
   5. Comprobar que el plan de Render permite `CREATEROLE`.
-- [ ] **Disco persistente** montado en `PROGRESS_PHOTO_DIR` (p. ej. `/var/data/progress-photos`). Si no, las fotos de progreso **se pierden en cada despliegue** (`src/lib/progress-photos.ts:34,59`). Obliga a una sola instancia; es aceptable para dos centros.
+- [ ] **Imágenes en Postgres.** Las fotos de progreso y el resto de imágenes subidas viven en `StoredFile` (`src/lib/file-store.ts`). Tras desplegar, ejecutar `npm run files:migrate` una vez: mueve a la base lo que siga en el disco de `PROGRESS_PHOTO_DIR` o dentro de las columnas como `data:`. Cuando termine sin pendientes, el disco persistente y `PROGRESS_PHOTO_DIR` se pueden retirar (ya no obligan a una sola instancia).
 - [ ] Un servicio **staging** idéntico con su propia BD y Stripe en modo test.
 - [ ] **Nunca** `npm run db:seed`, `prisma migrate dev` ni `migrate reset` contra producción: el seed vacía la base entera (`prisma/seed.ts:3251`).
 

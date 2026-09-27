@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { absoluteUrl, generateInvitationToken, invitationExpiry, onboardingUrlFor } from "@/lib/invitations";
+import { generateInvitationToken, invitationExpiry, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * QA-ALTA-04 · Bienvenida del socio: invitación vigente + plantilla + envío.
@@ -30,7 +31,7 @@ export async function sendMemberWelcome(memberId: string) {
       lastName: true,
       userId: true,
       primaryCenter: { select: { name: true, address: true } },
-      organization: { select: { name: true, logoUrl: true } },
+      organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
     },
   });
   if (!member) return { ok: false as const, error: "No se ha encontrado ese socio." };
@@ -61,7 +62,7 @@ export async function sendMemberWelcome(memberId: string) {
     html: renderMemberWelcomeEmail({
       memberFirstName: member.firstName,
       orgName,
-      orgLogoUrl: absoluteUrl(member.organization.logoUrl || "/brand/tz-logo-white.png"),
+      orgLogoUrl: emailBrandLogo(member.organization),
       centerName: member.primaryCenter.name,
       onboardingUrl: onboardingUrlFor(token),
       memberFullName: `${member.firstName} ${member.lastName}`,

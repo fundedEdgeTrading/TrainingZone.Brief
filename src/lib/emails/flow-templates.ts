@@ -1,4 +1,5 @@
 import { absoluteUrl } from "@/lib/site";
+import { emailLogoCellHtml, type LogoInput } from "./logo-cell";
 
 /**
  * E2 · Plantillas de los correos que salen de un FLUJO.
@@ -96,7 +97,7 @@ export type FlowEmailOptions = {
   memberFirstName: string;
   /** Nombre visible del remitente: el CENTRO, no la plataforma (RB-MARCA-001). */
   centerName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   /** Asunto, para la vista previa de la bandeja. */
   subject: string;
   /** Cuerpo en texto llano, con los párrafos separados por una línea en blanco. */
@@ -191,7 +192,7 @@ ${rows.map((r, i) => rowHtml(r, i === 0)).join("\n")}
 <tr><td class="tzhead" style="background:${INK};padding:26px 40px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
 <tr>
-<td align="left" style="width:60%;"><img src="${opts.brandLogoUrl}" alt="${esc(opts.centerName)}" width="155" height="26" style="height:26px;width:155px;display:block;border:0;"></td>
+<td align="left" style="width:60%;">${emailLogoCellHtml(opts.brandLogoUrl, opts.centerName)}</td>
 <td align="right" style="width:40%;font-family:${FONT};font-size:10px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:${MUTED};">${esc(opts.centerName)}</td>
 </tr>
 </table>

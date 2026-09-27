@@ -24,6 +24,8 @@ export type Membership = {
   orgId: string;
   orgName: string;
   orgLogoUrl: string | null;
+  /** Versión para fondos oscuros (ver `resolveBrandLogo`); el login de la app es oscuro. */
+  orgLogoDarkUrl: string | null;
   role: Role;
   centerId: string | null;
   name: string;
@@ -39,7 +41,7 @@ const MEMBERSHIP_SELECT = {
   centerId: true,
   name: true,
   image: true,
-  organization: { select: { name: true, logoUrl: true } },
+  organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
 } satisfies Prisma.UserSelect;
 
 type MembershipRow = Prisma.UserGetPayload<{ select: typeof MEMBERSHIP_SELECT }>;
@@ -50,6 +52,7 @@ function toMembership(row: MembershipRow): Membership {
     orgId: row.orgId,
     orgName: row.organization.name,
     orgLogoUrl: row.organization.logoUrl,
+    orgLogoDarkUrl: row.organization.logoDarkUrl,
     role: row.role,
     centerId: row.centerId,
     name: row.name,

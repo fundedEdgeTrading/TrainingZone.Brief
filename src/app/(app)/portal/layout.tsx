@@ -12,6 +12,7 @@ import { ReconsentBanner } from "./reconsent-banner";
 import { PendingAssessmentGate } from "./pending-assessment-gate";
 import { BirthdayGreetingScreen } from "./birthday-greeting";
 import { FirstSessionWall } from "./first-session-wall";
+import { DEFAULT_BRAND_LOGO, resolveBrandLogo } from "@/lib/brand-logo";
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -36,14 +37,14 @@ export default async function PortalLayout({ children }: { children: React.React
       if (firstStep) {
         const org = await prisma.organization.findUnique({
           where: { id: session.user.orgId },
-          select: { name: true, logoUrl: true },
+          select: { name: true, logoUrl: true, logoDarkUrl: true },
         });
         return (
           <FirstSessionWall
             missing={firstStep.missing}
             needsHealthDeclaration={firstStep.needsHealthDeclaration}
             orgName={org?.name ?? "Training Zone"}
-            orgLogoUrl={member.primaryCenter.logoUrl || org?.logoUrl || "/brand/tz-logo-white.png"}
+            orgLogo={resolveBrandLogo(member.primaryCenter, org) ?? DEFAULT_BRAND_LOGO}
             centerPhone={member.primaryCenter.phone}
           />
         );

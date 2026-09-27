@@ -7,7 +7,7 @@ import { resendOwnerActivation } from "@/lib/provisioning";
 import { sendMail } from "@/lib/mailer";
 import { renderVerifyEmail } from "@/lib/emails/templates";
 import { generateVerifyEmailToken, verifyEmailUrlFor } from "@/lib/email-verification";
-import { absoluteUrl } from "@/lib/invitations";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 export type CheckoutActionResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -32,7 +32,7 @@ export async function resendVerificationEmailAction(): Promise<ResendResult> {
 
   const org = await prisma.organization.findUnique({
     where: { id: session.user.orgId },
-    select: { name: true, logoUrl: true, centers: { select: { name: true, address: true }, orderBy: { createdAt: "asc" } } },
+    select: { name: true, logoUrl: true, logoDarkUrl: true, centers: { select: { name: true, address: true }, orderBy: { createdAt: "asc" } } },
   });
   const token = generateVerifyEmailToken(user.identity.id);
   const orgName = org?.name ?? "Training Zone";
@@ -47,7 +47,7 @@ export async function resendVerificationEmailAction(): Promise<ResendResult> {
       html: renderVerifyEmail({
         directorFirstName: user.name.split(/\s+/)[0] ?? user.name,
         orgName,
-        orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+        orgLogoUrl: emailBrandLogo(org),
         verifyUrl: verifyEmailUrlFor(token),
         directorEmail: user.email,
         centerNames: org?.centers.map((c) => c.name),

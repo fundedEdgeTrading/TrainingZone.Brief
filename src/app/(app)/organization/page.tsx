@@ -1,5 +1,6 @@
 import type { Role } from "@prisma/client";
-import { logoUrlForTheme } from "@/lib/theme";
+import { resolveBrandLogo, type BrandLogo } from "@/lib/brand-logo";
+import { ThemedBrandLogo } from "@/components/themed-brand-logo";
 import { requireRole } from "@/lib/guard";
 import { canManageOrg, canManageStaff, canEditStaff, canDeleteStaff, ROLE_LABEL } from "@/lib/rbac";
 import { getOrganization, getCentersWithCounts, getStaffWithMemberships } from "@/lib/org-queries";
@@ -25,6 +26,7 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
+import { ImageDropzone } from "@/components/ui/dropzone";
 import { StripeConnectCard } from "./stripe-connect-card";
 import { prisma } from "@/lib/prisma";
 import { ProductsSection } from "./products-section";
@@ -38,18 +40,28 @@ const SECTION_TITLE = "font-display font-extrabold text-lg uppercase tracking-[-
 
 
 /**
- * Vista previa del logo respetando el tema: el asset negro sobre la superficie
- * oscura no se veía (mismo criterio que el `BrandLogo` del sidebar).
+ * Cómo queda el logo en los dos fondos, con independencia del tema de quien
+ * mira: en oscuro va la versión para fondos oscuros o, si no hay, el logo
+ * normal sobre la pastilla clara (`resolveBrandLogo`). Es lo que verán el
+ * sidebar en oscuro, la cabecera de los emails y el login de la app.
  */
-function ThemedLogo({ url, alt, className }: { url: string; alt: string; className: string }) {
-  const dark = logoUrlForTheme(url, "dark");
-  /* eslint-disable @next/next/no-img-element -- logo por URL arbitraria, no un asset estático */
-  if (!dark || dark === url) return <img src={url} alt={alt} className={className} />;
+function LogoOnBackgrounds({ logo, alt }: { logo: BrandLogo; alt: string }) {
+  /* eslint-disable @next/next/no-img-element -- logo por URL arbitraria (`/api/files/<id>` o propia), no un asset estático */
   return (
-    <>
-      <img src={url} alt={alt} className={`tz-logo-light ${className}`} />
-      <img src={dark} alt="" aria-hidden="true" className={`tz-logo-dark ${className}`} />
-    </>
+    <div className="flex gap-2">
+      <div className="h-14 min-w-[150px] flex items-center justify-center rounded-lg border border-brand-border bg-[#f4f0e8] px-4">
+        <img src={logo.light} alt={alt} className="h-8 w-auto max-w-[180px] object-contain" />
+      </div>
+      <div className="h-14 min-w-[150px] flex items-center justify-center rounded-lg border border-brand-border bg-[#201f1c] px-4">
+        {logo.darkOnPlate ? (
+          <span className="tz-logo-plate">
+            <img src={logo.dark} alt="" className="h-7 w-auto max-w-[160px] object-contain" />
+          </span>
+        ) : (
+          <img src={logo.dark} alt="" className="h-8 w-auto max-w-[180px] object-contain" />
+        )}
+      </div>
+    </div>
   );
   /* eslint-enable @next/next/no-img-element */
 }
@@ -86,6 +98,7 @@ export default async function OrganizationPage({
       : Promise.resolve([]),
     centerScopeFor(session.user),
   ]);
+  const orgLogo = org ? resolveBrandLogo(org) : null;
 
   // Los selectores de centro no ofrecen más de lo que quien mira gestiona.
   const centers = canStaffAdmin || centerScope === null ? allCenters : allCenters.filter((c) => centerScope.includes(c.id));
@@ -134,31 +147,54 @@ export default async function OrganizationPage({
           <div className={`${CARD} flex flex-col lg:flex-row lg:items-end gap-5`}>
             <div className="shrink-0">
               <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted mb-1.5">
-                Logo en el NavBar
+                Así se ve · fondo claro y oscuro
               </div>
-              <div className="h-14 min-w-[180px] flex items-center rounded-lg border border-brand-border bg-tz-sand px-4">
-                {org.logoUrl ? (
-                  <ThemedLogo url={org.logoUrl} alt={org.name} className="h-8 w-auto max-w-[200px] object-contain" />
-                ) : (
+              {orgLogo ? (
+                <LogoOnBackgrounds logo={orgLogo} alt={org.name} />
+              ) : (
+                <div className="h-14 min-w-[180px] flex items-center rounded-lg border border-brand-border bg-tz-sand px-4">
                   <span className="flex items-center gap-2 text-xs text-faint">
                     <AptaLogo variant="dark" className="text-xl" />
                     <span>(por defecto)</span>
                   </span>
-                )}
-              </div>
+                </div>
+              )}
             </div>
             <ActionForm
               action={updateOrganization}
               successMessage="Marca actualizada."
               resetOnSuccess={false}
-              className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 items-end"
+              className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-end"
             >
               <Field label="Nombre de la organización">
                 <Input name="name" defaultValue={org.name} required />
               </Field>
-              <Field label="URL del logo" hint="Vacío = logo de Apta por defecto">
-                <Input name="logoUrl" defaultValue={org.logoUrl ?? ""} placeholder="/brand/mi-logo.svg o https://..." />
-              </Field>
+              <ImageDropzone
+                name="logoUrl"
+              tone="light"
+                label="Logo"
+                hint="PNG con fondo transparente o JPG. Sin logo = el de Apta."
+                shape="rect"
+                fit="contain"
+                maxDimension={800}
+                sizeClassName="w-full h-20"
+                emptyLabel="Subir logo"
+                removable
+                defaultValue={org.logoUrl}
+              />
+              <ImageDropzone
+                name="logoDarkUrl"
+                label="Logo para fondos oscuros"
+                hint="Opcional: la versión en blanco. Sin ella, en oscuro el logo va sobre una pastilla clara."
+                shape="rect"
+                fit="contain"
+                tone="dark"
+                maxDimension={800}
+                sizeClassName="w-full h-20"
+                emptyLabel="Subir versión clara"
+                removable
+                defaultValue={org.logoDarkUrl}
+              />
               <Button type="submit">Guardar marca</Button>
             </ActionForm>
           </div>
@@ -270,7 +306,7 @@ export default async function OrganizationPage({
               <div className="flex items-center gap-3">
                 <div className="h-9 w-9 rounded-lg bg-tz-sand border border-brand-border flex items-center justify-center overflow-hidden shrink-0">
                   {c.logoUrl ? (
-                    <ThemedLogo url={c.logoUrl} alt={c.name} className="h-7 w-7 object-contain" />
+                    <ThemedBrandLogo logo={resolveBrandLogo(c)!} alt={c.name} className="h-7 w-7 object-contain" />
                   ) : (
                     <span className="text-[8px] font-bold text-faint uppercase tracking-wide">hereda</span>
                   )}
@@ -291,9 +327,34 @@ export default async function OrganizationPage({
                   className="mt-3 flex items-end gap-2"
                 >
                   <input type="hidden" name="centerId" value={c.id} />
-                  <Field label="Logo (URL)" className="flex-1">
-                    <Input name="logoUrl" defaultValue={c.logoUrl ?? ""} placeholder="/brand/… (vacío = hereda)" />
-                  </Field>
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    <ImageDropzone
+                      name="logoUrl"
+                      tone="light"
+                      label="Logo del centro"
+                      hint="Sin logo = hereda el de la organización."
+                      shape="rect"
+                      fit="contain"
+                      maxDimension={800}
+                      sizeClassName="w-full h-16"
+                      emptyLabel="Subir logo"
+                      removable
+                      defaultValue={c.logoUrl}
+                    />
+                    <ImageDropzone
+                      name="logoDarkUrl"
+                      label="Para fondos oscuros"
+                      hint="Opcional. Solo con logo propio."
+                      shape="rect"
+                      fit="contain"
+                      tone="dark"
+                      maxDimension={800}
+                      sizeClassName="w-full h-16"
+                      emptyLabel="Versión clara"
+                      removable
+                      defaultValue={c.logoDarkUrl}
+                    />
+                  </div>
                   <Button type="submit" variant="secondary" size="sm">
                     Guardar
                   </Button>
@@ -343,9 +404,30 @@ export default async function OrganizationPage({
             <Field label="Slug" hint="Opcional — se genera del nombre">
               <Input name="slug" placeholder="delicias" />
             </Field>
-            <Field label="Logo (URL)" hint="Opcional — si no, hereda">
-              <Input name="logoUrl" placeholder="/brand/…" />
-            </Field>
+            <ImageDropzone
+              name="logoUrl"
+              tone="light"
+              label="Logo"
+              hint="Opcional — si no, hereda"
+              shape="rect"
+              fit="contain"
+              maxDimension={800}
+              sizeClassName="w-full h-[42px]"
+              emptyLabel="Subir logo"
+              removable
+            />
+            <ImageDropzone
+              name="logoDarkUrl"
+              label="Logo para fondos oscuros"
+              hint="Opcional — la versión en blanco"
+              shape="rect"
+              fit="contain"
+              tone="dark"
+              maxDimension={800}
+              sizeClassName="w-full h-[42px]"
+              emptyLabel="Versión clara"
+              removable
+            />
             <Field label="Dirección" className="md:col-span-2">
               <Input name="address" placeholder="Calle, número, ciudad" />
             </Field>

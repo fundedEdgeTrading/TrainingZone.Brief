@@ -2,6 +2,7 @@ import { Image, Text, View } from "react-native";
 import { useTheme, radii } from "@/theme/theme";
 import { fonts } from "@/theme/typography";
 import { Icon } from "./Icon";
+import { imageSource } from "@/api/client";
 
 /**
  * Miniatura del producto. Sin foto (el cliente todavía no las ha aportado) se
@@ -25,7 +26,7 @@ export function ProductThumb({
   if (uri) {
     return (
       <Image
-        source={{ uri }}
+        source={imageSource(uri)}
         resizeMode="cover"
         style={[style, { borderRadius: radii.chip, backgroundColor: theme.surfaceAlt }]}
         accessibilityIgnoresInvertColors

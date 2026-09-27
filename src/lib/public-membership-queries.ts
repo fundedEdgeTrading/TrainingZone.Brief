@@ -64,7 +64,7 @@ export const getPublicMembershipContext = cache(async function getPublicMembersh
 ) {
   const organization = await prisma.organization.findUnique({
     where: { slug: orgSlug },
-    select: { id: true, name: true, slug: true, logoUrl: true },
+    select: { id: true, name: true, slug: true, logoUrl: true, logoDarkUrl: true },
   });
   if (!organization) return null;
 

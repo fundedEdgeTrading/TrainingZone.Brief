@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { isRecurring, type ReconcileResult } from "@/lib/member-billing";
 import { createPaymentWithReceipt } from "@/lib/payments";
 import { confirmLeadClosureForMember, revertLeadClosureForFailedPayment } from "@/lib/leads-queries";
-import { createMemberWithInvitation, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
+import { createMemberWithInvitation, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
@@ -14,6 +14,7 @@ import { recordCheckoutDiscount } from "@/lib/stripe-coupons";
 // (pista P1) porque es la misma marca que consulta el reconciliador de
 // suscripciones para no abrir acceso con el débito en vuelo.
 import { holdAsyncCheckout, isAsyncPaymentPending } from "@/lib/stripe-mandate";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 export type CheckoutResult = { ok: true; url: string } | { ok: false; error: string };
 
@@ -307,7 +308,7 @@ async function createLandingMember(
   // best-effort: el socio ya está guardado, un SMTP lento no debe bloquear el
   // webhook. Va justo tras crear la ficha y no al final: una reentrega ya no
   // pasa por aquí, así que si algo de después fallara el correo no saldría nunca.
-  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } });
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } });
   const footer = memberEmailFooterLinks(member.id);
   void sendMail({
     to: email,
@@ -316,7 +317,7 @@ async function createLandingMember(
     html: renderMemberWelcomeEmail({
       memberFirstName: firstName,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      orgLogoUrl: emailBrandLogo(org),
       centerName: center.name,
       onboardingUrl: onboardingUrlFor(invitation.token),
       memberFullName: `${firstName} ${lastName}`,

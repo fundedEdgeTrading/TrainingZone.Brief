@@ -53,7 +53,7 @@ funcionalidades que hoy están construidas. Su **detalle funcional y técnico** 
 consolidó en los documentos de arriba; el texto original sigue en el historial de
 git (último commit con todos ellos: `3ebf9a2`).
 
-Algunos comentarios de `prisma/schema.prisma` (fichero congelado), de migraciones
+Algunos comentarios de `prisma/schema.prisma`, de migraciones
 ya aplicadas y de las épicas de `docs/hu/` siguen citándolos por su nombre
 antiguo. Esta tabla es la traducción.
 

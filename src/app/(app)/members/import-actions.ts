@@ -6,12 +6,13 @@ import { prisma } from "@/lib/prisma";
 import { requireRole, centerIsInScope, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { canImportMembers } from "@/lib/rbac";
 import { parseMembersCsv, type ParsedMemberData, type ParsedSubscriptionData } from "@/lib/member-import";
-import { absoluteUrl, createMemberInvitation, onboardingUrlFor } from "@/lib/invitations";
+import { createMemberInvitation, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
 import { createSubscriptionFromPlan, resolveSubscriptionTerms } from "@/lib/subscriptions";
 import { recordSessionsChange } from "@/lib/session-ledger";
+import { emailBrandLogo, type EmailLogo } from "@/lib/brand-logo";
 
 export type ImportSummary = {
   total: number;
@@ -169,7 +170,7 @@ async function upsertImportedSubscription(
 type InviteContext = {
   orgId: string;
   orgName: string;
-  orgLogoUrl: string;
+  orgLogoUrl: EmailLogo;
   centerName: string;
   centerAddress: string | null;
 };
@@ -271,12 +272,12 @@ export async function importMembersCsv(formData: FormData): Promise<ImportMember
 
   // Igual que los planes: una sola vez, no una consulta por socio invitado.
   const org = sendInvitations
-    ? await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } })
+    ? await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } })
     : null;
   const inviteContext: InviteContext = {
     orgId,
     orgName: org?.name ?? "Training Zone",
-    orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+    orgLogoUrl: emailBrandLogo(org),
     centerName: center.name,
     centerAddress: center.address,
   };

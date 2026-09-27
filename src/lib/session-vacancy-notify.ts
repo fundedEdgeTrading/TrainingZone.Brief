@@ -5,6 +5,7 @@ import { absoluteUrl } from "@/lib/invitations";
 import { sessionServiceKind, planServiceKind } from "@/lib/members-queries";
 import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * RB-RES-007 (decisión de negocio): no hay promoción automática de la lista de
@@ -84,7 +85,7 @@ export async function notifySessionVacancy(params: {
   const toWaitlist = waiting.length > 0;
 
   const [org, centerCandidates] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     // Con lista de espera el aviso no sale de ella: no hay a quién más consultar.
     toWaitlist
       ? []
@@ -121,7 +122,7 @@ export async function notifySessionVacancy(params: {
   if (recipients.length === 0) return { notifiedMemberIds: [], toWaitlist };
 
   const brandName = org?.name ?? "Training Zone";
-  const brandLogoUrl = absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png");
+  const brandLogoUrl = emailBrandLogo(org);
   const dateLabel = occurrenceDate.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
   const agendaUrl = absoluteUrl("/portal/agenda");
 
