@@ -34,7 +34,7 @@
 import crypto from "crypto";
 import type { AssessmentKind, Prisma, Sex } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { absoluteUrl, publicOrigin } from "@/lib/site";
+import { publicOrigin } from "@/lib/site";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberFormInviteEmail } from "@/lib/emails/templates";
 import { createNotificationOnce } from "@/lib/notifications";
@@ -52,6 +52,7 @@ import { getAssessmentConfig, getAssessmentMilestones } from "@/lib/assessments/
 import { milestoneKeyOf, type AssessmentMilestoneDef } from "@/lib/assessments/config";
 import { writeMemberPart } from "@/lib/assessments/member-part";
 import { memberPartSchemaFor, type MemberPartAnswers } from "@/lib/assessments/schemas";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 // ---------------------------------------------------------------------------
 // Token y enlace
@@ -342,7 +343,7 @@ export async function sendMemberForm(params: {
 
   const org = await prisma.organization.findUnique({
     where: { id: params.orgId },
-    select: { name: true, logoUrl: true },
+    select: { name: true, logoUrl: true, logoDarkUrl: true },
   });
 
   const token = generateMemberFormToken();
@@ -392,7 +393,7 @@ export async function sendMemberForm(params: {
     html: renderMemberFormInviteEmail({
       firstName: target.firstName,
       brandName,
-      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      brandLogoUrl: emailBrandLogo(org),
       formLabel: milestone.label,
       formUrl: memberFormUrlFor(token),
       expiresAt,
@@ -482,7 +483,7 @@ export async function resolveMemberFormInvite(token: string): Promise<ResolveMem
       memberId: true,
       leadId: true,
       center: { select: { name: true } },
-      organization: { select: { name: true, logoUrl: true, allowsMinors: true, minimumAgeYears: true } },
+      organization: { select: { name: true, logoUrl: true, logoDarkUrl: true, allowsMinors: true, minimumAgeYears: true } },
       member: {
         select: {
           firstName: true,

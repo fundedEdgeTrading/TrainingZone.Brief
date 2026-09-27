@@ -23,6 +23,7 @@ import {
   type FlowSkipReason,
 } from "@/lib/flows/safety";
 import { candidatesForTrigger } from "@/lib/flows/triggers";
+import { emailBrandLogo, type EmailLogo } from "@/lib/brand-logo";
 
 /**
  * ========================= E2 · EL MOTOR DE FLUJOS =========================
@@ -125,7 +126,7 @@ export type FlowSendContext = {
   centerName: string;
   centerAddress: string | null;
   centerTimezone: string;
-  brandLogoUrl: string;
+  brandLogoUrl: EmailLogo;
   flowsPausedAt: Date | null;
   flowsTestEmail: string | null;
   now: Date;
@@ -414,7 +415,7 @@ export async function runFlowQueue(orgId: string, now: Date = new Date()): Promi
     where: { id: orgId },
     select: {
       name: true,
-      logoUrl: true,
+      logoUrl: true, logoDarkUrl: true,
       flowsPausedAt: true,
       flowsTestEmail: true,
       platformPlan: true,
@@ -441,7 +442,7 @@ export async function runFlowQueue(orgId: string, now: Date = new Date()): Promi
     return report;
   }
 
-  const brandLogoUrl = absoluteUrl(org.logoUrl || "/brand/tz-logo-white.png");
+  const brandLogoUrl = emailBrandLogo(org);
 
   const flows = await prisma.flow.findMany({
     // Los pausados no entran: ni inscriben ni avanzan.
@@ -650,7 +651,7 @@ async function advanceEnrollment(args: {
   enrollment: DueEnrollment;
   flow: FlowWithDefinition;
   org: OrgFrame;
-  brandLogoUrl: string;
+  brandLogoUrl: EmailLogo;
   now: Date;
   report: FlowRunReport;
 }): Promise<void> {

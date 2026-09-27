@@ -53,7 +53,12 @@ export async function POST(req: NextRequest) {
   // orgId. Se devuelve 409 (conflicto), no 401, para que pueda distinguirlo.
   if (!membership) {
     return apiError("Elige la organización con la que quieres entrar.", 409, {
-      organizations: memberships.map((m) => ({ id: m.orgId, name: m.orgName, logoUrl: m.orgLogoUrl })),
+      organizations: memberships.map((m) => ({
+        id: m.orgId,
+        name: m.orgName,
+        logoUrl: m.orgLogoUrl,
+        logoDarkUrl: m.orgLogoDarkUrl,
+      })),
     });
   }
 

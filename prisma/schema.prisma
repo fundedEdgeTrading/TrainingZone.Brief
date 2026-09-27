@@ -30,6 +30,10 @@ model Organization {
   name      String
   slug      String   @unique
   logoUrl   String? // logo de marca para el NavBar; si es null se usa el de Apta
+  /// Versión del logo para fondos oscuros (tema oscuro, cabecera de los emails,
+  /// login de la app). Opcional: sin ella, el logo normal se pinta sobre una
+  /// pastilla clara (src/lib/brand-logo.ts).
+  logoDarkUrl String?
   createdAt DateTime @default(now())
 
   // ---------- Cobro de plataforma (Apta → gimnasio, Parte A) ----------
@@ -166,6 +170,9 @@ model Center {
   lat                  Float?
   lng                  Float?
   logoUrl              String? // logo propio del centro; si es null se hereda el de la organización (y en su defecto, Apta)
+  /// Versión para fondos oscuros del logo propio del centro. Solo cuenta si el
+  /// centro tiene `logoUrl`: no se mezcla con el logo de la organización.
+  logoDarkUrl          String?
   timezone             String   @default("Europe/Madrid")
   // Aforo por defecto de las sesiones de grupo del centro. Solo semilla del
   // formulario de alta: cambiarlo NO altera plantillas ni sesiones ya creadas,

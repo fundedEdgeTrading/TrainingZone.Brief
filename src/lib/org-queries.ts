@@ -9,6 +9,7 @@ export async function getOrganization(orgId: string) {
       name: true,
       slug: true,
       logoUrl: true,
+      logoDarkUrl: true,
       // E10-12 · política de edad declarada por la organización (D-P8).
       allowsMinors: true,
       minimumAgeYears: true,

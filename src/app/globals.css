@@ -218,6 +218,17 @@
   display: block;
 }
 
+/* Pastilla para un logo sin versión oscura (src/lib/brand-logo.ts): el logo
+   normal, sobre un fondo claro FIJO —no un token, que en oscuro se invierte—,
+   para que un logo negro siga leyéndose en el sidebar oscuro. */
+.tz-logo-plate {
+  width: fit-content;
+  max-width: 100%;
+  background: #f4f0e8;
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
 /* Los cambios de tema no deben parecer un recorte de pantalla: fondos y bordes
    del armazón y de las tarjetas interpolan. `prefers-reduced-motion` ya anula
    todas las transiciones al final de este fichero. */

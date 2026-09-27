@@ -5,10 +5,10 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { clientIpFrom, throttledAccessAttempt } from "@/lib/login-throttle";
 import { MIN_PASSWORD_LENGTH, setPassword } from "@/lib/identity";
-import { absoluteUrl } from "@/lib/invitations";
 import { generatePasswordResetToken, passwordResetUrlFor, verifyPasswordResetToken } from "@/lib/email-verification";
 import { sendMail } from "@/lib/mailer";
 import { renderPasswordResetEmail } from "@/lib/emails/templates";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 export type RequestResetResult = { ok: true } | { ok: false; error: string };
 
@@ -54,7 +54,7 @@ async function sendPasswordResetEmail(email: string): Promise<void> {
       memberships: {
         select: {
           name: true,
-          organization: { select: { name: true, logoUrl: true } },
+          organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
           center: { select: { address: true } },
         },
         orderBy: { createdAt: "asc" },
@@ -76,7 +76,7 @@ async function sendPasswordResetEmail(email: string): Promise<void> {
         html: renderPasswordResetEmail({
           recipientFirstName: membership?.name.split(" ")[0] ?? "",
           brandName,
-          brandLogoUrl: absoluteUrl(membership?.organization.logoUrl ?? "/brand/tz-logo-white.png"),
+          brandLogoUrl: emailBrandLogo(membership?.organization),
           resetUrl: passwordResetUrlFor(generatePasswordResetToken(identity.id)),
           accountEmail: identity.email,
           requestedAtLabel: new Date().toLocaleString("es-ES", {

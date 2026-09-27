@@ -33,6 +33,7 @@ export function ImageDropzone({
   fit = "cover",
   removable = false,
   emptyLabel = "Foto",
+  tone,
   onChange,
 }: {
   name: string;
@@ -48,6 +49,14 @@ export function ImageDropzone({
   /** Muestra "Quitar" para dejar el campo vacío (p. ej. volver al logo por defecto). */
   removable?: boolean;
   emptyLabel?: string;
+  /**
+   * Fondo FIJO de la vista previa, para logos: `light` para el logo normal y
+   * `dark` para su versión de fondos oscuros, cada uno sobre el fondo en el que
+   * se va a usar. Es un color fijo, no un token: con el token, en tema oscuro
+   * el logo negro quedaba invisible en su propia vista previa. Sin `tone`, el
+   * fondo sigue al tema (fotos).
+   */
+  tone?: "light" | "dark";
   onChange?: (dataUrl: string) => void;
 }) {
   const inputId = useId();
@@ -136,16 +145,22 @@ export function ImageDropzone({
           "relative shrink-0 overflow-hidden border-2 border-dashed flex items-center justify-center text-center transition-colors duration-150 cursor-pointer bg-tz-bone",
           SHAPE_CLASS[shape],
           sizeClassName,
+          tone === "dark" && "!bg-[#201f1c]",
+          tone === "light" && "!bg-[#f4f0e8]",
           dragOver ? "border-brand-ink bg-tz-sand/60" : "border-brand-border hover:border-brand-border-hover"
         )}
       >
         {processing ? (
-          <span className="text-[11px] font-semibold text-brand-muted px-2">Preparando…</span>
+          <span className={clsx("text-[11px] font-semibold px-2", tone === "dark" ? "text-[#b8b2a4]" : tone === "light" ? "text-[#8a8574]" : "text-brand-muted")}>
+            Preparando…
+          </span>
         ) : preview ? (
           // eslint-disable-next-line @next/next/no-img-element -- vista previa: data URL recién elegida o `/api/files/<id>`
           <img src={preview} alt="" className={clsx("w-full h-full", fit === "contain" ? "object-contain p-2" : "object-cover")} />
         ) : (
-          <span className="text-[11px] font-semibold text-brand-muted px-2">{emptyLabel}</span>
+          <span className={clsx("text-[11px] font-semibold px-2", tone === "dark" ? "text-[#b8b2a4]" : tone === "light" ? "text-[#8a8574]" : "text-brand-muted")}>
+            {emptyLabel}
+          </span>
         )}
       </button>
       <input

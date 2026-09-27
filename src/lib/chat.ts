@@ -4,6 +4,7 @@ import { createNotificationOnce } from "@/lib/notifications";
 import { sendMail } from "@/lib/mailer";
 import { renderNewChatMessageEmail } from "@/lib/emails/templates";
 import { absoluteUrl } from "@/lib/site";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 const CHAT_RECENT_WINDOW_DAYS = 90;
 
@@ -117,7 +118,7 @@ async function notifyDirectorsOfNewMessage(conversationId: string, messageBody: 
       orgId: true,
       memberId: true,
       member: { select: { firstName: true, lastName: true } },
-      organization: { select: { name: true, logoUrl: true } },
+      organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
     },
   });
   if (!conversation) return;
@@ -146,7 +147,8 @@ async function notifyDirectorsOfNewMessage(conversationId: string, messageBody: 
         recipientFirstName: director.name?.split(" ")[0] ?? "",
         memberName,
         orgName: conversation.organization.name,
-        orgLogoUrl: conversation.organization.logoUrl || "/brand/tz-logo-white.png",
+        // Antes iba una ruta relativa: en un cliente de correo no cargaba nunca.
+        orgLogoUrl: emailBrandLogo(conversation.organization),
         messagePreview: preview,
         chatUrl: absoluteUrl(`/members/${conversation.memberId}?s=actividad`),
       }),

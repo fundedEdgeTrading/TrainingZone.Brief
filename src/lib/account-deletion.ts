@@ -10,6 +10,7 @@ import { sendMail } from "@/lib/mailer";
 import { getSuppressionPlan, type SuppressionAction, type SuppressionEffect } from "@/lib/member-suppression";
 import { canDeleteMembers } from "@/lib/rbac";
 import { absoluteUrl } from "@/lib/site";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * E5-15 · Borrado de cuenta a petición del socio, desde la app y desde el portal.
@@ -278,7 +279,7 @@ async function sendDeletionAck(input: {
     select: {
       firstName: true,
       email: true,
-      organization: { select: { name: true, logoUrl: true } },
+      organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
       primaryCenter: { select: { name: true, address: true } },
     },
   });
@@ -296,7 +297,7 @@ async function sendDeletionAck(input: {
       html: renderAccountDeletionAckEmail({
         recipientFirstName: member.firstName,
         brandName,
-        brandLogoUrl: absoluteUrl(member.organization.logoUrl || "/brand/tz-logo-white.png"),
+        brandLogoUrl: emailBrandLogo(member.organization),
         dueDateLabel: input.dueAt.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" }),
         statusUrl: absoluteUrl(ACCOUNT_DELETION_PORTAL_PATH),
         centerName: member.primaryCenter.name,

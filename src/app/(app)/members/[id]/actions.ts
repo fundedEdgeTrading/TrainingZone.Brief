@@ -16,7 +16,7 @@ import {
   reactivateMember,
 } from "@/lib/member-lifecycle";
 import { setMemberNoteArchived, setMemberNoteImportant } from "@/lib/members-queries";
-import { generateInvitationToken, invitationExpiry, onboardingUrlFor, absoluteUrl } from "@/lib/invitations";
+import { generateInvitationToken, invitationExpiry, onboardingUrlFor } from "@/lib/invitations";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberWelcomeEmail } from "@/lib/emails/templates";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
@@ -35,6 +35,7 @@ import {
   isPhotoStoreConfigured,
   putProgressPhoto,
 } from "@/lib/progress-photos";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 const HEALTH_TYPES: HealthRecordType[] = [
   "INJURY",
@@ -944,7 +945,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
     update: { token, expiresAt, usedAt: null },
   });
 
-  const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true } });
+  const org = await prisma.organization.findUnique({ where: { id: session.user.orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } });
   const footer = memberEmailFooterLinks(member.id);
   // Email de bienvenida no bloqueante: la invitación ya está guardada, un SMTP lento no debe colgar la acción.
   void sendMail({
@@ -954,7 +955,7 @@ export async function resendMemberWelcome(memberId: string): Promise<MemberActio
     html: renderMemberWelcomeEmail({
       memberFirstName: member.firstName,
       orgName: org?.name ?? "Training Zone",
-      orgLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      orgLogoUrl: emailBrandLogo(org),
       centerName: member.primaryCenter.name,
       onboardingUrl: onboardingUrlFor(token),
       memberFullName: `${member.firstName} ${member.lastName}`,
