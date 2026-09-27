@@ -1,7 +1,8 @@
 import crypto from "crypto";
 import type Stripe from "stripe";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getStripeClient } from "@/lib/stripe";
 import { ensureIdentity } from "@/lib/identity";
 import { getPlatformPlan } from "@/lib/platform-plans";
 import {
@@ -184,45 +185,61 @@ async function provisionOrganization(input: ProvisionInput): Promise<ProvisionRe
 
   // 3. Organización + catálogos comerciales + credencial + membresía OWNER +
   //    invitación de activación, todo o nada.
-  const { orgId, token } = await prisma.$transaction(async (tx) => {
-    const org = await tx.organization.create({
-      data: {
-        name: orgName,
-        slug: await uniqueOrgSlug(orgName),
-        billingEmail: email,
-        billingName,
-        taxId: input.taxId,
-        ...platformFields,
-      },
-    });
-    await ensureDefaultLeadCatalogs(tx, org.id);
+  // El webhook y la vuelta del comprador a `/activar` pueden aprovisionar la
+  // misma sesión a la vez: el único de `provisioningSessionId` decide quién
+  // gana, y el que pierde devuelve la organización ya creada sin reenviar nada.
+  let created: { orgId: string; token: string };
+  try {
+    created = await prisma.$transaction(async (tx) => {
+      const org = await tx.organization.create({
+        data: {
+          name: orgName,
+          slug: await uniqueOrgSlug(orgName),
+          billingEmail: email,
+          billingName,
+          taxId: input.taxId,
+          ...platformFields,
+        },
+      });
+      await ensureDefaultLeadCatalogs(tx, org.id);
 
-    // Sin contraseña utilizable: la fija el director al canjear su enlace.
-    const identity = await ensureIdentity(tx, { email });
-    const owner = await tx.user.create({
-      data: {
-        identityId: identity.id,
-        orgId: org.id,
-        centerId: null,
-        name: billingName || email,
-        email: identity.email,
-        role: "OWNER",
-      },
-    });
+      // Sin contraseña utilizable: la fija el director al canjear su enlace.
+      const identity = await ensureIdentity(tx, { email });
+      const owner = await tx.user.create({
+        data: {
+          identityId: identity.id,
+          orgId: org.id,
+          centerId: null,
+          name: billingName || email,
+          email: identity.email,
+          role: "OWNER",
+        },
+      });
 
-    const invitation = await tx.invitation.create({
-      data: {
-        orgId: org.id,
-        type: "OWNER",
-        token: generateInvitationToken(),
-        email: identity.email,
-        userId: owner.id,
-        expiresAt: ownerInvitationExpiry(),
-      },
-    });
+      const invitation = await tx.invitation.create({
+        data: {
+          orgId: org.id,
+          type: "OWNER",
+          token: generateInvitationToken(),
+          email: identity.email,
+          userId: owner.id,
+          expiresAt: ownerInvitationExpiry(),
+        },
+      });
 
-    return { orgId: org.id, token: invitation.token };
-  });
+      return { orgId: org.id, token: invitation.token };
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const winner = await prisma.organization.findUnique({
+        where: { provisioningSessionId: input.provisioningSessionId },
+        select: { id: true },
+      });
+      if (winner) return { ok: true, created: false, orgId: winner.id, activationUrl: null };
+    }
+    throw error;
+  }
+  const { orgId, token } = created;
 
   const activationUrl = onboardingUrlFor(token);
 
@@ -325,6 +342,44 @@ export async function provisionOrganizationFromCheckout(
 }
 
 /**
+ * RB-ALTA-002 · El comprador vuelve de Stripe a `/activar` antes (o en lugar)
+ * de que llegue el webhook `checkout.session.completed`: si el entorno no lo
+ * recibe o llega tarde, la pantalla se quedaba en "estamos confirmando tu
+ * pago" para siempre y el enlace de acceso no salía nunca. Aquí se consulta la
+ * sesión a Stripe y, si el pago está confirmado, se aprovisiona por el mismo
+ * camino idempotente que el webhook (la clave es la sesión de checkout).
+ *
+ * Solo actúa con pagos ya cobrados (`paid` / `no_payment_required`): un pago
+ * asíncrono pendiente sigue esperando al webhook. Devuelve el email con el que
+ * el comprador pagó en Stripe, para decirle a dónde va a llegar el enlace.
+ */
+export async function reconcileSignupCheckout(
+  provisioningSessionId: string
+): Promise<{ email: string | null }> {
+  const stripe = getStripeClient();
+  if (!stripe || !provisioningSessionId.startsWith("cs_")) return { email: null };
+
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(provisioningSessionId);
+  } catch (error) {
+    console.error("[provisioning] no se pudo consultar la sesión de checkout:", error);
+    return { email: null };
+  }
+
+  const email = session.customer_details?.email ?? session.customer_email ?? null;
+  // Con `orgId` es una renovación o cambio de plan, no un alta.
+  if (session.metadata?.orgId) return { email };
+
+  const paid = session.payment_status === "paid" || session.payment_status === "no_payment_required";
+  if (session.status === "complete" && paid) {
+    const result = await provisionOrganizationFromCheckout(session);
+    if (!result.ok) console.error("[provisioning] alta desde /activar no completada:", result.error);
+  }
+  return { email };
+}
+
+/**
  * Alta de demo cuando Stripe no está configurado en este entorno
  * (`isDemoModeActive`, ver `lib/platform-plans.ts`): mismo flujo de
  * aprovisionamiento que un pago real, sin cliente ni suscripción de Stripe.
@@ -377,7 +432,25 @@ export async function resendOwnerActivation(
     where: { provisioningSessionId },
     select: { id: true, name: true, platformPlan: true, billingEmail: true },
   });
-  if (!org) return { ok: false, error: "Todavía estamos confirmando tu pago. Prueba de nuevo en unos segundos." };
+  if (!org) {
+    // Sin organización todavía: se intenta cerrar el alta contra Stripe antes
+    // de responder "confirmando" (el webhook puede no haber llegado).
+    await reconcileSignupCheckout(provisioningSessionId);
+    const provisioned = await prisma.organization.findUnique({
+      where: { provisioningSessionId },
+      select: { id: true },
+    });
+    if (!provisioned) {
+      return { ok: false, error: "Todavía estamos confirmando tu pago. Prueba de nuevo en unos segundos." };
+    }
+    // El alta acaba de enviar el enlace de bienvenida: no se duplica.
+    const fresh = await prisma.invitation.findFirst({
+      where: { orgId: provisioned.id, type: "OWNER", usedAt: null },
+      select: { email: true },
+    });
+    if (fresh) return { ok: true, email: fresh.email };
+    return { ok: false, error: "Esta cuenta ya está activada. Inicia sesión con tu email y contraseña." };
+  }
 
   const invitation = await prisma.invitation.findFirst({
     where: { orgId: org.id, type: "OWNER", usedAt: null },
