@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { CARTO_ATTRIBUTION, cartoTileUrl } from "@/lib/basemap";
 import { centerPinIcon } from "@/lib/map-pin";
 
 /**
@@ -35,9 +36,8 @@ export function CenterMiniMap({ lat, lng, label }: { lat: number; lng: number; l
       attributionControl: true,
     });
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    L.tileLayer(cartoTileUrl("light_all"), {
+      attribution: CARTO_ATTRIBUTION,
       subdomains: "abcd",
       maxZoom: 19,
     }).addTo(map);
