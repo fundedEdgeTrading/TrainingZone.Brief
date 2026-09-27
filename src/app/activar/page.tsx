@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { isPlatformOperational } from "@/lib/entitlements";
 import { listPurchasablePlans } from "@/lib/platform-price-catalog";
-import { SIGNUP_HELD_FOR_SUPPORT } from "@/lib/provisioning";
+import { SIGNUP_HELD_FOR_SUPPORT, reconcileSignupCheckout } from "@/lib/provisioning";
 import { PlanCheckoutButton, ResendVerificationButton, ResendActivationButton } from "./checkout-buttons";
 
 // El estado depende del webhook, que puede llegar después que el comprador.
@@ -51,10 +51,20 @@ export default async function ActivarPage({
   // RB-ALTA-002: el comprador nunca se queda ante un "revisa tu correo" sin
   // salida. Se le dice a qué email ha ido y puede reenviarlo desde aquí.
   if (params.session_id && !session?.user) {
-    const org = await prisma.organization.findUnique({
-      where: { provisioningSessionId: params.session_id },
-      select: { name: true, billingEmail: true },
-    });
+    const findOrg = () =>
+      prisma.organization.findUnique({
+        where: { provisioningSessionId: params.session_id },
+        select: { name: true, billingEmail: true },
+      });
+    let org = await findOrg();
+    // Sin organización todavía: no se espera al webhook. Se confirma el pago
+    // contra Stripe y, si está cobrado, el alta (y el email con el enlace) sale
+    // ya. Si no, al menos se dice a qué email llegará.
+    let buyerEmail: string | null = null;
+    if (!org) {
+      buyerEmail = (await reconcileSignupCheckout(params.session_id)).email;
+      org = await findOrg();
+    }
     // QA-ALTA-13 · Alta retenida porque el email ya dirige una organización:
     // no va a llegar ningún enlace, y "estamos confirmando tu pago" mentiría.
     const held = org
@@ -86,8 +96,16 @@ export default async function ActivarPage({
               </>
             ) : (
               <>
-                Tu pago se ha completado y estamos terminando de crear tu plataforma. Puede tardar unos
-                segundos: recarga esta página o pide el enlace de nuevo.
+                Tu pago se ha completado y estamos terminando de crear tu plataforma.{" "}
+                {buyerEmail ? (
+                  <>
+                    En cuanto esté lista te enviaremos el enlace de acceso a <b>{buyerEmail}</b>, el email que
+                    indicaste al pagar.
+                  </>
+                ) : (
+                  <>Te enviaremos el enlace de acceso al email que indicaste al pagar.</>
+                )}{" "}
+                Puede tardar unos segundos: recarga esta página o pide el enlace de nuevo.
               </>
             )}
           </p>
