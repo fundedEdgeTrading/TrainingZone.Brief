@@ -7,8 +7,10 @@ import { isDemoModeActive } from "@/lib/demo-mode";
  * desarrollo que en producción es un fallo silencioso: sin Stripe se encendía
  * la demo (PROD-01), sin Brevo el correo se simulaba (PROD-03), sin
  * `JOBS_CRON_SECRET` las reglas temporales no corren nunca, sin
- * `PROGRESS_PHOTO_DIR` las fotos van a un disco efímero que se pierde en cada
- * despliegue, y con el `AUTH_SECRET` del ejemplo cualquiera firma sesiones.
+ * `PROGRESS_PHOTO_DIR` no se encuentran las fotos de evolución que aún sigan
+ * en el disco de antes (las nuevas van a Postgres; se podrá retirar cuando
+ * `npm run files:migrate` las haya movido todas), y con el `AUTH_SECRET` del
+ * ejemplo cualquiera firma sesiones.
  * Mejor no arrancar que arrancar y callarse, igual que E10-07 con la región.
  *
  * Puro: recibe el entorno y devuelve la lista de problemas. **Nunca incluye

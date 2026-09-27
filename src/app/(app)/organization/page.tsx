@@ -25,6 +25,7 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { DataTable, type DataTableColumn, type DataTableRow } from "@/components/ui/data-table";
 import { ActionForm } from "@/components/ui/action-form";
+import { ImageDropzone } from "@/components/ui/dropzone";
 import { StripeConnectCard } from "./stripe-connect-card";
 import { prisma } from "@/lib/prisma";
 import { ProductsSection } from "./products-section";
@@ -156,9 +157,18 @@ export default async function OrganizationPage({
               <Field label="Nombre de la organización">
                 <Input name="name" defaultValue={org.name} required />
               </Field>
-              <Field label="URL del logo" hint="Vacío = logo de Apta por defecto">
-                <Input name="logoUrl" defaultValue={org.logoUrl ?? ""} placeholder="/brand/mi-logo.svg o https://..." />
-              </Field>
+              <ImageDropzone
+                name="logoUrl"
+                label="Logo"
+                hint="PNG con fondo transparente o JPG. Sin logo = el de Apta."
+                shape="rect"
+                fit="contain"
+                maxDimension={800}
+                sizeClassName="w-full h-20"
+                emptyLabel="Subir logo"
+                removable
+                defaultValue={org.logoUrl}
+              />
               <Button type="submit">Guardar marca</Button>
             </ActionForm>
           </div>
@@ -291,9 +301,20 @@ export default async function OrganizationPage({
                   className="mt-3 flex items-end gap-2"
                 >
                   <input type="hidden" name="centerId" value={c.id} />
-                  <Field label="Logo (URL)" className="flex-1">
-                    <Input name="logoUrl" defaultValue={c.logoUrl ?? ""} placeholder="/brand/… (vacío = hereda)" />
-                  </Field>
+                  <div className="flex-1">
+                    <ImageDropzone
+                      name="logoUrl"
+                      label="Logo del centro"
+                      hint="Sin logo = hereda el de la organización."
+                      shape="rect"
+                      fit="contain"
+                      maxDimension={800}
+                      sizeClassName="w-full h-16"
+                      emptyLabel="Subir logo"
+                      removable
+                      defaultValue={c.logoUrl}
+                    />
+                  </div>
                   <Button type="submit" variant="secondary" size="sm">
                     Guardar
                   </Button>
@@ -343,9 +364,17 @@ export default async function OrganizationPage({
             <Field label="Slug" hint="Opcional — se genera del nombre">
               <Input name="slug" placeholder="delicias" />
             </Field>
-            <Field label="Logo (URL)" hint="Opcional — si no, hereda">
-              <Input name="logoUrl" placeholder="/brand/…" />
-            </Field>
+            <ImageDropzone
+              name="logoUrl"
+              label="Logo"
+              hint="Opcional — si no, hereda"
+              shape="rect"
+              fit="contain"
+              maxDimension={800}
+              sizeClassName="w-full h-[42px]"
+              emptyLabel="Subir logo"
+              removable
+            />
             <Field label="Dirección" className="md:col-span-2">
               <Input name="address" placeholder="Calle, número, ciudad" />
             </Field>

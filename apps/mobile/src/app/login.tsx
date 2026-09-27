@@ -21,6 +21,7 @@ import { easeOutSoft, useReducedMotion } from "@/theme/motion";
 import { Field } from "@/components/Field";
 import { Button } from "@/components/Button";
 import type { LoginOrganization } from "@/api/types";
+import { imageSource } from "@/api/client";
 
 // A1 del handoff. Pantalla en tinta con dos manchas "aurora" a la deriva; el
 // login es el único sitio de la app donde el fondo no sigue la piel del
@@ -153,7 +154,7 @@ export default function LoginScreen() {
                     style={[styles.orgRow, { opacity: loading ? 0.5 : 1 }]}
                   >
                     {org.logoUrl ? (
-                      <Image source={{ uri: org.logoUrl }} style={styles.orgLogo} resizeMode="contain" />
+                      <Image source={imageSource(org.logoUrl)} style={styles.orgLogo} resizeMode="contain" />
                     ) : null}
                     <Text style={[typo.rowTitle, { color: BONE, flex: 1 }]} numberOfLines={1}>
                       {org.name}

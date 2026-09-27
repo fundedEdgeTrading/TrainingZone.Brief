@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { deleteStoredImage, discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { getCentersForUser } from "@/lib/agenda-queries";
 import { canManageAnnouncements } from "@/lib/rbac";
 import { requireApiRole } from "../../../_lib/api-session";
@@ -54,13 +55,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const endsAt = body.endsAt ? new Date(body.endsAt) : null;
   if (startsAt && endsAt && endsAt < startsAt) return apiError("La fecha de fin no puede ser anterior a la de inicio.", 400);
 
+  const image = await resolveImageInput(body.imageUrl, {
+    orgId: claims.orgId,
+    kind: "ANNOUNCEMENT_IMAGE",
+    previous: existing.imageUrl,
+    createdById: claims.sub,
+  });
+  if (!image.ok) return apiError(image.error, 400);
+
   await prisma.announcement.update({
     where: { id },
     data: {
       centerId,
       title,
       body: body.body?.trim() || null,
-      imageUrl: body.imageUrl?.trim() || null,
+      imageUrl: image.value,
       category: body.category ?? "NEWS",
       audience: body.audience ?? "ALL",
       tags: body.tags ?? [],
@@ -70,6 +79,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(typeof body.active === "boolean" ? { active: body.active } : {}),
     },
   });
+  await discardReplacedImage(existing.imageUrl, image.value, claims.orgId);
 
   return apiOk({ updated: true });
 }
@@ -85,5 +95,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!existing) return apiError("No se ha encontrado el anuncio.", 404);
 
   await prisma.announcement.delete({ where: { id } });
+  await deleteStoredImage(existing.imageUrl, claims.orgId);
   return apiOk({ deleted: true });
 }

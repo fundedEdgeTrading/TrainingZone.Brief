@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import { mkdir, readFile, rm, writeFile } from "fs/promises";
+import { readFile, rm } from "fs/promises";
 import path from "path";
 
 import {
@@ -10,23 +10,30 @@ import {
   signAccess,
   verifyAccess,
 } from "@/lib/column-crypto";
+import { sniffImageMime } from "@/lib/image-bytes";
 
 /**
- * E10-20 · Fotos de composición corporal fuera de la base de datos.
+ * E10-20 · Fotos de composición corporal, cifradas.
  *
- * `members/[id]/actions.ts:554` y `apps/mobile/src/utils/pick-image.ts:37`
- * guardaban `data:image/jpeg;base64,...` en columnas de texto de Postgres. Son
- * fotos frontal, de perfil y de espalda, habitualmente en ropa interior: un
- * volcado de la base de datos —una copia de seguridad, un `pg_dump` para
- * depurar, una réplica de lectura— las entrega legibles a quien lo abra.
+ * `members/[id]/actions.ts` y `apps/mobile/src/utils/pick-image.ts` guardaban
+ * `data:image/jpeg;base64,...` en columnas de texto de Postgres. Son fotos
+ * frontal, de perfil y de espalda, habitualmente en ropa interior: un volcado
+ * de la base de datos —una copia de seguridad, un `pg_dump` para depurar, una
+ * réplica de lectura— las entregaba legibles a quien lo abriera.
  *
- * Aquí las fotos salen de la base de datos. Lo que queda en la columna es una
- * REFERENCIA (`photo:v1:<id>`), y el fichero vive fuera, cifrado con AES-256-GCM
- * (ADR-005). La columna del esquema no cambia —está congelado— pero deja de
- * contener la foto.
+ * La columna guarda una REFERENCIA (`photo:v1:<id>`) y la foto va cifrada con
+ * AES-256-GCM (ADR-005) en su propia fila de `StoredFile` (kind PROGRESS_PHOTO,
+ * `encrypted`). Un volcado ya no entrega nada legible sin `PROGRESS_PHOTO_KEY`,
+ * que vive fuera de la base.
+ *
+ * Primero se guardaron en un disco de Render (`PROGRESS_PHOTO_DIR`). Eso ataba
+ * la app a una sola instancia y a un disco de pago, así que ahora van a
+ * Postgres; las que siguen en disco se leen y se borran igual mientras
+ * `npm run files:migrate` las pasa a la base.
  *
  * Se sirve solo por `/api/progress-photos/[ref]`, con enlace firmado y caducado,
  * y ese endpoint pasa por la matriz de permisos y deja rastro en `AuditLog`.
+ * `/api/files` las rechaza siempre.
  */
 
 const REF_PREFIX = "photo:v1:";
@@ -37,6 +44,9 @@ const DIR_ENV = "PROGRESS_PHOTO_DIR";
 export const PHOTO_LINK_TTL_MINUTES = 10;
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+/** Mismo tope que el resto de imágenes (`IMAGE_MAX_BYTES`): el cliente reescala antes de subir. */
+const PHOTO_MAX_BYTES = 2 * 1024 * 1024;
 
 export type StoredPhoto = { ref: string; mime: string; bytes: number };
 
@@ -53,9 +63,8 @@ export function refId(ref: string): string {
   return ref.slice(REF_PREFIX.length);
 }
 
-function storeDir(env: NodeJS.ProcessEnv = process.env): string {
-  // Por defecto FUERA de `public/`: un directorio servido estáticamente
-  // convertiría el enlace firmado en un adorno.
+/** Directorio de las fotos guardadas en disco antes de pasar a Postgres (solo lectura y borrado). */
+function legacyDir(env: NodeJS.ProcessEnv = process.env): string {
   return env[DIR_ENV] || path.join(process.cwd(), ".data", "progress-photos");
 }
 
@@ -85,82 +94,157 @@ export type ParsedDataUrl = { mime: string; data: Buffer };
 export function parseDataUrl(value: string): ParsedDataUrl | null {
   const match = /^data:([a-z]+\/[a-z0-9.+-]+);base64,(.+)$/i.exec(value);
   if (!match) return null;
-  const mime = match[1].toLowerCase();
-  if (!ALLOWED_MIME.has(mime)) return null;
+  if (!ALLOWED_MIME.has(match[1].toLowerCase())) return null;
   const data = Buffer.from(match[2], "base64");
-  if (data.length === 0) return null;
+  if (data.length === 0 || data.length > PHOTO_MAX_BYTES) return null;
+  // El tipo sale de la firma de los bytes, no de lo que diga el `data:` URL.
+  const mime = sniffImageMime(data);
+  if (!mime) return null;
   return { mime, data };
 }
 
+/** Dueño de la foto: la fila de `StoredFile` va atada al socio y se borra con él. */
+export type PhotoOwner = { orgId: string; memberId: string; createdById?: string | null };
+
 /**
- * Guarda una foto y devuelve la referencia que va a la columna.
+ * Dónde viven los sobres cifrados. La implementación real es Postgres
+ * (`postgresPhotoStore`); los tests pasan una en memoria.
+ */
+export type PhotoBlobStore = {
+  put(id: string, envelope: string, owner: PhotoOwner): Promise<void>;
+  get(id: string): Promise<string | null>;
+  delete(id: string): Promise<boolean>;
+};
+
+export type PhotoDeps = { env?: NodeJS.ProcessEnv; store?: PhotoBlobStore };
+
+/**
+ * `StoredFile` en Postgres, con las fotos que aún sigan en el disco de antes
+ * como respaldo de lectura y de borrado. El import de Prisma es perezoso: este
+ * módulo lo cargan tests que no tienen base de datos.
+ */
+export function postgresPhotoStore(env: NodeJS.ProcessEnv = process.env): PhotoBlobStore {
+  return {
+    async put(id, envelope, owner) {
+      const { saveStoredFile } = await import("@/lib/file-store");
+      await saveStoredFile({
+        id,
+        orgId: owner.orgId,
+        memberId: owner.memberId,
+        createdById: owner.createdById,
+        kind: "PROGRESS_PHOTO",
+        // El tipo real viaja DENTRO del sobre: la fila no cuenta qué hay en ella.
+        mime: "application/octet-stream",
+        encrypted: true,
+        data: Buffer.from(envelope, "utf8"),
+      });
+    },
+    async get(id) {
+      const { prisma } = await import("@/lib/prisma");
+      const row = await prisma.storedFile.findFirst({
+        where: { id, kind: "PROGRESS_PHOTO" },
+        select: { data: true },
+      });
+      if (row) return Buffer.from(row.data).toString("utf8");
+      return readLegacyEnvelope(id, env);
+    },
+    async delete(id) {
+      const { prisma } = await import("@/lib/prisma");
+      const deleted = await prisma.storedFile.deleteMany({ where: { id, kind: "PROGRESS_PHOTO" } });
+      const legacy = await deleteLegacyEnvelope(id, env);
+      return deleted.count > 0 || legacy;
+    },
+  };
+}
+
+/** Sobre de una foto que sigue en el disco de antes, o `null`. */
+export async function readLegacyEnvelope(id: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  const file = legacyPath(id, env);
+  if (!file) return null;
+  try {
+    return await readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function deleteLegacyEnvelope(id: string, env: NodeJS.ProcessEnv): Promise<boolean> {
+  const file = legacyPath(id, env);
+  if (!file) return false;
+  try {
+    await rm(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function storeOf(deps: PhotoDeps): PhotoBlobStore {
+  return deps.store ?? postgresPhotoStore(deps.env);
+}
+
+/**
+ * Cifra una foto, la guarda y devuelve la referencia que va a la columna.
  *
- * El nombre del fichero es un UUID y no un hash del contenido: con un hash, dos
- * socios con la misma foto compartirían fichero, y borrar el de uno se llevaría
- * el del otro.
+ * El id es un UUID y no un hash del contenido: con un hash, dos socios con la
+ * misma foto compartirían objeto, y borrar el de uno se llevaría el del otro.
  */
 export async function putProgressPhoto(
   dataUrl: string,
-  env: NodeJS.ProcessEnv = process.env,
+  owner: PhotoOwner,
+  deps: PhotoDeps = {},
 ): Promise<StoredPhoto | null> {
   const parsed = parseDataUrl(dataUrl);
   if (!parsed) return null;
 
-  const key = requireKey(env);
+  const key = requireKey(deps.env);
   const id = randomUUID();
-  const dir = storeDir(env);
-  await mkdir(dir, { recursive: true });
-
-  // El tipo viaja dentro del sobre cifrado, no en el nombre del fichero: el
-  // directorio no debe contar qué hay en él ni de quién.
+  // El tipo viaja dentro del sobre cifrado, no fuera: el almacén no debe contar
+  // qué hay en él ni de quién.
   const envelope = encryptColumn(Buffer.from(JSON.stringify({ mime: parsed.mime, data: parsed.data.toString("base64") })), key);
-  await writeFile(path.join(dir, `${id}.enc`), envelope, "utf8");
+  await storeOf(deps).put(id, envelope, owner);
 
   return { ref: `${REF_PREFIX}${id}`, mime: parsed.mime, bytes: parsed.data.length };
 }
 
 export type LoadedPhoto = { mime: string; data: Buffer };
 
-export async function readProgressPhoto(
-  ref: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<LoadedPhoto | null> {
+export async function readProgressPhoto(ref: string, deps: PhotoDeps = {}): Promise<LoadedPhoto | null> {
   if (!isPhotoRef(ref)) return null;
-  const key = requireKey(env);
-  const file = photoPath(ref, env);
-  if (!file) return null;
+  const id = validPhotoId(ref);
+  if (!id) return null;
+  const key = requireKey(deps.env);
 
-  let envelope: string;
-  try {
-    envelope = await readFile(file, "utf8");
-  } catch {
-    return null;
-  }
+  const envelope = await storeOf(deps).get(id);
+  if (!envelope) return null;
   const decoded = JSON.parse(decryptColumn(envelope, key).toString("utf8")) as { mime: string; data: string };
   return { mime: decoded.mime, data: Buffer.from(decoded.data, "base64") };
 }
 
-/** Borrar una entrada de progreso tiene que llevarse también el fichero. */
-export async function deleteProgressPhoto(
-  ref: string | null | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<boolean> {
+/** Borrar una entrada de progreso tiene que llevarse también la foto. */
+export async function deleteProgressPhoto(ref: string | null | undefined, deps: PhotoDeps = {}): Promise<boolean> {
   if (!isPhotoRef(ref)) return false;
-  const file = photoPath(ref, env);
-  if (!file) return false;
-  await rm(file, { force: true });
-  return true;
+  const id = validPhotoId(ref);
+  if (!id) return false;
+  return storeOf(deps).delete(id);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** El id de la referencia, validado como UUID ANTES de tocar ningún almacén. */
+function validPhotoId(ref: string): string | null {
+  const id = refId(ref);
+  return UUID_RE.test(id) ? id : null;
 }
 
 /**
- * Ruta del fichero. El id se valida como UUID ANTES de tocar el disco: un id
- * con `../` dentro convertiría este módulo en una lectura arbitraria de
+ * Ruta del fichero antiguo. El id se valida como UUID ANTES de tocar el disco:
+ * un id con `../` dentro convertiría este módulo en una lectura arbitraria de
  * ficheros, y `path.join` no protege de eso por sí solo.
  */
-function photoPath(ref: string, env: NodeJS.ProcessEnv): string | null {
-  const id = refId(ref);
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
-  return path.join(storeDir(env), `${id}.enc`);
+function legacyPath(id: string, env: NodeJS.ProcessEnv): string | null {
+  if (!UUID_RE.test(id)) return null;
+  return path.join(legacyDir(env), `${id}.enc`);
 }
 
 /**
@@ -237,15 +321,12 @@ export function photoRefsOf(entry: PhotoColumns): string[] {
   return [entry.photoFrontUrl, entry.photoSideUrl, entry.photoBackUrl].filter(isPhotoRef);
 }
 
-/** Borra los ficheros de un conjunto de entradas. Devuelve cuántos borró. */
-export async function deletePhotosOfEntries(
-  entries: PhotoColumns[],
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<number> {
+/** Borra las fotos de un conjunto de entradas. Devuelve cuántas borró. */
+export async function deletePhotosOfEntries(entries: PhotoColumns[], deps: PhotoDeps = {}): Promise<number> {
   let deleted = 0;
   for (const entry of entries) {
     for (const ref of photoRefsOf(entry)) {
-      if (await deleteProgressPhoto(ref, env)) deleted++;
+      if (await deleteProgressPhoto(ref, deps)) deleted++;
     }
   }
   return deleted;

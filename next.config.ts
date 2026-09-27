@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
 
-import { NO_REFERRER_HEADER, SIGNED_TOKEN_ROUTES, securityHeaders } from "./src/lib/security-headers";
+import {
+  NO_REFERRER_HEADER,
+  SIGNED_TOKEN_ROUTES,
+  UPLOADED_FILE_CSP_HEADER,
+  UPLOADED_FILE_ROUTES,
+  securityHeaders,
+} from "./src/lib/security-headers";
 import { logoRemotePatterns } from "./src/lib/logo-image";
 
 const nextConfig: NextConfig = {
@@ -28,7 +34,21 @@ const nextConfig: NextConfig = {
       // token sigue sin filtrarse si alguien guarda la página o la abre desde
       // una caché.
       ...SIGNED_TOKEN_ROUTES.map((source) => ({ source, headers: [NO_REFERRER_HEADER] })),
+      // Imágenes subidas: su propia CSP, más cerrada que la general.
+      ...UPLOADED_FILE_ROUTES.map((source) => ({ source, headers: [UPLOADED_FILE_CSP_HEADER] })),
     ];
+  },
+
+  /**
+   * Las imágenes viajan dentro del formulario como `data:` URL (ver
+   * `components/ui/dropzone.tsx`), y el tope por defecto de una server action
+   * es 1 MB. El caso más grande es una entrada de evolución con tres fotos de
+   * hasta 2 MB cada una (el navegador las reescala antes; en base64 ocupan 4/3).
+   */
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "10mb",
+    },
   },
 
   /**

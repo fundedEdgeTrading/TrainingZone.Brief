@@ -81,6 +81,7 @@ export function ProductsSection({ plans }: { plans: MembershipPlan[] }) {
             name="imageUrl"
             label="Foto del producto"
             hint="1600 × 1000"
+            removable
             shape="rounded"
             sizeClassName="w-full h-[92px]"
           />

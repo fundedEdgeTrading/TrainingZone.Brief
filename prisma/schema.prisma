@@ -97,6 +97,7 @@ model Organization {
   centers           Center[]
   users             User[]
   members           Member[]
+  storedFiles       StoredFile[]
   plans             MembershipPlan[]
   sessions          ClassSession[]
   templates         SessionTemplate[]
@@ -445,7 +446,7 @@ model Member {
   birthDate          DateTime?
   address            String?
   emergencyContact   String?
-  photoUrl           String? // foto de perfil (subida como data URL en esta demo)
+  photoUrl           String? // foto de perfil: `/api/files/<id>` (StoredFile MEMBER_PHOTO)
   state              MemberState @default(PROSPECT)
   joinedAt           DateTime    @default(now())
   cancelledAt        DateTime?
@@ -565,6 +566,7 @@ model Member {
   retentionAlerts     RetentionAlert[]
   noteEntries         MemberNote[]
   progressEntries     MemberProgressEntry[]
+  storedFiles         StoredFile[]
   invitation          Invitation?
   convertedFromLead   Lead?                    @relation("LeadConvertedMember")
   clientGoals         ClientGoal[]
@@ -634,6 +636,55 @@ model MemberProgressEntry {
 
   member Member @relation(fields: [memberId], references: [id])
 
+  @@index([memberId])
+}
+
+// ---------- Ficheros subidos (imágenes) ----------
+
+/// Qué es la imagen. Decide quién puede pedirla en `/api/files/[id]`
+/// (src/lib/file-store.ts):
+///  · ORG_LOGO, CENTER_LOGO, PRODUCT_IMAGE, ANNOUNCEMENT_IMAGE — públicas: salen
+///    en páginas sin sesión, en emails y en el checkout de Stripe.
+///  · MEMBER_PHOTO — el propio socio o el equipo con el socio en su ámbito de centro.
+///  · STAFF_PHOTO — cualquiera con sesión en la organización.
+///  · PROGRESS_PHOTO — NUNCA por `/api/files`: solo por `/api/progress-photos`,
+///    con enlace firmado, matriz de salud y AuditLog (E10-20).
+enum StoredFileKind {
+  ORG_LOGO
+  CENTER_LOGO
+  PRODUCT_IMAGE
+  ANNOUNCEMENT_IMAGE
+  MEMBER_PHOTO
+  STAFF_PHOTO
+  PROGRESS_PHOTO
+}
+
+/// Imágenes subidas desde la web y la app. Viven en Postgres, no en disco ni en
+/// un proveedor externo: sin coste añadido, entran en las copias de la base y
+/// valen con varias instancias. Las columnas `*Url` de cada modelo guardan
+/// `/api/files/<id>` (o `photo:v1:<id>` en las fotos de evolución), nunca los
+/// bytes. Un fichero no se reescribe: cambiar la imagen crea otra fila, así que
+/// la URL se puede cachear para siempre.
+model StoredFile {
+  id          String         @id @default(uuid())
+  orgId       String
+  kind        StoredFileKind
+  /// Dueño cuando la imagen es de un socio (foto de perfil, fotos de
+  /// evolución): borrar al socio se lleva sus imágenes.
+  memberId    String?
+  mime        String
+  size        Int
+  sha256      String
+  /// PROGRESS_PHOTO: sobre AES-256-GCM (ADR-005). Las demás, la imagen tal cual.
+  encrypted   Boolean        @default(false)
+  data        Bytes
+  createdById String?
+  createdAt   DateTime       @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  member       Member?      @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, kind])
   @@index([memberId])
 }
 
@@ -739,7 +790,7 @@ model MembershipPlan {
   // venta y foto. `active` es la visibilidad: un plan oculto no aparece en el
   // catálogo pero sigue vivo para quien ya lo tiene contratado.
   description String?
-  imageUrl    String? // 1600 × 1000 recomendado (data URL, igual que el resto de imágenes de la demo)
+  imageUrl    String? // 1600 × 1000 recomendado: `/api/files/<id>` (StoredFile PRODUCT_IMAGE) o URL externa
 
   // F5 (RB-VENTA-002): espejo del producto/precio en la cuenta CONECTADA del
   // gimnasio. Los precios de Stripe son inmutables — cambiar el importe crea
@@ -1777,7 +1828,7 @@ model Announcement {
   centerId    String? // null = anuncio global de la empresa
   title       String
   body        String? // texto informativo del anuncio
-  imageUrl    String? // banner (data URL en esta demo)
+  imageUrl    String? // banner: `/api/files/<id>` (StoredFile ANNOUNCEMENT_IMAGE) o URL externa
   category    AnnouncementCategory @default(NEWS)
   audience    AnnouncementAudience @default(ALL)
   tags        String[]             @default([]) // etiquetas libres para clasificar

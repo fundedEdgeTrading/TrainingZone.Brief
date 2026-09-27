@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireRole, memberIsInScope, centerIsInScope, OUT_OF_CENTER_SCOPE, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { createHealthRecord, updateHealthRecordStatus, type HealthWriteResult } from "@/lib/health-access";
 import { HEALTH_STATUSES } from "@/lib/health-status";
 import { canDeleteMembers, canManageMembers, canManageOrg } from "@/lib/rbac";
@@ -724,14 +725,26 @@ export async function deleteMember(memberId: string): Promise<MemberActionResult
 export async function updateMemberPhoto(formData: FormData): Promise<MemberActionResult> {
   const session = await requireRole(["OWNER", "CENTER_DIRECTOR", "TRAINER", "TRAINER_ADMIN", "RECEPTION"]);
   const memberId = String(formData.get("memberId") ?? "");
-  const photoUrl = String(formData.get("photoUrl") ?? "").trim() || null;
   if (!memberId) return { ok: false, error: "Falta el socio." };
 
-  const member = await prisma.member.findFirst({ where: { id: memberId, orgId: session.user.orgId }, select: { id: true } });
+  const member = await prisma.member.findFirst({
+    where: { id: memberId, orgId: session.user.orgId },
+    select: { id: true, photoUrl: true },
+  });
   if (!member) return { ok: false, error: "No se ha encontrado ese socio." };
   if (!(await memberIsInScope(session.user, member.id))) return { ok: false, error: OUT_OF_CENTER_SCOPE };
 
-  await prisma.member.update({ where: { id: memberId }, data: { photoUrl } });
+  const photo = await resolveImageInput(formData.get("photoUrl"), {
+    orgId: session.user.orgId,
+    kind: "MEMBER_PHOTO",
+    previous: member.photoUrl,
+    memberId: member.id,
+    createdById: session.user.id,
+  });
+  if (!photo.ok) return photo;
+
+  await prisma.member.update({ where: { id: memberId }, data: { photoUrl: photo.value } });
+  await discardReplacedImage(member.photoUrl, photo.value, session.user.orgId);
   revalidatePath(`/members/${memberId}`);
   return { ok: true };
 }
@@ -813,12 +826,16 @@ export async function createProgressEntry(formData: FormData): Promise<MemberAct
       photos[field] = null;
       continue;
     }
-    const stored = await putProgressPhoto(value);
+    const stored = await putProgressPhoto(value, {
+      orgId: session.user.orgId,
+      memberId: member.id,
+      createdById: session.user.id,
+    });
     if (!stored) {
-      // Se limpia lo ya guardado: media entrada con dos fotos huérfanas en
-      // disco es peor que ninguna.
+      // Se limpia lo ya guardado: media entrada con dos fotos huérfanas es
+      // peor que ninguna.
       for (const ref of storedRefs) await deleteProgressPhoto(ref);
-      return { ok: false, error: "Alguna de las fotos no es una imagen válida (JPEG, PNG o WebP)." };
+      return { ok: false, error: "Alguna de las fotos no es una imagen válida (JPEG, PNG o WebP de hasta 2 MB)." };
     }
     photos[field] = stored.ref;
     storedRefs.push(stored.ref);

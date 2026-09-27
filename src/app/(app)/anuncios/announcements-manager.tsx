@@ -207,7 +207,8 @@ export default function AnnouncementsManager({
           <ImageDropzone
             name="imageUrl"
             label="Imagen / banner"
-            hint="Opcional. JPG o PNG, máx. 2MB."
+            hint="Opcional. JPG, PNG o WebP; se ajusta sola al subirla."
+            removable
             shape="rect"
             sizeClassName="w-full h-32"
             defaultValue={editing?.imageUrl ?? null}

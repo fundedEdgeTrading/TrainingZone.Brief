@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveImageInput } from "@/lib/file-store";
 import { listAnnouncementsForManager } from "@/lib/announcements-queries";
 import { getCentersForUser } from "@/lib/agenda-queries";
 import { canManageAnnouncements, canManageOrg } from "@/lib/rbac";
@@ -76,13 +77,21 @@ export async function POST(req: NextRequest) {
   const endsAt = body.endsAt ? new Date(body.endsAt) : null;
   if (startsAt && endsAt && endsAt < startsAt) return apiError("La fecha de fin no puede ser anterior a la de inicio.", 400);
 
+  // Mismo paso que la web: la imagen va a `StoredFile`, la columna guarda su URL.
+  const image = await resolveImageInput(body.imageUrl, {
+    orgId: claims.orgId,
+    kind: "ANNOUNCEMENT_IMAGE",
+    createdById: claims.sub,
+  });
+  if (!image.ok) return apiError(image.error, 400);
+
   const created = await prisma.announcement.create({
     data: {
       orgId: claims.orgId,
       centerId,
       title,
       body: body.body?.trim() || null,
-      imageUrl: body.imageUrl?.trim() || null,
+      imageUrl: image.value,
       category: body.category ?? "NEWS",
       audience: body.audience ?? "ALL",
       tags: body.tags ?? [],

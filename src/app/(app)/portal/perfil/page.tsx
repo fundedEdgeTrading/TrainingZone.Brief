@@ -36,7 +36,7 @@ export default async function PortalProfilePage() {
 
       <Card title="Datos de contacto">
         <ActionForm action={updateMyProfileAction} successMessage="Datos actualizados." className="flex flex-col gap-4">
-          <ImageDropzone name="photoUrl" label="Foto de perfil" shape="circle" sizeClassName="w-24 h-24" defaultValue={member.photoUrl} />
+          <ImageDropzone name="photoUrl" label="Foto de perfil" shape="circle" sizeClassName="w-24 h-24" maxDimension={600} defaultValue={member.photoUrl} />
 
           <Field label="Teléfono">
             <Input name="phone" type="tel" defaultValue={member.phone ?? ""} placeholder="+34 600 000 000" />

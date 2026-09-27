@@ -27,7 +27,7 @@ Para la app nativa, `apps/mobile/README.md`.
 | `npm run test:unit` | Pruebas unitarias (`node:test` sobre `tsx`) |
 | `npm run test:unit:coverage` | Lo mismo, midiendo cobertura |
 | `npm run test:e2e` | Playwright |
-| `npm run migrate:fotos` | Migración de fotos de progreso al almacén cifrado |
+| `npm run files:migrate` | Mueve a Postgres (`StoredFile`) las imágenes que siguen dentro de su columna como `data:` URL y las fotos de evolución que siguen en disco. Idempotente. (`migrate:fotos` es el nombre antiguo) |
 | `npm run export:fichajes` | Exportación de fichajes (módulo aparcado) |
 | `npm run bootstrap:plataforma` | Organización de plataforma y su primer `PLATFORM_ADMIN` en una base limpia, sin seed (§7.3) |
 

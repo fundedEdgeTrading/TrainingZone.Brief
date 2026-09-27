@@ -95,6 +95,7 @@ export function EditPlanDrawer({ plan }: { plan: MembershipPlan }) {
                 name="imageUrl"
                 label="Foto del producto"
                 hint="1600 × 1000"
+                removable
                 shape="rounded"
                 sizeClassName="w-full h-[120px]"
                 defaultValue={plan.imageUrl}
