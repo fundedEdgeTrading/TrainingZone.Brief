@@ -3,6 +3,7 @@
 import {
   BARRIO_METRICS,
   formatMetricValue,
+  metricDef,
   metricValue,
   type BarrioMetric,
   type BarrioStat,
@@ -37,6 +38,7 @@ export function BarrioTable({
   onHover,
   onSelect,
   geometryNote,
+  compact = false,
 }: {
   rows: BarrioStat[];
   metric: BarrioMetric;
@@ -48,13 +50,23 @@ export function BarrioTable({
   onSelect: (code: string) => void;
   /** Las aproximaciones encadenadas que la tabla tiene que declarar (E11-05). */
   geometryNote: string;
+  /**
+   * En el panel lateral del mapa la nota ya está en la leyenda (tras su ⓘ) y
+   * el `<caption>` visible desbordaba la columna: ahí va solo para lectores de
+   * pantalla, que es quien lo necesita antes de las filas.
+   */
+  compact?: boolean;
 }) {
+  // En el panel estrecho la métrica activa va pegada al nombre: es la que se
+  // está leyendo, y al final de siete columnas quedaba fuera de la vista.
+  const columns = compact ? [metricDef(metric), ...BARRIO_METRICS.filter((m) => m.key !== metric)] : BARRIO_METRICS;
+
   return (
     <table className="w-full border-collapse text-left">
       {/* La fuente del dato y sus aproximaciones van en el `<caption>` y no en
           una nota al pie suelta: es la única parte de la tabla que un lector de
           pantalla anuncia ANTES de leer las filas. */}
-      <caption className="text-left text-[10.5px] leading-[1.45] text-brand-muted pb-2">
+      <caption className={compact ? "sr-only" : "text-left text-[10.5px] leading-[1.45] text-brand-muted pb-2"}>
         Socios y leads de tu organización agregados por código postal. {geometryNote}
       </caption>
       <thead>
@@ -65,7 +77,7 @@ export function BarrioTable({
           >
             Barrio
           </th>
-          {BARRIO_METRICS.map((m) => (
+          {columns.map((m) => (
             <th
               key={m.key}
               scope="col"
@@ -114,13 +126,14 @@ export function BarrioTable({
                 >
                   <span
                     aria-hidden="true"
-                    className="w-2 h-[22px] rounded-[3px] shrink-0"
+                    // El borde hace visible el testigo de "sin actividad", que es casi blanco.
+                    className="w-2 h-[22px] rounded-[3px] shrink-0 shadow-[inset_0_0_0_1px_rgba(29,29,28,.12)]"
                     style={{ background: colors[p.code] }}
                   />
                   <span className="truncate">{p.name}</span>
                 </button>
               </th>
-              {BARRIO_METRICS.map((m) => (
+              {columns.map((m) => (
                 <td
                   key={m.key}
                   className={`py-0.5 px-1 text-right text-[11.5px] tz-nums whitespace-nowrap ${

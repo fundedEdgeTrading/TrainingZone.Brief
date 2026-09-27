@@ -164,11 +164,18 @@ export async function KpiRow(props: PanelProps) {
 
 export async function PostalPanel(props: PanelProps) {
   const { orgId, centerId, range } = props;
-  const { points, opportunity } = await getPostalPanelData(orgId, optsOf(props));
+  const { points, opportunity, areas, centers } = await getPostalPanelData(orgId, optsOf(props));
   // E11-07 · El periodo y el centro bajan hasta el enlace del mapa de barrios,
   // que hasta ahora apuntaba a `/mapa-barrios` a secas y perdía los dos.
   return (
-    <PostalMapPanel points={points} opportunity={opportunity} range={range ?? "mes"} centerId={centerId ?? null} />
+    <PostalMapPanel
+      points={points}
+      areas={areas}
+      centers={centers}
+      opportunity={opportunity}
+      range={range ?? "mes"}
+      centerId={centerId ?? null}
+    />
   );
 }
 

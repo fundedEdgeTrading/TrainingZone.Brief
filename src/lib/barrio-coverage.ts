@@ -70,11 +70,20 @@ export function hasGaps(coverage: MapCoverage): boolean {
  * mitad es exacta.
  */
 export function geometryNote(realGeometry: boolean): string {
-  const shape = realGeometry
-    ? "Los contornos son los barrios reales publicados por el ayuntamiento."
-    : "Los contornos son una teselación desde el centroide de cada CP, no el barrio real.";
-  return `${POSTAL_CODE_CAVEAT} ${shape}`;
+  // Con contornos oficiales ya solo queda UNA aproximación: el nombre. El
+  // contorno es el área real del código postal, que es la unidad por la que se
+  // agrega el dato.
+  if (realGeometry) return REAL_GEOMETRY_NOTE;
+  return `${POSTAL_CODE_CAVEAT} Los contornos son una teselación desde el centroide de cada CP, no el barrio real.`;
 }
+
+/** Atribución de la capa de códigos postales (CC BY 4.0 pide citarla donde se usa). */
+export const POSTAL_GEOMETRY_ATTRIBUTION = "CartoCiudad · © Instituto Geográfico Nacional (CC BY 4.0)";
+
+const REAL_GEOMETRY_NOTE =
+  "Los contornos son las áreas oficiales de cada código postal (" +
+  POSTAL_GEOMETRY_ATTRIBUTION +
+  "). El nombre de barrio es aproximado: un CP reparte calles entre barrios colindantes.";
 
 const POSTAL_CODE_CAVEAT =
   "Dos aproximaciones encadenadas: la correspondencia entre código postal y barrio es un «mejor esfuerzo» (un CP reparte calles entre barrios colindantes).";

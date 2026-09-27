@@ -107,7 +107,11 @@ test("la nota declara las DOS aproximaciones encadenadas", () => {
 
   // Y se condiciona a cuál se está usando (E11-08).
   const real = geometryNote(true);
-  assert.match(real, /barrios reales/);
+  // Con contornos oficiales queda una sola aproximación, el nombre, y la
+  // fuente se cita: la licencia CC BY 4.0 lo pide.
+  assert.match(real, /áreas oficiales de cada código postal/);
+  assert.match(real, /Instituto Geográfico Nacional/);
+  assert.match(real, /aproximado/);
   assert.ok(!real.includes("teselación"));
 });
 

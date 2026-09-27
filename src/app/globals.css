@@ -712,36 +712,18 @@ textarea:focus-visible {
   background-size: 200% 100%;
 }
 
-/* ===== BI-3: mapa de calor — burbujas de provincia ===== */
-@keyframes tzMapBubbleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.2);
-  }
-  60% {
-    transform: scale(1.14);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-@keyframes tzMapPulseRing {
-  0% {
-    transform: scale(1);
-    opacity: 0.65;
-  }
-  100% {
-    transform: scale(2.5);
-    opacity: 0;
-  }
-}
-
+/* ===== Mapas de Leaflet (panel, mapa de barrios y ficha pública) =====
+   Un solo lenguaje para los tres: el panel y el mapa de barrios comparten
+   motor (`BarrioMap`) y la ficha pública, la chincheta. Callejero claro y casi
+   neutro, datos en la rampa de marca, bordes blancos finos, chincheta de
+   centro en tinta y globo oscuro. El callejero es fondo: se desatura, pero ya no se tiñe de sepia —el
+   sepia de antes, sumado al relleno al 86 %, dejaba la ciudad en una mancha
+   marrón sin calles ni río a los que agarrarse. */
 .tz-map .leaflet-tile {
-  filter: grayscale(1) sepia(0.42) saturate(0.72) brightness(1.03) contrast(0.9) hue-rotate(-8deg);
+  filter: grayscale(0.9) sepia(0.12) brightness(1.03) contrast(0.94);
 }
 .tz-map .leaflet-container {
-  background: var(--color-tz-sand);
+  background: var(--color-tz-bone);
   font-family: var(--font-sans);
 }
 .tz-map .leaflet-bar {
@@ -766,6 +748,7 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.72);
   color: var(--color-brand-muted);
   font-size: 9px;
+  border-top-left-radius: 6px;
 }
 .tz-map .leaflet-control-attribution a {
   color: var(--color-brand-text-2);
@@ -775,7 +758,10 @@ textarea:focus-visible {
    apagan (el `hue-rotate` devuelve el matiz que la inversión se lleva) para
    que el mapa no sea un rectángulo blanco en medio del panel. */
 [data-theme="dark"] .tz-map .leaflet-tile {
-  filter: grayscale(1) invert(1) brightness(0.78) contrast(0.95) sepia(0.3) hue-rotate(180deg);
+  filter: grayscale(1) invert(1) brightness(0.78) contrast(0.95) sepia(0.2) hue-rotate(180deg);
+}
+[data-theme="dark"] .tz-map .leaflet-container {
+  background: #24231f;
 }
 [data-theme="dark"] .tz-map .leaflet-bar a {
   background: var(--color-brand-card);
@@ -785,11 +771,6 @@ textarea:focus-visible {
 }
 [data-theme="dark"] .tz-map .leaflet-control-attribution {
   background: rgba(36, 35, 31, 0.78);
-}
-/* La burbuja hereda `--color-tz-black`, que en oscuro es hueso: sobre un mapa
-   oscuro se lee bien, pero su borde hueso desaparecía contra ella misma. */
-[data-theme="dark"] .tz-map-bubble-core {
-  border-color: rgba(29, 29, 28, 0.85);
 }
 
 /* Pantalla a sangre: la raíz de la página se marca con `data-full-bleed` y el
@@ -808,38 +789,55 @@ main:has(> [data-full-bleed]) {
 }
 
 /* ---------- Mapa de barrios (/mapa-barrios) ----------
-   Coropleta por barrio: manda el color de la celda, así que la tesela va más
-   clara y más desaturada que la del panel y sin rótulos propios (los nombres
-   los pone la vista). Los colores de esta sección son literales y no tokens a
-   propósito: se pintan SOBRE la rampa de datos —que es fija— y no sobre la
-   superficie del tema, así que en oscuro tienen que seguir siendo los mismos
-   para que el rótulo se lea encima de su celda. */
+   Coropleta por barrio: manda el color de la celda, así que la tesela va clara
+   y sin rótulos propios a zoom de ciudad (los nombres los pone la vista; los de
+   calle entran a partir de zoom 14, en su propio panel). Los colores de esta
+   sección son literales y no tokens a propósito: se pintan SOBRE la rampa de
+   datos —que es fija— y no sobre la superficie del tema, así que en oscuro
+   tienen que seguir siendo los mismos para que el rótulo se lea encima de su
+   celda. */
 .tz-barrio-map .leaflet-tile {
-  filter: grayscale(1) sepia(0.34) saturate(0.6) brightness(1.08) contrast(0.86);
+  filter: grayscale(1) sepia(0.08) brightness(1.04) contrast(0.92);
 }
-/* E11-06 · En oscuro, `.tz-barrio-map` heredaba el filtro INVERTIDO de
-   `.tz-map` —pensado para la tarjeta del panel— y el callejero se volvía casi
-   negro debajo de una coropleta cuya rampa es fija y clara: el mapa acababa
-   siendo colores flotando sobre un vacío. Aquí la tesela se apaga un poco, no se
-   invierte: la rampa manda y el callejero es fondo. */
+/* E11-06 · En oscuro, `.tz-barrio-map` NO hereda el filtro invertido de
+   `.tz-map` —pensado para la tarjeta del panel—: debajo de una coropleta cuya
+   rampa es fija y clara, invertir deja colores flotando sobre un vacío negro.
+   La tesela se apaga un poco, no se invierte: la rampa manda y el callejero es
+   fondo. */
 [data-theme="dark"] .tz-barrio-map .leaflet-tile {
-  filter: grayscale(1) sepia(0.34) saturate(0.5) brightness(0.92) contrast(0.8);
+  filter: grayscale(1) brightness(0.9) contrast(0.82);
 }
 [data-theme="dark"] .tz-barrio-map .leaflet-container {
   background: #2b2a26;
 }
 .tz-barrio-map .leaflet-interactive {
-  transition: fill-opacity 0.18s ease;
+  transition: fill-opacity 0.18s ease, stroke-width 0.18s ease;
 }
-/* El control de zoom vive en la esquina inferior derecha, que es justo donde la
-   vista pone su botonera flotante: se sube por encima de ella en vez de
-   quedarse debajo, medio tapado. */
-.tz-barrio-map .leaflet-bottom.leaflet-right .leaflet-control-zoom {
-  margin-bottom: 66px;
+/* El barrio activo se levanta del plano. */
+.tz-barrio-map path.tz-cell-on {
+  filter: drop-shadow(0 6px 10px rgba(29, 29, 28, 0.32));
+}
+/* Todo lo que queda fuera de la ciudad, apagado: así la ciudad tiene forma. */
+.tz-barrio-map path.tz-mask {
+  fill: var(--color-tz-sand);
+  fill-opacity: 0.62;
+}
+[data-theme="dark"] .tz-barrio-map path.tz-mask {
+  fill: #1c1b19;
+  fill-opacity: 0.55;
+}
+[data-theme="dark"] .tz-barrio-map path.tz-iso {
+  stroke: #f4f0e8;
+  fill: #f4f0e8;
+}
+/* La atribución queda detrás de la botonera flotante (z 500): se sube un
+   escalón para que siga siendo legible y pulsable. */
+.tz-barrio-map .leaflet-bottom.leaflet-right {
+  z-index: 510;
 }
 
-/* Etiqueta de barrio: nombre + cifra, con halo hueso. El halo es lo que las
-   hace legibles sobre cualquier escalón de la rampa. */
+/* Etiqueta de barrio: nombre + cifra, con un halo fino del color contrario a
+   la tinta. */
 .tz-lbl {
   pointer-events: none;
   display: flex !important;
@@ -851,147 +849,118 @@ main:has(> [data-full-bleed]) {
    una constante. Con tinta fija, sobre el escalón más oscuro de la rampa el
    nombre daba 2,08:1 y la cifra 1,12:1 — ilegible. Las dos variables las escribe
    `paint()` en el propio elemento, con `readableInkOn()`: la tinta gana el
-   contraste contra la celda y el halo es la contraria, que es la superficie
-   sobre la que el ojo lee de verdad (>14:1 en cualquier escalón).
+   contraste contra la celda y el halo es la contraria (>14:1 en cualquier
+   escalón).
 
-   El halo va con cuatro sombras y no con tres: cerrar el contorno por los cuatro
-   lados es lo que lo convierte en una superficie y no en un desenfoque. */
+   El halo cierra el contorno por los cuatro lados con desplazamientos de 1 px
+   y un solo desenfoque corto: se lee como una superficie, sin el efecto de
+   pegatina borrosa del halo de cuatro desenfoques de antes. */
 .tz-lbl b,
 .tz-lbl i {
   --tz-lbl-ink: #1d1d1c;
   --tz-lbl-halo: #f7f4ed;
+  text-shadow:
+    1px 0 0 var(--tz-lbl-halo),
+    -1px 0 0 var(--tz-lbl-halo),
+    0 1px 0 var(--tz-lbl-halo),
+    0 -1px 0 var(--tz-lbl-halo),
+    0 0 4px var(--tz-lbl-halo);
 }
 .tz-lbl b {
   display: inline-block;
   font-size: 11px;
-  font-weight: 700;
-  line-height: 1.1;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
   color: var(--tz-lbl-ink);
   white-space: nowrap;
-  text-shadow:
-    0 0 2px var(--tz-lbl-halo),
-    0 0 4px var(--tz-lbl-halo),
-    0 0 6px var(--tz-lbl-halo),
-    0 0 9px var(--tz-lbl-halo);
 }
 .tz-lbl i {
   display: inline-block;
+  font-family: var(--font-display);
   font-style: normal;
-  font-size: 10.5px;
+  font-size: 13px;
   font-weight: 800;
-  line-height: 1.25;
+  line-height: 1.2;
   color: var(--tz-lbl-ink);
   font-variant-numeric: tabular-nums;
-  opacity: 0.82;
-  text-shadow:
-    0 0 2px var(--tz-lbl-halo),
-    0 0 4px var(--tz-lbl-halo),
-    0 0 6px var(--tz-lbl-halo);
 }
-.tz-lbl.hi b,
+.tz-lbl.hi b {
+  font-weight: 700;
+}
 .tz-lbl.hi i {
-  opacity: 1;
+  font-size: 15px;
 }
-/* No cabía el nombre: queda la cifra, que es lo que el mapa mide. */
+/* No cabía el nombre (o no está entre los que más pesan): queda la cifra, que
+   es lo que el mapa mide. */
 .tz-lbl.compact b {
   display: none;
 }
-/* Ni la cifra cabe, o dirección ha pedido el mapa sin nombres. Va con
-   `!important` porque la regla base de `.tz-lbl` también lo lleva. */
+/* Ni la cifra cabe, el barrio no tiene actividad, o dirección ha pedido el
+   mapa sin nombres. Va con `!important` porque la regla base también lo lleva. */
 .tz-lbl.off {
   display: none !important;
 }
 
-/* Centro de la organización: cuadradito sólido + rótulo, sobre el anillo de
-   "15 min andando" que dibuja el propio mapa. */
-.tz-ctr {
+/* Centro de la organización: chincheta en tinta con punto hueso y el nombre en
+   una pastilla oscura. Se distingue de un rótulo de barrio a primera vista, que
+   es lo que el cuadradito de antes no conseguía. Lo usan los tres mapas. */
+.tz-pin {
   pointer-events: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
-.tz-ctr span.d {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  border-radius: 4px;
+.tz-pin-mark {
+  position: absolute;
+  left: 1px;
+  top: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
   background: #1d1d1c;
-  border: 2.5px solid #f4f0e8;
-  box-shadow: 0 3px 10px -2px rgba(29, 29, 28, 0.6);
+  border: 2px solid #ffffff;
+  box-shadow: -3px 4px 10px -3px rgba(29, 29, 28, 0.55);
+  display: grid;
+  place-items: center;
 }
-.tz-ctr span.t {
+.tz-pin-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-apta-gold);
+}
+.tz-pin-name {
+  position: absolute;
+  left: 30px;
+  top: 2px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+  background: #1d1d1c;
+  color: #f4f0e8;
   font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #1d1d1c;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
   white-space: nowrap;
-  text-shadow:
-    0 0 3px #f7f4ed,
-    0 0 6px #f7f4ed,
-    0 0 9px #f7f4ed;
+  box-shadow: 0 6px 16px -8px rgba(29, 29, 28, 0.6);
 }
 
 /* Barra de scroll del ranking flotante: sobre cristal, la del sistema canta. */
 .tz-scroll::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 .tz-scroll::-webkit-scrollbar-thumb {
   background: var(--color-brand-border);
   border-radius: 999px;
 }
+/* Fila de controles que se desplaza en horizontal en móvil sin barra visible. */
+.tz-scroll-x {
+  scrollbar-width: none;
+}
+.tz-scroll-x::-webkit-scrollbar {
+  display: none;
+}
 
-.tz-map-bubble {
-  display: grid;
-  place-items: center;
-  position: relative;
-  animation: tzMapBubbleIn 0.55s var(--ease-spring) both;
-  /* La caja mide siempre lo mismo (para que el radio pueda interpolar), así que
-     quien recibe el puntero es el círculo escalado, no la caja: si no, un
-     barrio pequeño tendría un área de clic de 64 px que pisaría a sus vecinos.
-     Con `--s: 0` el círculo no tiene área y el barrio deja de ser pulsable. */
-  pointer-events: none;
-}
-.tz-map-bubble-core {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  background: radial-gradient(circle at 34% 28%, rgba(91, 87, 72, 0.98), var(--color-tz-black) 72%);
-  border: 1.5px solid rgba(244, 240, 232, 0.9);
-  box-shadow: 0 4px 14px -4px rgba(29, 29, 28, 0.55);
-  opacity: var(--o, 0.88);
-  /* `--s` es el radio relativo de la métrica activa: al cambiarlo, el radio
-     interpola en vez de desmontarse y volver a entrar (plan §6.3). */
-  transform: scale(var(--s, 1));
-  pointer-events: auto;
-  cursor: pointer;
-  transition: transform 0.28s var(--ease-spring), box-shadow 0.28s var(--ease-out-soft),
-    opacity 0.28s var(--ease-out-soft);
-}
-.tz-map-bubble.top .tz-map-bubble-core {
-  background: radial-gradient(circle at 34% 28%, #e2c896, var(--color-apta-gold) 58%, #7a6231 150%);
-  border-color: rgba(255, 250, 240, 0.95);
-}
-.tz-map-bubble.top::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  border: 2px solid rgba(200, 171, 114, 0.55);
-  animation: tzMapPulseRing 2.6s ease-out infinite;
-  pointer-events: none;
-}
-.tz-map-bubble-hi .tz-map-bubble-core {
-  transform: scale(calc(var(--s, 1) * 1.22));
-  box-shadow: 0 9px 24px -5px rgba(29, 29, 28, 0.7);
-  border-color: var(--color-apta-gold);
-  border-width: 3px;
-}
-/* Con un barrio activo, el resto se apaga: el acento solo funciona si lo que
-   no es acento se aparta. */
-.tz-map-bubble-dim .tz-map-bubble-core {
-  opacity: 0.28;
-}
 .leaflet-tooltip.tz-map-tip {
   background: var(--color-tz-black);
   color: var(--color-tz-bone);
@@ -1003,6 +972,27 @@ main:has(> [data-full-bleed]) {
 }
 .leaflet-tooltip.tz-map-tip::before {
   display: none;
+}
+/* Globo del mapa de barrios: nombre y cifra de la métrica activa. Colores
+   literales: en oscuro `--color-tz-black` pasa a hueso y el globo se quedaría
+   claro sobre claro. */
+.leaflet-tooltip.tz-cell-tip {
+  background: #1d1d1c;
+  color: #f4f0e8;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 11px;
+  font-size: 12px;
+}
+.leaflet-tooltip.tz-cell-tip b {
+  font-weight: 600;
+}
+.leaflet-tooltip.tz-cell-tip span {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--color-apta-gold);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ===== Panel del entrenador (rediseño) ===== */

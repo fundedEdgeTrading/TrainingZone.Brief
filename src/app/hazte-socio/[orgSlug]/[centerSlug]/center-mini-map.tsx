@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { centerPinIcon } from "@/lib/map-pin";
 
 /**
  * Mapa mínimo de la ficha pública (E9-05): un punto, sin controles y sin
@@ -41,10 +42,9 @@ export function CenterMiniMap({ lat, lng, label }: { lat: number; lng: number; l
       maxZoom: 19,
     }).addTo(map);
 
-    L.marker([lat, lng], {
-      interactive: false,
-      icon: L.divIcon({ className: "tz-ctr", html: '<span class="d"></span>', iconSize: [16, 16], iconAnchor: [8, 8] }),
-    }).addTo(map);
+    // La misma chincheta que en el mapa de barrios y en el panel, sin nombre:
+    // aquí el nombre ya está en la página.
+    L.marker([lat, lng], { interactive: false, icon: centerPinIcon() }).addTo(map);
 
     // El contenedor puede montarse todavía sin medidas: sin esto el mapa se
     // dibuja contra un 0×0 y sale gris.

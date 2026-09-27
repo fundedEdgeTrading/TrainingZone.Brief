@@ -4,6 +4,8 @@ import {
   BARRIO_METRICS,
   CLASS_COUNT,
   DIVERGING_RAMP,
+  MAX_SEQUENTIAL_CLASSES,
+  NO_ACTIVITY_FILL,
   NO_DATA_FILL,
   SEQUENTIAL_RAMP,
   classIndex,
@@ -14,6 +16,7 @@ import {
   colorsByCode,
   formatMetricValue,
   groupBarriosByCity,
+  hasEmptyValues,
   hasMissingValues,
   legendSteps,
   metricAvailable,
@@ -65,7 +68,7 @@ const SKEWED = [0, 1, 2, 2, 3, 3, 4, 5, 6, 7, 8, 11, 13, 15, 18, 22, 27, 34, 120
 function spread(values: number[], kind: Parameters<typeof classify>[1]): number[] {
   const breaks = classify(values, kind);
   const counts = new Array(CLASS_COUNT).fill(0);
-  const fake = { kind, breaks, ramp: SEQUENTIAL_RAMP, inverted: false, min: 0, max: 0 } as const;
+  const fake = { kind, breaks, ramp: SEQUENTIAL_RAMP, inverted: false, emptyZero: false, min: 0, max: 0 } as const;
   for (const value of values) counts[classIndex(value, fake)]++;
   return counts;
 }
@@ -99,7 +102,7 @@ test("E11-02 · empates: dos barrios con el mismo valor caen en el mismo escaló
   // Aunque desequilibre el recuento. Lo contrario —partir un empate para cuadrar
   // el reparto— sería pintar de dos colores distintos el mismo número.
   const breaks = classify(SKEWED, "quantile");
-  const c = { kind: "quantile" as const, breaks, ramp: SEQUENTIAL_RAMP, inverted: false, min: 0, max: 120 };
+  const c = { kind: "quantile" as const, breaks, ramp: SEQUENTIAL_RAMP, inverted: false, emptyZero: false, min: 0, max: 120 };
   assert.equal(classIndex(2, c), classIndex(2, c));
   assert.equal(classIndex(3, c), classIndex(3, c));
 });
@@ -134,8 +137,22 @@ test("en Conversión la rampa se lee al revés: el terracota es el problema", ()
   assert.equal(c.inverted, true);
   // "¿Dónde convierto peor?": el terracota tiene que ser el 10 %, no el 67 %.
   assert.equal(colorForValueClassified(10, c), SEQUENTIAL_RAMP[6]);
-  assert.equal(colorForValueClassified(67, c), SEQUENTIAL_RAMP[0]);
-  assert.deepEqual(c.ramp, [...SEQUENTIAL_RAMP].reverse());
+  // El mejor barrio lleva el escalón más claro de los que se usan, que nunca es
+  // el hueso del escalón 0: se reserva para que "poco" no se confunda con "nada".
+  assert.equal(c.ramp[0], SEQUENTIAL_RAMP[6]);
+  assert.equal(colorForValueClassified(67, c), c.ramp[c.ramp.length - 1]);
+  assert.notEqual(colorForValueClassified(67, c), SEQUENTIAL_RAMP[0]);
+});
+
+test("en Conversión, un barrio sin demanda es «sin dato», no el peor de la ciudad", () => {
+  // 0 de 0 no es convertir mal: es no tener a quién convertir. Pintado como
+  // el peor, media ciudad salía en terracota con el periodo por defecto.
+  const vacio = barrio({ code: "50099", members: 0, leads: 0, total: 0, conv: 0 });
+  assert.equal(metricValue(vacio, "conv"), null);
+  const c = classifyMetric([...CITY, vacio], "conv");
+  assert.equal(colorForValueClassified(metricValue(vacio, "conv"), c), NO_DATA_FILL);
+  // Y no arrastra el mínimo de la escala.
+  assert.equal(c.min, 10);
 });
 
 test("una ciudad plana no divide por cero, se queda en un extremo", () => {
@@ -147,20 +164,79 @@ test("una ciudad plana no divide por cero, se queda en un extremo", () => {
 test("sin barrios no hay cortes, y nada revienta", () => {
   const c = classifyMetric([], "members");
   assert.deepEqual(c.breaks, []);
-  assert.equal(colorForValueClassified(0, c), SEQUENTIAL_RAMP[0]);
-  assert.equal(legendSteps(c).length, CLASS_COUNT);
+  // Sin nada que escalar, el cero es "sin actividad" y la leyenda no inventa
+  // una escala que no lleva ningún barrio.
+  assert.equal(colorForValueClassified(0, c), NO_ACTIVITY_FILL);
+  assert.deepEqual(legendSteps(c), []);
 });
 
-test("la leyenda tiene siete escalones con su tramo, no dos extremos", () => {
+test("la leyenda tiene un escalón por tramo con su corte, no dos extremos", () => {
   const c = classifyMetric(CITY, "members");
   const steps = legendSteps(c);
-  assert.equal(steps.length, CLASS_COUNT);
+  // Tres barrios con tres valores distintos: tres escalones, ni uno repetido.
+  assert.equal(steps.length, 3);
   // El último no tiene cota superior: es "de aquí para arriba".
   assert.equal(steps[steps.length - 1].to, null);
   // Y los cortes van en orden ascendente, que es lo que hace legible la escala.
   for (let i = 1; i < steps.length; i++) {
     assert.ok(steps[i].from >= steps[i - 1].from, "los cortes de la leyenda no están ordenados");
   }
+});
+
+test("el cero de una métrica de recuento no es el escalón más intenso", () => {
+  // El fallo que se veía en el periodo por defecto: con casi todos los barrios
+  // a cero, los cuantiles salían todos a 0, `0 >= 0` superaba cada corte y el
+  // cero caía en el ÚLTIMO escalón. La ciudad entera en terracota, con una
+  // leyenda de «0 0 0 0 0 0 0».
+  const mes = [
+    ...Array.from({ length: 17 }, (_, i) => barrio({ code: `z${i}` })),
+    barrio({ code: "a", members: 1 }),
+    barrio({ code: "b", members: 2 }),
+  ];
+  const c = classifyMetric(mes, "members");
+  assert.equal(colorForValueClassified(0, c), NO_ACTIVITY_FILL);
+  assert.notEqual(colorForValueClassified(1, c), colorForValueClassified(2, c));
+  assert.equal(colorForValueClassified(2, c), SEQUENTIAL_RAMP[6]);
+  assert.equal(hasEmptyValues(mes, "members"), true);
+  // Y el relleno de "sin actividad" no se confunde con ningún escalón ni con
+  // el gris de "sin dato".
+  assert.ok(!SEQUENTIAL_RAMP.includes(NO_ACTIVITY_FILL));
+  assert.ok(!DIVERGING_RAMP.includes(NO_ACTIVITY_FILL));
+  assert.notEqual(NO_ACTIVITY_FILL, NO_DATA_FILL);
+});
+
+test("la leyenda no repite cortes: como mucho cinco escalones, y ninguno vacío", () => {
+  // Con la distribución sesgada del informe: cinco escalones, todos con barrio.
+  const points = SKEWED.map((members, i) => barrio({ code: `s${i}`, members }));
+  const c = classifyMetric(points, "members");
+  const steps = legendSteps(c);
+  assert.equal(steps.length, MAX_SEQUENTIAL_CLASSES);
+  const froms = steps.map((s) => s.from);
+  assert.equal(new Set(froms).size, froms.length, `cortes repetidos: ${froms.join(" ")}`);
+  const used = new Set(points.filter((p) => p.members > 0).map((p) => colorForValueClassified(p.members, c)));
+  assert.equal(used.size, steps.length, "hay un escalón en la leyenda que no lleva ningún barrio");
+  // El valor más bajo cae en el primer escalón, no se lo salta.
+  assert.equal(colorForValueClassified(1, c), c.ramp[0]);
+});
+
+test("con pocos valores distintos, un escalón por valor: el 1 y el 2 no comparten color", () => {
+  // El caso del periodo «Año» en la demo: barrios con 0, 1 y 2 clientes. Por
+  // cuantiles la mediana caía sobre el mínimo y 1 y 2 salían del mismo tono.
+  const ano = [
+    ...Array.from({ length: 8 }, (_, i) => barrio({ code: `z${i}` })),
+    ...Array.from({ length: 6 }, (_, i) => barrio({ code: `u${i}`, members: 1 })),
+    ...Array.from({ length: 3 }, (_, i) => barrio({ code: `d${i}`, members: 2 })),
+  ];
+  const c = classifyMetric(ano, "members");
+  assert.notEqual(colorForValueClassified(1, c), colorForValueClassified(2, c));
+  assert.deepEqual(
+    legendSteps(c).map((s) => s.from),
+    [1, 2]
+  );
+});
+
+test("Tendencia conserva sus siete escalones y su cero en el centro", () => {
+  assert.equal(classifyMetric(CITY, "trend").ramp.length, CLASS_COUNT);
 });
 
 test("colorsByCode: el color de la celda y el del testigo de su fila salen del mismo sitio", () => {

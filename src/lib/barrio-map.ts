@@ -130,7 +130,11 @@ export const RAMP_FALLBACK_INK = "var(--color-brand-text)";
  * blanco, así que ahí se cae a la tinta de marca.
  */
 export function readableMetricInk(color: string): string {
-  return color === SEQUENTIAL_RAMP[0] || color === DIVERGING_RAMP[3] ? RAMP_FALLBACK_INK : color;
+  // Los dos rellenos de estado no son un escalón: la cifra va en tinta de marca.
+  if (color === NO_ACTIVITY_FILL || color === NO_DATA_FILL) return RAMP_FALLBACK_INK;
+  // Cualquier escalón que no llegue a 3:1 sobre la tarjeta blanca tampoco sirve
+  // para teñir una cifra grande: se leería como un hueco.
+  return contrastRatio(color, "#ffffff") < 3 ? RAMP_FALLBACK_INK : color;
 }
 
 // --- Contraste (E11-06) ------------------------------------------------------
@@ -192,6 +196,17 @@ export function haloForInk(ink: string): string {
 export const CLASS_COUNT = 7;
 
 /**
+ * Tope de escalones de una métrica secuencial en el MAPA (la rampa sigue
+ * teniendo siete colores; de ellos se eligen, como mucho, cinco).
+ *
+ * Con 19 barrios y siete escalones, dos barrios por color: el ojo no distingue
+ * siete tonos de ladrillo sobre un plano y la leyenda acababa repitiendo cifras
+ * («0 0 0 0 1 1 2»). Cinco es lo que se lee de un vistazo; menos si la ciudad
+ * tiene menos valores distintos que eso.
+ */
+export const MAX_SEQUENTIAL_CLASSES = 5;
+
+/**
  * Cómo se reparten los valores entre los siete escalones.
  *
  *  · `quantile` — mismo NÚMERO de barrios por escalón. Es lo que hace falta en
@@ -211,6 +226,13 @@ export type BarrioClassification = {
   ramp: string[];
   /** En Conversión el terracota es el problema, no el récord. */
   inverted: boolean;
+  /**
+   * `true` si en esta métrica el cero significa "aquí no pasa nada" (clientes,
+   * leads, bajas). Esos barrios no entran en la escala: se pintan con
+   * `NO_ACTIVITY_FILL`, casi transparente, y la escala reparte solo a los que
+   * tienen algo que contar.
+   */
+  emptyZero: boolean;
   min: number;
   max: number;
 };
@@ -245,6 +267,26 @@ export function classificationKind(metric: BarrioMetric): ClassificationKind {
 export const NO_DATA_FILL = "#cfcabd";
 
 /**
+ * Relleno de un barrio SIN ACTIVIDAD en una métrica de recuento: cero clientes,
+ * cero leads, cero bajas.
+ *
+ * Antes el cero entraba en la escala, y con el periodo por defecto (Mes) casi
+ * toda la ciudad vale cero: los cortes por cuantiles salían todos a 0, y como
+ * `0 >= 0` supera cada corte, el cero caía en el ÚLTIMO escalón. La ciudad
+ * entera se pintaba del terracota más intenso — "aquí están todos tus
+ * clientes" justo donde no hay ninguno.
+ *
+ * Fuera de las dos rampas y distinto del gris de "sin dato": el cero es un
+ * dato (no hay nada), el gris es la ausencia de uno (no lo sé). En el mapa se
+ * pinta casi transparente, así que un barrio vacío se ve como ciudad y no
+ * como color.
+ */
+export const NO_ACTIVITY_FILL = "#fbfaf7";
+
+/** Métricas de recuento: en ellas el cero es "sin actividad", no un escalón. */
+const EMPTY_ZERO_METRICS: ReadonlySet<BarrioMetric> = new Set(["members", "leads", "churn"]);
+
+/**
  * Valor de la métrica, o `null` si no se puede calcular (E11-03).
  *
  * `dist` y `opp` dependen de que la organización tenga algún centro SITUADO
@@ -261,6 +303,10 @@ export function metricValue(point: BarrioStat, metric: BarrioMetric): number | n
   // E11-09 · `undefined` no es cero: mientras la agregación no cuente bajas, la
   // métrica se lee como "sin dato" por el mismo camino que E11-03.
   if (metric === "churn") return point.churn ?? null;
+  // Conversión de un barrio sin demanda (ni clientes ni leads) es 0 de 0: no es
+  // "convierto fatal", es que no hay nada que convertir. Pintarlo como el peor
+  // barrio de la ciudad era la mitad del mapa en terracota.
+  if (metric === "conv" && point.total === 0) return null;
   return point[metric];
 }
 
@@ -269,6 +315,11 @@ export function metricAvailable(points: BarrioStat[], metric: BarrioMetric): boo
   if (metric === "churn") return points.some((p) => p.churn !== undefined);
   if (metric !== "dist" && metric !== "opp") return true;
   return points.some((p) => p.nearestCenter !== null);
+}
+
+/** `true` si algún barrio no tiene actividad: la leyenda explica su relleno casi transparente. */
+export function hasEmptyValues(points: BarrioStat[], metric: BarrioMetric): boolean {
+  return EMPTY_ZERO_METRICS.has(metric) && points.some((p) => metricValue(p, metric) === 0);
 }
 
 /** `true` si algún barrio se queda sin dato: entonces la leyenda necesita su entrada de gris. */
@@ -318,26 +369,102 @@ function equalBreaks(min: number, max: number, classes: number): number[] {
 /** La clasificación completa de una métrica sobre la ciudad activa. */
 export function classifyMetric(points: BarrioStat[], metric: BarrioMetric): BarrioClassification {
   const kind = classificationKind(metric);
+  const emptyZero = EMPTY_ZERO_METRICS.has(metric);
   // Los barrios sin dato no entran en el reparto: si contaran, un montón de
-  // ceros inventados desplazaría todos los cortes hacia abajo.
+  // ceros inventados desplazaría todos los cortes hacia abajo. Y en las
+  // métricas de recuento tampoco los ceros: son "sin actividad" y tienen su
+  // propio relleno.
   const values = points
     .map((p) => metricValue(p, metric))
-    .filter((v): v is number => v !== null && Number.isFinite(v));
+    .filter((v): v is number => v !== null && Number.isFinite(v))
+    .filter((v) => !(emptyZero && v === 0));
   const inverted = metric === "conv";
-  const base = kind === "diverging" ? DIVERGING_RAMP : SEQUENTIAL_RAMP;
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
 
+  if (kind === "diverging") {
+    return {
+      kind,
+      breaks: classify(values, kind),
+      ramp: inverted ? [...DIVERGING_RAMP].reverse() : DIVERGING_RAMP,
+      inverted,
+      emptyZero,
+      min,
+      max,
+    };
+  }
+
+  const breaks = sequentialBreaks(values, kind);
+  const ramp = pickSequentialRamp(breaks.length + 1);
+  return { kind, breaks, ramp: inverted ? [...ramp].reverse() : ramp, inverted, emptyZero, min, max };
+}
+
+/**
+ * Clasificación de un recuento suelto (clientes + leads, por ejemplo) con las
+ * mismas reglas que las métricas de recuento del mapa de barrios: el cero es
+ * "sin actividad" y queda fuera de la escala, y como mucho cinco escalones sin
+ * repetidos. La usa la tarjeta del panel, cuya métrica "Todos" no es ninguna
+ * de las de `BARRIO_METRICS`.
+ */
+export function classifyCounts(values: number[]): BarrioClassification {
+  const positive = values.filter((v) => Number.isFinite(v) && v > 0);
+  const breaks = sequentialBreaks(positive, "quantile");
   return {
-    kind,
-    breaks: classify(values, kind),
-    ramp: inverted ? [...base].reverse() : base,
-    inverted,
-    min: values.length ? Math.min(...values) : 0,
-    max: values.length ? Math.max(...values) : 0,
+    kind: "quantile",
+    breaks,
+    ramp: pickSequentialRamp(breaks.length + 1),
+    inverted: false,
+    emptyZero: true,
+    min: positive.length ? Math.min(...positive) : 0,
+    max: positive.length ? Math.max(...positive) : 0,
   };
 }
 
 /**
- * A qué escalón (0-6) cae un valor. El escalón se cuenta SIEMPRE de menor a
+ * Cortes de una métrica secuencial, sin escalones repetidos ni vacíos.
+ *
+ * Tantos escalones como valores distintos haya, hasta `MAX_SEQUENTIAL_CLASSES`.
+ * Por encima, cuantiles o intervalo igual según la métrica. Un corte igual al
+ * mínimo se descarta: con él, el valor más bajo de la ciudad
+ * se saltaba el primer escalón (`min >= corte`) y el primer color no lo llevaba
+ * nadie.
+ */
+function sequentialBreaks(values: number[], kind: ClassificationKind): number[] {
+  const distinct = [...new Set(values)].sort((a, b) => a - b);
+  if (distinct.length < 2) return [];
+  // Pocos valores distintos (lo normal en un periodo corto: 0, 1, 2 clientes):
+  // un escalón por valor. Repartir por cuantiles aquí fundía el 1 y el 2 en el
+  // mismo color, porque la mediana caía sobre el mínimo.
+  if (distinct.length <= MAX_SEQUENTIAL_CLASSES) return distinct.slice(1);
+  const min = distinct[0];
+  const raw = classify(values, kind, MAX_SEQUENTIAL_CLASSES);
+  return [...new Set(raw)].filter((b) => b > min).sort((a, b) => a - b);
+}
+
+/**
+ * Los colores de `n` escalones, elegidos de la rampa de siete.
+ *
+ * Se salta el hueso del escalón 0: con los ceros fuera de la escala, el
+ * primer escalón es "poco", no "nada", y tiene que verse como color sobre el
+ * callejero. Con pocos escalones se empieza aún más arriba, para que el más
+ * bajo no se confunda con el casi transparente de "sin actividad". Con uno
+ * solo (ciudad plana) se usa el extremo intenso.
+ */
+const RAMP_PICKS: Record<number, number[]> = {
+  1: [6],
+  2: [3, 6],
+  3: [2, 4, 6],
+  4: [2, 3, 5, 6],
+  5: [1, 2, 4, 5, 6],
+};
+
+function pickSequentialRamp(n: number): string[] {
+  const picks = RAMP_PICKS[Math.max(1, Math.min(MAX_SEQUENTIAL_CLASSES, n))];
+  return picks.map((i) => SEQUENTIAL_RAMP[i]);
+}
+
+/**
+ * A qué escalón cae un valor (0 … número de escalones − 1). El escalón se cuenta SIEMPRE de menor a
  * mayor; la inversión de Conversión vive en el orden de la rampa, no aquí, para
  * que la leyenda y el mapa no puedan discrepar.
  */
@@ -351,6 +478,7 @@ export function classIndex(value: number, classification: BarrioClassification):
 
 export function colorForValueClassified(value: number | null, classification: BarrioClassification): string {
   if (value === null) return NO_DATA_FILL;
+  if (classification.emptyZero && value === 0) return NO_ACTIVITY_FILL;
   return classification.ramp[classIndex(value, classification)];
 }
 
@@ -373,6 +501,10 @@ export type LegendStep = {
  */
 export function legendSteps(classification: BarrioClassification): LegendStep[] {
   const { breaks, ramp, min, max } = classification;
+  // Sin un solo valor que escalar (toda la ciudad sin actividad) no hay escala
+  // que enseñar: la leyenda lo dice con palabras en vez de pintar colores que
+  // no lleva ningún barrio.
+  if (classification.min === 0 && classification.max === 0 && classification.emptyZero) return [];
   if (breaks.length === 0) return ramp.map((color) => ({ color, from: min, to: max }));
 
   const lower = [classification.kind === "diverging" ? -Math.max(...breaks.map(Math.abs), 0) : min, ...breaks];

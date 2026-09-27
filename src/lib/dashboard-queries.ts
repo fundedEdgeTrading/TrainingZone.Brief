@@ -911,12 +911,16 @@ const OPPORTUNITY_MIN_LEADS = 5;
  * chip nuevo de la cabecera: demanda que existe y todavía no se ha convertido.
  */
 export async function getPostalPanelData(orgId: string, opts: DashboardOpts = {}) {
-  const points = await getPostalCodeStats(orgId, opts);
+  // Una sola agregación: la tarjeta pinta ahora una coropleta por ciudad, y
+  // para eso necesita TODOS los CP de la ciudad (los que están a cero son la
+  // forma de la ciudad) y los centros situados, no solo los barrios con datos.
+  const { points: areas, centers } = await getPostalCodeMapData(orgId, opts);
+  const points = areas.filter((p) => p.total > 0 || (p.churn ?? 0) > 0).sort((a, b) => b.total - a.total);
   const opportunity =
     [...points]
       .filter((p) => p.leads >= OPPORTUNITY_MIN_LEADS)
       .sort((a, b) => b.leads / (b.members + 1) - a.leads / (a.members + 1))[0] ?? null;
-  return { points, opportunity };
+  return { points, opportunity, areas, centers };
 }
 
 // ---------- BI-2: distribución por sexo (RB-BI-005) ----------
