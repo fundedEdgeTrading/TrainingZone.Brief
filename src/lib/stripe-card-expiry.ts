@@ -4,8 +4,8 @@ import { sendMail } from "@/lib/mailer";
 import { renderCardExpiringEmail } from "@/lib/emails/templates";
 import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-verification";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-import { absoluteUrl } from "@/lib/site";
 import type { ReconcileResult } from "@/lib/member-billing";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * HU-ST-22 · Tarjetas por caducar. **PISTA P1.**
@@ -234,7 +234,7 @@ async function sendExpiryNoticeOnce(
 
   const org = await prisma.organization.findUnique({
     where: { id: orgId },
-    select: { name: true, logoUrl: true },
+    select: { name: true, logoUrl: true, logoDarkUrl: true },
   });
 
   // Se sella ANTES de enviar: si el correo falla, el socio se queda sin aviso de
@@ -260,7 +260,7 @@ async function sendExpiryNoticeOnce(
     html: renderCardExpiringEmail({
       memberFirstName: member.firstName,
       brandName,
-      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      brandLogoUrl: emailBrandLogo(org),
       cardLabel: cardLabel(facts),
       expiryLabel: expiryLabel(facts.expMonth, facts.expYear) ?? "el mes que viene",
       // El enlace aterriza en la pantalla de recuperación (HU-ST-19), que es la

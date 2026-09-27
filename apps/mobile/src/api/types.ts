@@ -164,7 +164,8 @@ export type LoginResponse = { accessToken: string; refreshToken: string; user: M
  * Organización entre las que elegir cuando una misma identidad tiene varias
  * membresías (`POST /auth/login` responde 409 con esta lista, RB-ID-002).
  */
-export type LoginOrganization = { id: string; name: string; logoUrl: string | null };
+/** `logoDarkUrl`: versión para fondos oscuros. Sin ella, el logo va sobre una pastilla clara. */
+export type LoginOrganization = { id: string; name: string; logoUrl: string | null; logoDarkUrl?: string | null };
 export type RefreshResponse = { accessToken: string; refreshToken: string };
 
 // ---------- Mi evolución (socio) ----------
@@ -432,7 +433,7 @@ export type SaveAnnouncementInput = {
 };
 
 export type OrganizationResponse = {
-  organization: { id: string; name: string; logoUrl: string | null } | null;
+  organization: { id: string; name: string; logoUrl: string | null; logoDarkUrl?: string | null } | null;
   centers: { id: string; name: string; timezone: string; membersCount: number; staffCount: number }[];
   staff: { id: string; name: string; email: string; role: Role; roleLabel: string; centerNames: string[]; invitationPending: boolean }[];
 };

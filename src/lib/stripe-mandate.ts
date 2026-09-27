@@ -4,11 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
 import { stripeReadClient } from "@/lib/billing-shared";
 import { renderSepaMandateConfirmationEmail } from "@/lib/emails/templates";
-import { absoluteUrl, publicOrigin } from "@/lib/site";
+import { publicOrigin } from "@/lib/site";
 import { openDelinquency } from "@/lib/stripe-dunning";
 // Solo el TIPO: un import de valor desde `member-billing` cerraría un ciclo con
 // el que ya tiene este módulo por el otro lado.
 import type { ReconcileResult } from "@/lib/member-billing";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * HU-ST-12 · SEPA Direct Debit con mandato. **PISTA P1.**
@@ -338,7 +339,7 @@ async function sendMandateConfirmationOnce(
   if (already) return;
 
   const [org, member] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     prisma.member.findFirst({
       where: { id: memberId, orgId },
       select: {
@@ -373,7 +374,7 @@ async function sendMandateConfirmationOnce(
     html: renderSepaMandateConfirmationEmail({
       memberFirstName: member.firstName,
       brandName,
-      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      brandLogoUrl: emailBrandLogo(org),
       mandateReference: reference,
       ibanLast4,
       portalUrl: `${publicOrigin()}/portal/membresia`,

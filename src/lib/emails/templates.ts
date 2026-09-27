@@ -19,6 +19,7 @@
 
 const INK = "#1D1D1C"; // Negro corporativo
 import { absoluteUrl } from "@/lib/site";
+import { emailLogoCellHtml, type LogoInput } from "./logo-cell";
 
 const PAPER = "#F4F0E8"; // Hueso
 const SAND = "#E7DFD2"; // Arena (color de firma)
@@ -53,7 +54,7 @@ function row(r: EmailRow, first: boolean) {
 }
 
 function shell(opts: {
-  logoUrl: string;
+  logo: LogoInput;
   logoAlt: string;
   /** Etiqueta a la derecha del logo en la cabecera negra: SOCIOS, AGENDA, CUOTA… */
   section: string;
@@ -110,7 +111,7 @@ ${opts.rows.map((r, i) => row(r, i === 0)).join("\n")}
 <tr><td class="tzhead" style="background:${INK};padding:26px 40px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
 <tr>
-<td align="left" style="width:60%;"><img src="${opts.logoUrl}" alt="${esc(opts.logoAlt)}" width="155" height="26" style="height:26px;width:155px;display:block;border:0;"></td>
+<td align="left" style="width:60%;">${emailLogoCellHtml(opts.logo, opts.logoAlt)}</td>
 <td align="right" style="width:40%;font-family:${FONT};font-size:10px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:${MUTED};">${esc(opts.section)}</td>
 </tr>
 </table>
@@ -210,7 +211,7 @@ const DEFAULT_ADDRESS = process.env.EMAIL_POSTAL_ADDRESS || "Av. de Cataluña 42
 export function renderMemberWelcomeEmail(opts: {
   memberFirstName: string;
   orgName: string;
-  orgLogoUrl: string;
+  orgLogoUrl: LogoInput;
   centerName: string;
   onboardingUrl: string;
   /** Token de `generateEmailPreferencesToken(member.id)` para el pie. */
@@ -219,7 +220,7 @@ export function renderMemberWelcomeEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.orgLogoUrl,
+    logo: opts.orgLogoUrl,
     logoAlt: opts.orgName,
     section: "Socios",
     preheader: "Crea tu contraseña y entra a tu portal: reserva clases, sigue tu progreso y tus fotos de evolución.",
@@ -251,14 +252,14 @@ export function renderMemberWelcomeEmail(opts: {
 export function renderVerifyEmail(opts: {
   directorFirstName: string;
   orgName: string;
-  orgLogoUrl: string;
+  orgLogoUrl: LogoInput;
   verifyUrl: string;
   directorEmail?: string;
   centerNames?: string[];
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.orgLogoUrl,
+    logo: opts.orgLogoUrl,
     logoAlt: opts.orgName,
     section: "Dirección",
     preheader: "Confirma tu email de dirección para no perder ningún aviso de facturación ni de acceso.",
@@ -290,14 +291,14 @@ export function renderVerifyEmail(opts: {
 export function renderStaffInviteEmail(opts: {
   staffFirstName: string;
   orgName: string;
-  orgLogoUrl: string;
+  orgLogoUrl: LogoInput;
   roleLabel: string;
   onboardingUrl: string;
   centerName?: string;
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.orgLogoUrl,
+    logo: opts.orgLogoUrl,
     logoAlt: opts.orgName,
     section: "Equipo",
     preheader: `Crea tu contraseña para entrar a la plataforma de gestión de ${esc(opts.orgName)}.`,
@@ -329,14 +330,14 @@ export function renderStaffInviteEmail(opts: {
 export function renderPasswordResetEmail(opts: {
   recipientFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   resetUrl: string;
   accountEmail?: string;
   requestedAtLabel?: string;
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Seguridad",
     preheader: "Elige una contraseña nueva. El enlace caduca en una hora y solo sirve para eso.",
@@ -368,7 +369,7 @@ export function renderPasswordResetEmail(opts: {
 export function renderMemberBillingLinkEmail(opts: {
   recipientFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   portalRequestUrl: string;
   planName?: string;
   amountLabel?: string;
@@ -377,7 +378,7 @@ export function renderMemberBillingLinkEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Cuota",
     preheader: "Cambia tu método de pago, descarga facturas o cancela tu cuota sin necesidad de contraseña.",
@@ -409,7 +410,7 @@ export function renderMemberBillingLinkEmail(opts: {
 export function renderSessionVacancyEmail(opts: {
   recipientFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   sessionName: string;
   dateLabel: string;
   startTime: string;
@@ -423,7 +424,7 @@ export function renderSessionVacancyEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Agenda",
     preheader: `Hay un hueco en ${esc(opts.sessionName)}, ${esc(opts.dateLabel)} a las ${esc(opts.startTime)}. Se cubre por orden de llegada.`,
@@ -462,7 +463,7 @@ export function renderSessionVacancyEmail(opts: {
 export function renderBirthdayEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   portalUrl: string;
   memberSinceLabel?: string;
   sessionCount?: number;
@@ -471,7 +472,7 @@ export function renderBirthdayEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Hoy",
     preheader: "Gracias por estar con nosotros. Esperamos felicitarte muchos más.",
@@ -511,7 +512,7 @@ export function renderBirthdayEmail(opts: {
 export function renderPaymentFailedEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   amountLabel: string;
   portalUrl: string;
   prefsToken?: string;
@@ -519,7 +520,7 @@ export function renderPaymentFailedEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Cuota",
     preheader: "Casi siempre es una tarjeta caducada. Se arregla en un minuto desde el botón del email.",
@@ -560,7 +561,7 @@ export function renderPaymentFailedEmail(opts: {
 export function renderSepaPrenotificationEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   amountLabel: string;
   chargeDateLabel: string;
   /** Solo en adeudo domiciliado: la referencia (UMR) del mandato. */
@@ -586,7 +587,7 @@ export function renderSepaPrenotificationEmail(opts: {
       ? "la cuenta que nos domiciliaste"
       : "tu método de pago";
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Cuota",
     preheader: `Cargo de ${opts.amountLabel} el ${opts.chargeDateLabel}. Sin sorpresas en el extracto.`,
@@ -638,7 +639,7 @@ export function renderSepaPrenotificationEmail(opts: {
 export function renderSepaMandateConfirmationEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   mandateReference: string;
   ibanLast4: string;
   portalUrl: string;
@@ -646,7 +647,7 @@ export function renderSepaMandateConfirmationEmail(opts: {
 }) {
   const ibanLabel = opts.ibanLast4 ? `···· ${esc(opts.ibanLast4)}` : "La cuenta que nos indicaste";
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Cuota",
     preheader: "Guarda esta referencia: es la de tu domiciliación.",
@@ -683,7 +684,7 @@ export function renderSepaMandateConfirmationEmail(opts: {
 export function renderCardExpiringEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   /** "VISA ···· 4242". Nunca el número completo: Apta no lo tiene. */
   cardLabel: string;
   /** "10/2026". */
@@ -693,7 +694,7 @@ export function renderCardExpiringEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Cuota",
     preheader: "Cámbiala en un minuto y tu cuota se sigue cobrando sin sobresaltos.",
@@ -727,7 +728,7 @@ export function renderOwnerActivationEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.aptaLogoUrl,
+    logo: opts.aptaLogoUrl,
     logoAlt: "Training Zone",
     section: "Plataforma",
     preheader: "Elige tu contraseña y te llevamos directo a la puesta en marcha de tu plataforma.",
@@ -755,7 +756,7 @@ export function renderOwnerActivationEmail(opts: {
 export function renderAssessmentDueEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   assessmentLabel: string;
   isInitial: boolean;
   assessmentUrl: string;
@@ -764,7 +765,7 @@ export function renderAssessmentDueEmail(opts: {
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Salud",
     preheader: opts.isInitial
@@ -814,7 +815,7 @@ export function renderAssessmentDueEmail(opts: {
 export function renderSessionReminderEmail(opts: {
   memberFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   variant: "24H" | "2H";
   sessionName: string;
   dateLabel: string;
@@ -838,7 +839,7 @@ export function renderSessionReminderEmail(opts: {
     ? `Ya estás dentro de las ${opts.cancelWindowHours}h previas a la clase: si cancelas ahora, la sesión se da por empleada y no se devuelve a tu bono.`
     : `Puedes cancelar sin penalización hasta ${opts.cancelWindowHours}h antes de la clase. Pasado ese plazo, la sesión se da por empleada y no se devuelve a tu bono.`;
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Agenda",
     preheader: is24h
@@ -876,14 +877,14 @@ export function renderSessionReminderEmail(opts: {
 export function renderEmailPreferencesLinkEmail(opts: {
   recipientFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   preferencesUrl: string;
   centerName?: string;
   postalAddress?: string;
   prefsToken?: string;
 }) {
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Correo",
     preheader: "Elige qué correos quieres recibir, o déjalos todos: se aplica al momento.",
@@ -918,13 +919,13 @@ export function renderNewChatMessageEmail(opts: {
   recipientFirstName: string;
   memberName: string;
   orgName: string;
-  orgLogoUrl: string;
+  orgLogoUrl: LogoInput;
   messagePreview: string;
   chatUrl: string;
   postalAddress?: string;
 }) {
   return shell({
-    logoUrl: opts.orgLogoUrl,
+    logo: opts.orgLogoUrl,
     logoAlt: opts.orgName,
     section: "Chat",
     preheader: `${opts.memberName} ha escrito en el chat del portal.`,
@@ -962,7 +963,7 @@ export function renderNewChatMessageEmail(opts: {
 export function renderAccountDeletionAckEmail(opts: {
   recipientFirstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   /** Fecha límite del art. 12.3, ya formateada por el call site. */
   dueDateLabel: string;
   statusUrl: string;
@@ -973,7 +974,7 @@ export function renderAccountDeletionAckEmail(opts: {
 }) {
   const resolved = opts.resolution;
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Tus datos",
     preheader: resolved
@@ -1031,7 +1032,7 @@ export function renderAccountDeletionAckEmail(opts: {
 export function renderMemberFormInviteEmail(opts: {
   firstName: string;
   brandName: string;
-  brandLogoUrl: string;
+  brandLogoUrl: LogoInput;
   /** Nombre del hito tal y como lo llama el centro: «Valoración inicial», «Revisión · 6 meses»… */
   formLabel: string;
   formUrl: string;
@@ -1041,7 +1042,7 @@ export function renderMemberFormInviteEmail(opts: {
 }) {
   const expiresLabel = opts.expiresAt.toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" });
   return shell({
-    logoUrl: opts.brandLogoUrl,
+    logo: opts.brandLogoUrl,
     logoAlt: opts.brandName,
     section: "Socios",
     preheader: "Cinco minutos desde el móvil y llegas con tu entrenamiento ya preparado.",

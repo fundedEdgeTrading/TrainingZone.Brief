@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ROLE_LABEL } from "@/lib/rbac";
 import OnboardingForm from "./onboarding-form";
 import { tokenPageMetadata } from "@/lib/seo";
+import { DEFAULT_BRAND_LOGO, resolveBrandLogo } from "@/lib/brand-logo";
 
 // Sin generateStaticParams, Next.js podría cachear indefinidamente la
 // primera respuesta que reciba cada token (p. ej. si un escáner de
@@ -44,7 +45,7 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
   const invitation = await prisma.invitation.findUnique({
     where: { token },
     include: {
-      organization: { select: { name: true, logoUrl: true } },
+      organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
       member: { select: { firstName: true, lastName: true, email: true, primaryCenter: { select: { name: true } } } },
       user: { select: { name: true, email: true, role: true, identity: { select: { passwordSetAt: true } } } },
     },
@@ -55,7 +56,9 @@ export default async function OnboardingPage({ params }: { params: Promise<{ tok
   if (invitation.expiresAt < new Date()) return <InvalidLinkScreen message="Este enlace ha caducado (los enlaces de invitación duran 7 días). Pide que te reenvíen la invitación." />;
 
   const orgName = invitation.organization.name;
-  const orgLogoUrl = invitation.organization.logoUrl || "/brand/tz-logo-white.png";
+  // Pantalla pública: siempre en claro. El por defecto era la versión BLANCA,
+  // invisible sobre este fondo.
+  const orgLogoUrl = resolveBrandLogo(invitation.organization)?.light ?? DEFAULT_BRAND_LOGO.light;
 
   if (invitation.type === "MEMBER" && invitation.member) {
     // RB-ID-003 (QA-ALTA-09): si ese email ya tiene contraseña en Apta, no se

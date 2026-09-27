@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
   ]);
 
   return apiOk({
-    organization: organization ? { id: organization.id, name: organization.name, logoUrl: organization.logoUrl } : null,
+    organization: organization
+      ? { id: organization.id, name: organization.name, logoUrl: organization.logoUrl, logoDarkUrl: organization.logoDarkUrl }
+      : null,
     centers: centers.map((c) => ({
       id: c.id,
       name: c.name,

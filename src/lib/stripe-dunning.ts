@@ -5,7 +5,6 @@ import { createNotificationOnce } from "@/lib/notifications";
 import { renderPaymentFailedEmail } from "@/lib/emails/templates";
 import { generateMemberDunningToken, memberBillingUrlFor } from "@/lib/email-verification";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
-import { absoluteUrl } from "@/lib/site";
 // D-S5: los días de gracia son de la ORGANIZACIÓN y se leen del servidor. Ni el
 // número ni el cálculo se escriben en ningún otro sitio.
 import { graceDeadline, graceWindowFor, isWithinGraceWindow } from "@/lib/billing-shared";
@@ -18,6 +17,7 @@ import { invoicePayKey } from "@/lib/stripe-idempotency";
 // y no este fichero: un update suelto aquí sería un socio sin motivo de baja, y
 // se saltaría además el enganche de R1 y el disparador de E2.
 import { cancelMember, clearDelinquency as clearMemberDelinquency, markDelinquent } from "@/lib/member-lifecycle";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * HU-ST-18 · Motor de morosidad. **PISTA P1.**
@@ -84,7 +84,7 @@ export async function sendDunningNoticeOnce(
   if (already) return;
 
   const [org, member] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     prisma.member.findUnique({
       where: { id: memberId },
       select: {
@@ -130,7 +130,7 @@ export async function sendDunningNoticeOnce(
     html: renderPaymentFailedEmail({
       memberFirstName: member.firstName,
       brandName,
-      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      brandLogoUrl: emailBrandLogo(org),
       amountLabel: new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(amountCents / 100),
       portalUrl: memberBillingUrlFor(generateMemberDunningToken(memberId)),
       planName: member.subscriptions[0]?.plan.name,

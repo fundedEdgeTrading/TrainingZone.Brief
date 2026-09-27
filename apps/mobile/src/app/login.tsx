@@ -153,8 +153,15 @@ export default function LoginScreen() {
                     onPress={() => handleSubmit(org.id)}
                     style={[styles.orgRow, { opacity: loading ? 0.5 : 1 }]}
                   >
-                    {org.logoUrl ? (
-                      <Image source={imageSource(org.logoUrl)} style={styles.orgLogo} resizeMode="contain" />
+                    {/* El login es oscuro siempre: la versión para fondos oscuros si
+                        el gimnasio la subió; si no, su logo sobre una pastilla
+                        clara, igual que en la web (src/lib/brand-logo.ts). */}
+                    {org.logoDarkUrl ? (
+                      <Image source={imageSource(org.logoDarkUrl)} style={styles.orgLogo} resizeMode="contain" />
+                    ) : org.logoUrl ? (
+                      <View style={styles.orgLogoPlate}>
+                        <Image source={imageSource(org.logoUrl)} style={styles.orgLogoOnPlate} resizeMode="contain" />
+                      </View>
                     ) : null}
                     <Text style={[typo.rowTitle, { color: BONE, flex: 1 }]} numberOfLines={1}>
                       {org.name}
@@ -262,6 +269,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   orgLogo: { width: 30, height: 30, borderRadius: 8 },
+  // Mismo hueso fijo que `.tz-logo-plate` en la web.
+  orgLogoPlate: { width: 30, height: 30, borderRadius: 8, backgroundColor: "#F4F0E8", padding: 3 },
+  orgLogoOnPlate: { width: "100%", height: "100%" },
   dividerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   divider: { flex: 1, height: 1, backgroundColor: BORDER },
   ssoRow: { flexDirection: "row", gap: 10 },

@@ -6,6 +6,7 @@ import { createNotification, resolveNotification } from "@/lib/notifications";
 import { isBirthdayOn, zonedToday, DEFAULT_TIMEZONE } from "@/lib/date-utils";
 import { canSendMemberEmail, MEMBER_EMAIL_PREFERENCES_SELECT } from "@/lib/email-preferences";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * F5 — felicitación de cumpleaños. Dos registros con papeles distintos:
@@ -28,7 +29,7 @@ function greetingKey(memberId: string, year: number): string {
 
 export async function runBirthdayRule(orgId: string): Promise<number> {
   const [org, members] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     prisma.member.findMany({
       // Solo socios activos: un "gracias por estar con nosotros" a quien se dio
       // de baja hace tres meses es peor que el silencio.
@@ -49,7 +50,7 @@ export async function runBirthdayRule(orgId: string): Promise<number> {
   ]);
 
   const brandName = org?.name ?? "Training Zone";
-  const brandLogoUrl = absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png");
+  const brandLogoUrl = emailBrandLogo(org);
   const portalUrl = absoluteUrl("/portal");
 
   let greeted = 0;

@@ -3,11 +3,11 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { sendMail } from "@/lib/mailer";
-import { absoluteUrl } from "@/lib/invitations";
 import { verifyEmailPreferencesToken } from "@/lib/email-verification";
 import { type MemberEmailKind } from "@/lib/email-preferences";
 import { memberEmailFooterLinks, unsubscribeMemberFromAll, updateMemberEmailPreferences } from "@/lib/email-preferences-queries";
 import { renderEmailPreferencesLinkEmail } from "@/lib/emails/templates";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 export type PreferencesActionResult = { ok: true } | { ok: false; error: string };
 
@@ -57,7 +57,7 @@ export async function requestEmailPreferencesLink(email: string): Promise<Prefer
       id: true,
       firstName: true,
       email: true,
-      organization: { select: { name: true, logoUrl: true } },
+      organization: { select: { name: true, logoUrl: true, logoDarkUrl: true } },
       primaryCenter: { select: { name: true, address: true } },
     },
   });
@@ -74,7 +74,7 @@ export async function requestEmailPreferencesLink(email: string): Promise<Prefer
         html: renderEmailPreferencesLinkEmail({
           recipientFirstName: member.firstName,
           brandName,
-          brandLogoUrl: absoluteUrl(member.organization.logoUrl || "/brand/tz-logo-white.png"),
+          brandLogoUrl: emailBrandLogo(member.organization),
           preferencesUrl: links.preferencesUrl,
           centerName: member.primaryCenter.name,
           postalAddress: member.primaryCenter.address ?? undefined,

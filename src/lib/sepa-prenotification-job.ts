@@ -14,6 +14,7 @@ import {
   prenotificationKey,
   sepaNoticeFromEnv,
 } from "@/lib/sepa-prenotification";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 /**
  * E10-13 · Envío del preaviso de cargo SEPA, como una regla más del cron.
@@ -34,7 +35,7 @@ export async function runSepaPrenotificationRule(orgId: string, now: Date = new 
   const notice = sepaNoticeFromEnv();
 
   const [org, subscriptions] = await Promise.all([
-    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } }),
+    prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } }),
     prisma.subscription.findMany({
       // Solo cuotas vivas y recurrentes: un bono de sesiones no genera adeudo
       // periódico, y una suscripción pausada o cancelada no se va a cobrar.
@@ -71,7 +72,7 @@ export async function runSepaPrenotificationRule(orgId: string, now: Date = new 
   ]);
 
   const brandName = org?.name ?? "Training Zone";
-  const brandLogoUrl = absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png");
+  const brandLogoUrl = emailBrandLogo(org);
   const portalUrl = absoluteUrl("/portal/membresia");
 
   let sent = 0;
@@ -238,7 +239,7 @@ export async function sendPrenotificationForUpcomingInvoice(
   if (!decision.send) return { ok: true };
 
   const amountCents = invoice.amount_due ?? subscription.priceCents;
-  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true } });
+  const org = await prisma.organization.findUnique({ where: { id: orgId }, select: { name: true, logoUrl: true, logoDarkUrl: true } });
 
   // El apunte se escribe ANTES de enviar, igual que en el cron: si el correo
   // falla, el socio se queda sin preaviso de ESE cargo —y con la traza diciendo
@@ -279,7 +280,7 @@ export async function sendPrenotificationForUpcomingInvoice(
     html: renderSepaPrenotificationEmail({
       memberFirstName: subscription.member.firstName,
       brandName,
-      brandLogoUrl: absoluteUrl(org?.logoUrl || "/brand/tz-logo-white.png"),
+      brandLogoUrl: emailBrandLogo(org),
       amountLabel,
       chargeDateLabel,
       method: domiciliado ? "SEPA" : "CARD",

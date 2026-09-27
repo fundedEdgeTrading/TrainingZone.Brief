@@ -8,6 +8,7 @@ export type CenterInput = {
   lat: number | null;
   lng: number | null;
   logoUrl: string | null;
+  logoDarkUrl?: string | null;
 };
 
 /**

@@ -6,8 +6,8 @@ import { getPublicMembershipContext } from "@/lib/public-membership-queries";
 import { generateMemberBillingToken, memberBillingUrlFor } from "@/lib/email-verification";
 import { sendMail } from "@/lib/mailer";
 import { renderMemberBillingLinkEmail } from "@/lib/emails/templates";
-import { absoluteUrl } from "@/lib/invitations";
 import { memberEmailFooterLinks } from "@/lib/email-preferences-queries";
+import { emailBrandLogo } from "@/lib/brand-logo";
 
 export type RequestMemberBillingLinkResult = { ok: true } | { ok: false; error: string };
 
@@ -65,7 +65,7 @@ export async function requestMemberBillingLink(
         html: renderMemberBillingLinkEmail({
           recipientFirstName: member.firstName,
           brandName: ctx.organization.name,
-          brandLogoUrl: absoluteUrl(ctx.organization.logoUrl ?? "/brand/tz-logo-white.png"),
+          brandLogoUrl: emailBrandLogo(ctx.organization),
           portalRequestUrl: memberBillingUrlFor(generateMemberBillingToken(member.id)),
           planName: subscription?.plan.name,
           amountLabel: subscription

@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { BrandLogo } from "@/lib/brand-logo";
+import { ThemedBrandLogo } from "@/components/themed-brand-logo";
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import AptaLogo from "@/components/apta-logo";
@@ -119,56 +121,21 @@ function NavItemIcon({ item, active }: { item: NavItem; active: boolean }) {
 }
 
 
-/**
- * Logo de la organización con su variante oscura.
- *
- * Se pintan los dos y manda el CSS (`.tz-logo-light` / `.tz-logo-dark` en
- * globals.css). Resolverlo en el servidor obligaría a leer `User.theme` también
- * en este layout; hacerlo en el cliente dejaría un fotograma con el logo
- * equivocado. Cuando no hay variante distinta (logo propio del cliente), se
- * pinta una sola imagen.
- */
-function BrandLogo({
-  light,
-  dark,
-  alt,
-  className,
-}: {
-  light: string;
-  dark?: string | null;
-  alt: string;
-  className?: string;
-}) {
-  /* eslint-disable @next/next/no-img-element -- logo dinámico por organización/centro (URL arbitraria), no un asset estático */
-  if (!dark || dark === light) {
-    return <img src={light} alt={alt} className={`block ${className ?? ""}`} />;
-  }
-  return (
-    <>
-      <img src={light} alt={alt} className={`tz-logo-light block ${className ?? ""}`} />
-      <img src={dark} alt="" aria-hidden="true" className={`tz-logo-dark block ${className ?? ""}`} />
-    </>
-  );
-  /* eslint-enable @next/next/no-img-element */
-}
 
 export default function Sidebar({
   nav,
   footerLabel,
-  logoUrl,
-  logoUrlDark,
+  logo,
   brandName,
   member,
 }: {
   nav: NavItem[];
   footerLabel: string;
-  logoUrl?: string | null;
   /**
-   * Variante del logo para el tema oscuro, si el asset la tiene (ver
-   * `logoUrlForTheme`). Se pintan las dos y el CSS enseña la que toca: así no
-   * hace falta leer el tema aquí ni hay un fotograma con el logo equivocado.
+   * Logo del centro o de la organización con su versión para el tema oscuro
+   * (`resolveBrandLogo`). `null` = el de Apta.
    */
-  logoUrlDark?: string | null;
+  logo?: BrandLogo | null;
   brandName?: string;
   /** Presente solo para el rol MEMBER (rediseño NavBar premium 1b). Otros roles conservan el pie de texto plano. */
   member?: MemberSidebarData;
@@ -304,23 +271,21 @@ export default function Sidebar({
             completo aunque el estado plegado esté activo, de ahí las dos
             variantes con sus breakpoints en vez de un ternario a secas.
           */}
-          {logoUrl ? (
+          {logo ? (
             <>
               {rail && (
                 // Isotipo: el mismo lockup recortado a sus primeros 26 px (las
                 // dos medias lunas). Ver docs/BRANDING.md §1.
                 <span className="hidden lg:block w-[26px] h-[34px] overflow-hidden shrink-0">
-                  <BrandLogo
-                    light={logoUrl}
-                    dark={logoUrlDark}
+                  <ThemedBrandLogo
+                    logo={logo}
                     alt={brandName ?? "Logo"}
                     className="h-[34px] w-[202px] max-w-none object-cover object-left"
                   />
                 </span>
               )}
-              <BrandLogo
-                light={logoUrl}
-                dark={logoUrlDark}
+              <ThemedBrandLogo
+                logo={logo}
                 alt={brandName ?? "Logo"}
                 className={`h-[26px] lg:h-[34px] w-auto max-w-[190px] object-contain ${rail ? "lg:hidden" : ""}`}
               />

@@ -11,7 +11,7 @@ import { getMemberForUser, getPendingSessionFeedbackCountForUser, getMemberUpcom
 import { planNameWithoutService } from "@/lib/members-queries";
 import { effectiveSessionsIncluded, memberBonos } from "@/lib/session-balance";
 import { resolveTimezone } from "@/lib/timezone";
-import { logoUrlForTheme } from "@/lib/theme";
+import { resolveBrandLogo } from "@/lib/brand-logo";
 import { TimezoneSync } from "@/components/timezone-sync";
 import Sidebar, { type MemberSidebarData } from "./sidebar";
 import Header from "./header";
@@ -55,14 +55,14 @@ export default async function AppLayout({
   // El centro se resuelve antes que el resto: de él sale la zona horaria con la
   // que se calculan todas las horas de pared de la app (ver `resolveTimezone`).
   const center = centerId
-    ? await prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true, timezone: true } })
+    ? await prisma.center.findUnique({ where: { id: centerId }, select: { name: true, logoUrl: true, logoDarkUrl: true, timezone: true } })
     : null;
   const timezone = await resolveTimezone(center?.timezone);
 
   const [org, notifications, pendingPlanCount, memberships, features, member] = await Promise.all([
     prisma.organization.findUnique({
       where: { id: session.user.orgId },
-      select: { name: true, logoUrl: true, platformStatus: true },
+      select: { name: true, logoUrl: true, logoDarkUrl: true, platformStatus: true },
     }),
     listNotificationsForUser(session.user.orgId, session.user.id),
     role === "MEMBER" ? getPendingSessionFeedbackCountForUser(session.user.id, timezone) : Promise.resolve(0),
@@ -95,8 +95,8 @@ export default async function AppLayout({
   const nav = role === "PLATFORM_ADMIN" ? roleNav : filterNavByFeatures(roleNav, features);
 
   // NavBar: logo del centro, si no el de la organización, si no el de Apta (null).
-  const logoUrl = center?.logoUrl ?? org?.logoUrl ?? null;
-  const logoUrlDark = logoUrlForTheme(logoUrl, "dark");
+  // Con su versión para el tema oscuro (o la pastilla si no la hay).
+  const logo = resolveBrandLogo(center, org);
   const brandName = org?.name ?? "Apta";
 
   let centerName = center?.name ?? "";
@@ -153,8 +153,7 @@ export default async function AppLayout({
           <Sidebar
             nav={nav}
             footerLabel={footerLabelForRole(role)}
-            logoUrl={logoUrl}
-            logoUrlDark={logoUrlDark}
+            logo={logo}
             brandName={brandName}
             member={memberSidebar}
           />

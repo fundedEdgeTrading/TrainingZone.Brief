@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
+import type { BrandLogo } from "@/lib/brand-logo";
+import { ThemedBrandLogo } from "@/components/themed-brand-logo";
 import { Button, ButtonSpinner } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { ESSENTIAL_PROFILE_FIELDS, type EssentialProfileField } from "@/lib/member-first-session";
@@ -30,7 +32,7 @@ function Shell({
   eyebrow,
   title,
   intro,
-  orgLogoUrl,
+  orgLogo,
   orgName,
   centerPhone,
   children,
@@ -38,7 +40,7 @@ function Shell({
   eyebrow: string;
   title: string;
   intro: string;
-  orgLogoUrl: string;
+  orgLogo: BrandLogo;
   orgName: string;
   /** E5-08: la salida que no es cerrar sesión — hablar con el centro. */
   centerPhone?: string | null;
@@ -57,8 +59,10 @@ function Shell({
       </div>
       <div className="relative z-10 w-full max-w-[560px] my-auto tz-fade-up">
         <div className="text-center mb-6">
-          {/* eslint-disable-next-line @next/next/no-img-element -- logo dinámico por organización */}
-          <img src={orgLogoUrl} alt={orgName} className="h-[34px] w-auto object-contain inline-block" />
+          {/* Respeta el tema del socio: en oscuro, su versión clara o la pastilla. */}
+          <div className="flex justify-center">
+            <ThemedBrandLogo logo={orgLogo} alt={orgName} className="h-[34px] w-auto object-contain" />
+          </div>
         </div>
 
         <div className="bg-white border border-tz-linen rounded-card shadow-pop p-9">
@@ -93,13 +97,13 @@ function Shell({
 function EssentialProfileStep({
   missing,
   needsHealthDeclaration,
-  orgLogoUrl,
+  orgLogo,
   orgName,
   centerPhone,
 }: {
   missing: EssentialProfileField[];
   needsHealthDeclaration: boolean;
-  orgLogoUrl: string;
+  orgLogo: BrandLogo;
   orgName: string;
   centerPhone?: string | null;
 }) {
@@ -127,7 +131,7 @@ function EssentialProfileStep({
       eyebrow="Antes de tu primera sesión"
       title="Nos faltan un par de datos"
       intro="Solo lo justo para entrenar contigo con seguridad. El resto (dirección, código postal…) te lo pedimos luego, sin prisa, desde tu perfil."
-      orgLogoUrl={orgLogoUrl}
+      orgLogo={orgLogo}
       orgName={orgName}
       centerPhone={centerPhone}
     >
@@ -168,13 +172,13 @@ function EssentialProfileStep({
 export function FirstSessionWall({
   missing,
   needsHealthDeclaration,
-  orgLogoUrl,
+  orgLogo,
   orgName,
   centerPhone,
 }: {
   missing: EssentialProfileField[];
   needsHealthDeclaration: boolean;
-  orgLogoUrl: string;
+  orgLogo: BrandLogo;
   orgName: string;
   centerPhone?: string | null;
 }) {
@@ -182,7 +186,7 @@ export function FirstSessionWall({
     <EssentialProfileStep
       missing={missing}
       needsHealthDeclaration={needsHealthDeclaration}
-      orgLogoUrl={orgLogoUrl}
+      orgLogo={orgLogo}
       orgName={orgName}
       centerPhone={centerPhone}
     />

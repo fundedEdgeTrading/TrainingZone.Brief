@@ -23,6 +23,21 @@ NavBar muestra el del centro, si no el de la organización, y si ninguno tiene,
 el de **Apta**, la marca de la plataforma (`src/components/org-logo.tsx`,
 `src/lib/logo-image.ts`). Cada organización sube el suyo desde **Organización**.
 
+Como esa regla (negro en claro, hueso en oscuro) tiene que valer también para
+los logos que sube cada gimnasio, cada organización y cada centro pueden subir
+una **versión para fondos oscuros**, opcional. La elige `resolveBrandLogo`
+(`src/lib/brand-logo.ts`), la única fuente para el menú lateral, el portal, la
+cabecera de los emails (oscura siempre) y el login de la app:
+
+1. La versión para fondos oscuros que haya subido el gimnasio.
+2. La pareja por nombre de fichero de los assets propios (`-black` ↔ `-white`).
+3. Si no hay ninguna, el logo normal sobre una **pastilla hueso** (`#F4F0E8`,
+   `.tz-logo-plate`). Nunca se invierte el logo con un filtro: estropearía
+   cualquier logo a color.
+
+El logo de un centro no se mezcla nunca con la versión oscura del de la
+organización: son dos marcas.
+
 ### Construcción y proporción
 - El logotipo se construye sobre una retícula modular basada en una unidad `X` (altura del isotipo). Todos los márgenes y espaciados del lockup son múltiplos de `X`. No alterar las proporciones relativas entre isotipo y wordmark.
 
