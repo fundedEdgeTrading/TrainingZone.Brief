@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import type { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { getStripeClient } from "@/lib/stripe";
@@ -14,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { deauthorizeStripeAccount, refreshStripeAccountStatus } from "@/lib/stripe-connect";
 import { applyPlanChangeFromCheckout, provisionOrganizationFromCheckout } from "@/lib/provisioning";
 import { reconcilePlatformInvoicePaid, reconcilePlatformInvoicePaymentFailed } from "@/lib/platform-billing";
+import { PLATFORM_PRICE_CATALOG_TAG } from "@/lib/platform-price-catalog";
 import { claimStripeEvent, markStripeEventFailed, markStripeEventProcessed } from "@/lib/stripe-webhook-events";
 // Lote 2 · Los seis módulos de abajo los cablea S1 de una vez y los rellena
 // cada pista por separado (P1, P2, P4). Hoy registran el evento y devuelven ok:
@@ -311,6 +313,21 @@ async function handlePlatformEvent(event: Stripe.Event): Promise<PlatformEventRe
         where: { id: org.id },
         data: { platformStatus: voluntary ? "CANCELLED" : "SUSPENDED" },
       });
+      break;
+    }
+    // Catálogo comercial sincronizado con Stripe: crear, cambiar o archivar un
+    // producto o precio de la cuenta de Apta invalida la caché de /planes. Los
+    // mismos eventos de una cuenta conectada van por `handleConnectEvent` y no
+    // llegan aquí. Sin esta suscripción, la caché caduca sola en 5 minutos.
+    // `{ expire: 0 }` y no "max": un plan archivado no debe enseñarse ni una
+    // visita más (es el patrón que Next recomienda para webhooks).
+    case "product.created":
+    case "product.updated":
+    case "product.deleted":
+    case "price.created":
+    case "price.updated":
+    case "price.deleted": {
+      revalidateTag(PLATFORM_PRICE_CATALOG_TAG, { expire: 0 });
       break;
     }
     default:

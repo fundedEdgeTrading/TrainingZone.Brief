@@ -139,6 +139,9 @@ export default async function AptaPage({
         <div className={CARD}>
           <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-muted">MRR agregado</div>
           <div className="mt-1 text-2xl font-display font-extrabold text-gold">{euros(metrics.mrrCents)}</div>
+          <div className="mt-0.5 text-[11px] text-brand-muted">
+            {metrics.mrrFromStripe ? "Según Stripe" : "Estimado con precios de referencia"}
+          </div>
         </div>
       </section>
 

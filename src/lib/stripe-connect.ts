@@ -114,15 +114,50 @@ export function verifyConnectState(
   return { ok: true };
 }
 
+/**
+ * Pantalla con la que abre Stripe el OAuth. Sin `stripe_landing`, Stripe
+ * muestra el alta de una cuenta nueva y el director que YA tiene Stripe cree
+ * que tiene que crear su empresa desde cero. Por eso la tarjeta ofrece las dos
+ * puertas: "ya tengo cuenta" (login) y "crear cuenta" (register).
+ */
+export type ConnectLanding = "login" | "register";
+
+/** Lee el `landing` de la query del botón; cualquier otro valor cae en el alta, que es lo que hace Stripe por defecto. */
+export function parseConnectLanding(value: string | null | undefined): ConnectLanding {
+  return value === "login" ? "login" : "register";
+}
+
+/**
+ * Datos del centro con los que Stripe rellena de antemano el alta de la
+ * cuenta. Solo sugieren: el director los revisa y los cambia en Stripe, y a
+ * Apta no vuelve nada de ahí salvo el `acct_...`.
+ */
+export type ConnectPrefill = {
+  email?: string | null;
+  businessName?: string | null;
+};
+
+/** País por defecto del alta: Apta factura en euros a centros de España. */
+const CONNECT_PREFILL_COUNTRY = "ES";
+
 /** URL de autorización de Stripe con el nonce como `state` (nunca el orgId). */
-export function buildStripeAuthorizeUrl(nonce: string) {
+export function buildStripeAuthorizeUrl(
+  nonce: string,
+  { landing = "register", prefill = {} }: { landing?: ConnectLanding; prefill?: ConnectPrefill } = {}
+) {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: process.env.STRIPE_CONNECT_CLIENT_ID ?? "",
     scope: "read_write",
     redirect_uri: `${publicOrigin()}/api/stripe/connect/callback`,
     state: nonce,
+    stripe_landing: landing,
   });
+  const email = prefill.email?.trim();
+  const businessName = prefill.businessName?.trim();
+  if (email) params.set("stripe_user[email]", email);
+  if (businessName) params.set("stripe_user[business_name]", businessName);
+  params.set("stripe_user[country]", CONNECT_PREFILL_COUNTRY);
   return `https://connect.stripe.com/oauth/authorize?${params.toString()}`;
 }
 
@@ -131,11 +166,11 @@ export function buildStripeAuthorizeUrl(nonce: string) {
  * a `/api/stripe/connect/start`, que es quien puede poner la cookie del nonce
  * (un Server Component no puede escribir cookies). La org sale de la sesión en
  * el servidor, así que el argumento se ignora; se mantiene para no romper a
- * quien ya lo llama.
+ * quien ya lo llama. `landing` elige la pantalla con la que abre Stripe.
  */
-export function buildConnectOAuthUrl(orgId?: string) {
+export function buildConnectOAuthUrl(orgId?: string, landing?: ConnectLanding) {
   void orgId;
-  return CONNECT_START_PATH;
+  return landing ? `${CONNECT_START_PATH}?landing=${landing}` : CONNECT_START_PATH;
 }
 
 export async function exchangeOAuthCode(

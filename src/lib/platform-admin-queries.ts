@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import type { PlatformStatus } from "@prisma/client";
 import { getPlatformPlan, monthlyPriceCents } from "@/lib/platform-plans";
+import { subscriptionMonthlyCents } from "@/lib/platform-price-catalog";
+import { getStripeClient } from "@/lib/stripe";
 
 /**
  * E6-08 · back-office `/apta`. Consultas de ámbito PLATAFORMA (todas las
@@ -101,22 +103,62 @@ export type PlatformMetrics = {
   pendingPayment: number;
   /** MRR de las organizaciones ACTIVE + PAST_DUE (siguen facturando; TRIALING y Fundador no aportan). */
   mrrCents: number;
+  /**
+   * `true` si todo el MRR sale de las suscripciones reales de Stripe. `false`
+   * si alguna organización se ha contado con el precio de referencia del
+   * código (`priceLabel`): modo demo, Stripe caído o suscripción no encontrada.
+   */
+  mrrFromStripe: boolean;
 };
+
+/**
+ * Importe mensual real de cada suscripción de plataforma, leído de Stripe:
+ * incluye a quien sigue con un precio antiguo (las suscripciones no cambian al
+ * crear un precio nuevo). `null` si Stripe no está o falla — el llamador cae
+ * al precio de referencia. Un único listado paginado, no una llamada por org.
+ */
+async function fetchSubscriptionMonthlyCents(subscriptionIds: Set<string>): Promise<Map<string, number> | null> {
+  const stripe = getStripeClient();
+  if (!stripe || subscriptionIds.size === 0) return null;
+  try {
+    const result = new Map<string, number>();
+    for await (const subscription of stripe.subscriptions.list({ status: "all", limit: 100 })) {
+      if (subscriptionIds.has(subscription.id)) result.set(subscription.id, subscriptionMonthlyCents(subscription));
+      if (result.size === subscriptionIds.size) break;
+    }
+    return result;
+  } catch (error) {
+    console.error("[apta] no se pudo leer el MRR de Stripe; se usa el precio de referencia:", error);
+    return null;
+  }
+}
 
 export async function getPlatformMetrics(): Promise<PlatformMetrics> {
   const [statusCounts, billableOrgs] = await Promise.all([
     prisma.organization.groupBy({ by: ["platformStatus"], _count: { _all: true } }),
     prisma.organization.findMany({
       where: { platformStatus: { in: ["ACTIVE", "PAST_DUE"] } },
-      select: { platformPlan: true },
+      select: { platformPlan: true, platformStripeSubscriptionId: true },
     }),
   ]);
 
   const countOf = (status: PlatformStatus) => statusCounts.find((s) => s.platformStatus === status)?._count._all ?? 0;
 
+  const subscriptionIds = new Set(
+    billableOrgs.flatMap((org) => (org.platformStripeSubscriptionId ? [org.platformStripeSubscriptionId] : []))
+  );
+  const fromStripe = await fetchSubscriptionMonthlyCents(subscriptionIds);
+
+  let mrrFromStripe = true;
   const mrrCents = billableOrgs.reduce((sum, org) => {
     const plan = getPlatformPlan(org.platformPlan);
-    return sum + (plan ? monthlyPriceCents(plan) ?? 0 : 0);
+    // Fundador es pago único: no hay suscripción ni ingreso recurrente.
+    if (plan?.interval === "lifetime") return sum;
+    const real = org.platformStripeSubscriptionId ? fromStripe?.get(org.platformStripeSubscriptionId) : undefined;
+    if (real !== undefined) return sum + real;
+    const reference = plan ? monthlyPriceCents(plan) : null;
+    if (reference) mrrFromStripe = false;
+    return sum + (reference ?? 0);
   }, 0);
 
   return {
@@ -126,5 +168,6 @@ export async function getPlatformMetrics(): Promise<PlatformMetrics> {
     cancelled: countOf("CANCELLED"),
     pendingPayment: countOf("PENDING_PAYMENT"),
     mrrCents,
+    mrrFromStripe,
   };
 }

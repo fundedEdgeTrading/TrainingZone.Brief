@@ -8,8 +8,8 @@ import {
   fundadorMaxSeats,
   getPlatformPlan,
   isDemoModeActive,
-  resolveStripePriceId,
 } from "@/lib/platform-plans";
+import { resolvePlatformPriceId } from "@/lib/platform-price-catalog";
 import { publicOrigin } from "@/lib/site";
 
 export type PlatformCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
@@ -46,7 +46,7 @@ export async function createLicenseCheckoutSession(planCode: string): Promise<Pl
     return { ok: true, url: `${publicOrigin()}/demo-checkout?plan=${encodeURIComponent(plan.code)}` };
   }
 
-  const priceId = resolveStripePriceId(plan);
+  const priceId = await resolvePlatformPriceId(plan);
   if (!priceId) return { ok: false, error: "Ese plan no tiene precio configurado." };
 
   // Cupo de la oferta limitada: se comprueba antes de cobrar, no después.
@@ -86,7 +86,7 @@ export async function createPlatformCheckoutSession(orgId: string, planCode: str
   }
   const plan = getPlatformPlan(planCode);
   if (!plan) return { ok: false, error: "Plan no reconocido." };
-  const priceId = resolveStripePriceId(plan);
+  const priceId = await resolvePlatformPriceId(plan);
   if (!priceId) return { ok: false, error: "Este plan aún no tiene precio configurado en Stripe." };
 
   const stripe = getStripeClient()!;

@@ -5,19 +5,21 @@ import {
   FEATURE_LABEL,
   PLATFORM_PLANS,
   fundadorClosesAt,
-  listPurchasablePlans,
   type PlatformFeature,
   type PlatformPlan,
 } from "@/lib/platform-plans";
+import { listPurchasablePlans, type PurchasablePlan } from "@/lib/platform-price-catalog";
 import { remainingFundadorSeats } from "@/lib/platform-billing";
+import { JsonLd } from "@/components/json-ld";
+import { platformOffersJsonLd } from "@/lib/json-ld";
 
 /**
  * E9-08 · El bloque de precios, aparte del resto de `/planes`.
  *
- * `/planes` conserva su `force-dynamic` porque los precios se resuelven del
- * entorno en cada petición y no se puede cachear la página con un catálogo que
- * cambia sin desplegar. Pero eso valía para el 15 % de la página que depende del
- * entorno, no para el hero, el tour, la FAQ y los testimonios, que son
+ * `/planes` conserva su `force-dynamic` porque los precios se leen de Stripe
+ * (`lib/platform-price-catalog.ts`, con su propia caché corta) y no se puede
+ * cachear la página con un catálogo que cambia sin desplegar. Pero eso valía
+ * para el 15 % de la página que depende del entorno, no para el hero, el tour, la FAQ y los testimonios, que son
  * estáticos.
  *
  * Sacándolo a su propio componente asíncrono dentro de un `<Suspense>`, el
@@ -42,7 +44,7 @@ function allFeatures(): PlatformFeature[] {
 }
 
 export async function PricingBlock({ showYearly }: { showYearly: boolean }) {
-  const purchasable = listPurchasablePlans();
+  const purchasable = await listPurchasablePlans();
   const interval = showYearly ? "year" : "month";
   const visible = purchasable.filter((p) => p.interval === interval || p.interval === "lifetime");
   const fundadorSeatsLeft = purchasable.some((p) => p.limitedOffer) ? await remainingFundadorSeats() : null;
@@ -50,6 +52,11 @@ export async function PricingBlock({ showYearly }: { showYearly: boolean }) {
 
   return (
     <>
+      {/* E9-07 · El `Product` con sus ofertas, con el precio de Stripe cuando lo
+          hay (ver `platformOffersJsonLd`). Vive aquí y no en la página porque
+          depende del catálogo de Stripe, que es justo lo que espera dentro del
+          `<Suspense>`. */}
+      <JsonLd node={platformOffersJsonLd(purchasable)} />
       <div className="flex justify-center mb-8">
         <div className="inline-flex bg-white border border-brand-border rounded-pill p-1">
           <PeriodLink active={!showYearly} href="/planes" label="Mensual" />
@@ -112,7 +119,7 @@ function PlanCard({
   seatsLeft,
   closesAt,
 }: {
-  plan: PlatformPlan;
+  plan: PurchasablePlan;
   seatsLeft: number | null;
   closesAt: Date | null;
 }) {
@@ -143,7 +150,7 @@ function PlanCard({
         )}
       </div>
 
-      <p className="font-display font-extrabold text-2xl text-tz-black mt-2">{plan.priceLabel}</p>
+      <p className="font-display font-extrabold text-2xl text-tz-black mt-2">{plan.displayPrice}</p>
       <p className="text-xs text-muted mt-0.5">{INTERVAL_LABEL[plan.interval]}</p>
       <p className="text-[13px] font-semibold text-brand-text-2 mt-4">
         {centers}

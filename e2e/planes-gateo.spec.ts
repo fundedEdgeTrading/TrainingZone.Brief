@@ -22,7 +22,8 @@ test.describe("F2 — Catálogo comercial y gateo por plan", () => {
    * devuelve el catálogo ENTERO en vez de ninguno y "Contratar" lleva a
    * /demo-checkout en lugar de a un checkout de Stripe imposible. El aviso
    * "Todavía no hay precios configurados" sigue en app/planes/page.tsx, pero
-   * ahora solo es alcanzable con Stripe activo y sin STRIPE_PRICE_* — una mala
+   * ahora solo es alcanzable con Stripe activo y sin precios con lookup key
+   * `apta_*` en la cuenta (lib/platform-price-catalog.ts) — una mala
    * configuración de producción, no este entorno.
    */
   test("sin Stripe configurado el catálogo se ve en modo demo y ningún botón está muerto", async ({ page }) => {

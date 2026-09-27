@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import AptaLogo from "@/components/apta-logo";
-import { FEATURE_LABEL, listPurchasablePlans, type PlatformFeature } from "@/lib/platform-plans";
+import { FEATURE_LABEL, type PlatformFeature } from "@/lib/platform-plans";
 import Hero from "./hero";
 import Tour from "./tour";
 import HowItWorks from "./how-it-works";
@@ -11,12 +11,12 @@ import FinalCta from "./final-cta";
 import { PricingBlock, PricingSkeleton } from "./pricing";
 import { JsonLd } from "@/components/json-ld";
 import { FEATURE_PAGES, VERTICAL_PAGES, featurePath, verticalPath } from "@/lib/landing-pages";
-import { faqPageJsonLd, platformOffersJsonLd } from "@/lib/json-ld";
+import { faqPageJsonLd } from "@/lib/json-ld";
 
 /**
  * E9-08 · `/planes` conserva su `force-dynamic`, que está justificado: los
- * precios se resuelven del entorno en cada petición y no se puede cachear la
- * página con un catálogo que puede cambiar sin desplegar.
+ * precios se leen de Stripe (con caché corta) en cada petición y no se puede
+ * cachear la página con un catálogo que puede cambiar sin desplegar.
  *
  * Lo que cambia es a qué obliga eso. Antes, el 15 % de la página que depende del
  * entorno mantenía en vilo al 85 % que no: hero, tour, cómo funciona, FAQ y
@@ -41,11 +41,10 @@ export default async function PlanesPage({
   return (
     <div className="min-h-screen bg-tz-bone">
       {/* E9-07 · La FAQ se marca DESDE el array que pinta la página: escribirla
-          dos veces es garantizar que un día digan cosas distintas. Y el
-          `Product` va con ofertas SIN precio: `priceLabel` es presentación y el
-          importe real vive en Stripe (RB-PLAN-001). */}
+          dos veces es garantizar que un día digan cosas distintas. El
+          `Product` con las ofertas va dentro de `PricingBlock`: depende del
+          catálogo de Stripe. */}
       <JsonLd node={faqPageJsonLd(FAQS)} />
-      <JsonLd node={platformOffersJsonLd(listPurchasablePlans())} />
 
       <header className="flex items-center justify-between px-6 py-5 sm:px-10">
         <AptaLogo variant="dark" className="text-3xl" />

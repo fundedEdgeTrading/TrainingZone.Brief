@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 import { canManageOrg } from "@/lib/rbac";
 import {
   buildStripeAuthorizeUrl,
@@ -8,6 +9,7 @@ import {
   connectStateCookieOptions,
   createConnectState,
   isStripeConnectConfigured,
+  parseConnectLanding,
 } from "@/lib/stripe-connect";
 
 /**
@@ -17,6 +19,10 @@ import {
  *
  * La org sale de la sesión, nunca de un parámetro: así la cookie solo puede
  * atar el flujo a la org de quien pulsa el botón.
+ *
+ * `?landing=login|register` elige si Stripe abre con el inicio de sesión (el
+ * centro ya tiene cuenta) o con el alta, que llega rellena con los datos de
+ * facturación del centro.
  */
 export async function GET(req: NextRequest) {
   const settingsUrl = new URL("/organization", req.url);
@@ -28,8 +34,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(settingsUrl);
   }
 
+  const org = await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { name: true, billingName: true, billingEmail: true },
+  });
+
   const { nonce, cookieValue } = createConnectState(session.user.orgId);
-  const response = NextResponse.redirect(buildStripeAuthorizeUrl(nonce));
+  const authorizeUrl = buildStripeAuthorizeUrl(nonce, {
+    landing: parseConnectLanding(req.nextUrl.searchParams.get("landing")),
+    prefill: {
+      email: org?.billingEmail || session.user.email,
+      businessName: org?.billingName || org?.name,
+    },
+  });
+  const response = NextResponse.redirect(authorizeUrl);
   response.cookies.set(CONNECT_STATE_COOKIE, cookieValue, connectStateCookieOptions());
   return response;
 }
