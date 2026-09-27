@@ -73,6 +73,12 @@ export const PUBLIC_PATHS = [
   // chequeo de cookie de aquí la rebotaba entera a /login — incluido su
   // propio endpoint de login, con lo que la app no podía autenticarse nunca.
   "/api/mobile",
+  // Imágenes subidas. Hacen su propia comprobación: los logos y productos se
+  // sirven sin sesión (fichas públicas, emails, Stripe) y las fotos de personas
+  // exigen cookie O Bearer de la app. Rebotarlas aquí a /login rompía las dos
+  // cosas: el Bearer de la app nunca llegaba a la ruta.
+  "/api/files/",
+  "/api/progress-photos/",
   // E9-01 · Rastreo. El matcher del proxy ya los excluye por extensión y por
   // prefijo, así que en condiciones normales no llegan hasta aquí; se listan
   // igualmente para que el día que alguien reescriba el matcher la respuesta

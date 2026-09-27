@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { deleteStoredImage, discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { requireSession } from "@/lib/session";
 import { canManageAnnouncements } from "@/lib/rbac";
 import { getCentersForUser } from "@/lib/agenda-queries";
@@ -72,6 +73,12 @@ export async function createAnnouncement(formData: FormData): Promise<Announceme
   if (!(await centerAllowed(session.user, data.centerId))) {
     return { ok: false, error: "No puedes publicar en ese centro." };
   }
+  const image = await resolveImageInput(data.imageUrl, {
+    orgId: session.user.orgId,
+    kind: "ANNOUNCEMENT_IMAGE",
+    createdById: session.user.id,
+  });
+  if (!image.ok) return image;
 
   await prisma.announcement.create({
     data: {
@@ -79,7 +86,7 @@ export async function createAnnouncement(formData: FormData): Promise<Announceme
       centerId: data.centerId,
       title: data.title,
       body: data.body,
-      imageUrl: data.imageUrl,
+      imageUrl: image.value,
       category: data.category,
       audience: data.audience,
       tags: data.tags,
@@ -118,6 +125,13 @@ export async function updateAnnouncement(id: string, formData: FormData): Promis
   if (!(await centerAllowed(session.user, data.centerId))) {
     return { ok: false, error: "No puedes publicar en ese centro." };
   }
+  const image = await resolveImageInput(data.imageUrl, {
+    orgId: session.user.orgId,
+    kind: "ANNOUNCEMENT_IMAGE",
+    previous: existing.imageUrl,
+    createdById: session.user.id,
+  });
+  if (!image.ok) return image;
 
   await prisma.announcement.update({
     where: { id },
@@ -125,7 +139,7 @@ export async function updateAnnouncement(id: string, formData: FormData): Promis
       centerId: data.centerId,
       title: data.title,
       body: data.body,
-      imageUrl: data.imageUrl,
+      imageUrl: image.value,
       category: data.category,
       audience: data.audience,
       tags: data.tags,
@@ -134,6 +148,7 @@ export async function updateAnnouncement(id: string, formData: FormData): Promis
       endsAt: data.endsAt,
     },
   });
+  await discardReplacedImage(existing.imageUrl, image.value, session.user.orgId);
 
   revalidatePath("/anuncios");
   revalidatePath("/portal");
@@ -163,6 +178,7 @@ export async function deleteAnnouncement(id: string): Promise<AnnouncementAction
     return { ok: false, error: "No se ha encontrado el anuncio." };
   }
   await prisma.announcement.delete({ where: { id } });
+  await deleteStoredImage(existing.imageUrl, session.user.orgId);
   revalidatePath("/anuncios");
   revalidatePath("/portal");
   return { ok: true };

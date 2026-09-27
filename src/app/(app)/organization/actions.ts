@@ -4,6 +4,7 @@ import { revalidatePath, updateTag } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { requireRole, CENTER_OUT_OF_SCOPE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { deleteStoredImage, discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { parseOpeningHours } from "@/lib/opening-hours";
 import { centerPublicTag, orgCatalogTag } from "@/lib/public-center-seo";
 import { SUSPICIOUS_CENTER_KM, isFarFromAll } from "@/lib/barrio-geometry";
@@ -46,14 +47,29 @@ export type OrgActionResult = { ok: true; warning?: string } | { ok: false; erro
 export async function updateOrganization(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
   if (!name) return { ok: false, error: "El nombre de la organización es obligatorio." };
+
+  const current = await prisma.organization.findUnique({
+    where: { id: session.user.orgId },
+    select: { logoUrl: true },
+  });
+  // El logo se sube como imagen (o se pega una URL) y se guarda en Postgres:
+  // la columna recibe `/api/files/<id>`, nunca los bytes.
+  const logo = await resolveImageInput(formData.get("logoUrl"), {
+    orgId: session.user.orgId,
+    kind: "ORG_LOGO",
+    previous: current?.logoUrl,
+    createdById: session.user.id,
+  });
+  if (!logo.ok) return logo;
 
   await prisma.organization.update({
     where: { id: session.user.orgId },
-    data: { name, logoUrl },
+    data: { name, logoUrl: logo.value },
   });
-  revalidatePath("/organization");
+  await discardReplacedImage(current?.logoUrl, logo.value, session.user.orgId);
+  // El logo sale en el menú lateral de todas las pantallas.
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 
@@ -124,7 +140,6 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const name = String(formData.get("name") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim() || null;
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
   const slug = slugify(String(formData.get("slug") ?? "").trim() || name);
   if (!name || !slug) return { ok: false, error: "Indica al menos el nombre del centro." };
 
@@ -154,8 +169,26 @@ export async function createCenter(formData: FormData): Promise<OrgActionResult>
   // RB-PLAN-002: el número de centros es lo que se paga. El límite se comprueba
   // e inserta bajo el mismo bloqueo (QA-ALTA-18), con un mensaje que indica la
   // salida concreta en vez de un "no puedes".
-  const created = await createCenterWithinLimit(session.user.orgId, { name, slug, address, lat, lng, logoUrl });
-  if (!created.ok) return { ok: false, error: created.error };
+  const logo = await resolveImageInput(formData.get("logoUrl"), {
+    orgId: session.user.orgId,
+    kind: "CENTER_LOGO",
+    createdById: session.user.id,
+  });
+  if (!logo.ok) return logo;
+
+  const created = await createCenterWithinLimit(session.user.orgId, {
+    name,
+    slug,
+    address,
+    lat,
+    lng,
+    logoUrl: logo.value,
+  });
+  if (!created.ok) {
+    // El centro no se creó: el logo recién subido no tiene a quién pertenecer.
+    await deleteStoredImage(logo.value, session.user.orgId);
+    return { ok: false, error: created.error };
+  }
   revalidatePath("/organization");
   return { ok: true };
 }
@@ -291,16 +324,24 @@ function text(raw: FormDataEntryValue | null): string | null {
 export async function updateCenterLogo(formData: FormData): Promise<OrgActionResult> {
   const session = await requireRole(["OWNER", "PLATFORM_ADMIN"]);
   const centerId = String(formData.get("centerId") ?? "");
-  const logoUrl = String(formData.get("logoUrl") ?? "").trim() || null;
 
   const center = await prisma.center.findFirst({
     where: { id: centerId, orgId: session.user.orgId },
-    select: { id: true },
+    select: { id: true, logoUrl: true },
   });
   if (!center) return { ok: false, error: "No se ha encontrado ese centro." };
 
-  await prisma.center.update({ where: { id: centerId }, data: { logoUrl } });
-  revalidatePath("/organization");
+  const logo = await resolveImageInput(formData.get("logoUrl"), {
+    orgId: session.user.orgId,
+    kind: "CENTER_LOGO",
+    previous: center.logoUrl,
+    createdById: session.user.id,
+  });
+  if (!logo.ok) return logo;
+
+  await prisma.center.update({ where: { id: centerId }, data: { logoUrl: logo.value } });
+  await discardReplacedImage(center.logoUrl, logo.value, session.user.orgId);
+  revalidatePath("/", "layout");
   return { ok: true };
 }
 

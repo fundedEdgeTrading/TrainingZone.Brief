@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
+import { discardReplacedImage, resolveImageInput } from "@/lib/file-store";
 import { getMemberForUser } from "@/lib/portal-queries";
 import { isValidPostalCode } from "@/lib/postal-codes";
 import { CONSENT_VERSION, CONSENT_FIELD, type ConsentKind } from "@/lib/consent";
@@ -48,7 +49,20 @@ export async function updateMyProfileAction(formData: FormData): Promise<Profile
     return { ok: false, error: "El código postal debe tener 5 dígitos." };
   }
 
-  const photoUrl = optional(formData, "photoUrl");
+  // Sin foto en el formulario no se toca la actual (el socio no la borra desde aquí).
+  const rawPhoto = optional(formData, "photoUrl");
+  let photoUrl: string | null = null;
+  if (rawPhoto) {
+    const photo = await resolveImageInput(rawPhoto, {
+      orgId: session.user.orgId,
+      kind: "MEMBER_PHOTO",
+      previous: member.photoUrl,
+      memberId: member.id,
+      createdById: session.user.id,
+    });
+    if (!photo.ok) return photo;
+    photoUrl = photo.value;
+  }
 
   await prisma.member.update({
     where: { id: member.id },
@@ -64,6 +78,7 @@ export async function updateMyProfileAction(formData: FormData): Promise<Profile
       ...(photoUrl !== null ? { photoUrl } : {}),
     },
   });
+  if (photoUrl !== null) await discardReplacedImage(member.photoUrl, photoUrl, session.user.orgId);
 
   await prisma.auditLog.create({
     data: {

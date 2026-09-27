@@ -15,7 +15,8 @@
     "test:unit": "tsx --test $(find src -name '*.test.ts')",
     "test:unit:coverage": "node scripts/test-unit-coverage.mjs",
     "test:e2e": "playwright test",
-    "migrate:fotos": "tsx scripts/migrate-progress-photos.ts",
+    "files:migrate": "tsx scripts/migrate-files-to-postgres.ts",
+    "migrate:fotos": "tsx scripts/migrate-files-to-postgres.ts",
     "export:fichajes": "tsx scripts/export-timeclock.ts",
     "bootstrap:plataforma": "tsx scripts/bootstrap-plataforma.ts"
   },

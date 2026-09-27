@@ -5,9 +5,11 @@ export type PickedImage = { ok: true; dataUrl: string } | { ok: false; error: st
 const MAX_BYTES = 2 * 1024 * 1024;
 
 /**
- * Elige una foto de la galería y la devuelve como data URL, que es como
- * guarda las imágenes el resto del CRM (`Member.photoUrl`, `Announcement`).
- * Recorta a la proporción pedida antes de subir y rechaza lo que pase de 2 MB.
+ * Elige una foto de la galería y la devuelve como data URL, que es como la
+ * reciben las rutas de la API: el servidor la valida, la guarda en Postgres
+ * (`StoredFile`) y la columna recibe `/api/files/<id>`. Recorta a la
+ * proporción pedida antes de subir y rechaza lo que pase de 2 MB (el mismo
+ * tope que el servidor).
  *
  * `null` = la persona canceló el selector.
  */

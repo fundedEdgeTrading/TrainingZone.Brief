@@ -663,7 +663,7 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
     await page.getByRole("button", { name: "+ Nuevo socio" }).click();
     const dialog = page.getByRole("dialog", { name: "Nuevo socio" });
     await dialog.locator('input[type="file"]').setInputFiles({ name: "socia.png", mimeType: "image/png", buffer: TINY_PNG });
-    // El dropzone convierte la imagen en data URL de forma asíncrona.
+    // El dropzone reescala la imagen y la deja como data URL de forma asíncrona.
     await expect(dialog.locator('input[name="photoUrl"]')).toHaveValue(/^data:image\/png/);
     await dialog.locator('input[name="firstName"]').fill(SOCIA.firstName);
     await dialog.locator('input[name="lastName"]').fill(SOCIA.lastName);
@@ -676,7 +676,10 @@ test.describe.serial("Regresión · organización nueva, de /planes a la asisten
 
     const member = await db().member.findFirstOrThrow({ where: { orgId, email: SOCIA.email } });
     expect(member.primaryCenterId).toBe(centerAId);
-    expect(member.photoUrl).toMatch(/^data:image/);
+    // La foto va a Postgres (`StoredFile`, atada a la socia): la columna guarda su URL.
+    expect(member.photoUrl).toMatch(/^\/api\/files\/[0-9a-f-]{36}$/);
+    const photoId = member.photoUrl!.slice("/api/files/".length);
+    expect(await db().storedFile.count({ where: { id: photoId, memberId: member.id, kind: "MEMBER_PHOTO" } })).toBe(1);
     expect(member.phone).toBe(SOCIA.phone);
     expect(member.birthDate?.toISOString().slice(0, 10)).toBe(SOCIA.birthDate);
     sociaId = member.id;

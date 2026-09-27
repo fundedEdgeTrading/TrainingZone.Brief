@@ -3,8 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import clsx from "clsx";
 import { useToast } from "./toast";
-
-const MAX_BYTES = 2 * 1024 * 1024; // 2MB — suficiente para preview, evita hinchar la fila en BD.
+import { resizeImageFile } from "@/lib/image-resize";
 
 type Shape = "circle" | "rounded" | "rect";
 
@@ -15,9 +14,13 @@ const SHAPE_CLASS: Record<Shape, string> = {
 };
 
 /**
- * Zona de subida de imagen sin backend de almacenamiento: lee el archivo como
- * data URL en el cliente y lo deja en un <input type="hidden"> con `name`,
- * listo para viajar dentro del FormData del formulario que lo envuelve.
+ * Zona de subida de imagen. Reescala el archivo en el navegador
+ * (`resizeImageFile`: lado mayor `maxDimension`, sin EXIF) y lo deja como data
+ * URL en un <input type="hidden"> con `name`, listo para viajar dentro del
+ * FormData del formulario que lo envuelve. El servidor lo guarda en Postgres
+ * (`resolveImageInput`, src/lib/file-store.ts) y la columna recibe
+ * `/api/files/<id>`; si la imagen no se toca, se reenvía esa misma URL y el
+ * servidor la deja como está.
  */
 export function ImageDropzone({
   name,
@@ -26,6 +29,10 @@ export function ImageDropzone({
   shape = "rounded",
   defaultValue,
   sizeClassName = "w-24 h-24",
+  maxDimension = 1600,
+  fit = "cover",
+  removable = false,
+  emptyLabel = "Foto",
   onChange,
 }: {
   name: string;
@@ -34,13 +41,22 @@ export function ImageDropzone({
   shape?: Shape;
   defaultValue?: string | null;
   sizeClassName?: string;
+  /** Lado mayor tras reescalar. Logos y avatares no necesitan más de 600-800. */
+  maxDimension?: number;
+  /** `contain` para logos: se ven enteros, sin recortar. */
+  fit?: "cover" | "contain";
+  /** Muestra "Quitar" para dejar el campo vacío (p. ej. volver al logo por defecto). */
+  removable?: boolean;
+  emptyLabel?: string;
   onChange?: (dataUrl: string) => void;
 }) {
   const inputId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const hiddenRef = useRef<HTMLInputElement>(null);
+  const guardRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(defaultValue ?? null);
   const [dragOver, setDragOver] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const toast = useToast();
 
   // `preview` es estado de React, así que no se entera de dos cosas que sí
@@ -64,23 +80,31 @@ export function ImageDropzone({
     return () => form.removeEventListener("reset", onReset);
   }, [defaultValue]);
 
-  function handleFile(file: File | undefined) {
+  // Mientras se reescala, el formulario NO se puede enviar: el campo oculto
+  // aún lleva la imagen anterior, y guardar en ese instante perdía la nueva
+  // sin avisar. Un input con `setCustomValidity` hace que el propio navegador
+  // bloquee el envío, sin depender de cómo gestione el submit cada formulario.
+  useEffect(() => {
+    guardRef.current?.setCustomValidity(processing ? "Espera a que termine de prepararse la imagen." : "");
+  }, [processing]);
+
+  async function handleFile(file: File | undefined) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("Selecciona un archivo de imagen.");
+    setProcessing(true);
+    const result = await resizeImageFile(file, { maxDimension });
+    setProcessing(false);
+    if (!result.ok) {
+      toast.error(result.error);
       return;
     }
-    if (file.size > MAX_BYTES) {
-      toast.error("La imagen pesa demasiado (máx. 2MB).");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setPreview(dataUrl);
-      onChange?.(dataUrl);
-    };
-    reader.readAsDataURL(file);
+    setPreview(result.dataUrl);
+    onChange?.(result.dataUrl);
+  }
+
+  function clear() {
+    setPreview(null);
+    onChange?.("");
+    if (fileRef.current) fileRef.current.value = "";
   }
 
   return (
@@ -91,10 +115,13 @@ export function ImageDropzone({
         </label>
       )}
       <input ref={hiddenRef} type="hidden" name={name} value={preview ?? ""} />
+      <input ref={guardRef} tabIndex={-1} aria-hidden="true" className="sr-only" defaultValue="" />
       <button
         type="button"
         id={inputId}
         onClick={() => fileRef.current?.click()}
+        disabled={processing}
+        aria-busy={processing}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
@@ -103,7 +130,7 @@ export function ImageDropzone({
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
-          handleFile(e.dataTransfer.files?.[0]);
+          void handleFile(e.dataTransfer.files?.[0]);
         }}
         className={clsx(
           "relative shrink-0 overflow-hidden border-2 border-dashed flex items-center justify-center text-center transition-colors duration-150 cursor-pointer bg-tz-bone",
@@ -112,11 +139,13 @@ export function ImageDropzone({
           dragOver ? "border-brand-ink bg-tz-sand/60" : "border-brand-border hover:border-brand-border-hover"
         )}
       >
-        {preview ? (
-          // eslint-disable-next-line @next/next/no-img-element -- preview de imagen subida por el usuario (data URL)
-          <img src={preview} alt="" className="w-full h-full object-cover" />
+        {processing ? (
+          <span className="text-[11px] font-semibold text-brand-muted px-2">Preparando…</span>
+        ) : preview ? (
+          // eslint-disable-next-line @next/next/no-img-element -- vista previa: data URL recién elegida o `/api/files/<id>`
+          <img src={preview} alt="" className={clsx("w-full h-full", fit === "contain" ? "object-contain p-2" : "object-cover")} />
         ) : (
-          <span className="text-[11px] font-semibold text-brand-muted px-2">Foto</span>
+          <span className="text-[11px] font-semibold text-brand-muted px-2">{emptyLabel}</span>
         )}
       </button>
       <input
@@ -124,8 +153,17 @@ export function ImageDropzone({
         type="file"
         accept="image/*"
         className="sr-only"
-        onChange={(e) => handleFile(e.target.files?.[0])}
+        onChange={(e) => void handleFile(e.target.files?.[0])}
       />
+      {removable && preview && !processing && (
+        <button
+          type="button"
+          onClick={clear}
+          className="self-start text-xs font-semibold text-brand-muted underline underline-offset-2 hover:text-brand-ink"
+        >
+          Quitar
+        </button>
+      )}
       {hint && <p className="text-xs text-brand-muted max-w-xs">{hint}</p>}
     </div>
   );

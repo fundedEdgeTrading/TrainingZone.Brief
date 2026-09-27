@@ -275,6 +275,8 @@ export async function runDataRetention(
       data: { photoFrontUrl: null, photoSideUrl: null, photoBackUrl: null },
     });
     await db.member.update({ where: { id: member.id }, data: { photoUrl: null } });
+    // La foto de perfil también es un fichero (`StoredFile`), no solo la columna.
+    await db.storedFile.deleteMany({ where: { memberId: member.id, kind: "MEMBER_PHOTO" } });
     await mark(db, orgId, "PROGRESS_PHOTOS", member.id, { memberId: member.id, entries: cleared.count });
     photosPurged++;
   }

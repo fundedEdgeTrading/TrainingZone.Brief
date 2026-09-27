@@ -90,3 +90,17 @@ export const SIGNED_TOKEN_ROUTES: readonly string[] = [
 ];
 
 export const NO_REFERRER_HEADER: HttpHeader = { key: "Referrer-Policy", value: "no-referrer" };
+
+/**
+ * Imágenes subidas por usuarios (`/api/files`, `/api/progress-photos`),
+ * servidas desde nuestro propio dominio. El tipo ya se valida por la firma de
+ * los bytes al subir, pero si alguna se abriera como documento no debe poder
+ * ejecutar nada: `sandbox` y nada más que la propia imagen. Va DESPUÉS de la
+ * política general en `next.config.ts`: con la misma clave, gana la última.
+ */
+export const UPLOADED_FILE_ROUTES: readonly string[] = ["/api/files/:id*", "/api/progress-photos/:id*"];
+
+export const UPLOADED_FILE_CSP_HEADER: HttpHeader = {
+  key: "Content-Security-Policy",
+  value: "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox",
+};

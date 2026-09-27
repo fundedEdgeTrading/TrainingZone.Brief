@@ -1,5 +1,7 @@
 import type Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import { isStoredFileUrl } from "@/lib/file-store";
+import { absoluteUrl } from "@/lib/site";
 import { stripeForOrg } from "@/lib/stripe";
 import { isRecurring } from "@/lib/plan-recurrence";
 import { idempotencyKey, productKey } from "@/lib/stripe-idempotency";
@@ -181,6 +183,20 @@ export async function ensurePlanPriceForAccount(
 }
 
 /**
+ * Solo URLs absolutas: Stripe no admite `data:` en `images` (quedan filas
+ * antiguas así hasta que corra `npm run files:migrate`), y enviarla devolvería
+ * 400 y tumbaría el resto de la sincronización por un detalle cosmético. Las
+ * imágenes subidas (`/api/files/<id>`) son públicas y se mandan con el origen
+ * del sitio delante.
+ */
+export function stripeProductImages(imageUrl: string | null): string[] {
+  if (!imageUrl) return [];
+  if (/^https?:\/\//i.test(imageUrl)) return [imageUrl];
+  if (isStoredFileUrl(imageUrl)) return [absoluteUrl(imageUrl)];
+  return [];
+}
+
+/**
  * Producto de Stripe al día. Si el gimnasio reconectó otra cuenta, el producto
  * de la anterior no vale ahí: se crea uno nuevo.
  *
@@ -197,10 +213,7 @@ async function ensureProduct(
     name: plan.name,
     // Stripe rechaza la cadena vacía; `null` es la forma de borrar el campo.
     description: plan.description?.trim() || null,
-    // Solo URLs: Stripe no admite `data:` en `images`, y el resto de la app las
-    // usa para la demo. Enviar una data URL devolvería 400 y tumbaría el resto
-    // de la sincronización por un detalle cosmético.
-    images: plan.imageUrl && /^https?:\/\//i.test(plan.imageUrl) ? [plan.imageUrl] : [],
+    images: stripeProductImages(plan.imageUrl),
     // Ocultar en Apta oculta también en Stripe. Quien lo tiene contratado sigue
     // igual: archivar un producto no cancela ninguna suscripción.
     active: plan.active,

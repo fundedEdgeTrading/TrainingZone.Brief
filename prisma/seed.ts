@@ -3264,6 +3264,7 @@ async function main() {
     prisma.auditLog.deleteMany(),
     prisma.memberNote.deleteMany(),
     prisma.memberProgressEntry.deleteMany(),
+    prisma.storedFile.deleteMany(),
     prisma.clientFeedback.deleteMany(),
     prisma.trainerDebrief.deleteMany(),
     prisma.centerMembership.deleteMany(),
