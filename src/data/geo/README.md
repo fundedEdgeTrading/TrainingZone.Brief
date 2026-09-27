@@ -1,9 +1,50 @@
 # Geometría de barrio por ciudad (E11-08)
 
 Un fichero por ciudad, `<slug-de-ciudad>.topo.json`, servido por
-`GET /api/geo/[ciudad]`. **Este directorio está vacío a propósito**: hasta que se
-publique la geometría de una ciudad, el mapa usa `tessellate()` (Voronoi sobre el
-centroide de cada CP) y la leyenda lo declara. Es el respaldo, no una avería.
+`GET /api/geo/[ciudad]`. Una ciudad sin fichero aquí usa `tessellate()` (Voronoi
+sobre el centroide de cada CP) y la leyenda lo declara. Es el respaldo, no una
+avería.
+
+## Publicadas
+
+| Fichero | Contornos | Fuente | Licencia |
+| --- | --- | --- | --- |
+| `zaragoza.topo.json` | CP 50001–50022 del municipio de Zaragoza (INE 50297) | CNIG · CartoCiudad, capa de códigos postales | CC BY 4.0 · © Instituto Geográfico Nacional |
+| `santander.topo.json` | CP 39001–39012 del municipio de Santander (INE 39075) | CNIG · CartoCiudad, capa de códigos postales | CC BY 4.0 · © Instituto Geográfico Nacional |
+
+Son **áreas de código postal**, no barrios administrativos: es exactamente la
+unidad por la que se agregan socios y leads, así que el color de cada contorno
+mide lo que dice medir. El nombre de barrio que se rotula sigue siendo el de
+`PostalCodeArea` y es orientativo. La atribución va en la nota de la leyenda
+(`geometryNote`) y en el control de atribución del mapa.
+
+Los CP periurbanos 50011 y 50012 incluyen término rural al oeste. No se
+recortan (sería inventar un límite); el mapa encuadra sobre los centroides de
+los barrios y deja que esas colas salgan del encuadre.
+
+Copia de trabajo de la capa: el repositorio público
+`inigoflores/ds-codigos-postales` la publica por provincia en GeoJSON
+(`data/ZARAGOZA.geojson`, `data/CANTABRIA.geojson`), procesada desde la descarga
+del CNIG. Filtrado previo (municipio y CP urbanos) y paso a `code`:
+
+```sh
+node -e '
+  const fs = require("fs");
+  const g = JSON.parse(fs.readFileSync("ZARAGOZA.geojson"));
+  g.features = g.features
+    .filter((f) => f.properties.CODIGO_INE === 50297 && /^500[0-2]\d$/.test(f.properties.COD_POSTAL))
+    .map((f) => ({ ...f, properties: { code: f.properties.COD_POSTAL } }));
+  fs.writeFileSync("zaragoza.src.geojson", JSON.stringify(g));'
+
+npx mapshaper zaragoza.src.geojson -dissolve code -simplify 30% keep-shapes \
+  -filter-fields code -rename-layers barrios \
+  -o format=topojson quantization=1e5 src/data/geo/zaragoza.topo.json
+```
+
+(Santander igual, con `CODIGO_INE === 39075` y `/^390\d\d$/`.) Aquí se usa
+`-simplify 30%` y no el 8 % de la receta general: con un CP por barrio la ciudad
+entera pesa ~5 KB comprimida, y al 8 % los contornos se volvían poligonales a
+zoom de barrio.
 
 ## Qué tiene que traer el fichero
 

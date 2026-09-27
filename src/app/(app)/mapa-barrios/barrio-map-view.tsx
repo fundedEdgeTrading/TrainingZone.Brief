@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BARRIO_METRICS,
+  NO_ACTIVITY_FILL,
   NO_DATA_FILL,
   classifyMetric,
   colorForValueClassified,
@@ -11,6 +12,7 @@ import {
   dashedByCode,
   formatMetricValue,
   labelPriority,
+  hasEmptyValues,
   hasMissingValues,
   inksByCode,
   legendSteps,
@@ -42,7 +44,7 @@ import {
 /** Parámetros del mapa. Fijos hoy; el sitio natural de convertirlos en preferencia del centro. */
 const WALK_MINUTES = 15;
 const SHOW_CENTERS = true;
-const CELL_OPACITY = 0.86;
+const CELL_OPACITY = 0.74;
 
 const GLASS = "bg-brand-card/95 backdrop-blur-md border border-brand-border";
 
@@ -134,6 +136,15 @@ export function BarrioMapView({
   // ancho: es la única vía al dato para quien no usa ratón, y bajo 1024 px es la
   // única vía a secas. Se puede plegar para mirar el plano entero.
   const [panelOpen, setPanelOpen] = useState(true);
+  // Bajo 1024 px el panel es una hoja inferior: recogida (≈40 % del alto) deja
+  // ver el plano; ampliada, lee el ranking cómodo. Nunca se va del DOM.
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  // Bajo 1024 px los filtros de periodo y estado se pliegan tras un botón: eran
+  // la segunda fila de controles que, con las demás, tapaba el mapa entero.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  // La letra pequeña (cobertura y aproximaciones) tras un ⓘ en la leyenda.
+  const [notesOpen, setNotesOpen] = useState(false);
+  const [zoomSignal, setZoomSignal] = useState<{ dir: 1 | -1; signal: number } | null>(null);
   const gaps = hasGaps(coverage);
   // E11-08 · Qué geometría se está pintando de verdad. La nota de la leyenda se
   // condiciona a esto: decir "teselación" cuando se están pintando los barrios
@@ -157,7 +168,7 @@ export function BarrioMapView({
   useHeaderSubtitle(
     `${roleLabel} · ${city.label} · ${city.centers.length} ${city.centers.length === 1 ? "centro" : "centros"} · ${
       DASHBOARD_RANGES.find((r) => r.id === params.range)?.meta ?? ""
-    } · RB-LEAD-010`
+    }`
   );
 
   const classification = useMemo(() => classifyMetric(city.points, metric), [city, metric]);
@@ -186,6 +197,7 @@ export function BarrioMapView({
     [city]
   ) as Record<BarrioMetric, boolean>;
   const missing = useMemo(() => hasMissingValues(city.points, metric), [city, metric]);
+  const empty = useMemo(() => hasEmptyValues(city.points, metric), [city, metric]);
 
   // El barrio de la tarjeta: el que se está señalando, si no el fijado, si no el
   // primero del ranking (que es el que la métrica pone por delante).
@@ -243,36 +255,37 @@ export function BarrioMapView({
     URL.revokeObjectURL(url);
   }, [rows, city.label, params.range, params.estado, centerLabel]);
 
-  /** Las pastillas de métrica. Mismas en las dos vistas: es el mismo estado. */
+  /** Los botones de métrica. Mismos en las dos vistas: es el mismo estado. */
+  const metricButtons = BARRIO_METRICS.map((m) => {
+    const enabled = available[m.key];
+    return (
+      <button
+        key={m.key}
+        type="button"
+        disabled={!enabled}
+        onClick={() => selectMetric(m.key)}
+        // E11-03 · Sin centros situados esta métrica no se puede calcular.
+        // Se deshabilita CON explicación: un botón muerto y sin motivo se
+        // lee como una avería.
+        title={enabled ? m.question : "Ningún centro de tu organización tiene coordenadas: sin ellas no se puede calcular esta métrica."}
+        aria-pressed={m.key === metric}
+        className={`shrink-0 px-2.5 min-h-[44px] rounded-[10px] text-[12px] font-bold tracking-[.01em] whitespace-nowrap transition-colors duration-150 ${
+          !enabled
+            ? "text-brand-faint cursor-not-allowed line-through decoration-1"
+            : m.key === metric
+              ? "bg-tz-black text-tz-bone"
+              : "text-brand-text-2 hover:bg-brand-bg"
+        }`}
+      >
+        {m.label}
+      </button>
+    );
+  });
+
+  /** Las pastillas de métrica en su propia tarjeta (vista de tabla). */
   const metricPills = (
-    <div
-      data-tz-overlay
-      className={`flex flex-wrap gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
-    >
-      {BARRIO_METRICS.map((m) => {
-        const enabled = available[m.key];
-        return (
-          <button
-            key={m.key}
-            type="button"
-            disabled={!enabled}
-            onClick={() => selectMetric(m.key)}
-            // E11-03 · Sin centros situados esta métrica no se puede calcular.
-            // Se deshabilita CON explicación: un botón muerto y sin motivo se
-            // lee como una avería.
-            title={enabled ? m.question : "Ningún centro de tu organización tiene coordenadas: sin ellas no se puede calcular esta métrica."}
-            className={`px-[15px] min-h-[44px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] whitespace-nowrap transition-colors duration-150 ${
-              !enabled
-                ? "text-brand-faint cursor-not-allowed line-through decoration-1"
-                : m.key === metric
-                  ? "bg-tz-black text-tz-bone"
-                  : "text-brand-text-2 hover:bg-brand-bg"
-            }`}
-          >
-            {m.label}
-          </button>
-        );
-      })}
+    <div data-tz-overlay className={`flex flex-wrap gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}>
+      {metricButtons}
     </div>
   );
 
@@ -280,11 +293,8 @@ export function BarrioMapView({
      ellos el mapa era acumulado histórico CON los rótulos del panel: "leads de
      este trimestre" en /dashboard y "leads desde siempre" aquí, sin que nada lo
      dijera. */
-  const periodFilters = (
-    <div
-      data-tz-overlay
-      className={`self-start flex flex-wrap items-center gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
-    >
+  const periodControls = (
+    <>
       {/* E14-06 · Fuera el personalizado: necesita un selector de fechas, y
           `/mapa-barrios` no lo tiene. Una pastilla que navega a `range=custom`
           sin fechas se comporta como «Mes» sin decirlo, que es justo la clase
@@ -296,14 +306,15 @@ export function BarrioMapView({
           type="button"
           onClick={() => navigate({ range: r.id })}
           title={r.meta}
-          className={`px-3.5 min-h-[44px] rounded-[10px] text-[12.5px] font-bold transition-colors duration-150 ${
+          aria-pressed={r.id === params.range}
+          className={`shrink-0 px-3 min-h-[44px] rounded-[10px] text-[12.5px] font-bold whitespace-nowrap transition-colors duration-150 ${
             r.id === params.range ? "bg-tz-black text-tz-bone" : "text-brand-text-2 hover:bg-brand-bg"
           }`}
         >
           {r.label}
         </button>
       ))}
-      <span className="w-px self-stretch bg-tz-sand mx-1" aria-hidden="true" />
+      <span className="w-px self-stretch bg-tz-sand mx-1 shrink-0" aria-hidden="true" />
       <label className="sr-only" htmlFor="tz-barrio-estado">
         Estado de los socios que se cuentan
       </label>
@@ -311,7 +322,7 @@ export function BarrioMapView({
         id="tz-barrio-estado"
         value={params.estado}
         onChange={(e) => navigate({ estado: e.target.value as BarrioMapParams["estado"] })}
-        className="min-h-[44px] rounded-[10px] bg-transparent px-2 text-[12.5px] font-bold text-brand-text-2"
+        className="shrink-0 min-h-[44px] rounded-[10px] bg-transparent px-2 text-[12.5px] font-bold text-brand-text-2"
       >
         {BARRIO_STATE_FILTERS.map((state) => (
           <option key={state} value={state}>
@@ -319,18 +330,18 @@ export function BarrioMapView({
           </option>
         ))}
       </select>
+    </>
+  );
+
+  const periodFilters = (
+    <div
+      data-tz-overlay
+      className={`self-start flex flex-wrap items-center gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
+    >
+      {periodControls}
     </div>
   );
 
-  /**
-   * E14-10 · El conmutador de vista, en la cabecera y a cualquier ancho.
-   *
-   * Es la historia entera en un control: la tabla de CP con clientes, leads y
-   * conversión existía desde E11-04 y negocio la pidió igualmente, porque
-   * estaba donde no se busca — dentro del panel lateral del plano, rotulada
-   * como su alternativa accesible. Aquí arriba, al lado del selector de ciudad,
-   * es una de las dos formas de leer esta pantalla y no el plan B de la otra.
-   */
   /**
    * E14-10 · El conmutador de vista.
    *
@@ -338,34 +349,33 @@ export function BarrioMapView({
    * header es `shrink-0` y la del título `min-w-0`, así que todo lo que se
    * mete arriba se lo quita al título: con el conmutador ahí, a 1280 px el
    * subtítulo «… · Zaragoza · 2 centros» se quedaba a cero de ancho y el e2e
-   * del selector de ciudad lo cazó. Es exactamente lo que ya advertía el
-   * comentario de esta pantalla sobre los filtros de periodo, escrito por el
-   * mismo motivo.
+   * del selector de ciudad lo cazó.
    *
    * Vive con las pastillas de métrica, que es lo primero que se mira al entrar
    * y donde ya se decide qué se está leyendo. La historia pide que la tabla se
    * ENCUENTRE, no que esté en un sitio concreto.
    */
-  const viewSwitch = (
-    <div
-      data-tz-overlay
-      role="group"
-      aria-label="Vista"
-      className={`self-start flex gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}
-    >
+  const viewButtons = (
+    <div role="group" aria-label="Vista" className="flex gap-1 shrink-0">
       {BARRIO_VIEWS.map((v) => (
         <button
           key={v}
           type="button"
           onClick={() => selectView(v)}
           aria-pressed={v === view}
-          className={`px-[15px] min-h-[44px] rounded-[10px] text-[12.5px] font-bold tracking-[.01em] transition-colors duration-150 ${
+          className={`px-2.5 min-h-[44px] rounded-[10px] text-[12px] font-bold tracking-[.01em] transition-colors duration-150 ${
             v === view ? "bg-tz-black text-tz-bone" : "text-brand-text-2 hover:bg-brand-bg"
           }`}
         >
           {BARRIO_VIEW_LABEL[v]}
         </button>
       ))}
+    </div>
+  );
+
+  const viewSwitch = (
+    <div data-tz-overlay className={`self-start ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)]`}>
+      {viewButtons}
     </div>
   );
 
@@ -390,12 +400,12 @@ export function BarrioMapView({
   );
 
   /**
-   * El selector de ciudad de la barra de la tabla, para el hueco que el header
-   * deja por debajo de `md`: ahí sus pastillas se ocultan y hasta ahora no
-   * había forma de cambiar de ciudad en ningún ancho de móvil.
+   * El selector de ciudad para el hueco que el header deja por debajo de `md`:
+   * ahí sus pastillas se ocultan y hasta ahora no había forma de cambiar de
+   * ciudad en ningún ancho de móvil.
    */
   const citySelect = cities.length > 1 && (
-    <div className={`md:hidden flex items-center gap-1 ${GLASS} rounded-[14px] p-[5px]`}>
+    <div className={`md:hidden shrink-0 flex items-center gap-1 ${GLASS} rounded-[14px] p-[5px]`}>
       <label className="sr-only" htmlFor="tz-barrio-ciudad">
         Ciudad
       </label>
@@ -466,6 +476,136 @@ export function BarrioMapView({
     );
   }
 
+  /** Qué significa el relleno gris en la métrica activa: no es lo mismo en todas. */
+  const missingLabel =
+    metric === "conv"
+      ? "Sin demanda (ni leads ni clientes)"
+      : metric === "dist" || metric === "opp"
+        ? "Sin dato (falta situar un centro)"
+        : "Sin dato";
+
+  /**
+   * La leyenda, con la pregunta como título.
+   *
+   * La pregunta era una pastilla negra suelta entre las métricas y los filtros
+   * —la cuarta tarjeta apilada en la esquina—, y la leyenda repetía en su
+   * cabecera el nombre de la métrica. Juntas dicen lo que hay que leer: "¿dónde
+   * están mis clientes?" y, debajo, cómo se lee el color para contestarla.
+   *
+   * Bajo 1024 px va en la columna de controles; desde 1024 px, abajo a la
+   * izquierda, lejos de la botonera y del panel.
+   */
+  const legend = (
+    <div
+      data-tz-overlay
+      data-tz-legend
+      className={`w-full max-w-[400px] ${GLASS} rounded-[14px] px-[15px] pt-3 pb-3 shadow-[0_14px_34px_-20px_rgba(29,29,28,.5)] lg:absolute lg:left-0 lg:bottom-[-56px] lg:w-[400px]`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-display font-extrabold text-[15px] leading-[1.2] text-brand-text">{def.question}</h2>
+          <p className="text-[11px] font-semibold text-brand-muted mt-0.5">
+            {def.label} · {def.note}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setNotesOpen((v) => !v)}
+          aria-expanded={notesOpen}
+          aria-controls="tz-barrio-notas"
+          title="Cómo se ha hecho este mapa"
+          className={`shrink-0 -mr-2 -mt-1.5 w-11 min-h-[44px] rounded-full grid place-items-center text-[13px] font-bold transition-colors ${
+            notesOpen ? "text-brand-text" : "text-brand-muted hover:text-brand-text"
+          }`}
+        >
+          <span aria-hidden="true" className="w-[18px] h-[18px] rounded-full border-[1.5px] border-current grid place-items-center text-[11px] leading-none">
+            i
+          </span>
+          <span className="sr-only">Cómo se ha hecho este mapa</span>
+        </button>
+      </div>
+
+      {/* E11-02 · Un testigo por escalón con su corte, no dos etiquetas de
+          mínimo y máximo: con cuantiles los escalones no son equidistantes, y
+          una leyenda de dos extremos haría creer que el color del medio es el
+          valor del medio. Sin escalones repetidos: con pocos valores distintos
+          hay menos escalones, no cifras dobles. */}
+      {steps.length > 0 ? (
+        <>
+          <div className="flex gap-[3px] mt-2.5">
+            {steps.map((step, i) => (
+              <span
+                key={i}
+                className="flex-1 h-2.5 rounded-[3px]"
+                style={{ background: step.color }}
+                title={stepRangeLabel(step, metric)}
+              />
+            ))}
+          </div>
+          <div className="flex gap-[3px] mt-1">
+            {steps.map((step, i) => (
+              <span
+                key={i}
+                className="flex-1 text-[10px] font-bold text-brand-text-2 tz-nums text-center whitespace-nowrap overflow-hidden"
+              >
+                {i === steps.length - 1 && steps.length > 1 ? "≥ " : ""}
+                {formatMetricValue(step.from, metric)}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="mt-2.5 text-[12px] font-semibold text-brand-text-2">
+          Ningún barrio tiene actividad en este periodo. Prueba con un periodo más largo.
+        </p>
+      )}
+
+      {/* Las claves solo se explican si hay algo que explicar. El gris y el
+          casi transparente no son escalones: significan "no lo sé" y "aquí no
+          hay nada" (E11-03), y sin su entrada se leerían como el valor más
+          bajo. */}
+      {(empty || missing || city.centers.length > 0) && (
+        <div className="hidden sm:flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 pt-2.5 border-t border-tz-sand">
+          {empty && (
+            <LegendKey label="Sin actividad">
+              <span className="w-[13px] h-[13px] rounded-[3px] border border-brand-border" style={{ background: NO_ACTIVITY_FILL }} />
+            </LegendKey>
+          )}
+          {missing && (
+            <LegendKey label={missingLabel}>
+              <span className="w-[13px] h-[13px] rounded-[3px] border border-brand-border" style={{ background: NO_DATA_FILL }} />
+            </LegendKey>
+          )}
+          {city.centers.length > 0 && (
+            <>
+              <LegendKey label="Centro">
+                <span className="w-[11px] h-[11px] rounded-[50%_50%_50%_0] -rotate-45 bg-[#1d1d1c] border-[1.5px] border-white shadow-[0_0_0_1px_var(--color-brand-border)]" />
+              </LegendKey>
+              <LegendKey label={`${WALK_MINUTES} min andando`}>
+                <span className="w-[13px] h-[13px] rounded-full border-[1.5px] border-dashed border-brand-muted bg-brand-muted/10" />
+              </LegendKey>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* E11-05 · Cuánta gente NO está en el plano. Si falta alguien se dice
+          siempre, a la vista; si están todos, junto al resto de la letra
+          pequeña tras el ⓘ. */}
+      {gaps && !notesOpen && (
+        <p className="mt-2 text-[10.5px] font-medium leading-[1.45] text-brand-text-2">
+          {coverageSentence(coverage.members, "socio", "socios")} {coverageSentence(coverage.leads, "lead", "leads")}
+        </p>
+      )}
+      <div id="tz-barrio-notas" hidden={!notesOpen} className="mt-2 pt-2 border-t border-tz-sand text-[10.5px] font-medium leading-[1.45] text-brand-text-2">
+        <p>
+          {coverageSentence(coverage.members, "socio", "socios")} {coverageSentence(coverage.leads, "lead", "leads")}
+        </p>
+        <p className="mt-1 text-brand-muted">{note}</p>
+      </div>
+    </div>
+  );
+
   return (
     <div data-full-bleed className="absolute inset-0">
       {/* El header solo lleva el selector de ciudad, como siempre. Los filtros
@@ -489,6 +629,7 @@ export function BarrioMapView({
         focus={focus}
         showLabels={showLabels}
         frameSignal={frameSignal}
+        zoomSignal={zoomSignal}
         panTo={panTo}
         onHover={setHovered}
         onSelect={selectBarrio}
@@ -497,59 +638,88 @@ export function BarrioMapView({
         cellOpacity={CELL_OPACITY}
       />
 
-      {/* Franja superior: métricas y pregunta a la izquierda, foco y ranking a la
-          derecha. `pointer-events-none` en el contenedor para no robarle el mapa
-          al ratón en el hueco entre tarjetas. */}
-      <div className="absolute top-5 left-5 right-5 bottom-[76px] z-[500] flex items-start justify-between gap-4 pointer-events-none">
-        <div className="flex flex-col gap-2.5 min-w-0 pointer-events-auto">
-          {viewSwitch}
-          {metricPills}
+      {/* Franja de controles: una columna a la izquierda (qué se mira y cómo se
+          lee) y el panel a la derecha. `pointer-events-none` en el contenedor
+          para no robarle el mapa al ratón en el hueco entre tarjetas. */}
+      <div className="absolute top-3 left-3 right-3 bottom-[72px] lg:top-5 lg:left-5 lg:right-5 lg:bottom-[76px] z-[500] flex items-start justify-between gap-4 pointer-events-none">
+        <div data-tz-controls className="flex flex-col gap-2 min-w-0 max-w-full lg:max-w-[calc(100%-420px)] pointer-events-auto">
+          {/* Una sola barra: vista y métrica, que son las dos decisiones de
+              "qué estoy mirando". Antes eran cuatro tarjetas apiladas que se
+              comían la esquina del mapa y tapaban barrios enteros. En móvil se
+              desplaza en horizontal en vez de partirse en tres filas. */}
           <div
             data-tz-overlay
-            className="self-start bg-tz-black rounded-xl px-[15px] py-[9px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.5)]"
+            className={`self-start max-w-full flex items-center gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)] overflow-x-auto tz-scroll-x lg:flex-wrap lg:overflow-visible`}
           >
-            <span className="text-[13px] font-semibold text-tz-bone">{def.question}</span>
+            {viewButtons}
+            <span className="w-px self-stretch bg-tz-sand mx-0.5 shrink-0" aria-hidden="true" />
+            {metricButtons}
+            <span className="w-px self-stretch bg-tz-sand mx-1 shrink-0 lg:hidden" aria-hidden="true" />
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-expanded={filtersOpen}
+              aria-controls="tz-barrio-filtros"
+              className={`lg:hidden shrink-0 px-3 min-h-[44px] rounded-[10px] text-[12.5px] font-bold whitespace-nowrap transition-colors duration-150 ${
+                filtersOpen ? "bg-tz-black text-tz-bone" : "text-brand-text-2 hover:bg-brand-bg"
+              }`}
+            >
+              Periodo · {DASHBOARD_RANGES.find((r) => r.id === params.range)?.label ?? ""}
+            </button>
           </div>
 
-          {periodFilters}
-          {!available[metric] && (
+          <div className="flex items-start gap-2 max-w-full">
+            {citySelect}
             <div
+              id="tz-barrio-filtros"
               data-tz-overlay
-              className={`self-start max-w-[360px] ${GLASS} rounded-xl px-[15px] py-[9px]`}
-              role="status"
+              className={`${filtersOpen ? "flex" : "hidden"} lg:flex self-start max-w-full items-center gap-1 ${GLASS} rounded-[14px] p-[5px] shadow-[0_10px_28px_-14px_rgba(29,29,28,.4)] overflow-x-auto tz-scroll-x`}
             >
+              {periodControls}
+            </div>
+          </div>
+
+          {!available[metric] && (
+            <div data-tz-overlay className={`self-start max-w-[360px] ${GLASS} rounded-xl px-[15px] py-[9px]`} role="status">
               <span className="text-[12px] font-semibold text-brand-text-2">
                 No se puede calcular: ningún centro de tu organización tiene coordenadas. Añádelas en Organización →
                 Centros.
               </span>
             </div>
           )}
+
+          {legend}
         </div>
 
-        {/* E11-04 · Este panel ya no desaparece bajo 1024 px: se convierte en una
-            hoja inferior. Antes, bajo ese ancho se perdían ranking y tarjeta de
-            foco, y bajo 768 px además la leyenda — lo que quedaba era un mapa de
-            colores sin escala, que no es un mapa degradado sino incorrecto. */}
+        {/* E11-04 · Este panel no desaparece bajo 1024 px: se convierte en una
+            hoja inferior, recogida por defecto para que se vea el plano y con
+            su botón para ampliarla. Antes, bajo ese ancho se perdían ranking y
+            tarjeta de foco, y bajo 768 px además la leyenda — lo que quedaba
+            era un mapa de colores sin escala, que no es un mapa degradado sino
+            incorrecto. */}
         <div
           data-tz-overlay
           hidden={!panelOpen}
-          className="absolute left-0 right-0 bottom-0 max-h-[52%] lg:static lg:max-h-full lg:w-[420px] shrink-0 flex flex-col gap-3 min-h-0 pointer-events-auto"
+          data-tz-panel
+          className={`absolute left-0 right-0 bottom-0 ${
+            sheetExpanded ? "max-h-[78%]" : "max-h-[34%]"
+          } lg:static lg:max-h-full lg:w-[380px] shrink-0 flex flex-col gap-3 min-h-0 pointer-events-auto transition-[max-height] duration-200`}
         >
           <div
-            className={`hidden lg:block shrink-0 ${GLASS} rounded-card p-[18px] pb-4 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
+            className={`hidden lg:block shrink-0 ${GLASS} rounded-card p-4 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
           >
             <div className="flex items-baseline justify-between gap-2.5">
               <div className="min-w-0">
                 <div className="text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint">
-                  Barrio en foco
+                  {focus ? "Barrio fijado" : hovered ? "Barrio señalado" : "Primero del ranking"}
                 </div>
-                <div className="font-display font-extrabold text-[19px] leading-[1.15] text-brand-text mt-[5px]">
+                <div className="font-display font-extrabold text-[19px] leading-[1.15] text-brand-text mt-[5px] truncate">
                   {spotlight.name}
                 </div>
               </div>
               <div className="text-right shrink-0">
                 <div
-                  className="font-display font-extrabold text-[26px] leading-none tz-nums"
+                  className="font-display font-extrabold text-[28px] leading-none tz-nums"
                   style={{ color: readableMetricInk(colorForValueClassified(metricValue(spotlight, metric), classification)) }}
                 >
                   {formatMetricValue(metricValue(spotlight, metric), metric)}
@@ -564,10 +734,10 @@ export function BarrioMapView({
                 sobre el mismo plano: un barrio puede estar creciendo en altas
                 mientras se desangra por detrás, y con `trend` sola eso no se
                 ve. */}
-            <div className="grid grid-cols-2 gap-2 mt-4">
+            <div className="grid grid-cols-3 gap-1.5 mt-3.5">
               <SpotlightCell label="Clientes" value={String(spotlight.members)} />
               <SpotlightCell label="Leads" value={String(spotlight.leads)} />
-              <SpotlightCell label="Conversión" value={`${spotlight.conv}%`} />
+              <SpotlightCell label="Conversión" value={formatMetricValue(metricValue(spotlight, "conv"), "conv")} />
               <SpotlightCell
                 label="Altas 90 d"
                 value={formatMetricValue(spotlight.trend, "trend")}
@@ -584,7 +754,10 @@ export function BarrioMapView({
             </div>
 
             <div className="flex items-center gap-2 mt-3 pt-3 border-t border-tz-sand">
-              <span className="w-[9px] h-[9px] rounded-[3px] bg-tz-black shrink-0" />
+              <span
+                aria-hidden="true"
+                className="w-[10px] h-[10px] rounded-[50%_50%_50%_0] -rotate-45 bg-[#1d1d1c] shrink-0"
+              />
               <span className="text-xs text-brand-text-2">
                 {spotlight.nearestCenter
                   ? `${spotlight.dist} km hasta ${spotlight.nearestCenter}`
@@ -594,13 +767,21 @@ export function BarrioMapView({
           </div>
 
           <div
-            className={`flex-1 min-h-24 overflow-hidden flex flex-col ${GLASS} rounded-card p-3.5 pb-2.5 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
+            className={`flex-1 min-h-24 overflow-hidden flex flex-col ${GLASS} rounded-card p-3 pb-2 shadow-[0_18px_44px_-22px_rgba(29,29,28,.5)]`}
           >
-            <div className="shrink-0 flex items-baseline justify-between gap-2 px-1 pb-2">
+            <div className="shrink-0 flex items-center justify-between gap-2 px-1">
               <span className="text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint">
                 Ranking · {def.label}
               </span>
-              <span className="flex items-center gap-1 shrink-0">
+              <span className="flex items-center gap-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSheetExpanded((v) => !v)}
+                  aria-expanded={sheetExpanded}
+                  className="lg:hidden text-[10.5px] font-bold uppercase tracking-[.08em] text-brand-muted hover:text-brand-text min-h-[44px] px-2"
+                >
+                  {sheetExpanded ? "Reducir" : "Ampliar"}
+                </button>
                 {/* E14-10 · La segunda vía a la vista completa, desde la propia
                     tabla recortada: quien ya está leyéndola aquí es exactamente
                     quien quiere verla entera. */}
@@ -624,6 +805,7 @@ export function BarrioMapView({
                 pila entera no cabe y sin esto las últimas filas son inalcanzables. */}
             <div className="tz-scroll flex-1 min-h-0 overflow-auto pr-1">
               <BarrioTable
+                compact
                 rows={rows}
                 metric={metric}
                 colors={colors}
@@ -639,95 +821,39 @@ export function BarrioMapView({
         </div>
       </div>
 
-      <div className="hidden md:flex absolute left-5 bottom-5 z-[500] flex-col gap-2.5 max-w-[400px]">
-        <div
-          data-tz-overlay
-          className={`${GLASS} rounded-[14px] px-[15px] pt-[13px] pb-3 shadow-[0_14px_34px_-20px_rgba(29,29,28,.5)]`}
-        >
-          <div className="flex items-baseline gap-2.5 whitespace-nowrap">
-            <span className="text-[10.5px] font-bold uppercase tracking-[.14em] text-brand-faint">{def.label}</span>
-            <span className="flex-1 h-px bg-tz-sand" />
-            <span className="text-[11px] font-semibold text-brand-text-2">{def.note}</span>
-          </div>
-          {/* E11-02 · Los SIETE cortes, no dos etiquetas de mínimo y máximo.
-              Con cuantiles los escalones no son equidistantes, y una leyenda de
-              dos extremos le haría creer a quien la lee que el color del medio
-              es el valor del medio — exactamente lo contrario de lo que pasa en
-              una distribución sesgada. */}
-          <div className="flex gap-[3px] mt-[9px]">
-            {steps.map((step, i) => (
-              <span
-                key={i}
-                className="flex-1 h-3 rounded-[3px]"
-                style={{ background: step.color }}
-                title={stepRangeLabel(step, metric)}
-              />
-            ))}
-          </div>
-          <div className="flex gap-[3px] mt-1.5">
-            {steps.map((step, i) => (
-              <span
-                key={i}
-                className="flex-1 text-[9.5px] font-bold text-brand-text-2 tz-nums text-center whitespace-nowrap overflow-hidden"
-              >
-                {formatMetricValue(step.from, metric)}
-              </span>
-            ))}
-          </div>
-          {/* E11-03 · El gris no es un escalón más: significa "no se puede
-              calcular", y sin su entrada en la leyenda quien mira lo lee como
-              el valor más bajo. */}
-          {missing && (
-            <div className="flex items-center gap-[7px] mt-[11px] pt-2.5 border-t border-tz-sand">
-              <span
-                className="w-[13px] h-[13px] rounded-[3px] shrink-0 border border-brand-border"
-                style={{ background: NO_DATA_FILL }}
-              />
-              <span className="text-[11px] font-semibold text-brand-text-2">Sin dato (falta situar un centro)</span>
-            </div>
-          )}
-
-          {/* Las dos claves solo se explican si hay algo que explicar: una ciudad
-              sin centros situados no pinta ni cuadradito ni anillo. */}
-          {city.centers.length > 0 && (
-            <div className="flex items-center gap-4 mt-[11px] pt-2.5 border-t border-tz-sand">
-              <div className="flex items-center gap-[7px]">
-                <span className="w-[13px] h-[13px] rounded-[4px] bg-tz-black border-[2.5px] border-tz-bone shadow-[0_0_0_1px_var(--color-brand-border)] shrink-0" />
-                <span className="text-[11px] font-semibold text-brand-text-2">Centro Training Zone</span>
-              </div>
-              <div className="flex items-center gap-[7px]">
-                <span className="w-4 h-[13px] rounded-[3px] border-[1.5px] border-dashed border-brand-muted shrink-0" />
-                <span className="text-[11px] font-semibold text-brand-text-2">{WALK_MINUTES} min andando</span>
-              </div>
-            </div>
-          )}
-        </div>
-        {/* E11-05 · Cuánta gente NO está en el plano. El `FROM PostalCodeArea`
-            descarta cualquier CP que no esté sembrado —un socio de Madrid con
-            CP 28001 no sale en ningún sitio— y hasta ahora el mapa no lo decía:
-            dirección miraba un plano sin saber si valía por el 90 % de su
-            cartera o por el 40 %. */}
-        <div
-          data-tz-overlay
-          className={`text-[10.5px] font-medium leading-[1.45] px-1 ${
-            gaps ? "text-brand-text-2" : "text-brand-muted"
-          }`}
-        >
-          <p>
-            {coverageSentence(coverage.members, "socio", "socios")}{" "}
-            {coverageSentence(coverage.leads, "lead", "leads")}
-          </p>
-          <p className="mt-1 text-brand-muted">{note}</p>
-        </div>
-      </div>
-
-      <div data-tz-overlay className="absolute right-5 bottom-5 z-[500] flex gap-2">
-        <MapButton onClick={exportCsv}>Exportar CSV</MapButton>
+      {/* La botonera, con el +/− dentro: el control de zoom de Leaflet caía
+          encima del ranking. */}
+      <div
+        data-tz-overlay
+        className="absolute left-3 right-3 bottom-3 lg:left-auto lg:right-5 lg:bottom-5 z-[500] flex justify-end gap-2 overflow-x-auto tz-scroll-x"
+      >
+        <span className="hidden sm:contents">
+          <MapButton onClick={exportCsv}>Exportar CSV</MapButton>
+        </span>
         {!panelOpen && <MapButton onClick={() => setPanelOpen(true)}>Ver tabla</MapButton>}
         <MapButton onClick={() => setShowLabels((v) => !v)}>
           {showLabels ? "Ocultar nombres" : "Ver nombres"}
         </MapButton>
         <MapButton onClick={resetView}>↺ Encuadrar</MapButton>
+        <div className="shrink-0 flex rounded-full border border-brand-border bg-brand-card/95 backdrop-blur-md overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setZoomSignal({ dir: 1, signal: Date.now() })}
+            aria-label="Acercar"
+            className="w-11 min-h-[44px] text-[17px] font-bold text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
+          >
+            +
+          </button>
+          <span className="w-px bg-brand-border" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={() => setZoomSignal({ dir: -1, signal: Date.now() })}
+            aria-label="Alejar"
+            className="w-11 min-h-[44px] text-[17px] font-bold text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
+          >
+            −
+          </button>
+        </div>
       </div>
 
       {/* E11-04 · El cambio de foco se anuncia. Sin esto, seleccionar una fila
@@ -749,11 +875,22 @@ function stepRangeLabel(step: { from: number; to: number | null }, metric: Barri
   return step.to === null ? `≥ ${from}` : `${from} – ${formatMetricValue(step.to, metric)}`;
 }
 
+function LegendKey({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <span className="flex items-center gap-[7px]">
+      <span aria-hidden="true" className="shrink-0 grid place-items-center">
+        {children}
+      </span>
+      <span className="text-[11px] font-semibold text-brand-text-2">{label}</span>
+    </span>
+  );
+}
+
 function SpotlightCell({ label, value, className }: { label: string; value: string; className?: string }) {
   return (
-    <div className="bg-brand-bg rounded-[11px] px-[11px] py-[9px]">
-      <div className="text-[10px] font-bold uppercase tracking-[.08em] text-brand-muted">{label}</div>
-      <div className={`font-display font-extrabold text-[17px] mt-0.5 tz-nums ${className ?? "text-brand-text"}`}>
+    <div className="bg-brand-bg rounded-[10px] px-2.5 py-2 min-w-0">
+      <div className="text-[9.5px] font-bold uppercase tracking-[.08em] text-brand-muted truncate">{label}</div>
+      <div className={`font-display font-extrabold text-[16px] mt-0.5 tz-nums truncate ${className ?? "text-brand-text"}`}>
         {value}
       </div>
     </div>
@@ -768,7 +905,7 @@ function MapButton({ onClick, children }: { onClick: () => void; children: React
       // E11-10 · 44 px de alto: el objetivo táctil mínimo. Estos botones medían
       // ≈34 px, las métricas ≈35 y los de ciudad ≈31 — todos por debajo, y en la
       // pantalla que más se mira desde una tableta en la sala.
-      className="border border-brand-border bg-brand-card/95 backdrop-blur-md rounded-full px-[15px] min-h-[44px] font-display text-[11.5px] font-bold tracking-[.03em] text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
+      className="shrink-0 whitespace-nowrap border border-brand-border bg-brand-card/95 backdrop-blur-md rounded-full px-[15px] min-h-[44px] font-display text-[11.5px] font-bold tracking-[.03em] text-brand-text transition-colors duration-150 hover:bg-tz-black hover:text-tz-bone"
     >
       {children}
     </button>

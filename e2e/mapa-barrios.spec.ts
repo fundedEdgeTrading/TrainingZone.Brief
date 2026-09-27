@@ -70,9 +70,16 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
 
     await page.getByRole("button", { name: "Conversión", exact: true }).click();
     await expect(page.getByText("¿Dónde convierto peor?")).toBeVisible();
-    const firstByConv = await valueOf(0);
-    const lastByConv = await valueOf((await rows.count()) - 1);
-    expect(firstByConv).toBeLessThanOrEqual(lastByConv);
+    // Un barrio sin demanda (ni leads ni clientes) no convierte "mal": no
+    // tiene a quién convertir. Sale como «—» y al FINAL del ranking, detrás de
+    // todos los que tienen cifra.
+    const conv = await rows.evaluateAll((trs) =>
+      trs.map((tr) => (tr.querySelector("td.font-extrabold")?.textContent ?? "").trim())
+    );
+    const withValue = conv.filter((t) => t !== "—").map((t) => Number(t.replace("%", "")));
+    expect(withValue.length).toBeGreaterThan(1);
+    expect(withValue[0]).toBeLessThanOrEqual(withValue[withValue.length - 1]);
+    expect(conv.slice(withValue.length).every((t) => t === "—")).toBe(true);
   });
 
   test("E11-04 — hay una vía no cartográfica al dato: tabla con las seis métricas", async ({ page }) => {
@@ -97,24 +104,28 @@ test.describe("RB-LEAD-010 — Mapa de barrios", () => {
     await expect(page.locator(".tz-barrio-map")).toHaveAttribute("role", "application");
   });
 
-  test("E11-08 — sin geometría publicada se pinta la teselación, y la nota lo dice", async ({ page }) => {
+  test("E11-08 — con los contornos oficiales publicados se pintan, y la nota cita su fuente", async ({ page }) => {
     await loginAs(page, "direccion@trainingzone.es");
     await page.goto("/mapa-barrios");
 
-    // El recuento de polígonos es lo que esta historia podía romper: con
-    // geometría real serían los mismos anillos por otra vía, y sin ella siguen
-    // siendo los de `tessellate()`. En los dos casos, un polígono por barrio.
+    // Un polígono por barrio, venga de `tessellate()` o de los contornos
+    // oficiales de CP (`src/data/geo/zaragoza.topo.json`).
     await expect
       .poll(() => page.locator(".tz-barrio-map .leaflet-overlay-pane path").count(), { timeout: 15_000 })
       .toBeGreaterThan(5);
 
-    // Y se declara cuál se está usando: decir "teselación" pintando barrios
-    // reales sería tan falso como lo contrario. La nota sale en dos sitios —el
-    // pie de la leyenda y el <caption> de la tabla—, así que se comprueban los
-    // dos en vez de elegir uno.
-    const nota = page.getByText(/teselación desde el centroide/);
-    await expect(nota).toHaveCount(2);
-    await expect(nota.first()).toBeVisible();
+    // Zaragoza tiene geometría publicada: la nota deja de hablar de teselación
+    // y lo dice con su fuente, que la licencia (CC BY 4.0) pide citar.
+    const caption = page.locator("table").first().locator("caption");
+    await expect(caption).toContainText(/áreas oficiales de cada código postal/, { timeout: 15_000 });
+    await expect(caption).not.toContainText(/teselación/);
+
+    // En pantalla, tras el ⓘ de la leyenda.
+    const notas = page.locator("#tz-barrio-notas");
+    await expect(notas).toBeHidden();
+    await page.getByRole("button", { name: "Cómo se ha hecho este mapa" }).click();
+    await expect(notas).toBeVisible();
+    await expect(notas).toContainText(/Instituto Geográfico Nacional/);
   });
 
   test("el selector de ciudad reencuadra sobre los barrios de la otra ciudad", async ({ page }) => {
@@ -262,4 +273,34 @@ test("E14-07 — cambiar de periodo cambia lo que cuenta el plano", async ({ pag
   // El año incluye al mes, así que nunca puede contar menos; y en la demo hay
   // altas repartidas por el año, así que tiene que contar MÁS.
   expect(ano).toBeGreaterThan(mes);
+});
+
+// ---------------------------------------------------------------------------
+// Rediseño 2026-09 · La tarjeta del mapa del panel es una coropleta por ciudad
+// ---------------------------------------------------------------------------
+//
+// Era un mapa de burbujas encuadrado sobre todas las ciudades a la vez: a
+// escala de país los barrios se fundían en una sola burbuja por ciudad. Lo que
+// se fija aquí es que la tarjeta pinta contornos (no burbujas), que se mira una
+// ciudad cada vez y que el selector de ciudad cambia mapa y ranking juntos.
+
+test("la tarjeta del panel pinta los barrios de una ciudad y el selector la cambia", async ({ page }) => {
+  await loginAs(page, "direccion@trainingzone.es");
+
+  const mapa = page.locator(".tz-barrio-map");
+  await mapa.scrollIntoViewIfNeeded({ timeout: 15_000 });
+  await expect
+    .poll(() => mapa.locator(".leaflet-overlay-pane path.leaflet-interactive").count(), { timeout: 15_000 })
+    .toBeGreaterThan(5);
+  // Ni rastro del mapa de burbujas ni de la capa de calor.
+  await expect(page.locator(".tz-map-bubble")).toHaveCount(0);
+  await expect(page.locator(".leaflet-heatmap-layer")).toHaveCount(0);
+
+  const ciudad = page.getByRole("group", { name: "Ciudad" });
+  const ranking = page.getByText(/^Ranking · /);
+  for (const nombre of ["Zaragoza", "Santander"]) {
+    await ciudad.getByRole("button", { name: nombre }).click();
+    await expect(ciudad.getByRole("button", { name: nombre })).toHaveAttribute("aria-pressed", "true");
+    await expect(ranking).toHaveText(`Ranking · ${nombre}`);
+  }
 });
