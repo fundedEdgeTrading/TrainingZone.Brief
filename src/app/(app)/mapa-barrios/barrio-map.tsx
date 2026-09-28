@@ -6,6 +6,7 @@ import "leaflet/dist/leaflet.css";
 import { tessellate, type Ring } from "@/lib/barrio-geometry";
 import { coversCity, ringsFromTopology } from "@/lib/barrio-geojson";
 import { POSTAL_GEOMETRY_ATTRIBUTION } from "@/lib/barrio-coverage";
+import { CARTO_ATTRIBUTION, cartoTileUrl } from "@/lib/basemap";
 import { centerPinIcon } from "@/lib/map-pin";
 import {
   INK_DARK,
@@ -406,9 +407,8 @@ export function BarrioMap({
 
     // `light_nolabels` (el panel usa `light_all`): los rótulos de barrio los
     // pone la vista, y los de CARTO competían con ellos.
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png", {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    L.tileLayer(cartoTileUrl("light_nolabels"), {
+      attribution: CARTO_ATTRIBUTION,
       subdomains: "abcd",
       maxZoom: 19,
     }).addTo(map);
@@ -422,7 +422,7 @@ export function BarrioMap({
       streetPane.style.zIndex = "450";
       streetPane.style.pointerEvents = "none";
     }
-    const streetLabels = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png", {
+    const streetLabels = L.tileLayer(cartoTileUrl("light_only_labels"), {
       pane: "tz-street-labels",
       subdomains: "abcd",
       maxZoom: 19,
