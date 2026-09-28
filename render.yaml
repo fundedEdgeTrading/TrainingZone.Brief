@@ -167,6 +167,10 @@ services:
         sync: false
       - key: NEXT_PUBLIC_LOGO_HOSTS
         sync: false
+      # Clave de CARTO Basemaps (callejero de los mapas). Pública, sin ella las
+      # teselas salen con marca de agua. Ver .env.example.
+      - key: NEXT_PUBLIC_CARTO_BASEMAPS_KEY
+        sync: false
       - key: APPLE_TEAM_ID
         sync: false
       - key: IOS_BUNDLE_ID
@@ -270,6 +274,10 @@ services:
       - key: GOOGLE_SITE_VERIFICATION
         sync: false
       - key: NEXT_PUBLIC_LOGO_HOSTS
+        sync: false
+      # Clave de CARTO Basemaps (callejero de los mapas). Pública, sin ella las
+      # teselas salen con marca de agua. Ver .env.example.
+      - key: NEXT_PUBLIC_CARTO_BASEMAPS_KEY
         sync: false
       - key: APPLE_TEAM_ID
         sync: false
