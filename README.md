@@ -92,7 +92,7 @@ Empieza por **[`docs/README.md`](./docs/README.md)**, que es el índice.
 | [SEO y captación](./docs/SEO_Y_CAPTACION.md) | Páginas públicas, indexación, medición |
 | [App móvil](./docs/APP_MOVIL.md) | Contrato de la API y la app Expo |
 | [Operaciones](./docs/OPERACIONES.md) | Entornos, cron, pruebas, despliegue |
-| [Reglas de negocio](./docs/CRM_REGLAS_NEGOCIO.md) | Catálogo `RB-*` |
+| [Reglas de negocio](./docs/reglas/README.md) | Catálogo `RB-*` por dominio, y cómo lo trabaja negocio |
 
 Dos fuentes que no son documentación pero se leen como tal: `.env.example`
 explica cada variable con su porqué, y `prisma/schema.prisma` está comentado
@@ -107,5 +107,6 @@ Lee `AGENTS.md`. Resumen de lo que más cuesta si se ignora:
 - Toda lectura y escritura con `centerId` pasa por `isCenterInScope` /
   `requireApiCenterScope` — **también en la API móvil**.
 - Todo acceso a datos de salud pasa por `health-access.ts` y deja `AuditLog`.
-- `prisma/schema.prisma` y `src/lib/rbac.ts` están **congelados**: si hace falta
-  tocarlos, se pide.
+- `prisma/schema.prisma` y `src/lib/rbac.ts` son **sensibles**: el esquema solo
+  admite cambios aditivos con su migración en el mismo commit, y `rbac.ts` es la
+  fuente única de permisos y rótulos (condiciones completas en `AGENTS.md`).

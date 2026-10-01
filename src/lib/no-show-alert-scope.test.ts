@@ -10,7 +10,7 @@ import { CONSECUTIVE_NO_SHOW_THRESHOLD } from "@/lib/no-show";
  * socio.
  *
  * `no-show-alerts.ts` seleccionaba `role in [OWNER, CENTER_DIRECTOR]` de toda
- * la organización, mientras la documentación (CRM_REGLAS_NEGOCIO.md, RB-RES-009)
+ * la organización, mientras la documentación (docs/reglas/03-agenda-y-reservas.md, RB-RES-009)
  * dice "dirección **del centro**". Con eso, el nombre y apellidos de un socio de
  * La Jota —y el hecho de que se está descolgando— aparecían en la bandeja de la
  * dirección de Santander.

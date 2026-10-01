@@ -7,7 +7,7 @@ import { isOperatingDay } from "@/app/(app)/agenda/agenda-utils";
 
 /**
  * E12-13 · alinear documentación y código. Tres desviaciones concretas entre
- * `docs/CRM_REGLAS_NEGOCIO.md` y el código real:
+ * el catálogo de reglas (`docs/reglas/`) y el código real:
  *  - RB-RES-008 decía "el centro no opera en domingo" mientras isOperatingDay
  *    devuelve siempre true.
  *  - RB-PAGO-008 daba el ajuste de saldo al entrenador; el código nunca se
@@ -31,7 +31,7 @@ test("E12-13 · el entrenador raso no ajusta saldo de bono (RB-PAGO-008 corregid
 });
 
 test("E12-13 · RB-AGENDA-009 queda documentada", () => {
-  const doc = readFileSync(join("docs", "CRM_REGLAS_NEGOCIO.md"), "utf8");
+  const doc = readFileSync(join("docs", "reglas", "03-agenda-y-reservas.md"), "utf8");
   assert.match(doc, /RB-AGENDA-009/);
 });
 

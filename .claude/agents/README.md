@@ -20,6 +20,14 @@ Agentes especializados para delegar trabajo. La regla es simple: **el orquestado
 | `entrenador-experto` | ¿Esto encaja con el trabajo de sala? Metodología, briefs, mesociclos, valoraciones | No |
 | `socio-experto` | ¿Se entiende y se usa desde el móvil de quien paga la cuota? Portal y app nativa | No |
 
+## Reglas de negocio
+
+Las personas de negocio no lanzan agentes a mano: usan la skill `/regla-negocio`
+(`.claude/skills/regla-negocio/SKILL.md`), que solo edita `docs/reglas/` y puede
+apoyarse en `negocio-producto`, `entrenador-experto`, `socio-experto` y
+`cumplimiento-normativo` para cuestionar una regla antes de aprobarla. El
+procedimiento completo está en `docs/reglas/COMO_TRABAJAR_LAS_REGLAS.md`.
+
 ## Cómo delegar sin quemar contexto
 
 1. **Acota el encargo.** Módulo, ficheros de partida y criterio de aceptación. Un agente con el alcance abierto lee de más.

@@ -17,7 +17,7 @@ todo el 23-08-2026**. Ya no queda nada que reactivar. Se fueron la ruta
 `PersonalizedOffer` con su tabla y el enum `OfferStatus`, la clave
 `offerSuggestions` del `summary` del cron y `e2e/offers.spec.ts`. La regla de
 negocio `RB-RRHH-008/013` queda marcada como retirada en
-`CRM_REGLAS_NEGOCIO.md` §8.7.
+`docs/reglas/06-equipo-y-tareas.md`.
 
 ## Fichajes (22-08-2026, F2)
 
@@ -57,43 +57,32 @@ verificación cruzada en `/rrhh` con los datos que ya devuelven esas queries.
 > **Antes de retirar el modelo del esquema**, exportar y archivar los fichajes
 > existentes con `npm run export:fichajes`: el plazo de cuatro años del art.
 > 34.9 ET (RDL 8/2019) sigue corriendo aunque la funcionalidad desaparezca.
-> `prisma/schema.prisma` está congelado este trimestre, así que la retirada de
-> `TimeClockEntry` queda pendiente de la ventana de esquema — el código ya no
-> lo toca.
+> La retirada de `TimeClockEntry` del esquema sigue pendiente (el esquema
+> estuvo congelado hasta el 27-09-2026 y hoy solo admite cambios aditivos sin
+> acuerdo explícito): el código ya no lo toca.
 >
 > La declaración de que **Apta no presta registro de jornada** vive en
 > `src/lib/service-terms.ts` y se pinta en `/rrhh`, donde estaba el widget:
 > quien venga a buscar el fichaje encuentra la respuesta, no un hueco. Ahí está
 > también lo que un diseño futuro tendría que contemplar.
 
-## IA y chat en la ficha del socio (23-08-2026, rediseño de la ficha)
+## IA y chat en la ficha del socio (23-08-2026) — situación actual
 
-**Por qué.** El rediseño de `/members/[id]` unifica once pestañas en cinco
-secciones y el cliente decidió que la ficha no es el sitio del chat ni de la
-rutina generada por IA: el socio ya tiene el chat flotante en su portal y la
-rutina no se consultaba desde aquí. Se retira del todo de la ficha, no se
-esconde tras un flag.
+El 23-08-2026 el rediseño de `/members/[id]` retiró de la ficha la pestaña
+«IA & Chat». Desde entonces cambiaron las dos mitades:
 
-**Qué se ha hecho.**
+- **Chat: volvió.** E12-02 (decisión D-P6: se quita la promesa de respuesta
+  inmediata, el chat **no** se apaga) remontó el lado del personal: la ficha
+  tiene una sección «Chat» con `StaffChatThread`, visible según `RB-CHAT-001`
+  (`src/lib/chat.ts`). El socio sigue con el panel flotante del portal.
+- **Rutina para casa por IA: apagada del todo.** E12-01 (D-P6) retiró el
+  emisor (`lib/workout-programs.ts`) y el botón del portal, porque no había
+  pantalla donde el entrenador confirmase el borrador y la «IA» era fingida.
+  `src/app/(app)/portal/evolucion/workout-request.test.ts` comprueba que no
+  vuelve por accidente. Las reglas `RB-IA-001/003` quedan ⏸️ apagadas.
 
-- `src/app/(app)/members/[id]/page.tsx`: fuera la pestaña «IA & Chat» y con
-  ella las llamadas a `canAccessMemberChat`, `getOrCreateConversation`,
-  `listMessages` y `listWorkoutPrograms`, y los imports de `StaffChatThread` y
-  `WorkoutProgramList`. El consentimiento `consentAIAt` sigue en el modelo y en
-  el payload del panel de datos, pero deja de pintarse: los cuatro tiles de
-  consentimientos son Contrato, Salud, Imágenes y Marketing.
-- `e2e/portal.spec.ts`: fuera el caso «el entrenador asignado ve el chat y la
-  rutina del socio en su ficha». El chat del portal (panel flotante) se sigue
-  probando en el mismo archivo.
-
-**Qué NO se ha tocado.** `chat-actions.ts`, `staff-chat-thread.tsx`,
-`workout-panel.tsx` y `workout-actions.ts` siguen en el repo, exportados y sin
-cambios, igual que `lib/workout-programs.ts` y el chat del portal del socio.
-Ninguna tabla ni dato se ha borrado.
-
-**Para reactivarlo.** Volver a montar `StaffChatThread` y `WorkoutProgramList`
-en una sección de la ficha (o en una ruta propia) con las cuatro queries de
-arriba, y devolver el tile de «Tratamiento con IA» a los consentimientos.
+El consentimiento `consentAIAt` sigue en el modelo; los tiles de
+consentimiento de la ficha son Contrato, Salud, Imágenes y Marketing.
 
 ## Nota sobre el recuento del menú de Dirección
 

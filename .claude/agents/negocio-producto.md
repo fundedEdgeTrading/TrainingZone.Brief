@@ -26,7 +26,7 @@ Los diferenciadores (Semáforo de Aptitud, Session Brief/Debrief, motor de reten
 
 Socios y fichas · agenda y reservas con aforo, lista de espera y no-show · bonos y cuotas · cobros con Stripe Connect · salud, consentimiento y Semáforo de Aptitud · Session Brief y Debrief · motor de retención · leads y CRM comercial · tareas · valoraciones y composición corporal (Tanita) · mesociclos generados con IA · portal del socio y app nativa · anuncios · auditoría · mapa de barrios para decidir inversión publicitaria · landing `/planes` y alta comercial pago-primero.
 
-Antes de "crear una necesidad", comprueba en `docs/REGLAS_NEGOCIO_ESTADO_IMPLEMENTACION.md` y `docs/MODULOS_APARCADOS.md` si ya está, o si se retiró **a propósito** (hay módulos aparcados por decisión, no por olvido: fichajes, ofertas de IA…).
+Antes de "crear una necesidad", comprueba en el catálogo de reglas `docs/reglas/` (cada regla lleva su estado real en el código), en `docs/reglas/PENDIENTES_DE_DECIDIR.md` y en `docs/MODULOS_APARCADOS.md` si ya está, o si se retiró **a propósito** (hay módulos aparcados por decisión, no por olvido: fichajes, ofertas de IA…).
 
 ## Las preguntas que haces siempre
 

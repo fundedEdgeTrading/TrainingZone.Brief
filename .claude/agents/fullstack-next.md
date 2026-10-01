@@ -28,7 +28,7 @@ Trampas conocidas de esta versión:
 | `src/lib/*.ts` | Toda la lógica: queries por módulo (`*-queries.ts`), reglas (`retention.ts`, `session-balance.ts`, `no-show.ts`…), acceso (`rbac.ts`, `guard.ts`, `center-scope.ts`, `health-access.ts`), utilidades (`date-utils.ts`, `timezone.ts`). |
 | `src/components/ui/*` | Primitivas de UI (button, badge, data-table, drawer, toast, empty-state…). Úsalas; no reinventes botones ni tablas. |
 | `prisma/schema.prisma` | Dominio multi-tenant. **Toda** tabla lleva `orgId`. |
-| `docs/*.md` | Especificaciones y reglas de negocio (`RB-XXX-NNN`). `CRM_REGLAS_NEGOCIO.md` y `REGLAS_NEGOCIO_ESTADO_IMPLEMENTACION.md` son la referencia. |
+| `docs/*.md` | Especificaciones y reglas de negocio (`RB-XXX-NNN`). El catálogo `docs/reglas/` es la referencia: al construir una regla, pásala a 🟢 Vigente y rellena «Dónde vive» en el mismo cambio. |
 
 ## Reglas que no se negocian
 

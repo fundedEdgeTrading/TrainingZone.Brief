@@ -101,13 +101,13 @@ Defensa del login: `src/lib/login-throttle.ts`.
 
 Un usuario ve una pantalla solo si pasa **las tres**.
 
-### 4.1 Rol (`src/lib/rbac.ts`) — fichero congelado
+### 4.1 Rol (`src/lib/rbac.ts`) — fichero sensible
 
 Ocho roles:
 
 | Rol | Qué es |
 |---|---|
-| `PLATFORM_ADMIN` | Soporte de Apta: organizaciones, anuncios y auditoría |
+| `PLATFORM_ADMIN` | Soporte de Apta: organizaciones, anuncios y auditoría. No es un rol de plantilla: solo lo asigna otro `PLATFORM_ADMIN` de la organización de plataforma (`PLATFORM_ORG_SLUG`), y `/apta` exige pertenecer a ella (QA-ALTA-01) |
 | `OWNER` | Dirección de la organización. Manda en todos sus centros |
 | `CENTER_DIRECTOR` | Dirección de centro. Acotada a los suyos |
 | `TRAINER_ADMIN` | Entrenador con mando sobre su centro: aforo por defecto y ajuste de bonos |
@@ -215,13 +215,15 @@ Estas se comprueban en test y romperlas es un fallo, no una decisión de estilo.
 |---|---|
 | Ninguna operación mueve `sessionsRemaining` sin escribir en `SessionLedger` | `src/lib/session-ledger.ts` |
 | Las transiciones de reserva pasan por `assertBookingTransition`; `CANCELLED` y `WAITLISTED` **nunca** llegan a `ATTENDED`, en ninguno de los cuatro puntos de escritura | `src/lib/booking-transitions.ts` |
-| La ventana de cancelación llega del servidor —horas en `CANCEL_WINDOW_HOURS`, instante calculado en la zona horaria **del centro**, no en la cookie `tz`— y el mismo cálculo pinta el distintivo y ejecuta la cancelación. Cero literales de horas en el cliente | `CANCEL_WINDOW_HOURS`, `canCancelWithoutPenalty` y `enforcementStartsAt` en `src/lib/portal-queries.ts` |
+| La ventana de cancelación llega del servidor —horas en `CANCEL_WINDOW_HOURS`, hoy **un único valor para toda la plataforma** (`CANCELLATION_WINDOW_HOURS`; la ventana por centro de D-S9 está pendiente, ver `docs/reglas/PENDIENTES_DE_DECIDIR.md` P-03), instante calculado en la zona horaria **del centro**, no en la cookie `tz`— y el mismo cálculo pinta el distintivo y ejecuta la cancelación. Cero literales de horas en el cliente | `CANCEL_WINDOW_HOURS`, `canCancelWithoutPenalty` y `enforcementStartsAt` en `src/lib/portal-queries.ts` |
 | Nunca se borra un `Price` de Stripe: se archiva. Toda creación lleva clave de idempotencia | `src/lib/stripe-idempotency.ts` |
 | `Member.state` lo mueve un solo módulo | `src/lib/member-lifecycle.ts` |
 | Rótulos y tabla de permisos: fuente única compartida entre web y app | `src/lib/rbac.ts`, `src/lib/service-labels.ts` |
 
-**Ficheros congelados:** `prisma/schema.prisma` y `src/lib/rbac.ts`. No se editan
-sin pasar por integración.
+**Ficheros sensibles:** `prisma/schema.prisma` y `src/lib/rbac.ts`. Ya no están
+congelados (27-09-2026), pero `schema.prisma` solo admite cambios aditivos con su
+migración en el mismo commit, y `rbac.ts` sigue siendo la fuente única de
+permisos y rótulos. Las condiciones exactas están en `AGENTS.md`.
 
 ---
 

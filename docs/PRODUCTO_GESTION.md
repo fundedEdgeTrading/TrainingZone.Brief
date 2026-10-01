@@ -2,7 +2,7 @@
 
 Qué hace la plataforma en el día a día de un centro: socios, salud, valoraciones,
 agenda, bonos, sesiones y el trabajo del entrenador. Las reglas numeradas
-(`RB-*`) están en [CRM_REGLAS_NEGOCIO.md](./CRM_REGLAS_NEGOCIO.md); aquí se citan
+(`RB-*`) están en [`reglas/`](./reglas/README.md); aquí se citan
 por su código, no se reescriben.
 
 ---
