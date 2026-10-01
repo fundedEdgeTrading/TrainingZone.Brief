@@ -19,8 +19,11 @@ no.
 
 1. **Cada pista toca solo sus ficheros.** Si dos sesiones editan el mismo
    fichero, se pisan. Es la regla de oro y la única que de verdad importa.
-2. **`prisma/schema.prisma` y `src/lib/rbac.ts` están congelados.** Si una pista
-   los necesita, para y lo pide; no los edita en su rama.
+2. **`prisma/schema.prisma` y `src/lib/rbac.ts` son sensibles.** Desde el
+   27-09-2026 se pueden editar con las condiciones de `AGENTS.md` (esquema solo
+   aditivo y con su migración en el mismo commit; `rbac.ts` como fuente única).
+   Antes de subir, trae la rama de integración a la tuya: son los dos ficheros
+   con más riesgo de conflicto.
 3. **Nadie ejecuta la suite completa de Playwright** salvo quien integra, una vez
    al día: muta la base de datos de demo y contamina al resto de sesiones.
 

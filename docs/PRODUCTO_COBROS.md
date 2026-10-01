@@ -1,7 +1,7 @@
 # Producto · Cobros
 
 Todo lo que toca dinero. Reglas numeradas: `RB-PAGO-*`, `RB-VENTA-*`,
-`RB-PLAN-*`, `RB-CONNECT-*` en [CRM_REGLAS_NEGOCIO.md](./CRM_REGLAS_NEGOCIO.md).
+`RB-PLAN-*`, `RB-CONNECT-*` en [`reglas/`](./reglas/README.md).
 
 ---
 
@@ -96,8 +96,11 @@ nadie.
 
 ### 3.1 Conectar la cuenta
 
-Un botón, OAuth de Connect Standard (`src/lib/stripe-connect.ts`), con `state =
-orgId` para atar el callback a la organización que lo inició. El estado de la
+Un botón, OAuth de Connect Standard (`src/lib/stripe-connect.ts`). El `state`
+es un nonce firmado guardado en cookie (CON-01), que ata el callback a la
+sesión que lo inició; la cookie se borra también si
+falla el guardado. Al abrir Stripe, el alta llega rellena con los datos del
+centro. El estado de la
 conexión y lo que falta por configurar se resuelve en `stripe-connect-status.ts`
 y se enseña en `/organization` y en `/puesta-en-marcha`.
 
@@ -153,6 +156,25 @@ Las tres transiciones de estado que produce este motor —impago abierto, impago
 cerrado y baja por reintentos agotados— **las escribe `member-lifecycle.ts`**, no
 el propio motor: un `update` suelto aquí sería un socio sin motivo de baja, y se
 saltaría el enganche de referidos y el disparador de flujos.
+
+### 3.5 bis Renovación de cuotas con sesiones y adelanto
+
+- **Recarga al renovar** (STR-01, `src/lib/stripe-renewal.ts`): el `invoice.paid`
+  de cada ciclo recarga las sesiones incluidas y lo asienta en `SessionLedger`.
+  Lo que sobra **caduca** (`RENEWAL_CARRYOVER = false`, decisión D3).
+- **Adelantar la renovación** (ADV-01, `src/lib/stripe-advance-renewal.ts`,
+  botón en `/portal/membresia`): mueve el ancla del ciclo a hoy sin prorratear
+  (D4) y solo con tarjeta (D5). Idempotente por ciclo.
+- **Una sola suscripción recurrente viva por socio** (STR-02): el portal no abre
+  otra; devuelve `ALREADY_SUBSCRIBED`.
+- La cuota usa el **centro de la venta** (STR-03) y la pausa voluntaria se
+  sincroniza desde Stripe (`pause_collection`, STR-04/05).
+- El **Billing Portal** de Stripe se configura por API en la cuenta conectada
+  (CON-02): el gimnasio no entra al Dashboard para eso.
+- La compra de la **licencia** (plano 1) excluye Apple Pay; los cobros a socios
+  lo mantienen.
+
+Reglas: [`reglas/04-cobros-y-bonos.md`](./reglas/04-cobros-y-bonos.md).
 
 ### 3.6 Cupones y códigos promocionales
 
@@ -219,8 +241,13 @@ fijada.
 
 ## 6. Modo demo y degradación
 
-Sin `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`, el checkout y el webhook
-**degradan con un error controlado** en vez de reventar, y existe un checkout de
+El modo demo **se pide explícitamente** (`DEMO_MODE="true"`; en `NODE_ENV=production`
+hace falta además `ALLOW_DEMO_IN_PRODUCTION="true"`). Ya no se enciende solo
+porque falte una clave (PROD-01). Con él encendido existe un checkout de
 demostración (`/demo-checkout`, `src/lib/demo-member-checkout.ts`,
-`isDemoModeActive`) para poder recorrer el alta completa sin cuenta de Stripe.
-`/demo-checkout` es pública pero `noindex`.
+`isDemoModeActive`) para recorrer el alta completa sin cuenta de Stripe; con él
+apagado, `/demo-checkout` redirige a `/planes`.
+
+Fuera de producción, sin claves de Stripe el checkout y el webhook degradan con
+un error controlado. **En producción, sin las cuatro variables de Stripe el
+servidor no arranca** (PROD-02).

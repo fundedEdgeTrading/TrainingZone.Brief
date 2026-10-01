@@ -52,7 +52,7 @@ async function memberCenterIds(orgId: string, memberId: string, primaryCenterId:
 
 /**
  * Quién recibe la alerta (E1-07). La documentación dice "dirección **del
- * centro**" (CRM_REGLAS_NEGOCIO.md, RB-RES-009) y el código seleccionaba
+ * centro**" (docs/reglas/03-agenda-y-reservas.md, RB-RES-009) y el código seleccionaba
  * `role in [OWNER, CENTER_DIRECTOR]` de toda la organización: con eso, el
  * nombre y apellidos de un socio de La Jota cruzaban la frontera hasta la
  * bandeja de Santander.

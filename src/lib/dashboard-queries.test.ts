@@ -418,8 +418,12 @@ test("E14-04 · con pocos cobros el insight da el número absoluto y no un porce
       data: { orgId: mapOrgId, memberId: insightMemberId, amountCents, method: "CARD", status: "PAID", date },
     });
 
-  const ayer = new Date();
+  // "Ayer" salvo el día 1, en que ayer cae en el mes anterior y el mes en
+  // curso se quedaría sin cobros: entonces vale el momento actual.
+  const ahora = new Date();
+  const ayer = new Date(ahora);
   ayer.setDate(ayer.getDate() - 1);
+  if (ayer.getMonth() !== ahora.getMonth()) ayer.setTime(ahora.getTime() - 60_000);
   const mesPasado = new Date();
   mesPasado.setMonth(mesPasado.getMonth() - 1);
 

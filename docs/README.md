@@ -14,6 +14,11 @@ Dos superficies, un solo backend:
 | Código | `src/` | `apps/mobile/` |
 | Datos | Postgres vía Prisma | `src/app/api/mobile/v1/**` sobre las mismas consultas |
 
+> **¿Eres de negocio?** Tu sitio es [`reglas/`](./reglas/README.md): el
+> catálogo de reglas de negocio y el procedimiento para cambiarlas con Claude
+> Code ([COMO_TRABAJAR_LAS_REGLAS.md](./reglas/COMO_TRABAJAR_LAS_REGLAS.md)).
+> El resto de esta carpeta describe lo construido y lo mantiene desarrollo.
+
 ## Mapa de esta carpeta
 
 | Documento | Qué contesta |
@@ -25,7 +30,6 @@ Dos superficies, un solo backend:
 | [SEO_Y_CAPTACION.md](./SEO_Y_CAPTACION.md) | Páginas públicas, reglas de indexación, datos estructurados, sitemap, analítica sin cookies y medición |
 | [APP_MOVIL.md](./APP_MOVIL.md) | La app Expo y el contrato de la API móvil |
 | [OPERACIONES.md](./OPERACIONES.md) | Entornos, variables, trabajos programados, despliegue, pruebas y CI |
-| [CRM_REGLAS_NEGOCIO.md](./CRM_REGLAS_NEGOCIO.md) | Catálogo numerado de reglas de negocio (`RB-*`). Es la referencia que citan el código y el resto de documentos |
 | [BRANDING.md](./BRANDING.md) | Identidad visual y su traducción a tokens |
 | [MODULOS_APARCADOS.md](./MODULOS_APARCADOS.md) | Qué se ha apagado, cuándo y por qué. Se oculta, no se borra |
 | [TRABAJO_EN_PARALELO.md](./TRABAJO_EN_PARALELO.md) | Cómo se desarrolla con varias sesiones a la vez: pistas, ventanas de merge y las tres reglas que no se rompen |
@@ -34,6 +38,7 @@ Dos superficies, un solo backend:
 
 | Carpeta | Qué es |
 |---|---|
+| [`reglas/`](./reglas/README.md) | **Catálogo de reglas de negocio** (`RB-*`), un fichero por dominio, con el estado real de cada regla en el código, los pendientes de decidir y el procedimiento de trabajo de negocio. Es la referencia que citan el código y el resto de documentos |
 | [`legal/`](./legal/) | Expediente de cumplimiento para revisión jurídica. **Borradores sin firmar**: nada de ahí se publica tal cual |
 | [`hu/`](./hu/) | Las 192 historias de usuario troceadas por épica. **Material de trabajo vivo**: es lo que consumen las sesiones en paralelo |
 | [`seo/`](./seo/) | Línea base de medición de SEO, para poder comparar dentro de tres meses |
@@ -42,16 +47,18 @@ Dos superficies, un solo backend:
 
 Se borran cuando el lote cierra; no son referencia permanente.
 
-- `PLAN_LOTE3_PANEL_Y_MARKETING_2026-09-15.md` — reparto y prompts del lote en ejecución.
-- `DIAGNOSTICO_PANEL_2026-09.md` — medición previa a la corrección de las métricas del panel (E14-01).
+- `PASO_A_PRODUCCION_2_CENTROS.md` — plan del paso a producción con dos centros
+  (objetivo 07-10-2026). Sus decisiones de negocio D1-D7 ya están en
+  [`reglas/`](./reglas/README.md).
 
 ## Documentos retirados y dónde vive ahora su contenido
 
-Se retiraron 28 documentos: planes por fases ya ejecutados, prompts de
+Se retiraron 31 documentos: planes por fases ya ejecutados, prompts de
 paralelización, runbooks, informes puntuales de QA y guías de implementación de
 funcionalidades que hoy están construidas. Su **detalle funcional y técnico** se
 consolidó en los documentos de arriba; el texto original sigue en el historial de
-git (último commit con todos ellos: `3ebf9a2`).
+git (último commit con los 28 primeros: `3ebf9a2`; con los tres retirados el
+01-10-2026: `5f8ce72`).
 
 Algunos comentarios de `prisma/schema.prisma`, de migraciones
 ya aplicadas y de las épicas de `docs/hu/` siguen citándolos por su nombre
@@ -62,7 +69,9 @@ antiguo. Esta tabla es la traducción.
 | `APP_MOVIL_NATIVA_PLAN.md` | [APP_MOVIL.md](./APP_MOVIL.md) |
 | `ARQUITECTURA_IDENTIDAD_VENTA_MULTITENANT.md` | [ARQUITECTURA.md](./ARQUITECTURA.md) §2 y §8 · [PRODUCTO_COBROS.md](./PRODUCTO_COBROS.md) §1–§2 |
 | `COMPOSICION_CORPORAL_TANITA.md` · `..._IMPLEMENTACION.md` | [PRODUCTO_GESTION.md](./PRODUCTO_GESTION.md) §3.2 |
-| `CRM_IMPLEMENTACION_FUNCIONALIDADES.md` | Implementado. Las reglas, en [CRM_REGLAS_NEGOCIO.md](./CRM_REGLAS_NEGOCIO.md) |
+| `CRM_IMPLEMENTACION_FUNCIONALIDADES.md` | Implementado. Las reglas, en [`reglas/`](./reglas/README.md) |
+| `CRM_REGLAS_NEGOCIO.md` | Reconstruido y verificado contra el código el 01-10-2026 en [`reglas/`](./reglas/README.md), un fichero por dominio. Las referencias por sección (`§8.7`, `§11.4`…) que quedan en el código y en `hu/` apuntan a este documento retirado; las decisiones `§11.x` se citan en la regla correspondiente |
+| `DIAGNOSTICO_PANEL_2026-09.md` · `PLAN_LOTE3_PANEL_Y_MARKETING_2026-09-15.md` | Lote 3 cerrado. Las definiciones del panel, en [`reglas/07-panel-y-analitica.md`](./reglas/07-panel-y-analitica.md); sus decisiones (cuatro tipos de persona, «baja» como ingreso perdido, sin medir aperturas), en [`reglas/`](./reglas/README.md) |
 | `EMAILS_TRANSACCIONALES.md` | [CRM_Y_MARKETING.md](./CRM_Y_MARKETING.md) §5 |
 | `FEEDBACK_COBROS_DASHBOARD.md` · `..._IMPLEMENTACION.md` | [PRODUCTO_GESTION.md](./PRODUCTO_GESTION.md) §6.2 · [PRODUCTO_COBROS.md](./PRODUCTO_COBROS.md) · [CRM_Y_MARKETING.md](./CRM_Y_MARKETING.md) §6 |
 | `FILTROS_TABLA_IMPLEMENTACION.md` | [CRM_Y_MARKETING.md](./CRM_Y_MARKETING.md) §7 |
@@ -92,8 +101,9 @@ antiguo. Esta tabla es la traducción.
    que sobrevive es la descripción de lo que el producto hace, no la del camino
    que se siguió para construirlo. El historial de git guarda lo demás.
 3. **Las reglas de negocio se numeran.** Toda regla que decida comportamiento
-   vive en `CRM_REGLAS_NEGOCIO.md` con su código `RB-*`, y el código la cita por
-   ese código. No se duplica el enunciado en dos sitios.
+   vive en [`reglas/`](./reglas/README.md) con su código `RB-*` y su estado, y el
+   código la cita por ese código. No se duplica el enunciado en dos sitios. Quien
+   construye una regla la pasa a 🟢 Vigente en el mismo cambio.
 4. **Lo que no se puede comprobar, no se afirma.** Si una cifra no está medida,
    se dice que no lo está — es la regla que gobierna `seo/linea-base.md` y vale
    para todo lo demás.

@@ -269,7 +269,9 @@ mancha.
 
 Las cifras del panel se revisaron en septiembre de 2026 porque dirección
 reportaba tres que no cuadraban. El diagnóstico, con el método y los datos
-medidos, está en `DIAGNOSTICO_PANEL_2026-09.md` mientras el lote siga abierto.
+medidos, está en el historial de git (`DIAGNOSTICO_PANEL_2026-09.md`, retirado al
+cerrar el lote 3); las definiciones vigentes, en
+[`reglas/07-panel-y-analitica.md`](./reglas/07-panel-y-analitica.md).
 La regla que salió de ahí: **una métrica que dirección lee distinto de como se
 calcula es un fallo de definición, no de dato**, y se arregla en el rótulo tanto
 como en la consulta.
