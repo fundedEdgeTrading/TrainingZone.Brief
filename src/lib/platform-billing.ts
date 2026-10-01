@@ -10,6 +10,7 @@ import {
   isDemoModeActive,
 } from "@/lib/platform-plans";
 import { resolvePlatformPriceId } from "@/lib/platform-price-catalog";
+import { resolveNoApplePayConfigId } from "@/lib/platform-payment-methods";
 import { publicOrigin } from "@/lib/site";
 
 export type PlatformCheckoutResult = { ok: true; url: string } | { ok: false; error: string };
@@ -64,12 +65,14 @@ export async function createLicenseCheckoutSession(planCode: string): Promise<Pl
   // mismo plan a la vez recibirían la MISMA sesión de checkout. El motivo
   // completo está en `lib/stripe-idempotency.ts`.
   const stripe = getStripeClient()!;
+  const noApplePayConfigId = await resolveNoApplePayConfigId();
   const checkoutSession = await stripe.checkout.sessions.create({
     mode: plan.interval === "lifetime" ? "payment" : "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer_creation: plan.interval === "lifetime" ? "always" : undefined,
     billing_address_collection: "required",
     tax_id_collection: { enabled: true },
+    ...(noApplePayConfigId ? { payment_method_configuration: noApplePayConfigId } : {}),
     success_url: `${publicOrigin()}/activar?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${publicOrigin()}/planes?checkout=cancelado`,
     metadata: { planCode: plan.code },
@@ -110,11 +113,13 @@ export async function createPlatformCheckoutSession(orgId: string, planCode: str
     await prisma.organization.update({ where: { id: org.id }, data: { platformStripeCustomerId: customerId } });
   }
 
+  const noApplePayConfigId = await resolveNoApplePayConfigId();
   const checkoutSession = await stripe.checkout.sessions.create(
     {
       mode: plan.interval === "lifetime" ? "payment" : "subscription",
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
+      ...(noApplePayConfigId ? { payment_method_configuration: noApplePayConfigId } : {}),
       success_url: `${publicOrigin()}/activar?checkout=success`,
       cancel_url: `${publicOrigin()}/activar?checkout=cancelled`,
       metadata: { orgId: org.id, planCode: plan.code },
